@@ -130,15 +130,15 @@ export const heroes: { id: Hero; name: string }[] = [
  *  and every set but Signal dims the glow so the PC reads as hardware, not neon. */
 export type ColorSet = "brass" | "olive" | "denim";
 export const colorSets: { id: ColorSet; name: string; accent: string; scene: Partial<SceneTheme> }[] = [
-  { id: "brass", name: "Brass", accent: "#E6D3A3", scene: {
-    heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3",
-    airCool: "#D2C08F", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "olive", name: "Olive", accent: "#B7C2AB", scene: {
-    heatCool: "#C9D1BF", heatWarm: "#9AA88C", heatHot: "#6E7E60", highlight: "#B7C2AB",
-    airCool: "#B7C2AB", airWarm: "#9AA88C", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
   { id: "denim", name: "Denim", accent: "#B0C0D1", scene: {
     heatCool: "#C9D4E0", heatWarm: "#94A6BA", heatHot: "#5E7590", highlight: "#B0C0D1",
     airCool: "#B0C0D1", airWarm: "#94A6BA", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "olive", name: "Olive", accent: "#B7C2AB", scene: {
+    heatCool: "#C9D1BF", heatWarm: "#9AA88C", heatHot: "#6E7E60", highlight: "#B7C2AB",
+    airCool: "#B7C2AB", airWarm: "#9AA88C", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "brass", name: "Brass", accent: "#E6D3A3", scene: {
+    heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3",
+    airCool: "#D2C08F", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
 ];
 
 /** How much color Mix's widgets carry. Accents keeps the data in greys and colors only what needs a look. */

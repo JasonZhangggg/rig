@@ -46,14 +46,14 @@ function routeFromHash(): Route {
 function initial(): UI {
   const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
-  const colors = storage.get("rig.colors2") as ColorSet | null;
+  const colors = storage.get("rig.colors3") as ColorSet | null;
   const widgets = storage.get("rig.widgets") as WidgetColor | null;
   return {
     route: routeFromHash(),
     style: "mix",
     finish: "ink",
     hero: "band",
-    colors: colorSets.some((c) => c.id === colors) ? colors! : "olive",
+    colors: colorSets.some((c) => c.id === colors) ? colors! : "denim",
     widgets: widgetColors.some((w) => w.id === widgets) ? widgets! : "accents",
     mode: mode === "light" ? "light" : "dark",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
@@ -93,7 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { storage.set("rig.style4", ui.style); }, [ui.style]);
   useEffect(() => { storage.set("rig.finish2", ui.finish); }, [ui.finish]);
   useEffect(() => { storage.set("rig.hero2", ui.hero); }, [ui.hero]);
-  useEffect(() => { storage.set("rig.colors2", ui.colors); }, [ui.colors]);
+  useEffect(() => { storage.set("rig.colors3", ui.colors); }, [ui.colors]);
   useEffect(() => { storage.set("rig.widgets", ui.widgets); }, [ui.widgets]);
   useEffect(() => { storage.set("rig.mode", ui.mode); }, [ui.mode]);
   useEffect(() => {
