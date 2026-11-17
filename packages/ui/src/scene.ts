@@ -1,4 +1,4 @@
-// 3D view of the PC.
+// 3D view of the PC, drawn in ink: flat toon shading with outlined edges.
 // Models are built in code from part sizes. Popular cases,
 // graphics cards and boards will load a matched model from a library instead,
 // and anything else falls back to a shape built like this one.
@@ -8,6 +8,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import type { PC, Part } from "@rig/core";
 
 export interface SceneTheme {
@@ -17,6 +18,8 @@ export interface SceneTheme {
   chip: string; battery: string; ssd: string; keys: string; trackpad: string;
   screenBg: string; screenPanel: string; screenLine: string;
   heatCool: string; heatWarm: string; heatHot: string; highlight: string;
+  /** Light strips, fan rings and the turntable rim. Without it they take the PC's own accent. */
+  accent?: string;
   hemi: number; key: number; rim: number; rimColor?: string; exposure?: number;
   /** Let the page show through behind the model; only a soft shadow stays on the floor. */
   transparent?: boolean;
@@ -53,7 +56,7 @@ export interface PCScene {
 }
 
 type Vec3 = [number, number, number];
-interface MatOpts { r?: number; m?: number; op?: number; emissive?: string; ei?: number; cc?: number; env?: number }
+interface MatOpts { op?: number; emissive?: string; ei?: number }
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
 interface Framing { target: THREE.Vector3; cam: THREE.Vector3; camExploded: THREE.Vector3 }
 
@@ -72,6 +75,7 @@ export function createScene(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
+  const outlined = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultKeepAlive: true });
 
   const labels = new CSS2DRenderer();
   labels.domElement.className = "scene-labels";
@@ -203,14 +207,17 @@ export function createScene(
   const theme = (): SceneTheme => state.theme!;
 
   // ---------- helpers ----------
+  const toonRamp = (() => {
+    const t = new THREE.DataTexture(new Uint8Array([96, 178, 255]), 3, 1, THREE.RedFormat);
+    t.minFilter = t.magFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  })();
   function M(color: THREE.ColorRepresentation, o: MatOpts = {}) {
-    const m = new THREE.MeshPhysicalMaterial({
-      color, roughness: o.r ?? 0.55, metalness: o.m ?? 0.1,
-      transparent: o.op !== undefined && o.op < 1, opacity: o.op ?? 1,
-      depthWrite: o.op === undefined || o.op >= 0.5,
-      clearcoat: o.cc ?? 0, clearcoatRoughness: 0.25,
-      envMapIntensity: o.env ?? 1,
-    });
+    const op = o.op ?? 1;
+    const m = new THREE.MeshToonMaterial({ color, gradientMap: toonRamp, transparent: op < 1, opacity: op, depthWrite: op >= 0.5 });
+    // A see-through panel would show its own outline hull through it as a grey sheet, so glass gets none
+    m.userData.outlineParameters = { thickness: 0.0042, color: new THREE.Color(theme().trim).toArray(), visible: op >= 0.5, keepAlive: true };
     if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei ?? 1; }
     m.userData.glow = !!o.emissive;
     m.userData.baseEmissive = m.emissive.clone();
@@ -287,7 +294,7 @@ export function createScene(
   function fan(size: number, frameColor: string, accent: string, opts: { thick?: number; glow?: number; blade?: string; bladeOp?: number } = {}) {
     const g = new THREE.Group();
     const t = opts.thick ?? 0.25;
-    const frameMat = M(frameColor, { r: 0.7 });
+    const frameMat = M(frameColor);
     const s = size, w = 0.08;
     g.add(box(s, w, t, frameMat, 0, s / 2 - w / 2, 0));
     g.add(box(s, w, t, frameMat, 0, -s / 2 + w / 2, 0));
@@ -302,10 +309,10 @@ export function createScene(
       g.add(h);
     }
     const rotor = new THREE.Group();
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.16, s * 0.16, t * 0.8, 24), M(frameColor, { r: 0.4 }));
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.16, s * 0.16, t * 0.8, 24), M(frameColor));
     hub.rotation.x = Math.PI / 2;
     rotor.add(hub);
-    const bladeMat = M(opts.blade ?? frameColor, { r: 0.45, op: opts.bladeOp ?? 1 });
+    const bladeMat = M(opts.blade ?? frameColor, { op: opts.bladeOp ?? 1 });
     bladeMat.side = THREE.DoubleSide;
     const r0 = s * 0.15, r1 = s * 0.43;
     const bs = new THREE.Shape();
@@ -362,19 +369,19 @@ export function createScene(
   // ---------- tower ----------
   function buildTower(pc: PC, th: SceneTheme): Framing {
     const W = 2.27, H = 4.46, D = 4.64;
-    const caseMat = () => M(th.caseColor, { r: 0.38, m: 0.12, cc: 0.5 });
-    const accent = pc.accent;
+    const caseMat = () => M(th.caseColor);
+    const accent = th.accent ?? pc.accent;
 
     // Case shell
     const shell = new THREE.Group();
     shell.add(box(0.04, H, D, caseMat(), -W / 2, H / 2, 0)); // right side (solid)
     shell.add(box(W, 0.04, D, caseMat(), 0, 0.02, 0)); // bottom
     shell.add(box(W, H, 0.04, caseMat(), 0, H / 2, -D / 2)); // back
-    const shroud = box(W - 0.08, 0.9, D - 0.1, M(th.caseColor, { r: 0.5 }), 0, 0.49, 0);
+    const shroud = box(W - 0.08, 0.9, D - 0.1, M(th.caseColor), 0, 0.49, 0);
     shell.add(shroud);
     // Feet
     for (const [fx, fz] of [[-0.8, -1.9], [0.8, -1.9], [-0.8, 1.9], [0.8, 1.9]]) {
-      shell.add(box(0.3, 0.06, 0.3, M(th.trim, { r: 0.9 }), fx, -0.02, fz));
+      shell.add(box(0.3, 0.06, 0.3, M(th.trim), fx, -0.02, fz));
     }
     add(shell, "case");
     const top = box(W, 0.04, D, caseMat(), 0, H - 0.02, 0);
@@ -382,7 +389,7 @@ export function createScene(
     add(top, "case", [0, 1.2, 0]);
     // Front mesh panel
     const front = new THREE.Group();
-    const meshMat = M(th.caseColor, { r: 0.6, m: 0.2 });
+    const meshMat = M(th.caseColor);
     meshMat.alphaMap = meshTexture(W * 14, H * 14);
     meshMat.transparent = true;
     meshMat.alphaTest = 0.4;
@@ -404,8 +411,7 @@ export function createScene(
     front.add(stripGlow);
     add(front, "case", [0, 0, 1.8], { noPick: true });
     // Glass side panel
-    const glassMat = M(th.glass, { r: 0.04, m: 0.0, op: th.glassOpacity, env: th.transparent && th.hemi < 0.6 ? 1.2 : 2 });
-    glassMat.specularIntensity = 1;
+    const glassMat = M(th.glass, { op: th.glassOpacity });
     const glass = box(0.02, H - 0.12, D - 0.12, glassMat, W / 2, H / 2, 0);
     glass.castShadow = false;
     glass.add(outline(0.02, H - 0.12, D - 0.12));
@@ -415,30 +421,30 @@ export function createScene(
     const bx = -W / 2 + 0.2;
     const mb = new THREE.Group();
     mb.position.set(bx, 2.72, -0.88);
-    mb.add(box(0.03, 3.05, 2.44, M(th.board, { r: 0.6 }), 0, 0, 0));
-    const hs = M(th.heatsink, { r: 0.35, m: 0.6 });
+    mb.add(box(0.03, 3.05, 2.44, M(th.board), 0, 0, 0));
+    const hs = M(th.heatsink);
     mb.add(box(0.18, 0.95, 0.3, hs, 0.1, 0.85, -0.6)); // VRM
     mb.add(box(0.18, 0.3, 0.9, hs, 0.1, 1.35, -0.25)); // VRM top
     mb.add(box(0.06, 0.45, 0.45, hs, 0.04, -1.05, 0.6)); // chipset
     // PCIe slots
-    for (const y of [-0.55, -1.25]) mb.add(box(0.06, 0.07, 1.6, M(th.trim, { r: 0.6 }), 0.04, y, -0.25));
+    for (const y of [-0.55, -1.25]) mb.add(box(0.06, 0.07, 1.6, M(th.trim), 0.04, y, -0.25));
     // DIMM slots
-    for (let i = 0; i < 4; i++) mb.add(box(0.06, 1.33, 0.05, M(th.trim, { r: 0.6 }), 0.04, 0.62, 0.76 + i * 0.1));
+    for (let i = 0; i < 4; i++) mb.add(box(0.06, 1.33, 0.05, M(th.trim), 0.04, 0.62, 0.76 + i * 0.1));
     // I/O shroud
-    mb.add(box(0.25, 1.1, 0.25, M(th.trim, { r: 0.5, m: 0.3 }), 0.13, 0.75, -1.05));
+    mb.add(box(0.25, 1.1, 0.25, M(th.trim), 0.13, 0.75, -1.05));
     add(mb, "motherboard", [-0.4, 0, 0]);
 
     // CPU cooler (dual tower)
     const cool = new THREE.Group();
     cool.position.set(bx + 0.75, 3.4, -0.8);
-    const finMat = M(th.fins, { r: 0.3, m: 0.75 });
+    const finMat = M(th.fins);
     for (const zc of [-0.35, 0.35]) {
       for (let i = 0; i < 18; i++) {
         cool.add(box(1.05, 0.012, 0.52, finMat, 0.05, -0.62 + i * 0.075, zc));
       }
     }
     for (const zc of [-0.35, 0.35]) for (const dz of [-0.12, 0.12]) {
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 12), M(th.copper, { r: 0.25, m: 0.9 }));
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 12), M(th.copper));
       pipe.position.set(-0.35, -0.05, zc + dz);
       cool.add(pipe);
     }
@@ -454,7 +460,7 @@ export function createScene(
     ram.position.set(bx + 0.24, 3.34, -0.12);
     for (const i of [0, 2]) {
       const stick = new THREE.Group();
-      stick.add(box(0.36, 1.33, 0.06, M(th.ram, { r: 0.4, m: 0.4 }), 0, 0, 0));
+      stick.add(box(0.36, 1.33, 0.06, M(th.ram), 0, 0, 0));
       stick.add(box(0.06, 1.25, 0.065, M(accent, { emissive: accent, ei: 1.2 }), 0.2, 0, 0));
       stick.position.z = i * 0.1;
       const rg = halo(accent, 0.45, 1.5, 0.28);
@@ -465,17 +471,17 @@ export function createScene(
     add(ram, "ram", [1.4, 1.6, 0.9]);
 
     // SSD under its heatsink
-    const ssd = box(0.03, 0.22, 0.8, M(th.heatsink, { r: 0.3, m: 0.6 }), bx + 0.06, 2.58, -0.75);
+    const ssd = box(0.03, 0.22, 0.8, M(th.heatsink), bx + 0.06, 2.58, -0.75);
     add(ssd, "ssd", [2.4, 0.25, 1.1]);
 
     // Graphics card
     const gpu = new THREE.Group();
     gpu.position.set(bx + 0.72, 2.0, -0.93);
-    gpu.add(box(1.34, 0.42, 2.67, M(th.gpuShroud, { r: 0.35, m: 0.3, cc: 0.4 }), 0, 0, 0));
+    gpu.add(box(1.34, 0.42, 2.67, M(th.gpuShroud), 0, 0, 0));
     // Fin stack peeking out of the sides
-    const gfin = M(th.fins, { r: 0.3, m: 0.75 });
+    const gfin = M(th.fins);
     for (let i = 0; i < 22; i++) gpu.add(box(1.36, 0.26, 0.012, gfin, 0, -0.02, -1.15 + i * 0.105));
-    gpu.add(box(1.3, 0.04, 2.6, M(th.gpuBack, { r: 0.35, m: 0.7 }), 0, 0.23, 0)); // backplate
+    gpu.add(box(1.3, 0.04, 2.6, M(th.gpuBack), 0, 0.23, 0)); // backplate
     gpu.add(box(0.03, 0.06, 1.6, M(accent, { emissive: accent, ei: 1.0 }), 0.68, 0.12, 0.2)); // light bar
     for (const z of [-0.62, 0.62]) {
       const f = fan(0.95, th.gpuShroud, th.gpuFanRing, { thick: 0.12, glow: 0.15 });
@@ -511,7 +517,7 @@ export function createScene(
     ], th);
 
     // Power supply inside the shroud
-    const psu = box(1.5, 0.82, 1.6, M(th.psu, { r: 0.6, m: 0.2 }), -0.25, 0.48, -1.4);
+    const psu = box(1.5, 0.82, 1.6, M(th.psu), -0.25, 0.48, -1.4);
     add(psu, "psu", [2.6, -0.1, 0.4]);
 
     // Case fans
@@ -531,7 +537,7 @@ export function createScene(
     const cables = new THREE.Group();
     const cable = (pts: Vec3[], color: string, r = 0.045) => {
       const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
-      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, r, 10, false), M(color, { r: 0.65 }));
+      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, r, 10, false), M(color));
       m.castShadow = true;
       cables.add(m);
     };
@@ -628,21 +634,21 @@ export function createScene(
 
   function buildLaptop(pc: PC, th: SceneTheme): Framing {
     const W = 3.12, D = 2.2;
-    const accent = pc.accent;
-    const shellMat = () => M(th.laptopShell, { r: 0.35, m: 0.55 });
+    const accent = th.accent ?? pc.accent;
+    const shellMat = () => M(th.laptopShell);
 
     // Bottom cover
     const bottom = roundBox(W, 0.04, D, 0.12, shellMat(), 0, 0.02, 0);
-    for (const [fx, fz] of [[-1.2, -0.85], [1.2, -0.85], [-1.2, 0.85], [1.2, 0.85]]) bottom.add(box(0.5, 0.02, 0.06, M(th.trim, { r: 0.9 }), fx, -0.03, fz));
+    for (const [fx, fz] of [[-1.2, -0.85], [1.2, -0.85], [-1.2, 0.85], [1.2, 0.85]]) bottom.add(box(0.5, 0.02, 0.06, M(th.trim), fx, -0.03, fz));
     add(bottom, "chassis", [0, -1.1, 0]);
 
     // Internals
-    const board = box(1.9, 0.015, 0.9, M(th.board, { r: 0.6 }), 0.1, 0.01, -0.5);
+    const board = box(1.9, 0.015, 0.9, M(th.board), 0.1, 0.01, -0.5);
     const boardG = new THREE.Group(); boardG.add(board);
     add(boardG, "board", [0, 0.7, 0]);
     const cpu = new THREE.Group();
-    cpu.add(box(0.28, 0.03, 0.22, M(th.chip, { r: 0.3, m: 0.4 }), 0.1, 0.03, -0.5));
-    const pipeMat = M(th.copper, { r: 0.25, m: 0.9 });
+    cpu.add(box(0.28, 0.03, 0.22, M(th.chip), 0.1, 0.03, -0.5));
+    const pipeMat = M(th.copper);
     for (const dz of [-0.06, 0.06]) {
       const p = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.1, 10), pipeMat);
       p.rotation.z = Math.PI / 2; p.position.set(0.1, 0.06, -0.5 + dz);
@@ -650,7 +656,7 @@ export function createScene(
     }
     add(cpu, "cpu", [0, 0.95, 0]);
     const ram = new THREE.Group();
-    for (let i = 0; i < 4; i++) ram.add(box(0.14, 0.02, 0.16, M(th.chip, { r: 0.4 }), -0.35 + (i % 2) * 0.18, 0.025, -0.68 + Math.floor(i / 2) * 0.36));
+    for (let i = 0; i < 4; i++) ram.add(box(0.14, 0.02, 0.16, M(th.chip), -0.35 + (i % 2) * 0.18, 0.025, -0.68 + Math.floor(i / 2) * 0.36));
     add(ram, "ram", [0, 0.85, 0]);
     const lfans = new THREE.Group();
     for (const x of [-1.15, 1.25]) {
@@ -661,16 +667,16 @@ export function createScene(
       state.rotors.push({ rotor: f.userData.rotor, partId: "fans" });
     }
     add(lfans, "fans", [0, 1.1, 0]);
-    const bat = roundBox(2.5, 0.06, 0.82, 0.05, M(th.battery, { r: 0.7 }), 0, 0.04, 0.55);
+    const bat = roundBox(2.5, 0.06, 0.82, 0.05, M(th.battery), 0, 0.04, 0.55);
     add(bat, "battery", [0, 0.5, 0.25]);
-    const ssd = box(0.22, 0.02, 0.8, M(th.ssd, { r: 0.5 }), 0.85, 0.03, -0.45);
+    const ssd = box(0.22, 0.02, 0.8, M(th.ssd), 0.85, 0.03, -0.45);
     ssd.rotation.y = Math.PI / 2;
     add(ssd, "ssd", [0.2, 0.8, 0.55]);
 
     // Deck with keyboard, and the lid (move together when exploded)
     const deck = new THREE.Group();
     deck.add(roundBox(W, 0.15, D, 0.12, shellMat(), 0, 0.115, 0));
-    const keyMat = M(th.keys, { r: 0.8 });
+    const keyMat = M(th.keys);
     const keyGeo = new THREE.BoxGeometry(0.16, 0.02, 0.15);
     const keys = new THREE.InstancedMesh(keyGeo, keyMat, 6 * 14);
     const dummy = new THREE.Object3D();
@@ -682,7 +688,7 @@ export function createScene(
     }
     keys.castShadow = true;
     deck.add(keys);
-    deck.add(box(1.15, 0.01, 0.62, M(th.trackpad, { r: 0.3, m: 0.3 }), 0, 0.194, 0.62));
+    deck.add(box(1.15, 0.01, 0.62, M(th.trackpad), 0, 0.194, 0.62));
     // Lid
     const hinge = new THREE.Group();
     hinge.position.set(0, 0.19, -D / 2 + 0.02);
@@ -693,7 +699,7 @@ export function createScene(
     screen.position.set(0, -0.031, D / 2 + 0.02);
     lid.add(screen);
     // Accent identity: a small light on the lid back
-    lid.add(box(0.42, 0.012, 0.42, M(accent, { emissive: accent, ei: 0.5, r: 0.3 }), 0, 0.035, D / 2));
+    lid.add(box(0.42, 0.012, 0.42, M(accent, { emissive: accent, ei: 0.5 }), 0, 0.035, D / 2));
     hinge.add(lid);
     hinge.rotation.x = -1.92;
     deck.add(hinge);
@@ -737,7 +743,7 @@ export function createScene(
     pedestal.position.set(mid.x, 0, mid.z);
     pedestal.scale.set(pr, 1, pr);
     pedMat.color.set(th.pedestal ?? "#ffffff");
-    rimMat.color.set(state.pc!.accent);
+    rimMat.color.set(th.accent ?? state.pc!.accent);
     rimMat.opacity = th.pedestalRim ?? 0.8;
     const sy = ped ? PED_TOP + 0.002 : 0.003;
     blob.scale.set(size.x * 1.9 + 0.8, size.z * 1.45 + 0.8, 1);
@@ -748,6 +754,10 @@ export function createScene(
     contact.position.set(mid.x, sy + 0.001, mid.z);
     (contact.material as THREE.MeshBasicMaterial).opacity = Math.min(0.9, (th.shadow ?? 0.3) * 1.5);
     contact.visible = !!th.transparent;
+    // Only the PC's own parts get outlines; the stage, shadows and halos stay clean.
+    scene.traverse((o) => {
+      if (o instanceof THREE.Mesh && !o.material.userData?.outlineParameters) o.material.userData.outlineParameters = { visible: false };
+    });
     applyHighlights();
     applyExplode(true);
   }
@@ -905,7 +915,7 @@ export function createScene(
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
     controls.update();
-    renderer.render(scene, camera);
+    outlined.render(scene, camera);
     labels.render(scene, camera);
   }
 

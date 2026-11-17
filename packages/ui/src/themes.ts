@@ -1,19 +1,17 @@
 import type { SceneTheme } from "./scene";
 
-// The approved look: Friendly with the Watermelon accent. UI colors live in styles/.
-export const accent = "#EA5A72";
-
+/** The 3D look: a light case drawn in ink on a see-through stage, lit in denim. UI colors live in styles/tokens.css. */
 export const sceneTheme: SceneTheme = {
-  bg: "#F2F3F5", floor: "#E6E8EB", caseColor: "#F7F7F8", trim: "#2A2E34", glass: "#CFE0EA", glassOpacity: 0.16,
-  board: "#1F2328", heatsink: "#4A5058", fins: "#C9CDD2", copper: "#C07A4A", fanFrame: "#2B2F35", ram: "#2C3036",
-  gpuShroud: "#2E3238", gpuBack: "#555B63", gpuFanRing: "#5A6068", psu: "#26292E", laptopShell: "#B9BEC6",
-  chip: "#1C1F23", battery: "#30343A", ssd: "#1E3A2E", keys: "#2A2D32", trackpad: "#AEB3BB",
-  screenBg: "#F7F8FA", screenPanel: "#E6E9EE", screenLine: "#C7CDD5",
-  heatCool: "#3A7BD5", heatWarm: "#E0A030", heatHot: "#E5533A", highlight: accent,
-  hemi: 0.75, key: 1.8, rim: 0.6, exposure: 1.0, transparent: true, shadow: 0.26, edge: "#8F98A3", edgeOpacity: 0.35,
-  glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#FFFFFF", pedestalRim: 0.55,
-  air: 0.7, airCool: "#4C8DFF", airWarm: accent, airBlend: "normal",
+  bg: "#F3F3F2", floor: "#E6E6E4", caseColor: "#FAF9F7", trim: "#1B1B1F", glass: "#D9DCD2", glassOpacity: 0.16,
+  board: "#1E1F1E", heatsink: "#4A4C4A", fins: "#C9CBC8", copper: "#C07A4A", fanFrame: "#2A2B2A", ram: "#2B2C2B",
+  gpuShroud: "#2D2E2D", gpuBack: "#555755", gpuFanRing: "#5A5C5A", psu: "#262726", laptopShell: "#BDBFBC",
+  chip: "#1B1C1B", battery: "#303130", ssd: "#26331A", keys: "#2A2B2A", trackpad: "#B0B2AF",
+  screenBg: "#F7F7F6", screenPanel: "#E7E7E5", screenLine: "#C9C9C6",
+  heatCool: "#C9D4E0", heatWarm: "#94A6BA", heatHot: "#5E7590", highlight: "#B0C0D1", accent: "#B0C0D1",
+  hemi: 0.75, key: 1.8, rim: 0.6, exposure: 1.0, transparent: true, shadow: 0.22, edge: "#8F8D88", edgeOpacity: 0.35,
+  glow: 0.4, glowBlend: "normal", interior: 1.5, pedestal: "#FFFFFF", pedestalRim: 0.35,
+  air: 0.7, airCool: "#B0C0D1", airWarm: "#94A6BA", airBlend: "normal",
 };
 
-/** Colors a person can pick to mark their PC. */
+/** Colors a person can pick to mark their PC in the list of PCs. */
 export const pcAccents = ["#EA5A72", "#E8692E", "#3C7BF0", "#2E9E6B", "#C2477A", "#8A63D2", "#C9A227", "#5B6573"];

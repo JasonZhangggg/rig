@@ -10,7 +10,7 @@ export function PCPreview({ pc, className }: { pc: PC; className?: string }) {
     let scene: ReturnType<typeof createScene> | null = null;
     try {
       scene = createScene(ref.current!);
-      scene.setPC(pc, { ...sceneTheme, highlight: pc.accent });
+      scene.setPC(pc, sceneTheme);
       scene.setZoomable(false);
       scene.setSpin(true);
       scene.setAirflow(true);

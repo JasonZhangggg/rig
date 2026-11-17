@@ -71,8 +71,8 @@ function Root() {
   useEffect(() => { getStage().onSelect = (id) => set({ selected: id, tab: "live" }); }, [set]);
 
   // Rebuild the 3D model only when its shape changes; otherwise just feed it new readings.
-  const shape = `${pc.id}|${pc.kind}|${pc.accent}|${pc.parts?.gpu?.warn ?? ""}|${Object.keys(pc.parts ?? {}).join()}`;
-  useEffect(() => { scene.setPC(pc, { ...sceneTheme, highlight: pc.accent }); }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shape = `${pc.id}|${pc.kind}|${pc.parts?.gpu?.warn ?? ""}|${Object.keys(pc.parts ?? {}).join()}`;
+  useEffect(() => { scene.setPC(pc, sceneTheme); }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { scene.update(pc); }, [pc, scene]);
   useEffect(() => {
     const onPC = ui.route === "pc";
