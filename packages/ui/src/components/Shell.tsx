@@ -11,6 +11,7 @@ export const navItems: [Route, string, string][] = [
   ["upgrades", "Upgrades", "M10 16V5M5.5 9.5 10 5l4.5 4.5"],
   ["games", "Games", "M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01"],
   ["history", "History", "M3 15l4-5 3 3 5-7M3 17h14"],
+  ["logs", "Logs", "M5 3h7l3 3v11H5zM12 3v3h3M8 10h4M8 13h4"],
 ];
 
 /** Shows exactly what will change, before anything does. */

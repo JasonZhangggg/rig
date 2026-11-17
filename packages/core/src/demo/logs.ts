@@ -74,6 +74,14 @@ export function demoRecording(inv: Inventory, now: number): Recording {
     if (s.gpu != null) s.gpu -= cooled;
     samples.push(s);
   }
+  // Real sensors drift; the simulator's ripple is too regular at this sampling rate, so even it out.
+  for (const k of ["cpu", "gpu", "cpuLoad"] as const) {
+    const raw = samples.map((s) => s[k]);
+    samples.forEach((s, i) => {
+      const near = raw.slice(Math.max(0, i - 3), i + 4).filter((v): v is number => v != null);
+      if (s[k] != null && near.length) s[k] = Math.round(near.reduce((a, b) => a + b, 0) / near.length + Math.sin(i * 2.399) * 0.8);
+    });
+  }
   const req: RecordingRequest = {
     id: DEMO_RECORDING_ID, by: "rig", minutes, capture: captureKinds, question,
     reason: "Watch temperatures, load and Windows events while you play, to catch the black screen.",

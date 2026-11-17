@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
 import { useApp } from "../state";
+import { RecordingCard } from "./logs/RecordingCard";
 
 export function Chat() {
   const { data, pc, ask, client } = useApp();
@@ -39,6 +40,7 @@ export function Chat() {
             <li>Nothing changes until you say yes.</li>
             <li>Rig saves the old values first.</li>
             <li>Everything is listed in Changes with one-tap undo.</li>
+            <li>When Rig needs more to go on, it records readings for a while. That only reads, and you can stop it in <a href="#logs">Logs</a>.</li>
             {!client.caps.applyChanges && <li>Fixes are made from the Rig app on {pc.name}. Here you can ask and read.</li>}
           </ul>
           <a className="btn" href="#changes">Open Changes</a>
@@ -63,6 +65,7 @@ function Message({ m }: { m: ChatMessage }) {
             : <span key={s.label} className="source"><b>{s.kind}</b>{s.label}</span>)}</div>
         )}
         {m.proposal && <ProposalCard p={m.proposal} />}
+        {m.recording && <RecordingCard request={m.recording} />}
       </div>
     </div>
   );

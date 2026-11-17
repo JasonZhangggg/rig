@@ -22,17 +22,23 @@ interface LineChartProps {
   w?: number; h?: number;
   limit?: { v: number; label: string };
   bands?: boolean;
+  /** What the values are, after each axis number. Degrees unless told otherwise. */
+  unit?: string;
+  label?: string;
+  /** Moments to point out: a numbered line, or a shaded stretch when it has an end. */
+  marks?: { t: number; until?: number; n: number; strong?: boolean }[];
 }
 
 /** Temperatures over time with shaded busy periods. Gaps where the PC was off stay empty. */
-export function LineChart({ points, series, w = 860, h = 280, limit, bands }: LineChartProps) {
+export function LineChart({ points, series, w = 860, h = 280, limit, bands, unit = "°", label = "Temperature history", marks = [] }: LineChartProps) {
   const pad = { l: 40, r: 16, t: 14, b: 28 };
   const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
   if (points.length < 2) return <p className="muted">Not enough readings yet. Rig logs temperatures every minute while it runs.</p>;
   const t0 = points[0].t, t1 = points[points.length - 1].t;
   const vals = points.flatMap((p) => series.map((s) => p[s.key])).filter((v): v is number => v != null);
-  const yMin = Math.min(30, Math.floor(Math.min(...vals) / 10) * 10);
-  const yMax = Math.max(limit ? limit.v + 5 : 0, Math.ceil(Math.max(...vals) / 10) * 10 + 5);
+  const percent = unit === "%";
+  const yMin = percent ? 0 : Math.min(30, Math.floor(Math.min(...vals) / 10) * 10);
+  const yMax = percent ? 104 : Math.max(limit ? limit.v + 5 : 0, Math.ceil(Math.max(...vals) / 10) * 10 + 5);
   const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * iw;
   const y = (v: number) => pad.t + ih - ((v - yMin) / (yMax - yMin)) * ih;
   const gap = ((t1 - t0) / points.length) * 3;
@@ -46,11 +52,22 @@ export function LineChart({ points, series, w = 860, h = 280, limit, bands }: Li
     });
   }
   const grid: number[] = [];
-  for (let v = Math.ceil(yMin / 10) * 10; v <= yMax; v += 10) grid.push(v);
+  const gridStep = percent ? 25 : 10;
+  for (let v = Math.ceil(yMin / gridStep) * gridStep; v <= yMax; v += gridStep) grid.push(v);
+  // Numbers of moments that sit close together step down so each stays readable.
+  let lastX = -Infinity, row = 0;
+  const labelled = [...marks].filter((m) => m.t >= t0 && m.t <= t1).sort((a, b) => a.t - b.t).map((m) => {
+    row = x(m.t) - lastX < 18 ? row + 1 : 0;
+    lastX = x(m.t);
+    return { ...m, row };
+  });
   const span = t1 - t0;
   const day = 864e5;
   const ticks: { t: number; label: string }[] = [];
-  if (span <= 8 * 36e5) {
+  if (span <= 2 * 36e5) {
+    const step = (span <= 20 * 60_000 ? 5 : span <= 70 * 60_000 ? 10 : 30) * 60_000;
+    for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) ticks.push({ t, label: new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) });
+  } else if (span <= 8 * 36e5) {
     const first = new Date(t0); first.setMinutes(0, 0, 0);
     if (first.getTime() < t0) first.setHours(first.getHours() + 1);
     for (let t = first.getTime(); t <= t1; t += 36e5) ticks.push({ t, label: new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) });
@@ -73,12 +90,13 @@ export function LineChart({ points, series, w = 860, h = 280, limit, bands }: Li
   };
 
   return (
-    <svg className="chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Temperature history">
+    <svg className="chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label={label}>
+      {marks.filter((m) => m.until != null).map((m) => <rect key={`s${m.n}`} x={x(m.t)} y={pad.t} width={Math.max(2, x(m.until!) - x(m.t))} height={ih} className="chart-band chart-span" />)}
       {bandRects.map(([a, b]) => <rect key={a} x={x(a)} y={pad.t} width={Math.max(2, x(b) - x(a))} height={ih} className="chart-band" />)}
       {grid.map((v) => (
         <g key={v}>
           <line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} className="chart-grid" />
-          <text x={pad.l - 8} y={y(v) + 4} className="chart-tick" textAnchor="end">{v}°</text>
+          <text x={pad.l - 8} y={y(v) + 4} className="chart-tick" textAnchor="end">{v}{unit}</text>
         </g>
       ))}
       {ticks.map((k) => <text key={k.t} x={x(k.t)} y={h - 8} className="chart-tick" textAnchor="middle">{k.label}</text>)}
@@ -89,6 +107,12 @@ export function LineChart({ points, series, w = 860, h = 280, limit, bands }: Li
         </>
       )}
       {series.map((s) => <path key={s.key} d={path(s.key)} className={`chart-line ${s.cls}`} vectorEffect="non-scaling-stroke" />)}
+      {labelled.map((m) => (
+        <g key={m.n} className={`chart-mark${m.strong ? " strong" : ""}`}>
+          {m.until == null && <line x1={x(m.t)} x2={x(m.t)} y1={pad.t} y2={pad.t + ih} vectorEffect="non-scaling-stroke" />}
+          <text x={x(m.t)} y={pad.t + 12 + m.row * 15} textAnchor={m.until == null ? "middle" : "start"} dx={m.until == null ? 0 : 5}>{m.n}</text>
+        </g>
+      ))}
     </svg>
   );
 }

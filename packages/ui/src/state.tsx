@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RigClient, type Route } from "@rig/core";
+import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
-export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
+export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "web", "signin"];
 
 /** The review sheet shown before any change is made. */
 export interface Review {
@@ -33,6 +33,8 @@ export interface UI {
   toast: ToastState | null;
   palette: boolean;
   sideMini: boolean;
+  /** The recording open on the Logs page. */
+  recordingId: string | null;
 }
 
 export interface Data {
@@ -42,6 +44,8 @@ export interface Data {
   changes: Change[];
   chat: ChatMessage[];
   answering: boolean;
+  /** The on-screen PC's recordings, newest first, kept live. */
+  recordings: RecordingInfo[];
 }
 
 const storage = {
@@ -72,6 +76,10 @@ export interface Ctx {
   declineProposal: (proposalId: string) => void;
   toggleChange: (id: string) => Promise<void>;
   pickPC: (id: string) => void;
+  /** Starts recording readings on the PC. Nothing changes there, so there's no review. */
+  startRecording: (minutes: number, reason: string) => Promise<void>;
+  stopRecording: (id: string) => Promise<void>;
+  openRecording: (id: string | null) => void;
 }
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -95,9 +103,9 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
-    review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1",
+    review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
   }));
-  const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false });
+  const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [] });
   const [loaded, setLoaded] = useState(false);
 
   const set = useCallback((patch: Partial<UI> | ((u: UI) => Partial<UI>)) => {
@@ -121,10 +129,12 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
     if (!ui.pcId) return;
     storage.set("rig.pc", ui.pcId);
     const id = ui.pcId;
-    setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: [] }));
+    setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: client.conversation?.(id) ?? [], recordings: [] }));
+    setUI((u) => ({ ...u, recordingId: null }));
     const stop = client.watch(id, (pc) => setData((d) => ({ ...d, pc, pcs: d.pcs.map((p) => (p.id === pc.id ? pc : p)) })));
+    const stopRecordings = client.watchRecordings(id, (recordings) => setData((d) => ({ ...d, recordings })));
     client.changes(id).then((changes) => setData((d) => ({ ...d, changes }))).catch(() => {});
-    return stop;
+    return () => { stop(); stopRecordings(); };
   }, [client, ui.pcId]);
 
   useEffect(() => {
@@ -148,6 +158,16 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
     clearTimeout(timer.current);
     timer.current = window.setTimeout(() => set({ toast: null }), 6000);
   }, [set]);
+
+  // Say so when a recording finishes while the person is somewhere else in the app.
+  const wasActive = useRef(new Set<string>());
+  useEffect(() => {
+    for (const r of data.recordings) {
+      const active = r.state === "pending" || r.state === "recording";
+      if (!active && wasActive.current.has(r.id) && r.state === "done") toast("Rig finished recording. Open Logs or Ask to see what it found.");
+      if (active) wasActive.current.add(r.id); else wasActive.current.delete(r.id);
+    }
+  }, [data.recordings, toast]);
 
   const chatAbort = useRef<AbortController | null>(null);
   const pcId = ui.pcId;
@@ -180,6 +200,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
           else if (e.type === "sources") edit((m) => ({ ...m, sources: [...(m.sources ?? []), ...e.sources] }));
           else if (e.type === "steps") edit((m) => ({ ...m, steps: e.steps }));
           else if (e.type === "proposal") edit((m) => ({ ...m, proposal: e.proposal }));
+          else if (e.type === "recording") edit((m) => ({ ...m, recording: e.request }));
           else if (e.type === "error") edit((m) => ({ ...m, error: true, text: m.text || e.message }));
         }, ab.signal)
           .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""}`.trim() })))
@@ -209,6 +230,23 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
           set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Something went wrong. Nothing was changed." } });
         }
       },
+
+      startRecording: async (minutes, reason) => {
+        try {
+          const info = await client.startRecording(pcId, { minutes, reason });
+          setData((d) => ({ ...d, recordings: [info, ...d.recordings.filter((r) => r.id !== info.id)] }));
+          toast(info.state === "pending" ? `${pc.name} starts recording the next time its Rig app checks in.` : `Recording for ${minutes} minutes. Nothing on ${pc.name} changes.`);
+        } catch (e) { toast(e instanceof Error && e.message ? e.message : "Rig couldn't start recording."); }
+      },
+
+      stopRecording: async (id) => {
+        try {
+          await client.stopRecording(pcId, id);
+          if (!client.caps.local) toast(`${pc.name} stops recording the next time its Rig app checks in.`);
+        } catch (e) { toast(`Rig couldn't stop the recording. ${e instanceof Error ? e.message : ""}`.trim()); }
+      },
+
+      openRecording: (id) => { set({ recordingId: id }); if (id && location.hash !== "#logs") location.hash = "logs"; window.scrollTo(0, 0); },
 
       declineProposal: (proposalId) => { patchProposal(proposalId, { status: "declined" }); toast("Okay, nothing was changed."); },
 

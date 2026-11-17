@@ -189,16 +189,7 @@ export class DemoClient implements RigClient {
       for (const w of text.split(/(?<= )/)) { if (signal?.aborted) return; onEvent({ type: "text", text: w }); await sleep(18); }
     };
     const display = p.inv.displays.find((d) => d.refreshHz < d.maxRefreshHz);
-    if (/startup|slow|boot/.test(q)) {
-      const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
-      await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
-      const calls: ActionCall[] = on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false }));
-      onEvent({ type: "proposal", proposal: { id: uid(), title: titleFor(calls), calls, rows: await this.preview(id, calls), status: "waiting" } });
-    } else if (display && /screen|monitor|smooth|hz|refresh|fps|stutter/.test(q)) {
-      await say(`Your ${display.name} can run at ${display.maxRefreshHz} Hz, but Windows has it at ${display.refreshHz} Hz. That's a common default after a new cable or driver. Switching makes games and scrolling look smoother and changes nothing else.`);
-      const calls: ActionCall[] = [{ kind: "display.refreshRate", display: display.name, hz: display.maxRefreshHz }];
-      onEvent({ type: "proposal", proposal: { id: uid(), title: `Run ${display.name} at ${display.maxRefreshHz} Hz`, calls, rows: await this.preview(id, calls), status: "waiting" } });
-    } else if (/recording|what did (it|rig) find/.test(q)) {
+    if (/recording|what did (it|rig) find/.test(q)) {
       await p.recorder.load();
       const done = p.recorder.list().find((r) => r.state === "done" || r.state === "cancelled");
       if (done?.id === DEMO_RECORDING_ID) {
@@ -225,6 +216,15 @@ export class DemoClient implements RigClient {
         await say(`I can't tell from the latest readings alone, so I've started recording: temperatures, how hard each part works, the busiest apps and anything Windows logs. Nothing on the PC changes.\n\nOn your own PC I'd record for half an hour or more. This is the demo, so it's one minute: check back at ${back}.`);
         onEvent({ type: "recording", request: toRequest(info), queued: false });
       }
+    } else if (/startup|slow|boot/.test(q)) {
+      const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
+      await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
+      const calls: ActionCall[] = on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false }));
+      onEvent({ type: "proposal", proposal: { id: uid(), title: titleFor(calls), calls, rows: await this.preview(id, calls), status: "waiting" } });
+    } else if (display && /screen|monitor|smooth|hz|refresh|fps|stutter/.test(q)) {
+      await say(`Your ${display.name} can run at ${display.maxRefreshHz} Hz, but Windows has it at ${display.refreshHz} Hz. That's a common default after a new cable or driver. Switching makes games and scrolling look smoother and changes nothing else.`);
+      const calls: ActionCall[] = [{ kind: "display.refreshRate", display: display.name, hz: display.maxRefreshHz }];
+      onEvent({ type: "proposal", proposal: { id: uid(), title: `Run ${display.name} at ${display.maxRefreshHz} Hz`, calls, rows: await this.preview(id, calls), status: "waiting" } });
     } else if (/loud|hot|fan|temp|noise|dust/.test(q)) {
       await say("Some noise while gaming is normal. A steady rise in graphics card temperature at the same settings usually means dust on the intake filters, and cleaning them takes about five minutes.");
       onEvent({ type: "steps", steps: ["Shut down and unplug the PC.", "Take off the front panel; most pull off from the bottom edge.", "Slide the mesh filter out and rinse or vacuum it.", "Let it dry fully, then put it back."] });
