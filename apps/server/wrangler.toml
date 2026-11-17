@@ -1,0 +1,31 @@
+# Rig's website and API on Cloudflare Workers (free plan is enough to start).
+# Setup steps are in docs/deploy.md.
+name = "rig"
+main = "src/worker.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The website's built files. /api/* goes to the Worker first; everything else is a file.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# The Postgres database (Neon), reached through Hyperdrive. Replace the id
+# with the one `wrangler hyperdrive create rig` prints. For local runs,
+# wrangler dev connects straight to localConnectionString instead.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"
+localConnectionString = "postgres://rig:rig@localhost:5432/rig"
+
+[vars]
+# The address people open. Change this to the real one before deploying.
+WEB_ORIGIN = "http://localhost:8787"
+CHAT_DAILY_LIMIT = "40"
+
+# Secrets, set with `wrangler secret put NAME` (or in .dev.vars for local runs):
+#   BETTER_AUTH_SECRET   required, a long random string
+#   ANTHROPIC_API_KEY    for chat
+#   GOOGLE_CLIENT_ID     optional, Google sign-in
+#   GOOGLE_CLIENT_SECRET optional, Google sign-in

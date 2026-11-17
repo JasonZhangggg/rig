@@ -1,0 +1,11 @@
+{
+  "powerPlans": [ { "guid": "381b4222-f694-41f0-9685-ff5bb260df2e", "name": "Balanced", "active": true } ],
+  "startupApps": [
+    { "name": "OneDrive", "command": "OneDrive.exe /background", "enabled": true, "scope": "user" },
+    { "name": "Microsoft Teams", "command": "ms-teams.exe", "enabled": true, "scope": "user" },
+    { "name": "MyASUS", "command": "MyASUS.exe", "enabled": true, "scope": "machine" }
+  ],
+  "gameMode": true,
+  "visualEffects": "auto",
+  "maxProcessorState": { "ac": 100, "dc": 100 }
+}

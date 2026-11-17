@@ -1,0 +1,364 @@
+// The desktop app's client. It reads this PC through the Windows helper,
+// keeps temperature history and the change log on disk, makes changes only
+// from the fix catalog (saving the undo first), and, when signed in, uploads
+// the view so the website shows it and reaches the other PCs on the account.
+
+import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
+import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
+import type { MachineSync } from "./api";
+import type { CloudClient } from "./cloud";
+import { makeExport, type DataExport } from "./export";
+import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
+import { HistoryWindow } from "./history";
+import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
+import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
+import { suggestUpgrades } from "./upgrades";
+import { buildPC, type DayMax, type Identity } from "./view";
+
+/** The elevated Windows helper (or a stand-in), one call at a time. */
+export interface HelperLink {
+  hello(): Promise<{ version: string; elevated: boolean }>;
+  inventory(): Promise<Inventory>;
+  facts(): Promise<SystemFacts>;
+  snapshot(): Promise<Snapshot>;
+  /** Makes one catalog change and returns the call that puts it back. */
+  apply(call: ActionCall): Promise<ActionCall>;
+}
+
+/** Small on-disk store kept by the desktop shell (SQLite). */
+export interface LocalStore {
+  get<T>(key: string): Promise<T | null>;
+  set(key: string, value: unknown): Promise<void>;
+  addHistory(p: HistoryPoint): Promise<void>;
+  history(sinceMs: number): Promise<HistoryPoint[]>;
+  changes(): Promise<Change[]>;
+  putChange(c: Change): Promise<void>;
+}
+
+export interface LocalOptions {
+  /** How often to read sensors. */
+  tickMs?: number;
+  /** One history point per this many milliseconds (highest temperatures in the window). */
+  historyEveryMs?: number;
+  /** Upload to the account this often while signed in. */
+  syncEveryMs?: number;
+  /** Settings are re-read this often, and right after every change. */
+  factsEveryMs?: number;
+  /** Drives and the rest of the inventory are re-read this often, so free space stays current. */
+  inventoryEveryMs?: number;
+  now?: () => number;
+}
+
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const dayKey = (t: number) => new Date(t).toDateString();
+
+export class LocalClient implements RigClient {
+  readonly kind = "desktop" as const;
+  readonly caps = { local: true, applyChanges: true };
+
+  private inv: Inventory | null = null;
+  private facts: SystemFacts | null = null;
+  private factsAt = 0;
+  private invAt = 0;
+  private alertState: AlertState = emptyAlertState();
+  private alerts: Alert[] = [];
+  /** History the alerts compare against, oldest first. */
+  private recent: HistoryPoint[] = [];
+  private snap: Snapshot | null = null;
+  private identity: Identity & { at?: string } = {};
+  private dayMax: DayMax = {};
+  private day = "";
+  private window: HistoryWindow | null = null;
+  private unsynced: HistoryPoint[] = [];
+  private listeners = new Set<(pc: PC) => void>();
+  private timers: ReturnType<typeof setInterval>[] = [];
+  private ready: Promise<void> | null = null;
+  private busy = false;
+  private lastError: string | null = null;
+  private o: Required<LocalOptions>;
+
+  constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, ...opts };
+    if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
+    if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
+  }
+
+  /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
+  get id() { return this.inv?.machine.id ?? "this-pc"; }
+
+  /** Reads the PC and starts the sensor, history and sync timers. Safe to call more than once. */
+  start(): Promise<void> {
+    this.ready ??= (async () => {
+      [this.inv, this.facts, this.identity] = await Promise.all([
+        this.link.inventory(), this.link.facts(), this.store.get<Identity>("identity").then((v) => v ?? {}),
+      ]);
+      this.factsAt = this.invAt = this.o.now();
+      this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
+      this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
+      this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
+      await this.tick();
+      this.timers.push(setInterval(() => void this.tick(), this.o.tickMs));
+      if (this.cloud) {
+        this.timers.push(setInterval(() => void this.sync(), this.o.syncEveryMs));
+        void this.sync();
+      }
+    })();
+    return this.ready;
+  }
+
+  stop() { this.timers.forEach(clearInterval); this.timers = []; this.ready = null; }
+
+  /** One sensor read: updates the live view, today's highs and the history window. */
+  async tick() {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const now = this.o.now();
+      if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts(); this.factsAt = now; }
+      if (now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
+      this.snap = await this.link.snapshot();
+      this.lastError = null;
+      if (dayKey(now) !== this.day) { this.day = dayKey(now); this.dayMax = {}; }
+      for (const s of this.snap.sensors) if (s.type === "temperature" && s.value != null) this.dayMax[s.id] = Math.max(this.dayMax[s.id] ?? 0, s.value);
+      await this.record(now);
+      await this.watchAlerts(now);
+    } catch (e) {
+      this.lastError = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.busy = false;
+    }
+    this.emit();
+  }
+
+  private async record(now: number) {
+    const w = this.window ??= new HistoryWindow(now);
+    if (this.snap) w.add(this.snap);
+    if (now - w.from >= this.o.historyEveryMs) {
+      const p = w.point();
+      this.window = null;
+      await this.store.addHistory(p);
+      this.recent.push(p);
+      const keep = now - USUAL.baselineFrom * 864e5;
+      if (this.recent[0]?.t < keep) this.recent = this.recent.filter((x) => x.t >= keep);
+      this.unsynced.push(p);
+      await this.store.set("unsynced", this.unsynced.slice(-720));
+    }
+  }
+
+  /** Moves the alerts on by this reading, and keeps them on disk when one starts or ends so a restart carries on where it left off. */
+  private async watchAlerts(now: number) {
+    if (!this.inv) return;
+    const { state, alerts } = stepAlerts(this.alertState, { inv: this.inv, snap: this.snap, history: this.recent, now });
+    this.alertState = state;
+    const ids = (xs: Alert[]) => xs.map((a) => `${a.id}@${a.since}`).sort().join();
+    const changed = ids(alerts) !== ids(this.alerts);
+    this.alerts = alerts;
+    if (changed) await this.store.set("alerts", state);
+  }
+
+  /** The live view of this PC. */
+  view(): PC {
+    if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
+    const pc = withAlerts({ ...built, id: this.id }, this.alerts);
+    if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
+    return pc;
+  }
+
+  private emit() { if (this.inv) { const pc = this.view(); this.listeners.forEach((cb) => cb(pc)); } }
+  private isLocal(id: string) { return id === this.id; }
+  private signedIn() { return this.cloud?.signedIn() ?? Promise.resolve(false); }
+
+  /** Uploads this PC to the account so the website shows it. Quietly does nothing when signed out. */
+  async sync() {
+    if (!this.cloud || !this.inv || !this.facts || !(await this.signedIn())) return;
+    const payload: MachineSync = {
+      at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
+      history: this.unsynced, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
+      identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt }, identityAt: this.identity.at,
+    };
+    const sent = payload.history.length;
+    try {
+      const reply = await this.cloud.sync(this.id, payload);
+      this.unsynced = this.unsynced.slice(sent);
+      await this.store.set("unsynced", this.unsynced);
+      // Renamed on the website since this PC last changed it: take the website's version.
+      if (reply?.identityAt && (!this.identity.at || reply.identityAt > this.identity.at)) {
+        this.identity = { ...reply.identity, at: reply.identityAt };
+        await this.store.set("identity", this.identity);
+        this.emit();
+      }
+    } catch { /* try again on the next round */ }
+  }
+
+  // ----- Account -----
+  async account() { return this.cloud ? this.cloud.account().catch(() => null) : null; }
+  async signOut() { await this.cloud?.signOut(); }
+  /** Deletes the account on the server. What's kept on this PC stays, so Rig keeps working signed out. */
+  async deleteAccount() {
+    await this.cloud!.deleteAccount();
+    this.unsynced = [];
+    await this.store.set("unsynced", []);
+  }
+
+  /** The account's data when signed in; otherwise what this PC keeps on disk. */
+  async exportData(): Promise<DataExport> {
+    if (this.cloud && (await this.signedIn())) return this.cloud.exportData();
+    await this.start();
+    return makeExport({
+      account: null,
+      machines: [{
+        id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt },
+        changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
+      }],
+      notes: ["Exported from the Rig app on this PC while signed out."],
+      now: new Date(this.o.now()),
+    });
+  }
+
+  async signInWithBrowser() {
+    const r = await this.cloud!.signInWithBrowser!();
+    return { ...r, done: r.done.then(async (a) => { await this.sync(); return a; }) };
+  }
+
+  // ----- PCs -----
+  async machines(): Promise<PC[]> {
+    await this.start();
+    const others = (await this.signedIn()) ? await this.cloud!.machines().catch(() => []) : [];
+    return [this.view(), ...others.filter((p) => p.id !== this.id)];
+  }
+
+  watch(id: string, cb: (pc: PC) => void) {
+    if (!this.isLocal(id)) return this.cloud?.watch(id, cb) ?? (() => {});
+    this.listeners.add(cb);
+    void this.start().then(() => this.listeners.has(cb) && cb(this.view()));
+    return () => { this.listeners.delete(cb); };
+  }
+
+  async rename(id: string, patch: Identity) {
+    if (!this.isLocal(id)) return this.cloud?.rename(id, patch);
+    this.identity = { ...this.identity, ...patch, at: new Date(this.o.now()).toISOString() };
+    await this.store.set("identity", this.identity);
+    this.emit();
+    void this.sync();
+  }
+
+  async history(id: string, range: Range): Promise<HistoryPoint[]> {
+    if (!this.isLocal(id)) return this.cloud?.history(id, range) ?? [];
+    return this.store.history(this.o.now() - rangeMs[range]);
+  }
+
+  async upgrades(id: string) {
+    if (!this.isLocal(id)) return this.cloud?.upgrades(id) ?? [];
+    await this.start();
+    return suggestUpgrades(this.inv!);
+  }
+
+  async games(id: string): Promise<Game[]> {
+    if (!this.isLocal(id)) return this.cloud?.games(id) ?? [];
+    return (await this.store.get<Game[]>("games")) ?? [];
+  }
+
+  async changes(id: string): Promise<Change[]> {
+    if (!this.isLocal(id)) return this.cloud?.changes(id) ?? [];
+    return (await this.store.changes()).sort((a, b) => b.at.localeCompare(a.at));
+  }
+
+  // ----- Changes -----
+  private local(id: string) {
+    if (!this.isLocal(id)) throw new Error("Changes are made from the Rig app on that PC.");
+  }
+
+  private async freshFacts() {
+    this.facts = await this.link.facts();
+    this.factsAt = this.o.now();
+    return this.facts;
+  }
+
+  async preview(id: string, calls: ActionCall[]): Promise<DiffRow[]> {
+    this.local(id);
+    await this.start();
+    for (const c of calls) { const bad = validateCall(c); if (bad) throw new Error(bad); }
+    const facts = await this.freshFacts();
+    return calls.map((c) => describeCall(c, facts, this.inv!.displays));
+  }
+
+  /** Runs calls in order. If one fails, the ones before it are put back and nothing is left half done. */
+  private async run(pairs: { call: ActionCall; row: DiffRow }[]): Promise<AppliedCall[]> {
+    const done: AppliedCall[] = [];
+    try {
+      for (const { call, row } of pairs) done.push({ call, undo: await this.link.apply(call), row });
+      return done;
+    } catch (e) {
+      for (const a of [...done].reverse()) await this.link.apply(a.undo).catch(() => {});
+      throw new Error(`${e instanceof Error ? e.message : String(e)} Nothing was changed.`);
+    } finally {
+      await this.freshFacts().catch(() => {});
+      this.inv = await this.link.inventory().catch(() => this.inv);
+      this.emit();
+    }
+  }
+
+  async apply(id: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change> {
+    const rows = await this.preview(id, calls);
+    const applied = await this.run(calls.map((call, i) => ({ call, row: rows[i] })));
+    const change: Change = {
+      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? titleFor(calls),
+      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, applied,
+    };
+    await this.store.putChange(change);
+    void this.sync();
+    return change;
+  }
+
+  private async change(id: string, changeId: string) {
+    this.local(id);
+    const c = (await this.store.changes()).find((x) => x.id === changeId);
+    if (!c) throw new Error("That change isn't in the log.");
+    return c;
+  }
+
+  async undo(id: string, changeId: string): Promise<Change> {
+    const c = await this.change(id, changeId);
+    if (c.status !== "applied") return c;
+    await this.run([...c.applied].reverse().map((a) => ({ call: a.undo, row: a.row })));
+    const next: Change = { ...c, status: "undone" };
+    await this.store.putChange(next);
+    void this.sync();
+    return next;
+  }
+
+  async redo(id: string, changeId: string): Promise<Change> {
+    const c = await this.change(id, changeId);
+    if (c.status === "applied") return c;
+    const applied = await this.run(c.applied.map((a) => ({ call: a.call, row: a.row })));
+    const next: Change = { ...c, status: "applied", applied };
+    await this.store.putChange(next);
+    void this.sync();
+    return next;
+  }
+
+  // ----- Chat -----
+  async chat(id: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal) {
+    if (!this.cloud || !(await this.signedIn())) {
+      onEvent({ type: "error", message: "Sign in to ask Rig. Answers come from Rig's servers, which read your parts' manuals." });
+      onEvent({ type: "done" });
+      return;
+    }
+    const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts } : undefined;
+    await this.cloud.chat(id, history, onEvent, signal, live);
+  }
+}
+
+/** A LocalStore in memory, for tests and for running the desktop UI in a browser. */
+export class MemoryStore implements LocalStore {
+  private kv = new Map<string, unknown>();
+  private points: HistoryPoint[] = [];
+  private log = new Map<string, Change>();
+  async get<T>(k: string) { return (this.kv.has(k) ? structuredClone(this.kv.get(k)) : null) as T | null; }
+  async set(k: string, v: unknown) { this.kv.set(k, structuredClone(v)); }
+  async addHistory(p: HistoryPoint) { this.points.push(p); }
+  async history(since: number) { return this.points.filter((p) => p.t >= since); }
+  async changes() { return [...this.log.values()].map((c) => structuredClone(c)); }
+  async putChange(c: Change) { this.log.set(c.id, structuredClone(c)); }
+}

@@ -1,0 +1,10 @@
+{
+  "machine": { "id": "demo-atlas", "hostname": "Atlas", "manufacturer": "Custom build", "model": "Desktop", "kind": "tower", "os": { "name": "Windows 11 Pro", "version": "24H2", "build": "26100.2314" } },
+  "cpu": { "name": "AMD Ryzen 7 7800X3D", "cores": 8, "threads": 16, "maxClockMhz": 5050 },
+  "gpus": [ { "name": "NVIDIA GeForce RTX 4070 SUPER", "vendor": "nvidia", "vramMb": 12288, "driverVersion": "565.90", "driverDate": "Oct 22, 2026", "integrated": false } ],
+  "board": { "manufacturer": "MSI", "product": "MAG B650 TOMAHAWK WIFI", "biosVersion": "7D75v1H", "biosDate": "Mar 2026" },
+  "memory": { "totalMb": 32768, "slotsTotal": 4, "modules": [ { "manufacturer": "Corsair", "partNumber": "CMK32GX5M2B6000C30", "capacityMb": 16384, "speedMhz": 6000, "slot": "A2" }, { "manufacturer": "Corsair", "partNumber": "CMK32GX5M2B6000C30", "capacityMb": 16384, "speedMhz": 6000, "slot": "B2" } ] },
+  "disks": [ { "model": "Samsung SSD 990 PRO 2TB", "sizeGb": 2000, "media": "nvme", "healthPercent": 98, "writtenTb": 14.2 } ],
+  "volumes": [ { "letter": "C:", "label": "Windows", "sizeGb": 1862, "freeGb": 726 } ],
+  "displays": [ { "name": "LG 27GP850", "width": 2560, "height": 1440, "refreshHz": 60, "maxRefreshHz": 165, "primary": true } ]
+}
