@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CloudClient, serverDownText, unreachableText } from "../src";
+import { CloudClient, serverDownText, unreachableText, wrongServerText } from "../src";
 
 const client = () => new CloudClient({ base: "/api" });
 
@@ -25,5 +25,21 @@ describe("CloudClient when the server is in trouble", () => {
   it("treats a signed-out account as no account, not an error", async () => {
     vi.stubGlobal("fetch", async () => Response.json({ message: "Sign in first." }, { status: 401 }));
     await expect(client().account()).resolves.toBeNull();
+  });
+});
+
+describe("CloudClient pointed at the wrong address", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const page = () => new Response("<!DOCTYPE html><html></html>", { status: 200, headers: { "content-type": "text/html" } });
+
+  it("says so in plain words instead of a JSON parse error", async () => {
+    vi.stubGlobal("fetch", async () => page());
+    await expect(client().machines()).rejects.toThrow(wrongServerText);
+  });
+
+  it("says so when the desktop starts a browser sign-in", async () => {
+    vi.stubGlobal("fetch", async () => page());
+    const desktop = new CloudClient({ base: "", token: { get: async () => null, set: async () => {} }, openUrl: () => {} });
+    await expect(desktop.signInWithBrowser!()).rejects.toThrow(wrongServerText);
   });
 });
