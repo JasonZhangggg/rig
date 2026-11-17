@@ -4,7 +4,7 @@
 import type { ActionCall } from "./actions";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
-export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "web" | "signin" | "settings";
+export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "web" | "signin" | "settings";
 
 /** One row of a before and after table: [setting, now, after]. */
 export type DiffRow = [string, string, string];

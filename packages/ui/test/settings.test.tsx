@@ -76,10 +76,15 @@ describe("Settings", () => {
     await waitFor(() => expect(location.hash).toBe("#settings"));
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
     const section = within(await screen.findByRole("region", { name: "Notifications" }));
-    expect(section.getAllByRole("switch")).toHaveLength(5);
+    expect(section.getAllByRole("switch")).toHaveLength(6);
     expect(section.getByText(/The Rig app on each PC can also send a Windows notification/)).toBeTruthy();
     fireEvent.click(section.getByRole("switch", { name: /A drive is nearly full/ }));
     expect(JSON.parse(localStorage.getItem("rig.alerts.off")!)).toEqual(["drive-full"]);
+    const recording = section.getByRole("switch", { name: "A recording finished" });
+    expect(recording.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(recording);
+    expect(localStorage.getItem("rig.notify.recordingDone")).toBe("off");
+    expect(recording.getAttribute("aria-checked")).toBe("false");
     expect(screen.getByRole("navigation", { name: /settings/i }).textContent).toContain("Notifications");
   });
 
@@ -98,6 +103,8 @@ describe("Settings", () => {
     expect(out.format).toBe("rig-export/1");
     expect(out.machines.map((m) => m.name)).toEqual(["Atlas", "Pebble"]);
     expect(out.machines[0].history.length).toBeGreaterThan(100);
+    expect(out.machines[0].recordings[0].samples.length).toBeGreaterThan(10);
+    expect(out.machines[0].events.length).toBeGreaterThan(0);
   });
 
   it("deletes an account only after DELETE is typed", async () => {

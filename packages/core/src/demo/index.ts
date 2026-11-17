@@ -10,6 +10,10 @@ import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts } from "./apply";
+import { MemoryStore } from "../local";
+import { Recorder } from "../recorder";
+import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
+import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
 import atlasFacts from "./fixtures/atlas.facts.json";
@@ -19,9 +23,10 @@ export { simulate } from "./simulate";
 export { activityAt, type Activity } from "./schedule";
 export { applyToFacts } from "./apply";
 export { SimulatedLink } from "./link";
+export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] } }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -40,7 +45,20 @@ export class DemoClient implements RigClient {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => ({ inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState() });
+    const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => {
+      const store = new MemoryStore();
+      const recListeners = new Set<(list: RecordingInfo[]) => void>();
+      // Atlas starts with the recording its example conversation asked for.
+      const seed: Recording[] = inv.machine.kind === "tower" ? [demoRecording(inv, Date.now())] : [];
+      void store.set("recordings", seed.map(toInfo));
+      for (const r of seed) void store.set(`recording:${r.id}`, r);
+      const recorder: Recorder = new Recorder({
+        pcId: () => inv.machine.id, store, now: Date.now, limits: () => limitsOf(this.view(inv.machine.id)),
+        source: { events: async (since) => demoEvents(inv.machine.kind, Date.now(), since), processes: async () => demoProcesses(inv, Date.now()) },
+        onChange: () => recListeners.forEach((cb) => cb(recorder.list())),
+      });
+      return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners };
+    };
     this.pcs = {
       "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E" }, 1),
       "demo-pebble": mk(fixtures.pebble.inv, fixtures.pebble.facts, { name: "Pebble", accent: "#3C7BF0" }, 0),
@@ -75,6 +93,7 @@ export class DemoClient implements RigClient {
     const machines = await Promise.all(Object.entries(this.pcs).map(async ([id, p]) => ({
       id, view: this.view(id), inventory: p.inv, facts: p.facts, identity: { ...p.id },
       changes: await this.changes(id), games: await this.games(id), history: await this.history(id, "30d"),
+      events: await this.events(id), recordings: await p.recorder.all(),
     })));
     return makeExport({ account: await this.account(), machines, notes: ["Made-up data from Rig's demo."] });
   }
@@ -91,7 +110,10 @@ export class DemoClient implements RigClient {
     set.add(cb);
     this.listeners.set(id, set);
     cb(this.view(id));
-    this.timer ??= setInterval(() => this.listeners.forEach((_, k) => this.emit(k)), 2000);
+    this.timer ??= setInterval(() => this.listeners.forEach((_, k) => {
+      this.emit(k);
+      void this.pcs[k].recorder.tick(simulate(this.pcs[k].inv, Date.now(), { dust: this.pcs[k].dust }));
+    }), 2000);
     return () => {
       set.delete(cb);
       if ([...this.listeners.values()].every((s) => s.size === 0) && this.timer) { clearInterval(this.timer); this.timer = null; }
@@ -121,6 +143,28 @@ export class DemoClient implements RigClient {
 
   async upgrades(id: string) { return suggestUpgrades(this.pcs[id].inv); }
   async games(id: string) { return this.pcs[id].inv.gpus.some((g) => !g.integrated) ? demoGames : []; }
+
+  async events(id: string) { const p = this.pcs[id]; return p ? cleanEvents(demoEvents(p.inv.machine.kind, Date.now())) : []; }
+
+  watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) {
+    const p = this.pcs[id];
+    if (!p) return () => {};
+    p.recListeners.add(cb);
+    void p.recorder.load().then(() => p.recListeners.has(cb) && cb(p.recorder.list()));
+    return () => { p.recListeners.delete(cb); };
+  }
+
+  async recording(id: string, rid: string) { await this.pcs[id]?.recorder.load(); return this.pcs[id]?.recorder.get(rid) ?? null; }
+
+  async startRecording(id: string, req: { reason: string; minutes: number; question?: string }, by: "you" | "rig" = "you"): Promise<RecordingInfo> {
+    const checked = checkRequest(req, { id: uid(), by, now: new Date() });
+    if (typeof checked === "string") throw new Error(checked);
+    return this.pcs[id].recorder.start(checked);
+  }
+
+  async stopRecording(id: string, rid: string) { await this.pcs[id]?.recorder.stop(rid); }
+
+  conversation(id: string) { return id === "demo-atlas" ? demoConversation(this.pcs[id].inv, Date.now()) : []; }
 
   async changes(id: string) { return [...(this.pcs[id]?.changes ?? [])].sort((a, b) => b.at.localeCompare(a.at)); }
 
@@ -165,7 +209,34 @@ export class DemoClient implements RigClient {
       for (const w of text.split(/(?<= )/)) { if (signal?.aborted) return; onEvent({ type: "text", text: w }); await sleep(18); }
     };
     const display = p.inv.displays.find((d) => d.refreshHz < d.maxRefreshHz);
-    if (/startup|slow|boot/.test(q)) {
+    if (/recording|what did (it|rig) find/.test(q)) {
+      await p.recorder.load();
+      const done = p.recorder.list().find((r) => r.state === "done" || r.state === "cancelled");
+      if (done?.id === DEMO_RECORDING_ID) {
+        const rec = (await p.recorder.get(done.id))!;
+        const reset = rec.events[0];
+        const gpu = rec.samples.filter((s) => s.t < reset.t).at(-1)?.gpu ?? 85;
+        const limit = limitsOf(this.view(id)).gpu ?? 88;
+        const at = new Date(reset.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        await say(`Found it. At ${at} Windows logged that the graphics driver stopped responding and recovered. That's the black screen.\n\nIt wasn't random: the graphics card had been climbing for half an hour and was at ${gpu}°C, ${limit - gpu}° under its ${limit}°C limit, running flat out in Cyberpunk 2077. Its load fell to 4% for about twenty seconds, then the game carried on. The same reset is in the log from a week earlier, also on a Cyberpunk evening.\n\nA card that runs this close to its limit at the same settings usually has dust in the way. Clean the intake filters first; if it still happens, a clean install of the graphics driver is the next step.`);
+        onEvent({ type: "steps", steps: ["Shut down and unplug the PC.", "Take off the front panel and rinse or vacuum the mesh filter.", "Blow the dust out of the graphics card's fans with short bursts of air.", "Play again and check Logs: the card should stay under 80°C."] });
+        onEvent({ type: "sources", sources: [{ label: "Recording, 45 minutes", kind: "Your PC" }, { label: "Windows event log", kind: "Your PC" }] });
+      } else if (done) {
+        await say(`${done.headline ?? "Nothing unusual happened while Rig recorded."} This is the demo, so the readings are made up. Open Logs to see the recording's charts.`);
+      } else {
+        await say("There's no finished recording yet. When one finishes, I'll go through it here.");
+      }
+    } else if (/crash|black|freez|restart|blue ?screen|reboot|shut ?down|flicker/.test(q)) {
+      await p.recorder.load();
+      if (p.recorder.active()) {
+        await say("I'm already recording. Check back when it finishes and I'll go through what it caught.");
+      } else {
+        const info = await this.startRecording(id, { reason: "Watch temperatures, load and Windows events to catch it happening.", minutes: 1, question: history[history.length - 1]?.text }, "rig");
+        const back = new Date(info.endsAt!).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        await say(`I can't tell from the latest readings alone, so I've started recording: temperatures, how hard each part works, the busiest apps and anything Windows logs. Nothing on the PC changes.\n\nOn your own PC I'd record for half an hour or more. This is the demo, so it's one minute: check back at ${back}.`);
+        onEvent({ type: "recording", request: toRequest(info), queued: false });
+      }
+    } else if (/startup|slow|boot/.test(q)) {
       const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
       await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
       const calls: ActionCall[] = on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false }));

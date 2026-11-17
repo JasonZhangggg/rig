@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
 import { useApp, useTempText } from "../state";
+import { RecordingCard } from "./logs/RecordingCard";
 
 export function Chat() {
   const { data, pc, ask, client } = useApp();
@@ -40,6 +41,7 @@ export function Chat() {
             <li>Nothing changes until you say yes.</li>
             <li>Rig saves the old values first.</li>
             <li>Everything is listed in Changes with one-tap undo.</li>
+            <li>When Rig needs more to go on, it records readings for a while. That only reads, and you can stop it in <a href="#logs">Logs</a>.</li>
             {!client.caps.applyChanges && <li>Fixes are made from the Rig app on {pc.name}. Here you can ask and read.</li>}
           </ul>
           <a className="btn" href="#changes">Open Changes</a>
@@ -50,20 +52,22 @@ export function Chat() {
 }
 
 function Message({ m }: { m: ChatMessage }) {
+  const inUnit = useTempText();
   if (m.from === "you") return <div className="msg you"><div className="bubble">{m.text}</div></div>;
-  const paras = m.text.split(/\n{2,}/).filter(Boolean);
+  const paras = inUnit(m.text).split(/\n{2,}/).filter(Boolean);
   return (
     <div className={`msg claude${m.error ? " error" : ""}`}>
       <span className="who-mark" aria-label="Rig">R</span>
       <div className="body">
         {paras.length ? paras.map((p, i) => <p key={i}>{p}</p>) : m.pending ? <p className="typing" aria-label="Rig is thinking"><i /><i /><i /></p> : null}
-        {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{s}</li>)}</ol>}
+        {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{inUnit(s)}</li>)}</ol>}
         {m.sources && m.sources.length > 0 && (
           <div className="sources">{m.sources.map((s) => s.url
             ? <a key={s.label} className="source" href={s.url} target="_blank" rel="noreferrer"><b>{s.kind}</b>{s.label}</a>
             : <span key={s.label} className="source"><b>{s.kind}</b>{s.label}</span>)}</div>
         )}
         {m.proposal && <ProposalCard p={m.proposal} />}
+        {m.recording && <RecordingCard request={m.recording} />}
       </div>
     </div>
   );

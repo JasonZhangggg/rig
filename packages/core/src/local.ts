@@ -11,6 +11,8 @@ import { makeExport, type DataExport } from "./export";
 import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
+import { Recorder } from "./recorder";
+import { checkRequest, cleanEvents, limitsOf, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -23,6 +25,10 @@ export interface HelperLink {
   snapshot(): Promise<Snapshot>;
   /** Makes one catalog change and returns the call that puts it back. */
   apply(call: ActionCall): Promise<ActionCall>;
+  /** Windows crash and error events since a time. Read-only; missing on helpers from before recordings. */
+  events?(sinceMs: number): Promise<RawEvent[]>;
+  /** The busiest apps right now, by processor and memory use. Read-only. */
+  processes?(): Promise<ProcessUse[]>;
 }
 
 /** Small on-disk store kept by the desktop shell (SQLite). */
@@ -47,7 +53,12 @@ export interface LocalOptions {
   /** Drives and the rest of the inventory are re-read this often, so free space stays current. */
   inventoryEveryMs?: number;
   now?: () => number;
+  /** Shows a notification outside the app's window when a recording finishes. */
+  notify?: (n: { title: string; body: string }) => void;
 }
+
+const EVENTS_DAYS = 30;
+const EVENTS_EVERY_MS = 5 * 60_000;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const dayKey = (t: number) => new Date(t).toDateString();
@@ -76,9 +87,22 @@ export class LocalClient implements RigClient {
   private busy = false;
   private lastError: string | null = null;
   private o: Required<LocalOptions>;
+  private recorder: Recorder;
+  private recListeners = new Set<(list: RecordingInfo[]) => void>();
+  /** Recordings the account hasn't got the latest version of yet. */
+  private unsent = new Set<string>();
+  private eventLog: { at: number; list: PCEvent[] } | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, ...opts };
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, ...opts };
+    this.recorder = new Recorder({
+      pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
+      onChange: () => { const list = this.recorder.list(); this.recListeners.forEach((cb) => cb(list)); },
+      onFinish: (r) => {
+        this.o.notify({ title: "Rig finished recording", body: r.state === "failed" ? "It couldn't collect readings. Open Rig to see why." : "Open Logs in Rig to see what it found." });
+        void this.sendRecording(r.id);
+      },
+    });
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
     if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
   }
@@ -96,6 +120,8 @@ export class LocalClient implements RigClient {
       this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
       this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
       this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
+      this.unsent = new Set(await this.store.get<string[]>("recordingsUnsent") ?? []);
+      await this.recorder.load();
       await this.tick();
       this.timers.push(setInterval(() => void this.tick(), this.o.tickMs));
       if (this.cloud) {
@@ -122,6 +148,7 @@ export class LocalClient implements RigClient {
       for (const s of this.snap.sensors) if (s.type === "temperature" && s.value != null) this.dayMax[s.id] = Math.max(this.dayMax[s.id] ?? 0, s.value);
       await this.record(now);
       await this.watchAlerts(now);
+      await this.recorder.tick(this.snap);
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -176,6 +203,7 @@ export class LocalClient implements RigClient {
       at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
       history: this.unsynced, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
       identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt }, identityAt: this.identity.at,
+      events: await this.events(this.id).catch(() => []),
     };
     const sent = payload.history.length;
     try {
@@ -188,7 +216,33 @@ export class LocalClient implements RigClient {
         await this.store.set("identity", this.identity);
         this.emit();
       }
+      await this.syncRecordings(reply?.recordings);
     } catch { /* try again on the next round */ }
+  }
+
+  /** Starts and stops what was asked for on the web, then uploads recordings the account is behind on. */
+  private async syncRecordings(asked?: { start: RecordingRequest[]; stop: string[] }) {
+    for (const id of asked?.stop ?? []) { await this.recorder.stop(id); this.unsent.add(id); }
+    for (const req of asked?.start ?? []) {
+      // One at a time: a request that arrives while another runs waits on the server for a later sync.
+      if (this.recorder.active() && this.recorder.active()!.id !== req.id) continue;
+      await this.recorder.start(req);
+      this.unsent.add(req.id);
+    }
+    const live = this.recorder.active();
+    for (const id of new Set([...this.unsent, ...(live ? [live.id] : [])])) await this.sendRecording(id);
+  }
+
+  private async sendRecording(id: string) {
+    this.unsent.add(id);
+    try {
+      const r = await this.recorder.get(id);
+      if (r && this.cloud && (await this.signedIn())) {
+        await this.cloud.putRecording(this.id, r);
+        if (r.state !== "recording") this.unsent.delete(id);
+      } else if (!r) this.unsent.delete(id);
+    } catch { /* stays in the set for the next sync */ }
+    await this.store.set("recordingsUnsent", [...this.unsent]).catch(() => {});
   }
 
   // ----- Account -----
@@ -210,6 +264,7 @@ export class LocalClient implements RigClient {
       machines: [{
         id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt },
         changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
+        events: await this.events(this.id), recordings: await this.recorder.all(),
       }],
       notes: ["Exported from the Rig app on this PC while signed out."],
       now: new Date(this.o.now()),
@@ -262,6 +317,51 @@ export class LocalClient implements RigClient {
   async changes(id: string): Promise<Change[]> {
     if (!this.isLocal(id)) return this.cloud?.changes(id) ?? [];
     return (await this.store.changes()).sort((a, b) => b.at.localeCompare(a.at));
+  }
+
+  // ----- Logs and recordings -----
+  async events(id: string): Promise<PCEvent[]> {
+    if (!this.isLocal(id)) return this.cloud?.events(id) ?? [];
+    const now = this.o.now();
+    if (!this.eventLog || now - this.eventLog.at > EVENTS_EVERY_MS) {
+      const raw = await this.link.events?.(now - EVENTS_DAYS * 864e5) ?? [];
+      this.eventLog = { at: now, list: cleanEvents(raw) };
+    }
+    return this.eventLog.list;
+  }
+
+  watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) {
+    if (!this.isLocal(id)) return this.cloud?.watchRecordings(id, cb) ?? (() => {});
+    this.recListeners.add(cb);
+    void this.start().then(() => this.recListeners.has(cb) && cb(this.recorder.list()));
+    return () => { this.recListeners.delete(cb); };
+  }
+
+  async recording(id: string, rid: string): Promise<Recording | null> {
+    if (!this.isLocal(id)) return this.cloud?.recording(id, rid) ?? null;
+    return this.recorder.get(rid);
+  }
+
+  async startRecording(id: string, req: { reason: string; minutes: number; question?: string }): Promise<RecordingInfo> {
+    if (!this.isLocal(id)) {
+      if (!this.cloud) throw new Error("Sign in to record on another PC.");
+      return this.cloud.startRecording(id, req);
+    }
+    await this.start();
+    const checked = checkRequest(req, { id: uid(), by: "you", now: new Date(this.o.now()) });
+    if (typeof checked === "string") throw new Error(checked);
+    return this.begin(checked);
+  }
+
+  private async begin(req: RecordingRequest): Promise<RecordingInfo> {
+    const info = await this.recorder.start(req);
+    void this.sendRecording(req.id);
+    return info;
+  }
+
+  async stopRecording(id: string, rid: string): Promise<void> {
+    if (!this.isLocal(id)) return this.cloud?.stopRecording(id, rid);
+    await this.recorder.stop(rid);
   }
 
   // ----- Changes -----
@@ -346,7 +446,15 @@ export class LocalClient implements RigClient {
       return;
     }
     const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts } : undefined;
-    await this.cloud.chat(id, history, onEvent, signal, live);
+    // Rig reads recordings on the server, so it needs the latest ones before it answers.
+    if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
+    await this.cloud.chat(id, history, (e) => {
+      // A recording for this PC starts right away instead of waiting for the next sync.
+      if (e.type === "recording" && live) {
+        this.begin(e.request).catch(() => {});
+        onEvent({ ...e, queued: false });
+      } else onEvent(e);
+    }, signal, live);
   }
 }
 

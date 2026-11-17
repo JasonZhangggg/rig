@@ -6,7 +6,7 @@ import { navItems } from "./Shell";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
-const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "games", "upgrades"]], ["Help", ["chat", "changes", "history"]]];
+const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "games", "upgrades"]], ["Help", ["chat", "changes", "history", "logs"]]];
 
 function useOutside(open: boolean, close: () => void) {
   const box = useRef<HTMLDivElement>(null);
@@ -111,7 +111,8 @@ export function Sidebar({ children }: { children: ReactNode }) {
   const mini = ui.sideMini;
   const warn = (pc.issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
   const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count">{warn}</em>
-    : r === "changes" && data.changes.length ? <em className="fp-count">{data.changes.length}</em> : null;
+    : r === "changes" && data.changes.length ? <em className="fp-count">{data.changes.length}</em>
+    : r === "logs" && data.recordings.some((x) => x.state === "recording") ? <em className="fp-count" title="Recording now">●</em> : null;
   return (
     <div className={`shell-fpanel${mini ? " mini" : ""}`}>
       <div className="fp-frame">
