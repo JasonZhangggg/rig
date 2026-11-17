@@ -117,7 +117,7 @@ export function Overview() {
         </section>
 
         <div className="f-side">
-          <section className="f-health tone-dark">
+          <section className="f-health">
             <div className="f-ring">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle cx="60" cy="60" r="52" className="tr" />
@@ -169,7 +169,7 @@ export function Overview() {
           <p>The last seven days on {pc.name}</p>
         </div>
         <div className="f-trends">
-          <div className="f-vitals tone-dark">
+          <div className="f-vitals">
             <TempsCard temps={week?.temps ?? null} name={pc.name} />
             <FansCard fans={pc.fans} trend={week?.fans ?? null} />
           </div>
