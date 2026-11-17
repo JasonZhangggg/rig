@@ -46,15 +46,15 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
 };
 
 // Color options for Friendly. accent fills buttons, ink is the dark tile color.
-export type ColorId = "peach" | "mint" | "sky" | "lavender" | "lemon" | "blush";
-// Soft pastel colorways for Friendly. "scene" is a deeper tone for the 3D glow.
+export type ColorId = "coral" | "tangerine" | "watermelon" | "orchid" | "periwinkle" | "teal";
+// Accent colors for Friendly, all at the original coral's strength. Only the accent changes; the background stays neutral.
 export const colorways: { id: ColorId; name: string; accent: string; ink: string; scene: string }[] = [
-  { id: "peach", name: "Peach", accent: "#F6B39C", ink: "#2A211E", scene: "#EE8E6E" },
-  { id: "mint", name: "Mint", accent: "#A3D9BE", ink: "#1D2A23", scene: "#5DBB8D" },
-  { id: "sky", name: "Sky", accent: "#AFCBF4", ink: "#1B2232", scene: "#6E9DE6" },
-  { id: "lavender", name: "Lavender", accent: "#C9BAF2", ink: "#231E33", scene: "#9A83E3" },
-  { id: "lemon", name: "Lemon", accent: "#F3DC86", ink: "#24211A", scene: "#E2BA3C" },
-  { id: "blush", name: "Blush", accent: "#F2B8CA", ink: "#2A1E23", scene: "#E47FA0" },
+  { id: "coral", name: "Coral", accent: "#EE6A4D", ink: "#1C1A18", scene: "#EE6A4D" },
+  { id: "tangerine", name: "Tangerine", accent: "#F0843A", ink: "#1C1A18", scene: "#F0843A" },
+  { id: "watermelon", name: "Watermelon", accent: "#EA5A72", ink: "#1C1A18", scene: "#EA5A72" },
+  { id: "orchid", name: "Orchid", accent: "#A86ADB", ink: "#1C1A18", scene: "#A86ADB" },
+  { id: "periwinkle", name: "Periwinkle", accent: "#6A82EE", ink: "#1C1A18", scene: "#6A82EE" },
+  { id: "teal", name: "Teal", accent: "#22A493", ink: "#1C1A18", scene: "#22A493" },
 ];
 
 // Sidebar options for Friendly

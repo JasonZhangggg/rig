@@ -41,7 +41,8 @@ function Root() {
   useEffect(() => {
     const th = sceneThemes[ui.style];
     const cw = colorways.find((c) => c.id === ui.colors);
-    scene.setPC(pc, ui.style === "studio" && cw ? { ...th, highlight: cw.scene } : th);
+    // In Friendly the 3D glow follows the chosen accent so the page reads as one color
+    scene.setPC(ui.style === "studio" && cw ? { ...pc, accent: cw.scene } : pc, ui.style === "studio" && cw ? { ...th, highlight: cw.scene } : th);
   }, [pc.id, pc.accent, ui.style, ui.colors]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onPC = ui.route === "pc";

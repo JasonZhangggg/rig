@@ -47,7 +47,7 @@ function initial(): UI {
   return {
     route: routeFromHash(),
     style: styles.some((s) => s.id === style) ? style! : "studio",
-    colors: colorways.some((c) => c.id === colors) ? colors! : "peach",
+    colors: colorways.some((c) => c.id === colors) ? colors! : "coral",
     side: sidebars.some((c) => c.id === side) ? side! : "panel",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),

@@ -63,7 +63,7 @@ Each one has its own layout and navigation, not just its own colors.
 | **Canvas** | The PC in the middle of a dark dotted canvas, with each part as a card wired to it. A warm part's wire animates, and a "Rig" cursor points at it with a Fix it button. An ask box sits at the bottom. | Floating toolbars: screens on the left, one tab per PC in the middle, search and "Fix 1 issue" on the right. |
 | **Workspace** | A big hottest-temperature number, a power-draw bar split by part, a black "Needs a look" card, the PC in 3D, a hatched bar chart, games and parts lists, and a stats row. | An icon rail plus a tree of your PCs and their parts, with the page on a lighter sheet. |
 
-Friendly also comes in six soft pastel colorways (Peach, Mint, Sky, Lavender, Lemon and Blush). The mockup panel switches the sidebar and the colors.
+Friendly also comes in six accent colors at the same strength (Coral, the default, plus Tangerine, Watermelon, Orchid, Periwinkle and Teal) on a neutral background. The 3D glow follows the accent. The mockup panel switches the sidebar and the colors.
 
 The other screens (3D view, Ask, Changes and the rest) are shared and take on each mockup's colors and type inside its navigation.
 
