@@ -1,13 +1,65 @@
 import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
-import { AsciiField } from "../components/AsciiField";
+import { AsciiField, type TowerFit } from "../components/AsciiField";
+
+const ARTS = ["tower", "big-quiet", "hero-line", "bleed", "readout", "split-caption"] as const;
+type Art = (typeof ARTS)[number];
+
+const LOOKS: Record<Art, string> = {
+  tower: "", "big-quiet": "art-big-quiet", "hero-line": "art-hero-line", bleed: "art-bleed", readout: "art-readout", "split-caption": "art-split-caption",
+};
+
+const FITS: Record<Art, TowerFit | undefined> = {
+  tower: undefined,
+  "big-quiet": { size: 0.78, y: 0.5 },
+  "hero-line": { size: 0.78, x: 0.62, y: 0.43 },
+  bleed: { size: 1.3, width: 2, x: 0.76, y: 0.64 },
+  readout: { size: 0.68, y: 0.5 },
+  "split-caption": { size: 0.72, y: 0.42 },
+};
+
+/** Which panel layout to show, picked with ?art= so the options can be compared side by side. */
+function pickArt(): Art {
+  const a = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("art");
+  return (ARTS as readonly string[]).includes(a ?? "") ? (a as Art) : "tower";
+}
+
+const READINGS = [
+  { at: "at-tl", label: "CPU", value: "41°C", hot: false },
+  { at: "at-tr", label: "GPU", value: "46°C", hot: true },
+  { at: "at-bl", label: "Fans", value: "921 rpm", hot: false },
+  { at: "at-br", label: "Case", value: "29°C", hot: false },
+] as const;
 
 /** The left half of sign-in screens: a PC in thermal characters that warms under the pointer. */
 export function SignInArt() {
+  const [art] = useState(pickArt);
   return (
-    <div className="signin-art tone-dark">
-      <AsciiField />
+    <div className={`signin-art tone-dark ${LOOKS[art]}`}>
+      <AsciiField fit={FITS[art]}>
+        {art === "readout" && (
+          <div className="art-hud">
+            {READINGS.map((r) => (
+              <span key={r.at} className={`art-reading ${r.at}${r.hot ? " hot" : ""}`}><span>{r.label}</span><b className="num">{r.value}</b></span>
+            ))}
+          </div>
+        )}
+      </AsciiField>
       <div className="brand"><span className="brand-mark" />Rig</div>
+      {art === "big-quiet" && <p className="art-note">See inside your PC.</p>}
+      {art === "hero-line" && (
+        <div className="art-copy">
+          <p className="art-head">Know your PC.</p>
+          <p className="art-sub">What's inside, what's wrong and what to do next.</p>
+        </div>
+      )}
+      {art === "bleed" && <p className="art-note">Every part,<br />in plain words.</p>}
+      {art === "split-caption" && (
+        <div className="art-copy">
+          <p className="art-head">Know what's inside your PC and what to fix next.</p>
+          <p className="art-mono">Live temperatures, fixes shown first, undo anything</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,48 @@
 .ascii canvas { display: block; width: 100%; height: 100%; }
 .ascii-temp { position: absolute; top: 0; left: 0; padding: 3px 7px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--graphite) 82%, transparent); color: var(--text); font: 600 12px/1.2 ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; opacity: 0; pointer-events: none; transition: opacity .25s ease; will-change: transform; }
 
+.art-note,
+.art-copy { position: absolute; z-index: 1; left: 36px; right: 36px; bottom: 34px; margin: 0; pointer-events: none; }
+.art-note { color: var(--text-2); font-size: clamp(15px, .95vw, 19px); font-weight: 500; letter-spacing: -.01em; }
+.art-copy { display: flex; flex-direction: column; gap: 14px; }
+.art-copy::before { content: ""; position: absolute; z-index: -1; inset: -90px -36px -34px; background: linear-gradient(to top, var(--graphite) 30%, transparent); }
+.art-copy p { margin: 0; }
+.art-head { color: var(--text); font-weight: 600; letter-spacing: -.045em; }
+.art-sub { max-width: 26ch; color: var(--text-2); font-size: clamp(1rem, 1.05vw, 1.2rem); font-weight: 500; line-height: 1.4; letter-spacing: -.01em; }
+.art-mono,
+.art-reading { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+.art-mono { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: clamp(12.5px, .78vw, 15px); font-weight: 500; }
+.art-mono::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 1px; background: var(--good); }
+
+.art-hero-line .art-head { font-size: clamp(2.75rem, 4.6vw, 7rem); line-height: .95; }
+.art-split-caption .art-head { max-width: 22ch; font-size: clamp(1.35rem, 1.7vw, 2.6rem); font-weight: 500; line-height: 1.2; letter-spacing: -.025em; }
+.art-bleed .art-note { right: auto; color: var(--text); font-size: clamp(1.5rem, 2vw, 2.9rem); font-weight: 600; line-height: 1.08; letter-spacing: -.035em; }
+.art-bleed .art-note::before { content: ""; position: absolute; z-index: -1; inset: -40vh -40vw -60px -60px; background: radial-gradient(closest-side at 20% 75%, var(--graphite) 45%, transparent); }
+
+.art-hud { position: absolute; inset: var(--tower-t, 20%) var(--tower-r, 20%) var(--tower-b, 20%) var(--tower-l, 20%); pointer-events: none; --tick: color-mix(in srgb, var(--text-3) 55%, transparent); background:
+  linear-gradient(var(--tick), var(--tick)) top left / 16px 1px no-repeat, linear-gradient(var(--tick), var(--tick)) top left / 1px 16px no-repeat,
+  linear-gradient(var(--tick), var(--tick)) top right / 16px 1px no-repeat, linear-gradient(var(--tick), var(--tick)) top right / 1px 16px no-repeat,
+  linear-gradient(var(--tick), var(--tick)) bottom left / 16px 1px no-repeat, linear-gradient(var(--tick), var(--tick)) bottom left / 1px 16px no-repeat,
+  linear-gradient(var(--tick), var(--tick)) bottom right / 16px 1px no-repeat, linear-gradient(var(--tick), var(--tick)) bottom right / 1px 16px no-repeat; }
+.art-reading { position: absolute; display: grid; gap: 3px; color: var(--text-3); font-size: clamp(11px, .7vw, 13px); font-weight: 500; letter-spacing: .02em; white-space: nowrap; }
+.art-reading span { display: flex; align-items: center; gap: 7px; }
+.art-reading span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.art-reading.hot span::before { background: var(--look); }
+.art-reading b { padding-left: 13px; color: var(--text); font-size: clamp(15px, 1vw, 20px); font-weight: 600; letter-spacing: -.01em; }
+.art-reading::after { content: ""; position: absolute; top: 5px; width: 22px; height: 1px; background: var(--tick); }
+.art-reading.at-tl,
+.art-reading.at-bl { right: calc(100% + 30px); }
+.art-reading.at-tr,
+.art-reading.at-br { left: calc(100% + 30px); }
+.art-reading.at-tl::after,
+.art-reading.at-bl::after { left: calc(100% + 4px); }
+.art-reading.at-tr::after,
+.art-reading.at-br::after { right: calc(100% + 4px); }
+.art-reading.at-tl { top: 14%; }
+.art-reading.at-tr { top: 34%; }
+.art-reading.at-bl { bottom: 30%; }
+.art-reading.at-br { bottom: 16%; }
+
 .signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); background: var(--bg); }
 .signin-box { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 14px; }
 .signin-box h1 { margin-bottom: 2px; font-size: 2.25rem; line-height: 1.05; letter-spacing: -.035em; }
@@ -32,6 +74,9 @@
   .signin { grid-template-columns: 1fr; grid-template-rows: 220px 1fr; }
   .signin-art { min-height: 0; }
   .signin-art .brand { top: 20px; left: 20px; }
+  .art-note,
+  .art-copy,
+  .art-hud { display: none; }
   .signin-form { padding-top: 32px; }
 }
 :root:has(.signin) { scrollbar-gutter: auto; }

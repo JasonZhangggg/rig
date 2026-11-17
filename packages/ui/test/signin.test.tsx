@@ -7,7 +7,7 @@ const jo = { id: "u1", name: "Jo", email: "jo@example.com" };
 
 describe("Sign-in screen", () => {
   beforeEach(() => { vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null); });
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); window.history.replaceState(null, "", "/"); });
 
   it("signs in with email and password even when the art can't draw", async () => {
     const signInEmail = vi.fn(async () => jo);
@@ -45,5 +45,17 @@ describe("Sign-in screen", () => {
     expect((await screen.findByLabelText("Sign-in code")).textContent).toBe("W4XKLL2V");
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(onSkip).toHaveBeenCalled();
+  });
+
+  it("picks the art panel's layout from ?art= and keeps the plain tower otherwise", () => {
+    const client = { kind: "web", signInEmail: vi.fn() } as unknown as RigClient;
+    window.history.replaceState(null, "", "/app/?art=hero-line");
+    render(<SignIn client={client} onDone={() => {}} />);
+    expect(screen.getByText("Know your PC.")).toBeTruthy();
+    cleanup();
+    window.history.replaceState(null, "", "/app/?art=nope");
+    render(<SignIn client={client} onDone={() => {}} />);
+    expect(screen.queryByText("Know your PC.")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
 });
