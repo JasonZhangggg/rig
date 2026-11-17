@@ -95,6 +95,25 @@ describe("Home hero", () => {
     expect(screen.getAllByText("What should I upgrade first?").length).toBeGreaterThan(0);
   });
 
+  it("reads out each part's temperature now, against its limit when the maker gives one", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const now = within(await screen.findByRole("group", { name: "Temperatures now" }));
+    expect(now.getByRole("button", { name: /^Processor \d+°C, limit \d+°$/ })).toBeTruthy();
+    expect(now.getByRole("button", { name: /^Storage \d+°C, high today \d+°$/ })).toBeTruthy();
+    const health = within(screen.getByRole("heading", { name: "Health" }).closest("section")!);
+    expect(health.getByText("/100").parentElement!.textContent).toMatch(/^\d+\/100$/);
+  });
+
+  it("says what will show when a PC reports no temperatures yet", async () => {
+    const client = new DemoClient();
+    const watch = client.watch.bind(client);
+    client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, parts: Object.fromEntries(Object.entries(pc.parts ?? {}).map(([k, p]) => [k, { ...p, temp: undefined }])) }));
+    render(<RigApp client={client} />);
+    const now = within(await screen.findByRole("group", { name: "Temperatures now" }));
+    expect(now.getByText(/Temperatures show up here as soon as Rig reads/)).toBeTruthy();
+    expect(now.queryByRole("button")).toBeNull();
+  });
+
   it("says there's nothing to look at on a PC without issues", async () => {
     const client = new DemoClient();
     const watch = client.watch.bind(client);
