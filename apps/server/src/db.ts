@@ -9,6 +9,7 @@ import type { DB, RigTables } from "./sql";
 const HISTORY_DAYS = 30;
 /** The desktop sends at most this many points per sync. */
 const HISTORY_MAX = 2000;
+const GAME_NAME_MAX = 120;
 /** A PC counts as online when it synced this recently. The desktop syncs every 5 minutes. */
 const ONLINE_MS = 12 * 60_000;
 
@@ -72,11 +73,13 @@ export class Store {
         .onConflict((oc) => oc.columns(["user_id", "id"]).doUpdateSet(values)).execute();
       const points = s.history.slice(-HISTORY_MAX).map((p) => ({
         user_id: userId, machine_id: id, t: Math.round(p.t), cpu: p.cpu ?? null, gpu: p.gpu ?? null, busy: !!p.busy,
+        fan: p.fan == null ? null : Math.round(p.fan), game: p.game ? p.game.slice(0, GAME_NAME_MAX) : null,
       }));
       if (points.length) {
         await trx.insertInto("machine_history").values(points)
           .onConflict((oc) => oc.columns(["user_id", "machine_id", "t"]).doUpdateSet((eb) => ({
             cpu: eb.ref("excluded.cpu"), gpu: eb.ref("excluded.gpu"), busy: eb.ref("excluded.busy"),
+            fan: eb.ref("excluded.fan"), game: eb.ref("excluded.game"),
           }))).execute();
       }
       await trx.deleteFrom("machine_history").where("user_id", "=", userId).where("machine_id", "=", id)
@@ -95,9 +98,9 @@ export class Store {
   }
 
   async history(userId: string, id: string, sinceMs: number): Promise<HistoryPoint[]> {
-    const rows = await this.db.selectFrom("machine_history").select(["t", "cpu", "gpu", "busy"])
+    const rows = await this.db.selectFrom("machine_history").select(["t", "cpu", "gpu", "busy", "fan", "game"])
       .where("user_id", "=", userId).where("machine_id", "=", id).where("t", ">=", sinceMs).orderBy("t").execute();
-    return rows.map((r) => ({ t: Number(r.t), cpu: r.cpu, gpu: r.gpu, busy: r.busy }));
+    return rows.map((r) => ({ t: Number(r.t), cpu: r.cpu, gpu: r.gpu, busy: r.busy, fan: r.fan, game: r.game }));
   }
 
   /** Counts one question and says whether it's within today's allowance. */

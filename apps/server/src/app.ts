@@ -6,7 +6,7 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { suggestUpgrades, type ChatEvent, type ChatRequest, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { suggestUpgrades, type ChatEvent, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
@@ -185,5 +185,11 @@ function cleanIdentity(body: Record<string, unknown> | null): Identity | null {
 function isSync(s: MachineSync | null): s is MachineSync {
   return !!s && typeof s === "object" && !!s.view && typeof s.view === "object" && !!s.inventory && !!s.facts
     && Array.isArray(s.history) && Array.isArray(s.changes) && Array.isArray(s.games)
-    && s.history.every((p) => p && typeof p.t === "number");
+    && s.history.every(isPoint);
+}
+
+const optional = (v: unknown, type: "number" | "string") => v == null || typeof v === type;
+
+function isPoint(p: HistoryPoint | null): boolean {
+  return !!p && typeof p.t === "number" && optional(p.fan, "number") && optional(p.game, "string");
 }

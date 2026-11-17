@@ -146,6 +146,36 @@ describe("PCs", () => {
     expect(await (await call("/api/machines", { cookie: other })).json()).toEqual([]);
   });
 
+  it("keeps fan speed and game per point, and still takes points from older apps", async () => {
+    const { call, signUp } = await setup();
+    const cookie = await signUp("kit@example.com");
+    const t = Date.now();
+    const s = await syncPayload({
+      history: [
+        { t: t - 1_200_000, cpu: 48, gpu: 40, busy: false },
+        { t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2140, game: "Cyberpunk 2077" },
+        { t, cpu: 52, gpu: 44, busy: false, fan: null, game: null },
+      ],
+    });
+    const id = s.inventory.machine.id;
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
+
+    const hist = await (await call(`/api/machines/${id}/history?range=24h`, { cookie })).json();
+    expect(hist).toEqual([
+      { t: t - 1_200_000, cpu: 48, gpu: 40, busy: false, fan: null, game: null },
+      { t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2140, game: "Cyberpunk 2077" },
+      { t, cpu: 52, gpu: 44, busy: false, fan: null, game: null },
+    ]);
+
+    const resent = await syncPayload({ history: [{ t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2300, game: "Balatro" }] });
+    await call(`/api/machines/${id}/sync`, { method: "PUT", json: resent, cookie });
+    const again = await (await call(`/api/machines/${id}/history?range=24h`, { cookie })).json() as { fan: number; game: string }[];
+    expect(again[1]).toMatchObject({ fan: 2300, game: "Balatro" });
+
+    const bad = await syncPayload({ history: [{ t, cpu: 50, gpu: 40, busy: false, fan: "fast" as unknown as number }] });
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: bad, cookie })).status).toBe(400);
+  });
+
   it("keeps the newest name, whether it was changed on the website or the PC", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const { call, signUp } = await setup();

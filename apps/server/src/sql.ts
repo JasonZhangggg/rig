@@ -21,7 +21,10 @@ export interface RigTables {
     changes: Json<unknown[]>; games: Json<unknown[]>; identity: Json<Record<string, unknown>>;
     identity_at: Time | null; synced_at: Time; created_at: Generated<Date>;
   };
-  machine_history: { user_id: string; machine_id: string; t: number; cpu: number | null; gpu: number | null; busy: boolean };
+  machine_history: {
+    user_id: string; machine_id: string; t: number; cpu: number | null; gpu: number | null; busy: boolean;
+    fan: number | null; game: string | null;
+  };
   chat_usage: { user_id: string; day: string; count: number };
 }
 
