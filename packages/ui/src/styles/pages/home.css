@@ -3,7 +3,7 @@
 /* Home: the greeting and its controls, then a dashboard of widgets the person arranges (dash.css).
    A few type sizes used the same way everywhere, round bubbles only where you act. Series colors come from the --s-* tokens
    of the tone each tile sits on, so a dark tile or another accent needs nothing here. */
-.f-home { max-width: 1880px; gap: 40px; container: home / inline-size; }
+.f-home { --home-gap: 40px; max-width: 1880px; gap: var(--home-gap); container: home / inline-size; }
 
 .f-link {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 0; border: 0; background: transparent;
@@ -445,7 +445,7 @@
 }
 
 @container home (max-width: 640px) {
-  .f-home { gap: 32px; }
+  .f-home { --home-gap: 32px; }
   .f-head-tools { flex-wrap: wrap; }
   .f-mic { display: none; }
   .f-cta { font-size: 14px; padding-left: 18px; }
