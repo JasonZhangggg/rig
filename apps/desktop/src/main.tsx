@@ -4,6 +4,7 @@ import { CloudClient, LocalClient, MemoryStore, type HelperLink } from "@rig/cor
 import { SimulatedLink, fixtures } from "@rig/core/demo";
 import { RigApp } from "@rig/ui";
 import { inTauri, tauriLink, tauriStore, tauriToken } from "./tauri";
+import { notifyAlerts } from "./notify";
 
 // The Rig server. Set VITE_RIG_API for a release build.
 const api = (import.meta.env.VITE_RIG_API as string | undefined) ?? "http://localhost:8787/api";
@@ -25,6 +26,7 @@ pickLink().then((link) => {
   const cloud = inTauri ? new CloudClient({ base: api, token: tauriToken, openUrl: (u) => void openUrl(u) }) : null;
   const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud);
   root.render(<RigApp client={client} />);
+  if (inTauri) client.start().then(() => notifyAlerts(client), () => {});
 }).catch((e: unknown) => {
   root.render(
     <div className="splash" role="alert">

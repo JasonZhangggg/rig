@@ -45,6 +45,7 @@ fn token_set(token: Option<String>) -> R<()> { secrets::set(token.as_deref()) }
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
