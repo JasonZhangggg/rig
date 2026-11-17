@@ -7,6 +7,8 @@ export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades",
 export interface AppHost {
   /** Start Rig when the person signs in to Windows. */
   autostart?: { get(): Promise<boolean>; set(on: boolean): Promise<void> };
+  /** The Rig server this app signs in to, shown in Settings. */
+  server?: string;
 }
 
 /** The review sheet shown before any change is made. */

@@ -34,6 +34,7 @@ a { color: inherit; }
 .lp-safe ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; line-height: 1.55; color: #D9D9DE; }
 .lp-foot { display: flex; gap: 20px; padding: 24px 0 0; color: var(--text-2); font-size: 14px; }
 .lp-foot span { font-weight: 600; color: var(--text); margin-right: auto; }
+.lp-foot small { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--text-2); }
 @media (max-width: 860px) {
   .lp-hero { grid-template-columns: 1fr; padding-top: 36px; }
   .lp-grid { grid-template-columns: 1fr; }
