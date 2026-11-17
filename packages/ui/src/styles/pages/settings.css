@@ -18,6 +18,7 @@
 .set-danger .input { max-width: 260px; background: var(--surface); }
 .set-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .set-switches { padding: 6px 0 4px; }
+.switch.set-toggle { padding: 0; background: transparent; }
 
 @media (hover: hover) and (pointer: fine) {
   .set-nav button:hover { background: var(--surface); color: var(--text); }

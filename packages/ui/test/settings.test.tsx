@@ -66,6 +66,22 @@ describe("Settings", () => {
     expect(within(await screen.findByRole("group", { name: "Temperatures" })).getByRole("button", { name: "°F" }).getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("has a Notifications section with a switch for each kind of alert, found by searching for alerts", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Search" }), { target: { value: "alerts" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Notifications/ }));
+    await waitFor(() => expect(location.hash).toBe("#settings"));
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    const section = within(await screen.findByRole("region", { name: "Notifications" }));
+    expect(section.getAllByRole("switch")).toHaveLength(5);
+    expect(section.getByText(/The Rig app on each PC can also send a Windows notification/)).toBeTruthy();
+    fireEvent.click(section.getByRole("switch", { name: /A drive is nearly full/ }));
+    expect(JSON.parse(localStorage.getItem("rig.alerts.off")!)).toEqual(["drive-full"]);
+    expect(screen.getByRole("navigation", { name: /settings/i }).textContent).toContain("Notifications");
+  });
+
   it("downloads the account's data as a JSON file", async () => {
     let saved: Blob | null = null;
     URL.createObjectURL = vi.fn((b: Blob) => { saved = b; return "blob:rig"; });
