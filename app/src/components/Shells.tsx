@@ -234,8 +234,68 @@ function FriendlyPanelShell({ children }: { children: ReactNode }) {
   );
 }
 
+/* ---------- Pulse: pill nav on top, round icon rail on the left ---------- */
+const pulseNav: Route[] = ["overview", "pc", "games", "upgrades", "chat"];
+const railItems: [Route, string, string][] = [
+  ["changes", "Changes", path("changes")],
+  ["history", "History", path("history")],
+  ["web", "On the web", "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM3 10h14M10 3c2 2 2.8 4.3 2.8 7s-.8 5-2.8 7c-2-2-2.8-4.3-2.8-7S8 5 10 3"],
+];
+function PulseShell({ children }: { children: ReactNode }) {
+  const { ui, pc, set, toast } = useApp();
+  const [open, setOpen] = useState(false);
+  const [acct, setAcct] = useState(false);
+  const box = useOutside(open, () => setOpen(false));
+  const me = useOutside(acct, () => setAcct(false));
+  const warn = (pc.issues ?? []).filter((i) => i.severity === "warn").length;
+  return (
+    <div className="shell shell-pulse">
+      <header className="pl-top">
+        <a className="pl-logo" href="#overview" aria-label="Rig home">R</a>
+        <nav className="pl-nav" aria-label="Main">
+          {pulseNav.map((r) => (
+            <a key={r} href={`#${r}`} className="pl-pill" aria-current={ui.route === r ? "page" : undefined} title={label(r)}>
+              <Icon d={path(r)} /><span>{label(r)}</span>
+              {r === "overview" && warn > 0 && <em className="pl-badge" aria-label={`${warn} needs a look`}>{warn}</em>}
+            </a>
+          ))}
+          <button type="button" className="pl-round" onClick={() => set({ palette: true })} aria-label="Search or ask" title="Search or ask (Ctrl K)"><Search /></button>
+        </nav>
+        <div className="pl-switch" ref={box}>
+          <button type="button" className="pl-switch-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={`Switch PC, now ${pc.name}`}>
+            <span className="sh-dot" />
+            <span className="pl-switch-txt"><b>{pc.name}</b><small>{pc.nickname}</small></span>
+            <svg className="pl-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {open && <PCMenu onPick={() => setOpen(false)} />}
+        </div>
+      </header>
+      <aside className="pl-rail" aria-label="More">
+        {railItems.map(([r, text, d]) => (
+          <a key={r} href={`#${r}`} className="pl-rail-btn" aria-current={ui.route === r ? "page" : undefined} aria-label={text} data-tip={text}>
+            <Icon d={d} />
+            {r === "changes" && <em className="pl-badge">{ui.changes.length}</em>}
+          </a>
+        ))}
+        <button type="button" className="pl-rail-btn" aria-label="Add a PC" data-tip="Add a PC" onClick={() => toast("Adding a PC opens a download link and a pairing code.")}>
+          <Icon d="M10 4v12M4 10h12" />
+        </button>
+        <span className="pl-rail-gap" />
+        <div className="pl-me-wrap" ref={me}>
+          <button type="button" className="pl-me" onClick={() => setAcct(!acct)} aria-expanded={acct} aria-haspopup="menu" aria-label={`Account, ${user.name}`} data-tip={acct ? undefined : user.name}>
+            {user.name[0]}
+          </button>
+          {acct && <AccountMenu onPick={() => setAcct(false)} />}
+        </div>
+      </aside>
+      <main className="main pl-main" id="main">{children}</main>
+    </div>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { ui } = useApp();
+  if (ui.style === "pulse") return <PulseShell>{children}</PulseShell>;
   if (ui.style === "workbench") return <CanvasShell>{children}</CanvasShell>;
   if (ui.style === "checkup") return <WorkspaceShell>{children}</WorkspaceShell>;
   return <FriendlyPanelShell>{children}</FriendlyPanelShell>;

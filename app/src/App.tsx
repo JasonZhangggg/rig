@@ -4,7 +4,7 @@ import { getStage } from "./components/Stage";
 import { MockPanel, Modal, Toast } from "./components/Shell";
 import { Shell } from "./components/Shells";
 import { Palette } from "./components/Palette";
-import { sceneThemes, studioAccent } from "./themes";
+import { lime, sceneFor, studioAccent } from "./themes";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
@@ -30,19 +30,20 @@ function Root() {
   // Theme and PC identity
   useEffect(() => {
     document.documentElement.dataset.style = ui.style;
+    document.documentElement.dataset.mode = ui.mode;
     document.documentElement.style.setProperty("--pc", pc.accent);
-  }, [ui.style, pc.accent]);
+  }, [ui.style, ui.mode, pc.accent]);
 
   // Keep the 3D scene in step with the app
   useEffect(() => {
     getStage().onSelect = (id) => set({ selected: id, tab: "live" });
   }, [set]);
   useEffect(() => {
-    const th = sceneThemes[ui.style];
-    // In Friendly the 3D glow follows the accent so the page reads as one color
-    const studio = ui.style === "studio";
-    scene.setPC(studio ? { ...pc, accent: studioAccent } : pc, studio ? { ...th, highlight: studioAccent } : th);
-  }, [pc.id, pc.accent, ui.style]); // eslint-disable-line react-hooks/exhaustive-deps
+    const th = sceneFor(ui.style, ui.mode);
+    // In Friendly, Pulse and Blend the 3D glow follows the accent so the page reads as one color
+    const glow = ui.style === "studio" ? studioAccent : ui.style === "pulse" || ui.style === "blend" ? lime : null;
+    scene.setPC(glow ? { ...pc, accent: glow } : pc, glow ? { ...th, highlight: glow } : th);
+  }, [pc.id, pc.accent, ui.style, ui.mode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);

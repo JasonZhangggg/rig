@@ -1,8 +1,11 @@
 import type { SceneTheme } from "./scene";
 
-export type StyleId = "studio" | "workbench" | "checkup";
+export type StyleId = "pulse" | "blend" | "studio" | "workbench" | "checkup";
+export type Mode = "dark" | "light";
 
 export const styles: { id: StyleId; name: string; note: string }[] = [
+  { id: "pulse", name: "Pulse", note: "Black cards, lime and orange charts, pill nav on top" },
+  { id: "blend", name: "Blend", note: "Friendly's panel and tiles with Pulse's charts, in lime and black" },
   { id: "studio", name: "Friendly", note: "Round tiles and a helper that talks to you" },
   { id: "workbench", name: "Canvas", note: "Your PC in the middle, parts wired around it" },
   { id: "checkup", name: "Workspace", note: "Two sidebars, big numbers, dense and calm" },
@@ -10,6 +13,28 @@ export const styles: { id: StyleId; name: string; note: string }[] = [
 
 // How the 3D scene looks in each style. UI colors live in styles.css.
 export const sceneThemes: Record<StyleId, SceneTheme> = {
+  pulse: {
+    bg: "#161616", floor: "#1C1C1C", caseColor: "#D9DBD4", trim: "#1D1E1C", glass: "#B9C2BC", glassOpacity: 0.12,
+    board: "#151615", heatsink: "#3C3F3B", fins: "#A2A79F", copper: "#B8784A", fanFrame: "#1B1C1B", ram: "#202220",
+    gpuShroud: "#262826", gpuBack: "#3D403C", gpuFanRing: "#40443F", psu: "#1C1D1C", laptopShell: "#C9CCC5",
+    chip: "#111211", battery: "#262826", ssd: "#1F2A12", keys: "#1C1D1C", trackpad: "#B3B7B0",
+    screenBg: "#121312", screenPanel: "#1E201D", screenLine: "#343832",
+    heatCool: "#E4F7B0", heatWarm: "#FF9A1F", heatHot: "#FF5A36", highlight: "#C6F432",
+    hemi: 0.55, key: 1.7, rim: 1.0, rimColor: "#E8F8B0", exposure: 1.05, transparent: true, shadow: 0.55, edge: "#C9CEC5", edgeOpacity: 0.28,
+    glow: 1, glowBlend: "add", interior: 10, pedestal: "#232422", pedestalRim: 0.8,
+    air: 0.7, airCool: "#E9FBB0", airWarm: "#FF9A1F", airBlend: "add",
+  },
+  blend: {
+    bg: "#F3F3F2", floor: "#E6E6E4", caseColor: "#F8F8F7", trim: "#1F1F1E", glass: "#D5D9D6", glassOpacity: 0.16,
+    board: "#1E1F1E", heatsink: "#4A4C4A", fins: "#C9CBC8", copper: "#C07A4A", fanFrame: "#2A2B2A", ram: "#2B2C2B",
+    gpuShroud: "#2D2E2D", gpuBack: "#555755", gpuFanRing: "#5A5C5A", psu: "#262726", laptopShell: "#BDBFBC",
+    chip: "#1B1C1B", battery: "#303130", ssd: "#26331A", keys: "#2A2B2A", trackpad: "#B0B2AF",
+    screenBg: "#F7F7F6", screenPanel: "#E7E7E5", screenLine: "#C9C9C6",
+    heatCool: "#9FCB1A", heatWarm: "#F28A00", heatHot: "#D9480F", highlight: "#C6F432",
+    hemi: 0.75, key: 1.8, rim: 0.6, exposure: 1.0, transparent: true, shadow: 0.26, edge: "#8F928E", edgeOpacity: 0.35,
+    glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#FFFFFF", pedestalRim: 0.55,
+    air: 0.7, airCool: "#8DB80F", airWarm: "#F28A00", airBlend: "normal",
+  },
   studio: {
     bg: "#F2F3F5", floor: "#E6E8EB", caseColor: "#F7F7F8", trim: "#2A2E34", glass: "#CFE0EA", glassOpacity: 0.16,
     board: "#1F2328", heatsink: "#4A5058", fins: "#C9CDD2", copper: "#C07A4A", fanFrame: "#2B2F35", ram: "#2C3036",
@@ -46,5 +71,15 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
 };
 
 export const studioAccent = "#EA5A72";
+export const lime = "#C6F432";
+
+const pulseLightScene: SceneTheme = {
+  ...sceneThemes.blend,
+  bg: "#F4F5F0", floor: "#E4E6DE", caseColor: "#F7F8F4", pedestal: "#FFFFFF", edge: "#8E938A",
+};
+
+export function sceneFor(style: StyleId, mode: Mode): SceneTheme {
+  return style === "pulse" && mode === "light" ? pulseLightScene : sceneThemes[style];
+}
 
 export const accents = ["#E8692E", "#3C7BF0", "#2E9E6B", "#C2477A", "#8A63D2", "#C9A227", "#5B6573"];

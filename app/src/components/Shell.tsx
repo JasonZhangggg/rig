@@ -107,9 +107,15 @@ export function MockPanel() {
     <aside className={`mock${ui.mockMin ? " min" : ""}`} aria-label="Mockup controls">
       <div className="mock-head"><span>Mockup controls</span><button type="button" onClick={() => set({ mockMin: !ui.mockMin })}>{ui.mockMin ? "Show" : "Hide"}</button></div>
       <div className="mbody" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div className="mrow">
+        <div className="mrow wrap">
           {styles.map((s) => <button key={s.id} type="button" aria-pressed={ui.style === s.id} onClick={() => set({ style: s.id })}>{s.name}</button>)}
         </div>
+        {ui.style === "pulse" && (
+          <div className="mrow" role="group" aria-label="Mode">
+            <button type="button" aria-pressed={ui.mode === "dark"} onClick={() => set({ mode: "dark" })}>Dark</button>
+            <button type="button" aria-pressed={ui.mode === "light"} onClick={() => set({ mode: "light" })}>Light</button>
+          </div>
+        )}
         <div className="mnote">{style.note}</div>
         <div className="mrow">
           <button type="button" aria-pressed={ui.pcId === "atlas"} onClick={() => pickPC("atlas")}>Tower</button>

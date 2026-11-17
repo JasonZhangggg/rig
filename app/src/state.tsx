@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { pcs as pcSeed, chat as chatSeed, changes as changeSeed, type Change, type ChatMessage, type DiffRow, type PC, type Route } from "./data";
-import { styles, type StyleId } from "./themes";
+import { styles, type Mode, type StyleId } from "./themes";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
 
@@ -10,6 +10,7 @@ export interface ToastState { msg: string; undo?: string }
 export interface UI {
   route: Route;
   style: StyleId;
+  mode: Mode;
   pcId: string;
   pcs: Record<string, PC>;
   exploded: boolean;
@@ -38,11 +39,13 @@ function routeFromHash(): Route {
 }
 
 function initial(): UI {
-  const style = storage.get("rig.style") as StyleId | null;
+  const style = storage.get("rig.style2") as StyleId | null;
+  const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
   return {
     route: routeFromHash(),
-    style: styles.some((s) => s.id === style) ? style! : "studio",
+    style: styles.some((s) => s.id === style) ? style! : "pulse",
+    mode: mode === "light" ? "light" : "dark",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
     exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
@@ -77,7 +80,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
-  useEffect(() => { storage.set("rig.style", ui.style); }, [ui.style]);
+  useEffect(() => { storage.set("rig.style2", ui.style); }, [ui.style]);
+  useEffect(() => { storage.set("rig.mode", ui.mode); }, [ui.mode]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && (e.target.closest("input, textarea, [contenteditable]") !== null);

@@ -7,6 +7,8 @@ import { useApp } from "../state";
 import { FriendlyHome } from "./homes/FriendlyHome";
 import { CanvasHome } from "./homes/CanvasHome";
 import { WorkspaceHome } from "./homes/WorkspaceHome";
+import { PulseHome } from "./homes/PulseHome";
+import { BlendHome } from "./homes/BlendHome";
 
 const sevLabel = { warn: "Needs a look", info: "Suggestion", ok: "Good news", bad: "Problem" };
 
@@ -92,6 +94,8 @@ function Dial({ pct, icon }: { pct: number; icon: JSX.Element }) {
 
 export function Overview() {
   const { ui } = useApp();
+  if (ui.style === "pulse") return <PulseHome />;
+  if (ui.style === "blend") return <BlendHome />;
   if (ui.style === "studio") return <FriendlyHome />;
   if (ui.style === "workbench") return <CanvasHome />;
   if (ui.style === "checkup") return <WorkspaceHome />;
