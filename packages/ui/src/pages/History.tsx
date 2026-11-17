@@ -1,10 +1,13 @@
 import { historySummary, STEADY_MARGIN, type BusySummary, type HistorySummary, type Range, type TempFormat } from "@rig/core";
 import { ChartNote, LineChart } from "../chart";
 import { useApp, useHistory, useTemp } from "../state";
+import { Events } from "./history/Events";
+import { Ranges } from "./history/Ranges";
 
 type Temp = (celsius: number | null | undefined, opts?: TempFormat) => string;
 /** A difference between two temperatures, like "6° warmer": scaled to the unit, not offset. */
 const diff = (temp: Temp, celsius: number) => temp(celsius, { delta: true, mark: "degree" });
+const rangeWords: Record<Range, string> = { "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days" };
 
 function busyNote(b: BusySummary | null, laptop: boolean, temp: Temp) {
   if (!b) return "Nothing heavy ran in this range.";
@@ -23,7 +26,7 @@ function peakNote(peak: NonNullable<HistorySummary["peak"]>, range: Range, temp:
 }
 
 export function History() {
-  const { ui, pc, set } = useApp();
+  const { ui, pc, set, ask } = useApp();
   const temp = useTemp();
   const pts = useHistory(ui.range);
   const laptop = pc.kind === "laptop";
@@ -66,6 +69,26 @@ export function History() {
             <p className="num big-figure" style={peak && peak.headroom <= 0 ? { color: "var(--warn)" } : undefined}>{temp(peak?.temp)}</p>
             <p className="muted">{peak ? peakNote(peak, ui.range, temp) : "No readings in this range."}</p>
           </div>
+        </section>
+      )}
+      {pts && pts.length > 1 && (
+        <div className="hi-row">
+          <Ranges points={pts} pc={pc} when={rangeWords[ui.range]} />
+          <Events key={ui.range} points={pts} range={ui.range} when={rangeWords[ui.range]} />
+        </div>
+      )}
+      {pts && pts.length < 2 && (
+        <section className="card hi-empty">
+          <div className="hi-empty-text">
+            <h2 className="plain-h">Your history fills in as Rig runs</h2>
+            <p className="muted">Leave Rig open and {pc.name}'s temperatures land here every minute. After a day you can see the pattern; after a week, whether it's running warmer than it used to.</p>
+            <div><button className="btn" type="button" onClick={() => ask(`What temperatures are normal for ${pc.name}?`)}>Ask what's normal</button></div>
+          </div>
+          <ul className="hi-empty-list" aria-label="What shows up here">
+            <li><b>Every part, minute by minute</b><span className="muted">The processor{pc.parts?.gpu ? " and graphics card" : ""} on one chart, against the safe limit.</span></li>
+            <li><b>{laptop ? "Busy periods" : "Games and heavy work"}, shaded</b><span className="muted">So you can see what made it warm.</span></li>
+            <li><b>Lowest, typical and highest</b><span className="muted">With the hottest moment and how close it came to the limit.</span></li>
+          </ul>
         </section>
       )}
     </div>

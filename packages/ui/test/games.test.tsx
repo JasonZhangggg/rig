@@ -23,7 +23,7 @@ describe("Games", () => {
 
   it("lists the week's games most played first and opens one", async () => {
     await openGames();
-    const list = await screen.findByRole("list");
+    const list = await screen.findByRole("list", { name: "Games" });
     const rows = within(list).getAllByRole("button");
     expect(rows.length).toBeGreaterThanOrEqual(2);
     const hours = rows.map((r) => Number(r.querySelector(".gm-hours .num")!.textContent!.replace(/[^\d.]/g, "")));
@@ -32,7 +32,7 @@ describe("Games", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
     await screen.findByText("Most played this month");
-    const cyberpunk = within(await screen.findByRole("list")).getAllByRole("button").find((r) => r.textContent!.includes("Cyberpunk 2077"))!;
+    const cyberpunk = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Cyberpunk 2077"))!;
     expect(within(cyberpunk).getByText("Settings to try")).toBeTruthy();
     fireEvent.click(cyberpunk);
     expect(await screen.findByRole("heading", { level: 1, name: "Cyberpunk 2077" })).toBeTruthy();
@@ -51,7 +51,7 @@ describe("Games", () => {
     const client = new DemoClient();
     client.games = async () => [];
     await openGames(client);
-    await screen.findByRole("list");
+    await screen.findByRole("list", { name: "Games" });
     expect(screen.queryByText("Settings to try")).toBeNull();
   });
 
@@ -82,7 +82,7 @@ describe("Games", () => {
   it("shows the games in °F once picked", async () => {
     localStorage.setItem("rig.tempUnit", "f");
     await openGames();
-    await screen.findByRole("list");
+    await screen.findByRole("list", { name: "Games" });
     await waitFor(() => expect(screen.getByRole("main").textContent).toMatch(/\d+°F/));
     expect(screen.getByRole("main").textContent).not.toMatch(/°C/);
   });

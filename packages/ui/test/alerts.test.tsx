@@ -33,7 +33,7 @@ function demoCounting(alerts: Alert[]) {
 }
 
 const todo = async () => within((await screen.findByText("Things to look at")).closest("section")!);
-const rows = async () => (await todo()).getAllByRole("button").map((b) => b.querySelector("b")!.textContent);
+const rows = async () => within((await todo()).getByRole("list")).getAllByRole("button").map((b) => b.querySelector("b")!.textContent);
 
 describe("alerts in Things to look at", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });

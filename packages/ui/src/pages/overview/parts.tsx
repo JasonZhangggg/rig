@@ -20,17 +20,20 @@ export function useGrowOnce(key: string) {
 
 export type LegendMark = "a" | "b" | "c";
 
-export function Legend({ items, total }: { items: [LegendMark, string][]; total?: [string, string] }) {
+export function Legend({ items }: { items: [LegendMark, string][] }) {
   return (
     <div className="pl-legend">
       {items.map(([mark, text]) => <span key={text}><i className={mark} />{text}</span>)}
-      {total && <span className="pl-total">{total[0]} <b>{total[1]}</b></span>}
     </div>
   );
 }
 
-export const CardHead = ({ title, note }: { title: string; note?: string }) => (
-  <div className="f-card-head"><span>{title}</span>{note && <span className="f-faint">{note}</span>}</div>
+/** A pane's title and note, with its headline number large on the right when there is one. */
+export const CardHead = ({ title, note, figure }: { title: string; note?: string; figure?: { value: string; label: string; tone?: "look" } }) => (
+  <div className="pl-head">
+    <div><h3>{title}</h3>{note && <span className="f-faint">{note}</span>}</div>
+    {figure && <div className={`pl-figure${figure.tone ? ` ${figure.tone}` : ""}`}><b>{figure.value}</b><span>{figure.label}</span></div>}
+  </div>
 );
 
 export const EmptyNote = ({ children }: { children: ReactNode }) => <p className="bl-empty">{children}</p>;

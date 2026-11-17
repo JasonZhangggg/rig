@@ -1,5 +1,5 @@
 import type { FanReading, FanTrend } from "@rig/core";
-import { CardHead, EmptyNote } from "./parts";
+import { CardHead, EmptyNote, Legend } from "./parts";
 
 /** A fan past this share of its top speed is working hard enough to mark. */
 const BUSY = 0.75;
@@ -55,11 +55,15 @@ function DotMatrix({ trend }: { trend: FanTrend }) {
 export function FansCard({ fans, trend }: { fans: readonly FanReading[] | undefined; trend: FanTrend | null }) {
   const stats = headlines(fans ?? []);
   return (
-    <section className="f-card bl-fans tone-dark">
+    <section className="f-pane bl-fans">
       <CardHead title="Fans" note="rpm" />
       {stats.length > 0 && <div className="pl-stats">{stats.map((s) => <Stat key={s.fan.label} {...s} />)}</div>}
       {trend && (trend.scale != null
-        ? <DotMatrix trend={trend} />
+        ? <>
+          <DotMatrix trend={trend} />
+          <Legend items={[["c", "Quiet"], ["a", "Busier"], ["b", "Near the week's top"]]} />
+          <div className="pl-legend" aria-hidden="true"><span>Fastest fan, every six hours</span><span className="pl-total">Top <b>{whole.format(trend.scale)} rpm</b></span></div>
+        </>
         : <EmptyNote>{stats.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>)}
     </section>
   );

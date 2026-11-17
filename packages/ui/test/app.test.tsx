@@ -26,7 +26,7 @@ describe("Rig app on demo data", () => {
     await screen.findByText(/Things to look at/i);
     const pages: [string, RegExp][] = [
       ["pc", /Quick switches/i],
-      ["chat", /How fixes work/i],
+      ["chat", /Rig shows every change first/i],
       ["changes", /Changes/i],
       ["upgrades", /Upgrades|upgrade/i],
       ["games", /Games|game/i],

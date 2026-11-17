@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, shownSummary, weekEvenings, weekTemps, type HistoryPoint, type Issue, type PC } from "@rig/core";
-import { StageSlot } from "../components/Stage";
+import { StageSlot, getStage } from "../components/Stage";
 import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../state";
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
@@ -11,6 +11,18 @@ const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 1
 const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
 const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
 const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
+
+const SPEC_PARTS = ["cpu", "gpu", "ram"];
+
+/** Heat and exploded views for the hero. They belong to this page, so leaving it puts the shared scene back. */
+function useHeroViews() {
+  const [heat, setHeat] = useState(false);
+  const [exploded, setExploded] = useState(false);
+  useEffect(() => { getStage().scene.setHeat(heat); }, [heat]);
+  useEffect(() => { getStage().scene.setExploded(exploded); }, [exploded]);
+  useEffect(() => () => { const { scene } = getStage(); scene.setHeat(false); scene.setExploded(false); }, []);
+  return { heat, exploded, toggleHeat: () => setHeat((v) => !v), toggleExploded: () => setExploded((v) => !v) };
+}
 
 /** The home charts from the last week of history, in the viewer's local days. Null while history loads. */
 function useWeekInsights(pc: PC, points: HistoryPoint[] | null) {
@@ -37,6 +49,8 @@ export function Overview() {
   const open = issues.filter((i) => i.severity === "warn" || i.severity === "bad");
   const top = open[0] ?? issues[0];
   const chips = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp != null).slice(0, 4);
+  const specs = SPEC_PARTS.flatMap((id) => { const p = pc.parts?.[id]; return p ? [{ id, type: shortType(p.type), name: p.name }] : []; });
+  const views = useHeroViews();
   const name = client.kind === "demo" ? null : firstName(data.account?.name);
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
@@ -44,12 +58,18 @@ export function Overview() {
   const week = useWeekInsights(pc, useHistory("7d"));
   const temp = useTemp();
   const inUnit = useTempText();
+  const checkup = () => ask(`Give ${pc.name} a checkup. Is anything running hotter or slower than it should?`);
+  const asks = [`Why is ${pc.name} loud?`, "What should I upgrade first?", `How hot is too hot for ${pc.name}?`];
   const goTo = (i: Issue) => issueGo(i.ask ? { ...i, ask: inUnit(i.ask) } : i, pc, ctx);
 
   return (
     <div className="page f-home">
-      <section className="f-band">
-        <div className="f-band-left">
+      <header className="f-head">
+        <div className="f-head-text">
+          <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
+          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
+        </div>
+        <div className="f-head-tools">
           <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
             <button type="button" className="f-cta" onClick={() => goTo(top)}>
@@ -58,22 +78,29 @@ export function Overview() {
               <i><Arrow /></i>
             </button>
           )}
-          <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={() => ask(`Give ${pc.name} a checkup. Is anything running hotter or slower than it should?`)}><Pulse /></button>
+          <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={checkup}><Pulse /></button>
+          <button type="button" className="f-round f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
         </div>
-        <div className="f-band-right">
-          <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
-          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
-        </div>
-        <button type="button" className="f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
-      </section>
+      </header>
 
-      <div className="f-grid">
-        <section className="f-card f-pc">
+      <div className="f-top">
+        <section className="f-pc" aria-label={`${pc.name} in 3D`}>
           <StageSlot id="hero-stage" zoom={false} spin />
           <div className="f-pc-top">
             <div><div className="f-kicker">{pc.nickname}</div><div className="f-pc-name">{pc.name}</div></div>
-            <a className="f-arrow" href="#pc" aria-label="Open 3D view"><Arrow /></a>
+            <div className="f-pc-tools">
+              <div className="f-views" role="group" aria-label="3D view">
+                <button type="button" aria-pressed={views.heat} onClick={views.toggleHeat}>Heat</button>
+                <button type="button" aria-pressed={views.exploded} onClick={views.toggleExploded}>Exploded</button>
+              </div>
+              <a className="f-arrow" href="#pc" aria-label="Open 3D view"><Arrow /></a>
+            </div>
           </div>
+          {specs.length > 0 && (
+            <dl className="f-specs">
+              {specs.map((s) => <div key={s.id}><dt>{s.type}</dt><dd>{s.name}</dd></div>)}
+            </dl>
+          )}
           <div className="f-pc-chips">
             {chips.map(([id, p]) => (
               <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
@@ -83,34 +110,65 @@ export function Overview() {
           </div>
         </section>
 
-        <section className="f-card f-health tone-dark">
-          <div className="f-card-head"><span>Health</span><a className="f-mini" href="#history" aria-label="Temperature history"><Arrow /></a></div>
-          <div className="f-ring">
-            <svg viewBox="0 0 120 120" aria-hidden="true">
-              <circle cx="60" cy="60" r="52" className="tr" />
-              <circle cx="60" cy="60" r="52" className="vl" strokeDasharray={`${(ringC * pc.health) / 100} ${ringC}`} transform="rotate(-90 60 60)" />
-            </svg>
-            <div><b>{pc.health}</b><span>of 100</span></div>
-          </div>
-          <p>{summary}</p>
-        </section>
+        <div className="f-side">
+          <section className="f-health tone-dark">
+            <div className="f-ring">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="52" className="tr" />
+                <circle cx="60" cy="60" r="52" className="vl" strokeDasharray={`${(ringC * pc.health) / 100} ${ringC}`} transform="rotate(-90 60 60)" />
+              </svg>
+              <div><b>{pc.health}</b><span>of 100</span></div>
+            </div>
+            <div className="f-health-text">
+              <div className="f-health-head"><h2>Health</h2><a className="f-mini" href="#history" aria-label="Temperature history"><Arrow /></a></div>
+              <p>{summary}</p>
+            </div>
+          </section>
 
-        <FansCard fans={pc.fans} trend={week?.fans ?? null} />
-        <TempsCard temps={week?.temps ?? null} name={pc.name} />
-        <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
-
-        <section className="f-card f-todo">
-          <div className="f-card-head"><span>Things to look at</span>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
-          {issues.map((i) => (
-            <button key={i.id} type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
-              <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
-              <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
-              <i className="f-todo-go"><Arrow /></i>
-            </button>
-          ))}
-          {!issues.length && <p className="f-faint">Nothing to look at. Rig keeps watching while you use {pc.name}.</p>}
-        </section>
+          <section className="f-todo">
+            <div className="f-todo-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
+            {issues.length > 0 ? (
+              <ul className="f-todo-list">
+                {issues.map((i) => (
+                  <li key={i.id}>
+                    <button type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
+                      <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
+                      <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
+                      <i className="f-todo-go"><Arrow /></i>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="f-todo-empty"><i className="f-todo-ico"><Check /></i><p>Nothing to look at. Rig keeps watching while you use {pc.name}.</p></div>
+            )}
+            {issues.length <= 3 && (
+              <div className="f-asks" role="group" aria-label="Ask Rig">
+                <span>Ask Rig</span>
+                <div>{asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>
+              </div>
+            )}
+            <div className="f-todo-foot">
+              <p>Want a fuller look at {pc.name}?</p>
+              <button type="button" className="f-todo-check" onClick={checkup}><Pulse />Run a checkup</button>
+            </div>
+          </section>
+        </div>
       </div>
+
+      <section className="f-week" aria-labelledby="f-week-title">
+        <div className="f-week-head">
+          <h2 id="f-week-title">This week</h2>
+          <p>The last seven days on {pc.name}</p>
+        </div>
+        <div className="f-trends">
+          <div className="f-vitals tone-dark">
+            <TempsCard temps={week?.temps ?? null} name={pc.name} />
+            <FansCard fans={pc.fans} trend={week?.fans ?? null} />
+          </div>
+          <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
+        </div>
+      </section>
     </div>
   );
 }

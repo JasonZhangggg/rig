@@ -1,54 +1,70 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
 import { useApp, useTempText } from "../state";
 import { RecordingCard } from "./logs/RecordingCard";
+import { ChatBar } from "./chat/ChatBar";
+import { Composer } from "./chat/Composer";
+import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
 
 export function Chat() {
-  const { data, pc, ask, client } = useApp();
-  const [q, setQ] = useState("");
-  const inUnit = useTempText();
-  const starters = [
-    ...(pc.issues ?? []).filter((i) => i.ask).slice(0, 2).map((i) => inUnit(i.ask!)),
-    `Why is ${pc.name} loud?`,
-    "Why is startup slow?",
-    "Can my screen look smoother?",
-  ].slice(0, 4);
+  const { data, pc, client, clearChat } = useApp();
+  const starters = useStarters();
+  const box = useRef<HTMLTextAreaElement>(null);
+  const empty = data.chat.length === 0;
+  useStickToBottom(data.chat, data.answering);
+  const next = data.answering ? [] : notAsked(starters, data.chat);
+  const startOver = () => { clearChat(); box.current?.focus(); };
   return (
-    <div className="page mid">
-      <div className="page-head"><div><h1>Ask</h1><p className="sub">Answers come from your parts' manuals, maker support pages and {pc.name}'s own readings. Every fix is shown to you first and can be undone.</p></div></div>
-      <div className="chat-wrap">
-        <section className="card">
-          <div className="thread" aria-live="polite">
-            {data.chat.length === 0 && (
-              <div className="msg claude">
-                <span className="who-mark" aria-label="Rig">R</span>
-                <div className="body"><p>Hi! I can see {pc.name}'s temperatures, settings and parts. Ask me what's wrong, how to fix something, or what to upgrade.</p></div>
-              </div>
-            )}
-            {data.chat.map((m) => <Message key={m.id} m={m} />)}
+    <div className={`page chat-page${empty ? " is-empty" : ""}`}>
+      <ChatBar onNew={startOver} />
+      <div className="chat-main">
+        {empty ? (
+          <div className="chat-hello">
+            <span className="chat-mark" aria-hidden="true">R<i /></span>
+            <h1>What's going on with {pc.name}?</h1>
+            <p>Rig reads {pc.name}'s temperatures, settings and parts, and answers from your parts' manuals and maker support pages.</p>
           </div>
-          {!data.answering && <div className="suggest">{starters.map((s) => <button key={s} type="button" onClick={() => ask(s)}>{s}</button>)}</div>}
-          <form className="composer" onSubmit={(e) => { e.preventDefault(); if (!data.answering) { ask(q); setQ(""); } }}>
-            <input id="ask-chat" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Ask about ${pc.name}`} aria-label="Message" />
-            <button className="btn primary" disabled={data.answering || !q.trim()}>{data.answering ? "Answering…" : "Send"}</button>
-          </form>
-        </section>
-        <aside className="card card-pad rules">
-          <h2>How fixes work</h2>
-          <ul>
-            <li>Rig shows every change before it happens, with the value now and the value after.</li>
-            <li>Nothing changes until you say yes.</li>
-            <li>Rig saves the old values first.</li>
-            <li>Everything is listed in Changes with one-tap undo.</li>
-            <li>When Rig needs more to go on, it records readings for a while. That only reads, and you can stop it in <a href="#logs">Logs</a>.</li>
-            {!client.caps.applyChanges && <li>Fixes are made from the Rig app on {pc.name}. Here you can ask and read.</li>}
-          </ul>
-          <a className="btn" href="#changes">Open Changes</a>
-        </aside>
+        ) : (
+          <>
+            <h1 className="sr-only">Ask Rig about {pc.name}</h1>
+            <div className="thread" aria-live="polite">
+              {data.chat.map((m) => <Message key={m.id} m={m} />)}
+            </div>
+          </>
+        )}
+        <div className="chat-dock">
+          {!empty && <FollowUps starters={next} />}
+          <Composer ref={box} big={empty} />
+          <p className="chat-rules">
+            Rig shows every change first. Nothing changes until you say yes, and you can undo it in <a href="#changes">Changes</a>. When Rig needs more to go on, it records readings for a while, which you can stop in <a href="#logs">Logs</a>.
+            {!client.caps.applyChanges && <> Fixes are made from the Rig app on {pc.name}.</>}
+          </p>
+        </div>
+        {empty && <StarterGrid starters={starters} />}
       </div>
     </div>
   );
+}
+
+/** Keeps the newest message in view while Rig answers, unless the person has scrolled up to read. */
+function useStickToBottom(chat: ChatMessage[], answering: boolean) {
+  const stick = useRef(true);
+  const seen = useRef(0);
+  useEffect(() => {
+    const page = () => document.scrollingElement ?? document.documentElement;
+    const on = () => { const el = page(); stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140; };
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
+  const last = chat[chat.length - 1];
+  useLayoutEffect(() => {
+    if (chat.length > seen.current) stick.current = true;
+    seen.current = chat.length;
+    if (!stick.current || !chat.length) return;
+    const el = document.scrollingElement ?? document.documentElement;
+    el.scrollTop = el.scrollHeight;
+  }, [chat.length, last?.text, last?.steps, last?.sources, last?.proposal, answering]);
 }
 
 function Message({ m }: { m: ChatMessage }) {

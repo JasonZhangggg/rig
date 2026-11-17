@@ -1,6 +1,5 @@
 .pc-view { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: var(--gap); align-items: start; }
-.stage-card,
-.signin-art {
+.stage-card {
   isolation: isolate;
   background:
     radial-gradient(70% 60% at 100% 0%, color-mix(in srgb, var(--expected) 42%, transparent) 0%, transparent 62%),
@@ -41,7 +40,7 @@
 .space { display: flex; flex-direction: column; gap: 10px; }
 .space-head { display: flex; justify-content: space-between; align-items: baseline; }
 .space-bar { display: flex; gap: 3px; height: 12px; }
-.space-bar i { min-width: 6px; border-radius: var(--r-pill); background: var(--graphite); }
+.space-bar i { min-width: 6px; border-radius: var(--r-pill); background: var(--good-mark); }
 .space-bar i:nth-child(2) { background: var(--look); }
 .space-bar i:nth-child(3) { background: var(--good); }
 .space-bar i:nth-child(n + 4) { background: var(--expected); }
