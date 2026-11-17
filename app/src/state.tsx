@@ -39,12 +39,12 @@ function routeFromHash(): Route {
 }
 
 function initial(): UI {
-  const style = storage.get("rig.style2") as StyleId | null;
+  const style = storage.get("rig.style3") as StyleId | null;
   const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
   return {
     route: routeFromHash(),
-    style: styles.some((s) => s.id === style) ? style! : "pulse",
+    style: styles.some((s) => s.id === style) ? style! : "paper",
     mode: mode === "light" ? "light" : "dark",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
@@ -80,7 +80,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
-  useEffect(() => { storage.set("rig.style2", ui.style); }, [ui.style]);
+  useEffect(() => { storage.set("rig.style3", ui.style); }, [ui.style]);
   useEffect(() => { storage.set("rig.mode", ui.mode); }, [ui.mode]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

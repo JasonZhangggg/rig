@@ -228,3 +228,60 @@ export function Legend({ items, total }: { items: [string, string][]; total?: [s
     </div>
   );
 }
+
+/* ---------- Dot-matrix figures and capsule bars (Paper and Signature) ---------- */
+
+const glyphs: Record<string, string[]> = {
+  "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+  "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+  "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+  "3": ["#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."],
+  "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+  "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+  "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
+  "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+  "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+  "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
+};
+
+/** A number drawn on a 5 x 7 dot grid per digit. Lit dots are the value, faint dots keep the grid visible. */
+export function DotDigits({ value, label, grow }: { value: string; label: string; grow: boolean }) {
+  const chars = [...value].filter((c) => glyphs[c]);
+  const step = 12, r = 4.4, cols = chars.length * 6 - 1;
+  return (
+    <svg className={`pl-digits${grow ? " grow" : ""}`} viewBox={`0 0 ${cols * step} ${7 * step}`} role="img" aria-label={label}>
+      {chars.map((c, n) => glyphs[c].map((row, y) => [...row].map((on, x) => (
+        <circle key={`${n}-${x}-${y}`} cx={(n * 6 + x) * step + step / 2} cy={y * step + step / 2} r={r} className={on === "#" ? "on" : "off"} />
+      ))))}
+    </svg>
+  );
+}
+
+export interface DayBar { d: string; v: number; kind: "past" | "peak" | "forecast" }
+
+/** The week's peaks so far, the hottest day marked, then three expected days. */
+export function peakBars(pc: PC): DayBar[] {
+  const week = ex(pc).week;
+  const top = Math.max(...week.map((w) => w.peak));
+  const last3 = week.slice(-3).reduce((a, w) => a + w.peak, 0) / 3;
+  const peakAt = week.findIndex((w) => w.peak === top);
+  const past = week.map((w, i): DayBar => ({ d: w.d, v: w.peak, kind: i === peakAt ? "peak" : "past" }));
+  const ahead = [0, 1, 2].map((i): DayBar => ({ d: week[i].d, v: Math.round(last3 + [0, 1, -1][i]), kind: "forecast" }));
+  return [...past, ...ahead];
+}
+
+/** Rounded vertical bars, one per day, height by value. */
+export function CapsuleBars({ bars, label, grow }: { bars: DayBar[]; label: string; grow: boolean }) {
+  const vals = bars.map((b) => b.v);
+  const lo = Math.min(...vals) - 14, hi = Math.max(...vals);
+  return (
+    <div className={`pl-vbars${grow ? " grow" : ""}`} role="img" aria-label={label}>
+      {bars.map((b, i) => (
+        <div key={`${b.d}-${i}`} className={`pl-vbar-col ${b.kind}`} style={{ "--i": i } as CSSProperties}>
+          <span className="pl-vbar-track"><span className="pl-vbar" style={{ height: `${Math.max(28, ((b.v - lo) / (hi - lo)) * 100)}%` }}><b>{b.v}</b></span></span>
+          <small>{b.d}</small>
+        </div>
+      ))}
+    </div>
+  );
+}

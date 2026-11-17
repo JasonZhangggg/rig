@@ -293,8 +293,129 @@ function PulseShell({ children }: { children: ReactNode }) {
   );
 }
 
+/* ---------- Paper: floating numbered sidebar on paper ---------- */
+const paperNav: Route[] = ["overview", "pc", "games", "upgrades", "chat", "changes", "history"];
+const two = (n: number) => String(n).padStart(2, "0");
+export function paperSection(r: Route): [string, string] {
+  const i = paperNav.indexOf(r);
+  return i >= 0 ? [two(i + 1), label(r)] : [two(paperNav.length + 1), "On the web"];
+}
+const Caret = ({ up }: { up?: boolean }) => <svg viewBox="0 0 20 20" aria-hidden="true"><path d={up ? "M7 8 10 5l3 3M7 12l3 3 3-3" : "M6 8l4 4 4-4"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+
+function PaperShell({ children }: { children: ReactNode }) {
+  const { ui, pc, set } = useApp();
+  const [open, setOpen] = useState(false);
+  const [acct, setAcct] = useState(false);
+  const box = useOutside(open, () => setOpen(false));
+  const me = useOutside(acct, () => setAcct(false));
+  const warn = (pc.issues ?? []).some((i) => i.severity === "warn");
+  const [num, name] = paperSection(ui.route);
+  return (
+    <div className="shell shell-paper">
+      <aside className="pp-side" aria-label="Main">
+        <div className="pp-top">
+          <div className="pp-brand" ref={box}>
+            <button type="button" className="pp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={`Switch PC, now ${pc.name}`}>
+              <span className="pp-word"><span className="pp-mark">R</span><b>Rig</b></span>
+              <span className="pp-pcline"><span>{pc.name}</span><small>{pc.nickname}</small></span>
+              <Caret />
+            </button>
+            {open && <PCMenu onPick={() => setOpen(false)} />}
+          </div>
+          <nav className="pp-nav">
+            {paperNav.map((r, i) => (
+              <a key={r} href={`#${r}`} className="pp-link" aria-current={ui.route === r ? "page" : undefined}>
+                <span className="pp-n">{two(i + 1)}</span><span className="pp-t">{label(r)}</span>
+                {r === "overview" && warn && <i className="pp-flag" aria-label="Needs a look" />}
+              </a>
+            ))}
+          </nav>
+          <button type="button" className="pp-search" onClick={() => set({ palette: true })}>
+            <Search /><span>Search</span><kbd>Ctrl K</kbd>
+          </button>
+        </div>
+        <a className="pp-ask" href="#chat">Ask Rig</a>
+        <div className="pp-acct" ref={me}>
+          <button type="button" className="pp-me" onClick={() => setAcct(!acct)} aria-expanded={acct} aria-haspopup="menu" aria-label={`Account, ${user.name}`}>
+            <span className="pp-ava">{user.name[0]}</span>
+            <span className="pp-me-txt"><b>{user.name}</b><small>Synced</small></span>
+            <Caret up />
+          </button>
+          {acct && <AccountMenu onPick={() => setAcct(false)} />}
+        </div>
+      </aside>
+      <main className="main pp-main" id="main" style={{ ["--pp-num" as string]: `"${num}"`, ["--pp-name" as string]: `"${name}"` }}>{children}</main>
+    </div>
+  );
+}
+
+/* ---------- Signature: compact floating sidebar, ask bar on top ---------- */
+function SignatureShell({ children }: { children: ReactNode }) {
+  const { ui, pc, set } = useApp();
+  const [open, setOpen] = useState(false);
+  const [acct, setAcct] = useState(false);
+  const [mini, setMini] = useState(false);
+  const box = useOutside(open, () => setOpen(false));
+  const me = useOutside(acct, () => setAcct(false));
+  const warn = (pc.issues ?? []).filter((i) => i.severity === "warn").length;
+  return (
+    <div className={`shell shell-sig${mini ? " mini" : ""}`}>
+      <aside className="sg-side" aria-label="Main">
+        <div className="sg-top">
+          <div className="sg-brand">
+            <a className="sg-mark" href="#overview" aria-label="Rig home">R</a>
+            <b className="sg-word">Rig</b>
+            <button type="button" className="sg-collapse" onClick={() => setMini(!mini)} aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 4v12" stroke="currentColor" strokeWidth="1.5" /><path d={mini ? "M11.5 8.5 13 10l-1.5 1.5" : "M13 8.5 11.5 10l1.5 1.5"} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          </div>
+          {groups.map(([g, ids]) => (
+            <div key={g} className="sg-group">
+              <div className="sg-label">{g}</div>
+              {ids.map((r) => (
+                <a key={r} href={`#${r}`} className="sg-item" title={mini ? label(r) : undefined} aria-current={ui.route === r ? "page" : undefined}>
+                  <Icon d={path(r)} /><span className="sg-item-t">{label(r)}</span>
+                  {r === "overview" && warn > 0 && <em className="sg-count hot" aria-label={`${warn} needs a look`}>{warn}</em>}
+                  {r === "changes" && <em className="sg-count">{ui.changes.length}</em>}
+                  {ui.route === r && <i className="sg-live" aria-hidden="true" />}
+                </a>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div className="sg-acct" ref={me}>
+          <button type="button" className="sg-me" onClick={() => setAcct(!acct)} aria-expanded={acct} aria-haspopup="menu" aria-label={`Account, ${user.name}`} title={mini ? user.name : undefined}>
+            <span className="sg-ava">{user.name[0]}</span>
+            <span className="sg-me-txt"><b>{user.name}</b><small>Synced</small></span>
+            <Caret up />
+          </button>
+          {acct && <AccountMenu onPick={() => setAcct(false)} />}
+        </div>
+      </aside>
+      <div className="sg-body">
+        <header className="sg-bar">
+          <button type="button" className="sg-ask" onClick={() => set({ palette: true })}>
+            <Search /><span>Ask Rig about {pc.name}…</span><kbd>Ctrl K</kbd>
+          </button>
+          <div className="sg-switch" ref={box}>
+            <button type="button" className="sg-switch-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={`Switch PC, now ${pc.name}`}>
+              <span className="sg-switch-dot" aria-hidden="true" />
+              <span className="sg-switch-txt"><b>{pc.name}</b><small>{pc.nickname}</small></span>
+              <Caret />
+            </button>
+            {open && <PCMenu onPick={() => setOpen(false)} />}
+          </div>
+        </header>
+        <main className="main sg-main" id="main">{children}</main>
+      </div>
+    </div>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { ui } = useApp();
+  if (ui.style === "paper") return <PaperShell>{children}</PaperShell>;
+  if (ui.style === "signature") return <SignatureShell>{children}</SignatureShell>;
   if (ui.style === "pulse") return <PulseShell>{children}</PulseShell>;
   if (ui.style === "workbench") return <CanvasShell>{children}</CanvasShell>;
   if (ui.style === "checkup") return <WorkspaceShell>{children}</WorkspaceShell>;

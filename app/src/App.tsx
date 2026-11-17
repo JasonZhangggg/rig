@@ -4,7 +4,7 @@ import { getStage } from "./components/Stage";
 import { MockPanel, Modal, Toast } from "./components/Shell";
 import { Shell } from "./components/Shells";
 import { Palette } from "./components/Palette";
-import { lime, sceneFor, studioAccent } from "./themes";
+import { sceneFor, sceneGlow } from "./themes";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
@@ -40,8 +40,8 @@ function Root() {
   }, [set]);
   useEffect(() => {
     const th = sceneFor(ui.style, ui.mode);
-    // In Friendly, Pulse and Blend the 3D glow follows the accent so the page reads as one color
-    const glow = ui.style === "studio" ? studioAccent : ui.style === "pulse" || ui.style === "blend" ? lime : null;
+    // In one-accent looks the 3D glow follows that accent so the page reads as one color
+    const glow = sceneGlow[ui.style] ?? null;
     scene.setPC(glow ? { ...pc, accent: glow } : pc, glow ? { ...th, highlight: glow } : th);
   }, [pc.id, pc.accent, ui.style, ui.mode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
