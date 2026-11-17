@@ -118,6 +118,14 @@ export const finishes: { id: Finish; name: string }[] = [
   { id: "line", name: "Drawing" },
 ];
 
+export type Hero = "score" | "statement" | "ask" | "band";
+export const heroes: { id: Hero; name: string }[] = [
+  { id: "score", name: "Score" },
+  { id: "statement", name: "Statement" },
+  { id: "ask", name: "Ask" },
+  { id: "band", name: "Greeting" },
+];
+
 export function sceneFor(style: StyleId, mode: Mode): SceneTheme {
   return style === "pulse" && mode === "light" ? pulseLightScene : sceneThemes[style];
 }

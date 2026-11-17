@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { pcs as pcSeed, chat as chatSeed, changes as changeSeed, type Change, type ChatMessage, type DiffRow, type PC, type Route } from "./data";
-import { finishes, styles, type Mode, type StyleId } from "./themes";
+import { finishes, heroes, styles, type Hero, type Mode, type StyleId } from "./themes";
 import type { Finish } from "./scene";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
@@ -13,6 +13,7 @@ export interface UI {
   style: StyleId;
   mode: Mode;
   finish: Finish;
+  hero: Hero;
   pcId: string;
   pcs: Record<string, PC>;
   exploded: boolean;
@@ -44,11 +45,13 @@ function initial(): UI {
   const style = storage.get("rig.style4") as StyleId | null;
   const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
-  const finish = storage.get("rig.finish") as Finish | null;
+  const finish = storage.get("rig.finish2") as Finish | null;
+  const hero = storage.get("rig.hero") as Hero | null;
   return {
     route: routeFromHash(),
     style: styles.some((s) => s.id === style) ? style! : "mix",
-    finish: finishes.some((f) => f.id === finish) ? finish! : "photo",
+    finish: finishes.some((f) => f.id === finish) ? finish! : "ink",
+    hero: heroes.some((h) => h.id === hero) ? hero! : "score",
     mode: mode === "light" ? "light" : "dark",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
@@ -85,7 +88,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
   useEffect(() => { storage.set("rig.style4", ui.style); }, [ui.style]);
-  useEffect(() => { storage.set("rig.finish", ui.finish); }, [ui.finish]);
+  useEffect(() => { storage.set("rig.finish2", ui.finish); }, [ui.finish]);
+  useEffect(() => { storage.set("rig.hero", ui.hero); }, [ui.hero]);
   useEffect(() => { storage.set("rig.mode", ui.mode); }, [ui.mode]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

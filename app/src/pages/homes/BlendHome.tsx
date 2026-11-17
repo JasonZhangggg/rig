@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { user } from "../../data";
 import { StageSlot } from "../../components/Stage";
 import { useApp } from "../../state";
-import { issueGo, partIcon, shortType } from "./shared";
+import { greeting, issueGo, partIcon, shortType } from "./shared";
+import { MixHero } from "./MixHero";
 import {
   Arrow, CapsuleChart, CapsuleTimeline, Check, DotMatrix, Legend, Stat,
   fanColumns, fanStats, tempLabels, useGrowOnce, weekSessions, weekTemps,
@@ -11,9 +12,10 @@ import {
 const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
 
 export function BlendHome() {
-  const { pc, set, go, toast } = useApp();
+  const { ui, pc, set, go, toast } = useApp();
+  const plain = ui.style === "mix";
   const issues = pc.issues ?? [];
-  const open = issues.filter((i) => i.severity !== "ok");
+  const open = issues.filter((i) => (plain ? i.severity === "warn" : i.severity !== "ok"));
   const top = issues.find((i) => i.severity === "warn") ?? issues[0];
   const parts = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp !== undefined).slice(0, 4);
   const fans = useMemo(() => fanColumns(14), []);
@@ -29,12 +31,12 @@ export function BlendHome() {
 
   return (
     <div className="page f-home bl-home">
-      <section className="f-band">
+      {plain && ui.hero !== "band" ? <MixHero /> : <section className="f-band">
         <div className="f-band-left">
           <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
             <button type="button" className="f-cta" onClick={() => issueGo(top, pc, set, go)}>
-              <span>{top.severity === "warn" ? "Fix what needs a look" : "See what's new"}</span>
+              <span>{top.severity !== "warn" ? "See what's new" : plain ? "Review" : "Fix what needs a look"}</span>
               {open.length > 0 && <em className="bl-n">{open.length}</em>}
               <i><Arrow /></i>
             </button>
@@ -44,11 +46,20 @@ export function BlendHome() {
           </button>
         </div>
         <div className="f-band-right">
-          <h1>Hey {user.name}, <span>need help?</span></h1>
-          <p>Just ask me anything about {pc.name}.</p>
+          {plain ? (
+            <>
+              <h1>{greeting()}, {user.name}</h1>
+              <p>{open.length === 0 ? `${pc.name} is running well.` : `${pc.name} is running well. ${open.length === 1 ? "One thing needs" : `${open.length} things need`} a look.`}</p>
+            </>
+          ) : (
+            <>
+              <h1>Hey {user.name}, <span>need help?</span></h1>
+              <p>Just ask me anything about {pc.name}.</p>
+            </>
+          )}
         </div>
         <button type="button" className="f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
-      </section>
+      </section>}
 
       <div className="f-grid bl-grid">
         <section className="f-card f-pc bl-pc">

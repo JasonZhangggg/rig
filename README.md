@@ -59,7 +59,7 @@ Each one has its own layout and navigation, not just its own colors.
 
 | Mockup | Home screen | Navigation |
 | --- | --- | --- |
-| **Mix** | Blend's greeting band, 3D PC tile, health ring, fan dots, temperature capsules and gaming timeline, set in Signature's tight sentence-case type on paper with graphite tiles. Lime means healthy, coral means needs a look, mist means expected. | The Panel sidebar in paper tones, a graphite pill for the current screen and your account at the bottom. |
+| **Mix** | A monochrome hero, then Blend's tiles: the 3D PC, health ring, fan dots, temperature capsules and gaming timeline on graphite. Color lives only in the tiles: lime means healthy, coral means needs a look, mist means expected. The hero has four options: Score (one dot-matrix health number on graphite), Statement (a big sentence under a hairline), Ask (a large ask bar with three starters) and Greeting (Blend's band, calmed). | The Panel sidebar in paper tones, all graphite and grey, with your account at the bottom. |
 | **Paper** | A hero card with a big sentence about your PC, the 3D PC on a soft dusk gradient, a dot-matrix peak temperature, capsule bars for each day and a list of things to look at. Coral marks only the one thing that needs a look. | A floating white sidebar with numbered links, an Ask Rig button and your account at the bottom. |
 | **Signature** | A greeting, health as lime dot-matrix digits on a graphite tile, the 3D PC, a capsule temperature chart and a gaming timeline. Lime means healthy, coral means needs a look. | A floating white sidebar with icons and your account at the bottom, plus an Ask Rig bar on top. |
 | **Pulse** | Dark cards with a health sparkline, a dot-matrix fan chart, the 3D PC, a capsule temperature chart and a gaming timeline in lime and orange. Has a light mode. | Pill buttons along the top and a rail of round buttons with your account at the bottom. |
@@ -70,7 +70,7 @@ Each one has its own layout and navigation, not just its own colors.
 
 Friendly uses a Watermelon accent on a neutral background, and the 3D glow follows it. Every screen is tuned for it: bolder page titles, warnings and notes in the accent family instead of orange and blue, a calmer History chart, a full-height sign-in with the app's own logo, a check mark on the current PC, and short press and open animations that switch off with reduced motion.
 
-**PC styles:** the 3D PC can be drawn four ways in any look. Real is lit like a product photo. Clay is one matte tone. Ink is flat color with drawn outlines. Drawing is a pen sketch on paper. The mockup panel switches between them.
+**PC styles:** the 3D PC can be drawn four ways in any look, and Ink is the default. Real is lit like a product photo. Clay is one matte tone. Ink is flat color with drawn outlines. Drawing is a pen sketch on paper. The mockup panel switches between them.
 
 The other screens (3D view, Ask, Changes and the rest) are shared and take on each mockup's colors and type inside its navigation.
 
