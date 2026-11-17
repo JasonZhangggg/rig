@@ -63,7 +63,7 @@
 .up-tile-note { font-size: 13.5px; }
 .up-part { color: var(--text); font-weight: 500; }
 
-.up-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gap); }
+.up-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--gap); }
 .up-card { display: flex; flex-direction: column; gap: 10px; padding: 20px; }
 .up-card-head .chip { margin-left: auto; }
 .up-card h3 { margin-top: 4px; font-size: 1.12rem; letter-spacing: -.02em; }
