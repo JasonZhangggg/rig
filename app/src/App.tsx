@@ -4,7 +4,7 @@ import { getStage } from "./components/Stage";
 import { MockPanel, Modal, Toast } from "./components/Shell";
 import { Shell } from "./components/Shells";
 import { Palette } from "./components/Palette";
-import { colorways, sceneThemes } from "./themes";
+import { sceneThemes, studioAccent } from "./themes";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
@@ -30,9 +30,8 @@ function Root() {
   // Theme and PC identity
   useEffect(() => {
     document.documentElement.dataset.style = ui.style;
-    document.documentElement.dataset.colors = ui.colors;
     document.documentElement.style.setProperty("--pc", pc.accent);
-  }, [ui.style, ui.colors, pc.accent]);
+  }, [ui.style, pc.accent]);
 
   // Keep the 3D scene in step with the app
   useEffect(() => {
@@ -40,10 +39,10 @@ function Root() {
   }, [set]);
   useEffect(() => {
     const th = sceneThemes[ui.style];
-    const cw = colorways.find((c) => c.id === ui.colors);
-    // In Friendly the 3D glow follows the chosen accent so the page reads as one color
-    scene.setPC(ui.style === "studio" && cw ? { ...pc, accent: cw.scene } : pc, ui.style === "studio" && cw ? { ...th, highlight: cw.scene } : th);
-  }, [pc.id, pc.accent, ui.style, ui.colors]); // eslint-disable-line react-hooks/exhaustive-deps
+    // In Friendly the 3D glow follows the accent so the page reads as one color
+    const studio = ui.style === "studio";
+    scene.setPC(studio ? { ...pc, accent: studioAccent } : pc, studio ? { ...th, highlight: studioAccent } : th);
+  }, [pc.id, pc.accent, ui.style]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);

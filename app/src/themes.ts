@@ -45,29 +45,6 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
   },
 };
 
-// Color options for Friendly. accent fills buttons, ink is the dark tile color.
-export type ColorId = "coral" | "tangerine" | "watermelon" | "orchid" | "periwinkle" | "teal" | "sage" | "forest" | "ocean" | "mono";
-// Accent colors for Friendly, all at the original coral's strength. Only the accent changes; the background stays neutral.
-export const colorways: { id: ColorId; name: string; accent: string; ink: string; scene: string }[] = [
-  { id: "coral", name: "Coral", accent: "#EE6A4D", ink: "#1C1A18", scene: "#EE6A4D" },
-  { id: "tangerine", name: "Tangerine", accent: "#F0843A", ink: "#1C1A18", scene: "#F0843A" },
-  { id: "watermelon", name: "Watermelon", accent: "#EA5A72", ink: "#1C1A18", scene: "#EA5A72" },
-  { id: "orchid", name: "Orchid", accent: "#A86ADB", ink: "#1C1A18", scene: "#A86ADB" },
-  { id: "periwinkle", name: "Periwinkle", accent: "#6A82EE", ink: "#1C1A18", scene: "#6A82EE" },
-  { id: "teal", name: "Teal", accent: "#22A493", ink: "#1C1A18", scene: "#22A493" },
-  { id: "sage", name: "Sage", accent: "#A9C7A4", ink: "#1C1A18", scene: "#8DB889" },
-  { id: "forest", name: "Forest", accent: "#2F8A5F", ink: "#1C1A18", scene: "#3FA474" },
-  { id: "ocean", name: "Ocean", accent: "#3B82E0", ink: "#1C1A18", scene: "#3B82E0" },
-  { id: "mono", name: "Mono", accent: "#1C1A18", ink: "#1C1A18", scene: "#9C978F" },
-];
-
-// Sidebar options for Friendly
-export type SideId = "panel" | "tree" | "card" | "dock";
-export const sidebars: { id: SideId; name: string }[] = [
-  { id: "panel", name: "Panel" },
-  { id: "tree", name: "Tree" },
-  { id: "card", name: "Card" },
-  { id: "dock", name: "Dock" },
-];
+export const studioAccent = "#EA5A72";
 
 export const accents = ["#E8692E", "#3C7BF0", "#2E9E6B", "#C2477A", "#8A63D2", "#C9A227", "#5B6573"];

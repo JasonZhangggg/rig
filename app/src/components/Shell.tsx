@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { user, type Route } from "../data";
 import { useApp } from "../state";
-import { colorways, sidebars, styles } from "../themes";
+import { styles } from "../themes";
 import { DiffTable, Icon } from "./common";
 
 export const navItems: [Route, string, string][] = [
@@ -111,20 +111,6 @@ export function MockPanel() {
           {styles.map((s) => <button key={s.id} type="button" aria-pressed={ui.style === s.id} onClick={() => set({ style: s.id })}>{s.name}</button>)}
         </div>
         <div className="mnote">{style.note}</div>
-        {ui.style === "studio" && (
-          <div className="mrow" role="group" aria-label="Sidebar">
-            {sidebars.map((b) => <button key={b.id} type="button" aria-pressed={ui.side === b.id} onClick={() => set({ side: b.id })}>{b.name}</button>)}
-          </div>
-        )}
-        {ui.style === "studio" && (
-          <div className="mrow mswatches" role="group" aria-label="Colors">
-            {colorways.map((c) => (
-              <button key={c.id} type="button" aria-pressed={ui.colors === c.id} title={c.name} onClick={() => set({ colors: c.id })}>
-                <i style={{ background: c.accent }} />{c.name}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="mrow">
           <button type="button" aria-pressed={ui.pcId === "atlas"} onClick={() => pickPC("atlas")}>Tower</button>
           <button type="button" aria-pressed={ui.pcId === "pebble"} onClick={() => pickPC("pebble")}>Laptop</button>
