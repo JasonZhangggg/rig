@@ -9,7 +9,22 @@ One Cloudflare Worker serves the website and, under `/api`, accounts, sync and c
 - A Claude API key from console.anthropic.com, for chat. Chat answers cost money per question; the server caps each account at `CHAT_DAILY_LIMIT` questions a day (40 by default).
 - Optional: a Google Cloud OAuth client, for "Continue with Google".
 
-## Steps
+## The quick way: Deploy in GitHub Actions
+
+1. In Neon, create a project and copy its connection string. Use the direct one, not the pooled one, since Hyperdrive does the pooling.
+2. In Cloudflare, note the account ID (on the dashboard's Workers page) and create an API token with the "Edit Cloudflare Workers" template, plus Hyperdrive edit permission.
+3. In GitHub, Settings, Secrets and variables, Actions, add these repository secrets:
+   - `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+   - `DATABASE_URL`, the Neon connection string
+   - `BETTER_AUTH_SECRET`, a long random string (`openssl rand -base64 32`)
+   - `ANTHROPIC_API_KEY`, for chat (without it, chat says it isn't set up)
+   - Optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+4. Actions, Deploy, Run workflow, with the address people will open, like `https://rig.<your-subdomain>.workers.dev`. It creates the tables, connects Hyperdrive, builds the website and deploys. Running it again updates everything.
+5. Add the repository variable `RIG_API_URL` = `<that address>/api`, so installers built by CI use this server.
+
+Nothing secret goes in the repo or the logs; the workflow passes secrets straight to Cloudflare.
+
+## By hand
 
 Run these from `apps/server`.
 
