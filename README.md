@@ -22,6 +22,8 @@ pnpm test           # all tests
 
 Building the Windows installer needs Windows with Rust, .NET 8 and Node. CI does it for you: Actions tab, CI, Run workflow, then download `rig-windows-installer`.
 
+Releases: `pnpm version:set 0.2.0`, merge, then push the tag `v0.2.0`, and GitHub publishes the installer as a release. See [docs/releasing.md](docs/releasing.md).
+
 ## Layout
 
 | Folder | What it is |

@@ -6,8 +6,8 @@ import { RigApp } from "@rig/ui";
 import { inTauri, tauriAutostart, tauriLink, tauriStore, tauriToken } from "./tauri";
 import { notifyAlerts, notifyRecording } from "./notify";
 
-// The Rig server. Set VITE_RIG_API for a release build.
-const api = (import.meta.env.VITE_RIG_API as string | undefined) ?? "http://localhost:8787/api";
+// The Rig server. An installer build fails without VITE_RIG_API (see vite.config.ts); an empty one counts as missing.
+const api = (import.meta.env.VITE_RIG_API as string | undefined) || "http://localhost:8787/api";
 
 async function pickLink(): Promise<HelperLink> {
   if (!inTauri) return new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts);
@@ -25,7 +25,7 @@ const root = createRoot(document.getElementById("root")!);
 pickLink().then((link) => {
   const cloud = inTauri ? new CloudClient({ base: api, token: tauriToken, openUrl: (u) => void openUrl(u) }) : null;
   const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording } : {});
-  root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart } : undefined} />);
+  root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api } : undefined} />);
   if (inTauri) client.start().then(() => notifyAlerts(client), () => {});
 }).catch((e: unknown) => {
   root.render(

@@ -58,7 +58,7 @@ When the chat can't tell what's wrong from the latest readings, it records. A re
 - **The model and the summary are in `packages/core/src/recordings.ts`.** A capture kind is one entry in the `captures` table and an event kind is one entry in `eventRules`; adding either is a table entry. `summarise` is pure: it finds sustained heat, a part pinned at full load, sudden drops and each Windows event, with the readings around it. The Logs screen and the chat both read that one summary, so the charts and Claude's answer agree.
 - **The desktop runs it** (`recorder.ts`). It saves as it goes, so a recording survives the app closing or the PC crashing, which is often the thing being recorded, and it reads the event log when time is up. The newest 20 stay on the PC.
 - **The chat has two tools**, `start_recording` and `read_recording`. On the desktop the recording starts at once. From the website the server stores the request and the desktop picks it up on its next upload, up to about five minutes later; the chat says so. When it finishes, the desktop uploads it, shows a Windows notification, and the chat offers "See what Rig found".
-- **The server keeps them per account and PC** (`0004_recordings.sql`): the 20 newest for 90 days, one running at a time, and a request nobody picked up in a day is closed.
+- **The server keeps them per account and PC** (`0003_recordings.sql`): the 20 newest for 90 days, one running at a time, and a request nobody picked up in a day is closed.
 - **The Logs screen** (`packages/ui/src/pages/Logs.tsx`) lists Windows events by day with a kind filter, the recordings, and one recording with its charts, what Rig found marked on them, and "Ask about this".
 
 ## Defaults chosen

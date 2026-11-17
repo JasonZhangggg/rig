@@ -3,6 +3,7 @@
 
 import type { ComponentType } from "react";
 import type { Ctx } from "../../state";
+import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
 import { AppSection } from "./AppSection";
 import { DataSection } from "./DataSection";
@@ -29,6 +30,7 @@ export const settingsSections: SettingsSectionDef[] = [
   { id: "units", title: "Units", intro: "How temperatures show on every screen.", keywords: "units temperature celsius fahrenheit degrees °c °f", Body: UnitsSection },
   { id: "notifications", title: "Notifications", intro: "Which problems Rig alerts you about on this device.", keywords: "notifications alerts alert notify warnings windows hot temperature fan stopped drive full disk space wearing recording finished logs", Body: NotificationsSection },
   { id: "app", title: "App", intro: "How the Rig app runs on this PC.", keywords: "app startup start with windows launch login autostart", show: ({ host }) => !!host.autostart, Body: AppSection },
+  { id: "about", title: "About", intro: "Which version of Rig this is.", keywords: "about version release build number update server", Body: AboutSection },
 ];
 
 let pending: string | null = null;
