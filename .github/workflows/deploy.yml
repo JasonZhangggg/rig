@@ -1,9 +1,11 @@
 # Puts the website and server online on Cloudflare, with the database on Neon.
-# Runs only when started by hand: Actions tab > Deploy > Run workflow.
+# Runs when the deploy branch is pushed, or by hand: Actions tab > Deploy > Run workflow.
 # The secrets it needs are listed in docs/deploy.md.
 name: Deploy
 
 on:
+  push:
+    branches: [deploy]
   workflow_dispatch:
     inputs:
       web_origin:
