@@ -211,8 +211,7 @@ export function Grid(p: GridProps) {
         p.announce(`${title} moved to place ${to + 1} of ${d.order.length}${d.size !== me.size ? `, now ${SIZE_LABEL[d.size]}` : ""}.`);
       }
     } else if (commit && d?.mode === "resize" && d.size !== me.size) {
-      p.onResize(s.id, d.size);
-      p.announce(`${title} is now ${SIZE_LABEL[d.size]}.`);
+      resized(me, d.size);
     }
   };
 
@@ -261,6 +260,17 @@ export function Grid(p: GridProps) {
 
   useEffect(() => () => { session.current = null; stop(); }, []);
 
+  /** Applies a new size, then lets the tile after it take the size that leaves no hole beside it. */
+  const resized = (me: Widget, size: SizeName) => {
+    const all = live.current.widgets;
+    const trial = all.map((w) => (w.id === me.id ? { ...w, size } : w));
+    const next = trial[trial.findIndex((w) => w.id === me.id) + 1];
+    const fit = next && live.current.cols > 1 ? fitSize(trial, next.id, live.current.cols) : undefined;
+    p.onResize(me.id, size);
+    if (next && fit && fit !== next.size) p.onResize(next.id, fit);
+    p.announce(`${titleOf(me)} is now ${SIZE_LABEL[size]}.${next && fit && fit !== next.size ? ` ${titleOf(next)} is now ${SIZE_LABEL[fit]} to fill the row.` : ""}`);
+  };
+
   // ----- Keyboard -----
   const moveBy = (w: Widget, to: number) => {
     const n = widgets.length;
@@ -297,8 +307,7 @@ export function Grid(p: GridProps) {
       if (size === w.size) { p.announce(`${titleOf(w)} can't get any ${arrows[e.key]}.`); return; }
       snapshot();
       focusAfter.current = w.id;
-      p.onResize(w.id, size);
-      p.announce(`${titleOf(w)} is now ${SIZE_LABEL[size]}.`);
+      resized(w, size);
     } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
       moveBy(w, i + (e.key === "ArrowLeft" ? -1 : 1));

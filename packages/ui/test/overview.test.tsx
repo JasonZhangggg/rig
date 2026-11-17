@@ -31,12 +31,10 @@ describe("Home charts", () => {
 
   it("leads each chart of the week with its headline number", async () => {
     render(<RigApp client={new DemoClient()} />);
-    const week = within((await screen.findByRole("heading", { name: "This week" })).closest("section")!);
-    const hottest = (await week.findByText("Hottest")).parentElement!;
-    expect(hottest.textContent).toMatch(/^\d+°CHottest$/);
-    expect((await week.findByText("In all")).parentElement!.textContent).toMatch(/^[\d.,]+ hIn all$/);
-    expect(week.getByRole("heading", { name: "Temperatures" })).toBeTruthy();
-    expect(week.getByRole("heading", { name: "Evenings" })).toBeTruthy();
+    const temps = within((await screen.findByRole("heading", { name: "Temperatures" })).closest("section")!);
+    expect((await temps.findByText("Hottest")).parentElement!.textContent).toMatch(/^\d+°CHottest$/);
+    const evenings = within(screen.getByRole("heading", { name: "Evenings" }).closest("section")!);
+    expect((await evenings.findByText("In all")).parentElement!.textContent).toMatch(/^[\d.,]+ hIn all$/);
   });
 
   it("leaves days without readings empty rather than at zero", () => {
@@ -55,7 +53,7 @@ describe("Home charts", () => {
       { t: now - 120_000, cpu: 44, gpu: 40, busy: false },
       { t: now - 60_000, cpu: 61, gpu: 72, busy: true },
     ];
-    render(<TempsCard temps={weekTemps(points, insightContext({ kind: "tower" }, now))} name="Atlas" />);
+    render(<TempsCard temps={weekTemps(points, insightContext({ kind: "tower" }, now))} name="Atlas" style="rows" />);
     const chart = screen.getByRole("img");
     expect(chart.textContent).toMatch(/IdleGamingPeak/);
     expect(chart.lastElementChild!.textContent).toMatch(/447272$/);
@@ -63,8 +61,18 @@ describe("Home charts", () => {
 
   it("names the game on each evening it was played", async () => {
     render(<RigApp client={new DemoClient()} />);
-    const week = within((await screen.findByRole("heading", { name: "This week" })).closest("section")!);
-    expect((await week.findAllByText(/Baldur's Gate 3/)).length).toBeGreaterThan(0);
+    const evenings = within((await screen.findByRole("heading", { name: "Evenings" })).closest("section")!);
+    expect((await evenings.findAllByText(/Baldur's Gate 3/)).length).toBeGreaterThan(0);
+  });
+
+  it("brings back the original styles by default: capsules, a dot grid and pills with initials", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const temps = (await screen.findByRole("heading", { name: "Temperatures" })).closest("section")!;
+    await waitFor(() => expect(temps.querySelectorAll(".pl-cap").length).toBeGreaterThan(0));
+    const fans = screen.getByRole("heading", { name: "Fans" }).closest("section")!;
+    await waitFor(() => expect(fans.querySelectorAll("circle.pl-dot").length).toBeGreaterThan(0));
+    const evenings = screen.getByRole("heading", { name: "Evenings" }).closest("section")!;
+    await waitFor(() => expect(evenings.querySelector(".pl-tl-pill i")?.textContent).toMatch(/^[A-Z]{1,2}$/));
   });
 
   it("hides the fan speeds on a PC that reports none", () => {
@@ -117,10 +125,10 @@ describe("Home hero", () => {
     expect(last("setExploded")).toBe(false);
   });
 
-  it("asks Rig a suggested question from Things to look at", async () => {
+  it("asks Rig a suggested question from the Ask Rig widget", async () => {
     render(<RigApp client={new DemoClient()} />);
-    const todo = within((await screen.findByText("Things to look at")).closest("section")!);
-    fireEvent.click(todo.getByRole("button", { name: "What should I upgrade first?" }));
+    const asks = within(await screen.findByRole("group", { name: "Ask Rig" }));
+    fireEvent.click(asks.getByRole("button", { name: "What should I upgrade first?" }));
     await waitFor(() => expect(screen.queryByText("Things to look at")).toBeNull());
     expect(screen.getAllByText("What should I upgrade first?").length).toBeGreaterThan(0);
   });

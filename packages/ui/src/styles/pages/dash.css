@@ -18,7 +18,8 @@
 .dw-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: clip; overflow-clip-margin: 10px; }
 .dw-body > * { flex: 1; min-height: 0; }
 .dash[data-cols="1"] .dw-body { overflow: visible; }
-.dash[data-cols="1"] .dw[data-kind="pc"] { height: min(640px, 130vw); }
+.dash[data-cols="1"] .dw[data-kind="pc"] { height: clamp(580px, 160vw, 720px); }
+.dash[data-cols="1"] .f-pc .stage-slot { inset: 0 0 -20px; }
 .dash[data-cols="1"] .dw[data-kind="evenings"] .pl-tl-row { flex: none; height: 50px; }
 .dash[data-cols="1"] .dw[data-kind="temps"] .pl-caps { min-height: 300px; }
 .dash[data-cols="1"] .dw[data-kind="fans"] .pl-dots { flex: none; height: auto; }
@@ -81,6 +82,12 @@
 .dash-bar p { color: var(--text-2); font-size: 14px; font-weight: 500; }
 .dash-bar p b { color: var(--text); font-weight: 600; }
 .dash-bar-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+@container home (max-width: 640px) {
+  .dash-bar { border-radius: calc(var(--r) - 6px); padding: 14px; }
+  .dash-bar p { padding: 0 6px; }
+  .dash-bar p span { display: none; }
+  .dash-bar-tools .dbtn { flex: 1 1 auto; height: 38px; padding: 0 12px; }
+}
 
 .dbtn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-pill);

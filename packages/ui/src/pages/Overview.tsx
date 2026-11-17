@@ -130,7 +130,7 @@ export function Overview() {
 
       {editing && (
         <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
-          <p><b>Customizing Home.</b> Drag a tile to move it, drag its corner to resize it.</p>
+          <p><b>Customizing Home.</b><span> Drag a tile to move it, drag its corner to resize it.</span></p>
           <div className="dash-bar-tools">
             <button type="button" className="dbtn" onClick={(e) => setPanel({ type: "add", at: e.currentTarget })}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
             <button type="button" className="dbtn" onClick={(e) => setPanel({ type: "dash", at: e.currentTarget })}>Dashboard</button>
