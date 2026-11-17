@@ -11,7 +11,7 @@ const kindText: Record<SessionKind, string> = { played: "", hot: ", ran hot", ba
 const sixPm = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new Date(2000, 0, 1, 18));
 
 /** A game's initials ("BG" for Baldur's Gate 3), so the badge stays two letters at most. */
-const initials = (game: string) => game.split(/[\s-]+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+export const initials = (game: string) => game.split(/[\s-]+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
 const Task = () => <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
 
