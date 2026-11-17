@@ -91,6 +91,7 @@
 .page-head .sub { color: var(--text-2); max-width: 62ch; margin-top: 8px; }
 
 .splash { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 14px; background: var(--bg); color: var(--text-2); font-size: 14px; text-align: center; padding: 24px; }
-.splash .fp-logo { animation: rig-pulse 1.6s ease-in-out infinite; }
+.splash p { max-width: 44ch; }
+.splash[role="status"] .fp-logo { animation: rig-pulse 1.6s ease-in-out infinite; }
 @keyframes rig-pulse { 50% { opacity: .55; } }
-@media (prefers-reduced-motion: reduce) { .splash .fp-logo { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .splash[role="status"] .fp-logo { animation: none; } }

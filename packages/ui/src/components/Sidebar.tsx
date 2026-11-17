@@ -79,7 +79,7 @@ const Caret = () => <svg className="fp-me-caret" viewBox="0 0 20 20" aria-hidden
 
 /** Account pinned to the bottom of the sidebar. */
 function AccountBlock() {
-  const { data, client, ui, go } = useApp();
+  const { data, client, ui, go, toast } = useApp();
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
   const a = data.account;
@@ -103,7 +103,7 @@ function AccountBlock() {
           <div className="sh-menu-head" role="presentation"><b>{a.name}</b><span>{a.email}</span></div>
           <hr />
           <a href="#web" role="menuitem" onClick={() => setOpen(false)}>All your PCs</a>
-          {client.kind !== "demo" && <button type="button" role="menuitem" onClick={() => { setOpen(false); client.signOut().then(() => { go("signin"); location.reload(); }); }}>Sign out</button>}
+          {client.kind !== "demo" && <button type="button" role="menuitem" onClick={() => { setOpen(false); client.signOut().then(() => { go("signin"); location.reload(); }, () => toast("Couldn't sign out just now. Check your internet connection and try again.")); }}>Sign out</button>}
         </div>
       )}
     </div>

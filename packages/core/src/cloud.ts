@@ -5,7 +5,7 @@
 
 import type { ActionCall } from "./actions";
 import {
-  ApiError, desktopClientId, errorText, paths, readChatStream,
+  ApiError, desktopClientId, errorText, paths, readChatStream, unreachableText,
   type ChatRequest, type MachineSync, type SyncReply,
 } from "./api";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
@@ -50,11 +50,13 @@ export class CloudClient implements RigClient {
   private async send(path: string, init: RequestInit = {}): Promise<Response> {
     // `credentials` is a browser option; written this way so the server can share this file's types.
     const credentials = { credentials: this.opts.token ? "omit" : "include" } as RequestInit;
-    return fetch(this.opts.base + path, {
-      ...credentials,
-      ...init,
-      headers: { ...(await this.headers(init.body != null)), ...init.headers },
-    });
+    const headers = { ...(await this.headers(init.body != null)), ...init.headers };
+    try {
+      return await fetch(this.opts.base + path, { ...credentials, ...init, headers });
+    } catch (e) {
+      if (init.signal?.aborted) throw e;
+      throw new ApiError(0, unreachableText);
+    }
   }
 
   private async req<T>(path: string, init: RequestInit = {}): Promise<T> {
