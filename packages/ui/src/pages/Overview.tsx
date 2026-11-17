@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
-import { useApp, useHistory } from "../state";
+import { useApp, useHistory, useTemp, useTempText } from "../state";
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
 import { WeekCard } from "./overview/WeekCard";
@@ -37,6 +37,8 @@ export function Overview() {
   const now = new Date();
   const ringC = 2 * Math.PI * 52;
   const week = useWeekInsights(pc, useHistory("7d"));
+  const temp = useTemp();
+  const inUnit = useTempText();
 
   return (
     <div className="page f-home">
@@ -69,7 +71,7 @@ export function Overview() {
           <div className="f-pc-chips">
             {chips.map(([id, p]) => (
               <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
-                <i>{partIcon[id]}</i>{shortType(p.type)}<b>{p.temp}°</b>
+                <i>{partIcon[id]}</i>{shortType(p.type)}<b>{temp(p.temp, { mark: "degree" })}</b>
               </button>
             ))}
           </div>
@@ -96,7 +98,7 @@ export function Overview() {
           {issues.map((i) => (
             <button key={i.id} type="button" className={`f-todo-row ${i.severity}`} onClick={() => issueGo(i, pc, ctx)}>
               <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
-              <span><b>{i.title}</b><small>{i.body}</small></span>
+              <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
               <i className="f-todo-go"><Arrow /></i>
             </button>
           ))}

@@ -1,11 +1,12 @@
 import type { HistoryPoint } from "@rig/core";
 import { LineChart } from "../chart";
-import { useApp, useHistory } from "../state";
+import { useApp, useHistory, useTemp } from "../state";
 
 const avg = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
 
 export function History() {
   const { ui, pc, set } = useApp();
+  const temp = useTemp();
   const pts = useHistory(ui.range);
   const laptop = pc.kind === "laptop";
   const main: "gpu" | "cpu" = pc.parts?.gpu ? "gpu" : "cpu";
@@ -31,24 +32,24 @@ export function History() {
           {pc.parts?.gpu && <span><i className="lg-gpu" />Graphics card</span>}
           <span><i className="lg-limit" />Safe limit</span>
         </div>
-        {pts == null ? <p className="muted">Loading…</p> : <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]} limit={{ v: limit, label: `${limit}°C limit` }} bands />}
+        {pts == null ? <p className="muted">Loading…</p> : <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]} limit={{ v: limit, label: `${temp(limit)} limit` }} bands />}
       </section>
       {pts && pts.length > 1 && (
         <section className="trend">
           <div className="card card-pad">
             <div className="label">{partName} when busy</div>
-            <p className="num big-figure" style={trend != null && trend >= 3 ? { color: "var(--warn)" } : undefined}>{trend == null ? "–" : `${trend >= 0 ? "+" : ""}${trend.toFixed(0)}°C`}</p>
+            <p className="num big-figure" style={trend != null && trend >= 3 ? { color: "var(--warn)" } : undefined}>{trend == null ? "–" : temp(trend, { delta: true, sign: true, mark: "degree" })}</p>
             <p className="muted">{trend == null ? "Needs a few busy sessions to compare." : trend >= 3 ? "Warmer than earlier in this range. Dust is the usual cause." : "Steady across this range."}</p>
           </div>
           <div className="card card-pad">
             <div className="label">Processor at rest</div>
-            <p className="num big-figure">{idleCpu.length ? `${avg(idleCpu)!.toFixed(0)}°C` : "–"}</p>
+            <p className="num big-figure">{temp(avg(idleCpu))}</p>
             <p className="muted">Average when nothing heavy is running.</p>
           </div>
           <div className="card card-pad">
             <div className="label">Hottest moment</div>
-            <p className="num big-figure">{peak ? `${Math.round(peak[main]!)}°C` : "–"}</p>
-            <p className="muted">{peak ? new Date(peak.t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : ""}{peak && peak[main]! < limit ? `, ${Math.round(limit - peak[main]!)}° under the limit.` : "."}</p>
+            <p className="num big-figure">{temp(peak?.[main])}</p>
+            <p className="muted">{peak ? new Date(peak.t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : ""}{peak && peak[main]! < limit ? `, ${temp(limit - peak[main]!, { delta: true, mark: "degree" })} under the limit.` : "."}</p>
           </div>
         </section>
       )}

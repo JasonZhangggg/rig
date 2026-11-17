@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
-import { useApp } from "../state";
+import { useApp, useTempText } from "../state";
 
 export function Chat() {
   const { data, pc, ask, client } = useApp();
   const [q, setQ] = useState("");
+  const inUnit = useTempText();
   const starters = [
-    ...(pc.issues ?? []).filter((i) => i.ask).slice(0, 2).map((i) => i.ask!),
+    ...(pc.issues ?? []).filter((i) => i.ask).slice(0, 2).map((i) => inUnit(i.ask!)),
     `Why is ${pc.name} loud?`,
     "Why is startup slow?",
     "Can my screen look smoother?",

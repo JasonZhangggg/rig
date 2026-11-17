@@ -83,27 +83,21 @@ function AccountBlock() {
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
   const a = data.account;
-  if (!a) {
-    return (
-      <div className="fp-foot">
-        <a className="fp-me" href="#signin" title={ui.sideMini ? "Sign in" : undefined}><span aria-hidden="true">?</span><b>Not signed in</b><small>Sign in</small></a>
-      </div>
-    );
-  }
   return (
     <div className="fp-foot" ref={box}>
-      <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={`Account, ${a.name}`} title={ui.sideMini ? a.name : undefined}>
-        <span aria-hidden="true">{a.name[0]?.toUpperCase()}</span>
-        <b>{a.name}</b>
-        <small>{client.kind === "demo" ? "Demo" : "Synced"}</small>
+      <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={a ? `Account, ${a.name}` : "Account, not signed in"} title={ui.sideMini ? a?.name ?? "Not signed in" : undefined}>
+        <span aria-hidden="true">{a ? a.name[0]?.toUpperCase() : "?"}</span>
+        <b>{a ? a.name : "Not signed in"}</b>
+        <small>{!a ? "Sign in" : client.kind === "demo" ? "Demo" : "Synced"}</small>
         <Caret />
       </button>
       {open && (
         <div className="sh-menu up" role="menu">
-          <div className="sh-menu-head" role="presentation"><b>{a.name}</b><span>{a.email}</span></div>
-          <hr />
-          <a href="#web" role="menuitem" onClick={() => setOpen(false)}>All your PCs</a>
-          {client.kind !== "demo" && <button type="button" role="menuitem" onClick={() => { setOpen(false); client.signOut().then(() => { go("signin"); location.reload(); }); }}>Sign out</button>}
+          {a && <><div className="sh-menu-head" role="presentation"><b>{a.name}</b><span>{a.email}</span></div><hr /></>}
+          {!a && <a href="#signin" role="menuitem" onClick={() => setOpen(false)}>Sign in</a>}
+          {a && <a href="#web" role="menuitem" onClick={() => setOpen(false)}>All your PCs</a>}
+          <a href="#settings" role="menuitem" onClick={() => setOpen(false)}>Settings</a>
+          {a && client.kind !== "demo" && <button type="button" role="menuitem" onClick={() => { setOpen(false); client.signOut().then(() => { go("signin"); location.reload(); }); }}>Sign out</button>}
         </div>
       )}
     </div>

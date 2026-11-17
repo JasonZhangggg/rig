@@ -1,7 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RigClient, type Route } from "@rig/core";
+import { formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RigClient, type Route } from "@rig/core";
 
-export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
+export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin", "settings"];
+
+/** What the app around the screens can do beyond the client. The desktop app passes these; the website passes none. */
+export interface AppHost {
+  /** Start Rig when the person signs in to Windows. */
+  autostart?: { get(): Promise<boolean>; set(on: boolean): Promise<void> };
+}
 
 /** The review sheet shown before any change is made. */
 export interface Review {
@@ -33,6 +39,8 @@ export interface UI {
   toast: ToastState | null;
   palette: boolean;
   sideMini: boolean;
+  /** Temperatures on screen, saved on this device. */
+  tempUnit: TempUnit;
 }
 
 export interface Data {
@@ -58,6 +66,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 export interface Ctx {
   client: RigClient;
+  host: AppHost;
   ui: UI;
   data: Data;
   /** The PC on screen. Pages only render once it has loaded. */
@@ -77,6 +86,21 @@ export interface Ctx {
 const AppCtx = createContext<Ctx | null>(null);
 export const useApp = () => useContext(AppCtx)!;
 
+/** The viewer's temperature unit. Outside the app (as in a test of one card) it's °C. */
+export const useTempUnit = (): TempUnit => useContext(AppCtx)?.ui.tempUnit ?? "c";
+
+/** Formats a Celsius temperature in the viewer's unit. */
+export function useTemp() {
+  const unit = useTempUnit();
+  return useCallback((celsius: number | null | undefined, opts?: TempFormat) => formatTemp(celsius, unit, opts), [unit]);
+}
+
+/** Rewrites the °C figures in a sentence from the PC, like a finding's title, into the viewer's unit. */
+export function useTempText() {
+  const unit = useTempUnit();
+  return useCallback((text: string) => tempsInText(text, unit), [unit]);
+}
+
 /** The on-screen PC's recorded history over a range. Null while it loads, empty when there is none or it couldn't be read. */
 export function useHistory(range: Range): HistoryPoint[] | null {
   const { client, pc } = useApp();
@@ -90,12 +114,15 @@ export function useHistory(range: Range): HistoryPoint[] | null {
   return points;
 }
 
-export function AppProvider({ client, children, fallback }: { client: RigClient; children: ReactNode; fallback: (state: "loading" | "empty") => ReactNode }) {
+const noHost: AppHost = {};
+
+export function AppProvider({ client, host = noHost, children, fallback }: { client: RigClient; host?: AppHost; children: ReactNode; fallback: (state: "loading" | "empty") => ReactNode }) {
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1",
+    tempUnit: ((u) => (isTempUnit(u) ? u : "c"))(storage.get("rig.tempUnit")),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false });
   const [loaded, setLoaded] = useState(false);
@@ -133,6 +160,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
   useEffect(() => { storage.set("rig.sideMini", ui.sideMini ? "1" : "0"); }, [ui.sideMini]);
+  useEffect(() => { storage.set("rig.tempUnit", ui.tempUnit); }, [ui.tempUnit]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]") !== null;
@@ -160,7 +188,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
       setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...patch } } : m)) }));
 
     const ctx: Ctx = {
-      client, ui, data, pc, set, toast,
+      client, host, ui, data, pc, set, toast,
       go: (r) => { location.hash = r; },
       pickPC: (id) => set({ pcId: id, selected: null }),
 
@@ -226,7 +254,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
       },
     };
     return ctx;
-  }, [client, ui, data, pcId, set, toast]);
+  }, [client, host, ui, data, pcId, set, toast]);
 
   if (!value) return <>{fallback(loaded && !data.pcs.some((p) => p.parts) ? "empty" : "loading")}</>;
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
