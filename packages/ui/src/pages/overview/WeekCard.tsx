@@ -56,12 +56,12 @@ export function WeekCard({ week, recorded, name }: { week: WeekEvenings | null; 
   const grow = useGrowOnce("home-week");
   const any = !!week?.days.some((d) => d.sessions.length);
   return (
-    <section className="f-card bl-week">
-      <CardHead title="This week" note={`Hours after ${sixPm}`} />
+    <section className="f-pane bl-week">
+      <CardHead title="Evenings" note={`Hours after ${sixPm}`} figure={any && week ? { value: `${hours(week.hours)} h`, label: "In all" } : undefined} />
       {week && (any ? (
         <>
           <Timeline week={week} grow={grow} />
-          <Legend items={[["a", "Played"], ["b", "Ran hot"], ["c", "Background task"]]} total={["Total", `${hours(week.hours)} h`]} />
+          <Legend items={[["a", "Played"], ["b", "Ran hot"], ["c", "Background task"]]} />
         </>
       ) : (
         <EmptyNote>{recorded

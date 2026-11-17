@@ -59,7 +59,7 @@ describe("Settings", () => {
     await waitFor(() => expect(screen.getByRole("main").textContent).toMatch(/°F limit/));
     expect(screen.getByRole("main").textContent).not.toMatch(/°C/);
     await open("overview");
-    await screen.findByText(/This week, °F/);
+    await screen.findByText(/Each day, °F/);
 
     unmount();
     render(<RigApp client={new DemoClient()} />);

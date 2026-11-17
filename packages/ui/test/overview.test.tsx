@@ -24,7 +24,19 @@ describe("Home charts", () => {
     expect(await screen.findAllByText(/Rig is still learning this week/)).toHaveLength(2);
     expect(screen.getByText(/still learning how fast the fans run/)).toBeTruthy();
     expect(screen.queryByRole("img", { name: /°C/ })).toBeNull();
+    expect(screen.queryByText("Hottest")).toBeNull();
+    expect(screen.queryByText("In all")).toBeNull();
     expect(document.body.textContent).not.toMatch(/NaN/);
+  });
+
+  it("leads each chart of the week with its headline number", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const week = within((await screen.findByRole("heading", { name: "This week" })).closest("section")!);
+    const hottest = (await week.findByText("Hottest")).parentElement!;
+    expect(hottest.textContent).toMatch(/^\d+°CHottest$/);
+    expect((await week.findByText("In all")).parentElement!.textContent).toMatch(/^[\d.,]+ hIn all$/);
+    expect(week.getByRole("heading", { name: "Temperatures" })).toBeTruthy();
+    expect(week.getByRole("heading", { name: "Evenings" })).toBeTruthy();
   });
 
   it("leaves days without readings empty rather than at zero", () => {

@@ -58,12 +58,12 @@ export function TempsCard({ temps, name }: { temps: WeekTemps | null; name: stri
   const unit = useTempUnit();
   const l = labels[temps?.subject ?? "gpu"];
   return (
-    <section className="f-card bl-temps tone-dark">
-      <CardHead title="Temperatures" note={`This week, ${tempMark(unit)}`} />
+    <section className="f-pane bl-temps">
+      <CardHead title="Temperatures" note={`Each day, ${tempMark(unit)}`} figure={temps?.peak != null ? { value: temp(temps.peak), label: "Hottest", tone: "look" } : undefined} />
       {temps && (temps.days.some(hasReadings) ? (
         <>
           <CapsuleChart temps={temps} grow={grow} />
-          <Legend items={[["c", l.idle], ["a", l.typical], ["b", l.peak]]} total={temps.peak != null ? ["Peak", temp(temps.peak)] : undefined} />
+          <Legend items={[["c", l.idle], ["a", l.typical], ["b", l.peak]]} />
         </>
       ) : (
         <EmptyNote>Rig is still learning this week. Each day's temperatures show up here once {name} has run for a while.</EmptyNote>

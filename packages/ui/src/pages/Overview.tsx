@@ -64,8 +64,12 @@ export function Overview() {
 
   return (
     <div className="page f-home">
-      <section className="f-band">
-        <div className="f-band-left">
+      <header className="f-head">
+        <div className="f-head-text">
+          <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
+          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
+        </div>
+        <div className="f-head-tools">
           <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
             <button type="button" className="f-cta" onClick={() => goTo(top)}>
@@ -75,16 +79,12 @@ export function Overview() {
             </button>
           )}
           <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={checkup}><Pulse /></button>
+          <button type="button" className="f-round f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
         </div>
-        <div className="f-band-right">
-          <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
-          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
-        </div>
-        <button type="button" className="f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
-      </section>
+      </header>
 
       <div className="f-top">
-        <section className="f-card f-pc" aria-label={`${pc.name} in 3D`}>
+        <section className="f-pc" aria-label={`${pc.name} in 3D`}>
           <StageSlot id="hero-stage" zoom={false} spin />
           <div className="f-pc-top">
             <div><div className="f-kicker">{pc.nickname}</div><div className="f-pc-name">{pc.name}</div></div>
@@ -111,7 +111,7 @@ export function Overview() {
         </section>
 
         <div className="f-side">
-          <section className="f-card f-health tone-dark">
+          <section className="f-health tone-dark">
             <div className="f-ring">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle cx="60" cy="60" r="52" className="tr" />
@@ -120,13 +120,13 @@ export function Overview() {
               <div><b>{pc.health}</b><span>of 100</span></div>
             </div>
             <div className="f-health-text">
-              <div className="f-card-head"><span>Health</span><a className="f-mini" href="#history" aria-label="Temperature history"><Arrow /></a></div>
+              <div className="f-health-head"><h2>Health</h2><a className="f-mini" href="#history" aria-label="Temperature history"><Arrow /></a></div>
               <p>{summary}</p>
             </div>
           </section>
 
-          <section className="f-card f-todo">
-            <div className="f-card-head"><span>Things to look at</span>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
+          <section className="f-todo">
+            <div className="f-todo-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
             {issues.length > 0 ? (
               <ul className="f-todo-list">
                 {issues.map((i) => (
@@ -156,11 +156,19 @@ export function Overview() {
         </div>
       </div>
 
-      <div className="f-grid">
-        <TempsCard temps={week?.temps ?? null} name={pc.name} />
-        <FansCard fans={pc.fans} trend={week?.fans ?? null} />
-        <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
-      </div>
+      <section className="f-week" aria-labelledby="f-week-title">
+        <div className="f-week-head">
+          <h2 id="f-week-title">This week</h2>
+          <p>The last seven days on {pc.name}</p>
+        </div>
+        <div className="f-trends">
+          <div className="f-vitals tone-dark">
+            <TempsCard temps={week?.temps ?? null} name={pc.name} />
+            <FansCard fans={pc.fans} trend={week?.fans ?? null} />
+          </div>
+          <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
+        </div>
+      </section>
     </div>
   );
 }
