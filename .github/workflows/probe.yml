@@ -1,0 +1,21 @@
+name: Probe sign-in
+on:
+  push:
+    branches: [probe/signin]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          B=https://rig.jasonxyz.workers.dev/api
+          for spec in "GET /config" "OPTIONS /auth/device/code" "POST /auth/device/code" "GET /auth/get-session" "POST /auth/sign-in/email"; do
+            m=${spec%% *}; p=${spec#* }
+            echo "===== $m $p"
+            case $m in
+              POST) body='{"client_id":"rig-desktop"}'; [ "$p" = "/auth/sign-in/email" ] && body='{"email":"nobody@example.com","password":"wrongpassword1"}'
+                    curl -sS -i -X POST -H "Origin: http://tauri.localhost" -H "content-type: application/json" -d "$body" "$B$p" | head -c 1500;;
+              OPTIONS) curl -sS -i -X OPTIONS -H "Origin: http://tauri.localhost" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" "$B$p" | head -c 800;;
+              *) curl -sS -i -H "Origin: http://tauri.localhost" "$B$p" | head -c 800;;
+            esac
+            echo
+          done
