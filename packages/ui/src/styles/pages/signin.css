@@ -1,0 +1,22 @@
+.signin { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; }
+.signin-art { position: relative; display: flex; border-right: 1px solid var(--line); align-items: flex-end; padding: 40px; overflow: hidden; }
+.signin-art blockquote { position: relative; z-index: 1; max-width: 34ch; margin: 0; color: var(--text); font-size: 1.15em; }
+.signin-form { display: grid; place-items: center; padding: 40px max(24px, env(safe-area-inset-right, 0px)) 40px max(24px, env(safe-area-inset-left, 0px)); }
+.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
+.signin-box h1 { font-size: 2.5rem; line-height: 1; }
+.signin-form .btn { width: 100%; height: 42px; }
+.signin-code { padding: 14px; border-radius: var(--r-sm); background: var(--surface-2); font-size: 28px; letter-spacing: .18em; text-align: center; user-select: all; }
+
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font: 600 1.35rem var(--font); letter-spacing: -.03em; }
+.brand-mark { position: relative; width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 13px; background: var(--graphite); }
+.brand-mark::before { content: "R"; color: #FFFFFF; font: 700 20px var(--font); }
+.brand-mark::after { content: ""; position: absolute; right: 9px; bottom: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+
+.or { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 12px; }
+.or::before,
+.or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+@media (max-width: 860px) {
+  .signin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .signin-art { min-height: 260px; border-right: 0; border-bottom: 1px solid var(--line); }
+}

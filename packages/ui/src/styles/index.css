@@ -1,6 +1,13 @@
 /* Fonts ship with the app, so the desktop app works offline. */
-@import "@fontsource-variable/manrope";
-@import "@fontsource/geist-mono/400.css";
-@import "@fontsource/geist-mono/500.css";
+@import "@fontsource-variable/inter-tight";
+@import "./tokens.css";
 @import "./base.css";
-@import "./friendly.css";
+@import "./components.css";
+@import "./shell.css";
+@import "./pages/home.css";
+@import "./pages/pc.css";
+@import "./pages/chat.css";
+@import "./pages/lists.css";
+@import "./pages/history.css";
+@import "./pages/web.css";
+@import "./pages/signin.css";

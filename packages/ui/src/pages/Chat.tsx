@@ -83,7 +83,7 @@ function ProposalCard({ p }: { p: Proposal }) {
         {p.status === "applied" ? <a className="btn sm" href="#changes">View in Changes</a> : p.status === "declined" ? null : (
           <>
             <button className="btn sm" type="button" onClick={() => declineProposal(p.id)}>Not now</button>
-            <button className="btn primary sm" type="button" onClick={() => review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id })}>Review</button>
+            <button className="btn primary sm" type="button" onClick={() => review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id })}>Review and apply</button>
           </>
         )}
       </div>

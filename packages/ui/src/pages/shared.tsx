@@ -23,6 +23,22 @@ export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | 
   ctx.go(i.go);
 }
 
+/** How often Rig suggests cleaning the dust out, in days. */
+export const CLEAN_EVERY = 90;
+
+export const daysSince = (iso?: string) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 864e5)) : null);
+
+/** A reminder in Things to look at once the last dust clean is overdue. */
+export function dustIssue(pc: PC): Issue | null {
+  const days = daysSince(pc.cleanedAt);
+  if (days == null || days < CLEAN_EVERY || !pc.parts?.fans) return null;
+  return {
+    id: "dust", severity: "info", part: "fans", go: "pc", action: "Open Cooling",
+    title: "Time to clean the dust out",
+    body: `Last cleaned ${days} days ago. Dust makes fans work harder and parts run warmer.`,
+  };
+}
+
 export function greeting() {
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";

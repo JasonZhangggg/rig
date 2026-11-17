@@ -25,8 +25,6 @@ export interface RigAppProps {
 
 /** The whole Rig app. The desktop app and the website mount this with their own client. */
 export function RigApp({ client, requireAccount }: RigAppProps) {
-  document.documentElement.dataset.style = "studio";
-  document.documentElement.dataset.colors = "watermelon";
   const [account, setAccount] = useState<Account | null | undefined>(requireAccount ? undefined : null);
   const [signin, setSignin] = useState(location.hash === "#signin");
   // The desktop app opens /app/?user_code=… so the person can approve its sign-in here.
@@ -67,7 +65,6 @@ function Root() {
   const { ui, pc, set } = useApp();
   const { scene } = getStage();
 
-  useEffect(() => { document.documentElement.style.setProperty("--pc", pc.accent); }, [pc.accent]);
   useEffect(() => { getStage().onSelect = (id) => set({ selected: id, tab: "live" }); }, [set]);
 
   // Rebuild the 3D model only when its shape changes; otherwise just feed it new readings.

@@ -1,0 +1,56 @@
+/* Rig's design tokens. Graphite and warm greys carry the chrome; color lives
+   only in data, in the denim set below. */
+:root {
+  --font: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fs: 15px;
+
+  --ground: #E4E1DA;
+  --band: #EAE7E1;
+  --bg: #F2F0EC;
+  --surface: #FFFFFF;
+  --surface-2: #F2F0EC;
+  --line: rgba(27, 27, 31, .10);
+  --line-strong: rgba(27, 27, 31, .18);
+  --text: #1B1B1F;
+  --text-2: #5E5D59;
+  --text-3: #6B6A66;
+  --graphite: #1B1B1F;
+  --foam: #ECE8FA;
+  --primary: var(--graphite);
+  --primary-text: #FFFFFF;
+  --focus: var(--graphite);
+
+  /* Data colors: good is settled, look needs a look, expected is what's normal. */
+  --good: #B0C0D1; --good-mark: #4E6680; --good-text: #3E556D; --good-bg: #E8EDF3;
+  --look: #71879F; --look-text: #46596E; --look-bg: #DCE3EB;
+  --expected: #E2E9F0;
+  --ok: var(--good-text); --ok-bg: var(--good-bg);
+  --warn: var(--look-text); --warn-bg: var(--look-bg);
+  --info: var(--graphite); --info-bg: var(--surface-2);
+
+  /* Chart series on light cards: a is the usual reading, b needs a look, c is expected. */
+  --s-a: var(--good); --s-mark-a: var(--good-mark); --s-b: var(--look); --s-c: var(--expected);
+  --s-ink: #111111; --s-c-ink: var(--graphite);
+  --s-track: rgba(27, 27, 31, .10); --s-dim: rgba(27, 27, 31, .08); --s-edge: rgba(27, 27, 31, .08);
+
+  --r: 28px;
+  --r-sm: 14px;
+  --r-pill: 999px;
+  --gap: 14px;
+  --shadow-lg: 0 24px 60px rgba(27, 27, 31, .16), 0 2px 6px rgba(27, 27, 31, .06);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  color-scheme: light;
+}
+
+/* Graphite tiles inside a light page. Data stays in warm greys with the set as an accent. */
+.tone-dark {
+  --surface: var(--graphite); --surface-2: #26262B;
+  --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
+  --line: rgba(255, 255, 255, .10);
+  --ok: var(--good); --warn: var(--look); --focus: var(--good);
+  --s-a: #A8A59E; --s-mark-a: #A8A59E; --s-b: color-mix(in srgb, var(--look) 45%, #3F3E3B); --s-c: #E6E3DC;
+  --s-track: rgba(255, 255, 255, .12); --s-dim: rgba(255, 255, 255, .08); --s-edge: transparent;
+  background: var(--graphite);
+  color: var(--text);
+}

@@ -33,7 +33,7 @@ export function History() {
         </div>
       </div>
       <section className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="legend hist-legend">
+        <div className="legend">
           <span><i className="lg-cpu" />Processor</span>
           {pc.parts?.gpu && <span><i className="lg-gpu" />Graphics card</span>}
           <span><i className="lg-limit" />Safe limit</span>

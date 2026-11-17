@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import type { Part } from "@rig/core";
+import type { ActionCall, Part } from "@rig/core";
 import { Sparkline } from "../chart";
 import { StageSlot, getStage } from "../components/Stage";
 import { useApp } from "../state";
 import { pcAccents } from "../themes";
+import { CLEAN_EVERY, daysSince } from "./shared";
 
 /** The last few readings of a value, kept while the page is open. */
 function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40) {
@@ -47,7 +48,10 @@ export function PCPage() {
             <button className="btn ghost sm" type="button" onClick={() => getStage().scene.resetView()}>Reset view</button>
           </div>
         </section>
-        <aside className="card detail"><Detail /></aside>
+        <div className="pc-side">
+          <aside className="card detail"><Detail /></aside>
+          <QuickSwitches />
+        </div>
       </div>
     </div>
   );
@@ -66,9 +70,35 @@ function Customize({ onDone }: { onDone: () => void }) {
           {pcAccents.map((a) => <button key={a} type="button" className="swatch" style={{ background: a }} aria-label={`Accent ${a}`} aria-pressed={a.toLowerCase() === pc.accent.toLowerCase()} onClick={() => update({ accent: a })} />)}
         </div>
       </div>
-      <p className="faint" style={{ fontSize: 12 }}>The accent lights up your case and fans in 3D, and marks this PC everywhere you see it.</p>
+      <p className="faint" style={{ fontSize: 12 }}>The accent marks this PC in your list of PCs.</p>
       <div style={{ display: "flex", justifyContent: "flex-end" }}><button className="btn primary sm" type="button" onClick={() => { if (name.trim() && name !== pc.name) update({ name: name.trim() }); onDone(); }}>Done</button></div>
     </div>
+  );
+}
+
+/** Windows settings that are one tap away, each shown for review before it changes. */
+function QuickSwitches() {
+  const { pc, client, review } = useApp();
+  const s = pc.settings;
+  const high = s?.powerPlans.find((p) => /high performance/i.test(p.name));
+  const balanced = s?.powerPlans.find((p) => /balanced/i.test(p.name));
+  const switches: { key: string; title: string; body: string; on: boolean; flip: ActionCall | null }[] = s ? [
+    { key: "game", title: "Game Mode", body: "Windows puts games first while they run", on: s.gameMode, flip: { kind: "windows.gameMode", enabled: !s.gameMode } },
+    { key: "power", title: "High performance", body: "Full speed all the time. Warmer at idle.", on: !!high?.active, flip: high && balanced ? { kind: "power.plan", guid: high.active ? balanced.guid : high.guid } : null },
+    { key: "fx", title: "Fewer animations", body: "Snappier windows on slower PCs", on: s.visualEffects === "performance", flip: { kind: "windows.visualEffects", mode: s.visualEffects === "performance" ? "auto" : "performance" } },
+  ] : [];
+  return (
+    <section className="card switches">
+      <div className="card-head"><h2>Quick switches</h2></div>
+      <div className="switch-list">
+        {switches.length ? switches.map((w) => (
+          <button key={w.key} type="button" className="switch" role="switch" aria-checked={w.on} disabled={!w.flip}
+            onClick={() => w.flip && review([w.flip], { by: "you", title: `Turn ${w.title} ${w.on ? "off" : "on"}`, cta: w.on ? "Turn off" : "Turn on" })}>
+            <span><b>{w.title}</b><small>{w.body}</small></span><i />
+          </button>
+        )) : <p className="muted">{client.caps.local ? "Reading Windows settings…" : `Switches work in the Rig app on ${pc.name}.`}</p>}
+      </div>
+    </section>
   );
 }
 
@@ -107,6 +137,37 @@ function Detail() {
       </div>
       <div className="detail-body"><DetailTab part={part} id={id} tab={tab} /></div>
     </>
+  );
+}
+
+const size = (gb: number) => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${gb} GB`);
+
+/** How full the drives are, by what's using the space. */
+function Space() {
+  const { pc } = useApp();
+  const st = pc.storage;
+  if (!st) return <p className="muted">Reading drives…</p>;
+  return (
+    <div className="space">
+      <div className="space-head"><span className="label">Space</span><span className="faint">{size(st.totalGb)}</span></div>
+      <div className="space-bar" aria-hidden="true">
+        {st.slices.map((x) => <i key={x.label} className={x.label === "Free" ? "free" : undefined} style={{ flexGrow: x.gb }} />)}
+      </div>
+      <table className="kv"><tbody>{st.slices.map((x) => <tr key={x.label}><th>{x.label}</th><td className="num">{size(x.gb)}</td></tr>)}</tbody></table>
+    </div>
+  );
+}
+
+/** When the dust was last cleaned out, so Rig can remind you when it's due. */
+function DustClean() {
+  const { pc, client, toast } = useApp();
+  const days = daysSince(pc.cleanedAt);
+  const cleaned = () => client.rename(pc.id, { cleanedAt: new Date().toISOString() }).catch(() => toast("Couldn't save that. Try again."));
+  return (
+    <div className="callout dust">
+      <p>{days == null ? "Tell Rig when you clean the dust out and it will remind you when it's due." : days === 0 ? `Cleaned today. Rig will remind you in ${CLEAN_EVERY} days.` : `Last cleaned ${days} ${days === 1 ? "day" : "days"} ago. Rig suggests every ${CLEAN_EVERY} days.`}</p>
+      {days !== 0 && <button type="button" className="btn sm" onClick={cleaned}>I cleaned it today</button>}
+    </div>
   );
 }
 
@@ -170,6 +231,8 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
         </>
       )}
       {part.soldered && <div className="callout">Soldered to the board, so it can't be upgraded.</div>}
+      {id === "ssd" && <Space />}
+      {id === "fans" && <DustClean />}
       <SourceBadge part={part} />
     </>
   );
