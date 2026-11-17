@@ -1,5 +1,5 @@
 /* Rig's design tokens. Graphite and warm greys carry the chrome; color lives
-   only in data, in the denim set below. */
+   only in data, in the brass set below. */
 :root {
   --font: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
   --fs: 15px;
@@ -20,10 +20,10 @@
   --primary-text: #FFFFFF;
   --focus: var(--graphite);
 
-  /* Data colors: good is settled, look needs a look, expected is what's normal. */
-  --good: #B0C0D1; --good-mark: #4E6680; --good-text: #3E556D; --good-bg: #E8EDF3;
-  --look: #71879F; --look-text: #46596E; --look-bg: #DCE3EB;
-  --expected: #E2E9F0;
+  /* Data colors: pale gold is settled, rust needs a look, warm grey is what's normal. */
+  --good: #E6D3A3; --good-mark: #7C6A3A; --good-text: #6A5A2E; --good-bg: #F3EDDD;
+  --look: #D9804F; --look-text: #A4471C; --look-bg: #F8E2D5;
+  --expected: #A7A39B;
   --ok: var(--good-text); --ok-bg: var(--good-bg);
   --warn: var(--look-text); --warn-bg: var(--look-bg);
   --info: var(--graphite); --info-bg: var(--surface-2);
