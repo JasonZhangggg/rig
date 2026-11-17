@@ -112,6 +112,15 @@ export const unreachableText = "Rig can't reach its server. Check your internet 
 /** Shown when the server failed without saying why. */
 export const serverDownText = "Rig's server isn't answering right now. Try again in a minute.";
 
+/** Shown when a web page came back where the server's data should be, so Rig is pointed at the wrong address. */
+export const wrongServerText = "Rig got a web page back instead of its server's answer, so this copy of Rig points at the wrong address. Install the latest version of Rig and try again.";
+
+/** Reads a JSON body, or says plainly that the answer wasn't from Rig's server. */
+export async function readJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  try { return JSON.parse(text) as T; } catch { throw new ApiError(res.status, wrongServerText); }
+}
+
 export async function errorText(res: Response): Promise<string> {
   const fallback = res.status >= 500 ? serverDownText : res.statusText || `Error ${res.status}`;
   try {

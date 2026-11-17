@@ -5,7 +5,7 @@
 
 import type { ActionCall } from "./actions";
 import {
-  ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, unreachableText,
+  ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, readJson, unreachableText,
   type ChatRequest, type DeleteAccountRequest, type MachineSync, type SyncReply,
 } from "./api";
 import type { DataExport } from "./export";
@@ -64,7 +64,7 @@ export class CloudClient implements RigClient {
   private async req<T>(path: string, init: RequestInit = {}): Promise<T> {
     const res = await this.send(path, init);
     if (!res.ok) throw new ApiError(res.status, await errorText(res));
-    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+    return res.status === 204 ? (undefined as T) : readJson<T>(res);
   }
 
   async signedIn() { return this.opts.token ? (await this.opts.token.get()) != null : true; }
@@ -122,7 +122,8 @@ export class CloudClient implements RigClient {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: start.device_code, client_id: desktopClientId }),
         });
-        const body = await res.json().catch(() => ({})) as { access_token?: string; error?: string; error_description?: string };
+        if (res.status >= 500) continue;
+        const body = await readJson<{ access_token?: string; error?: string; error_description?: string }>(res);
         if (res.ok && body.access_token) {
           await token!.set(body.access_token);
           const me = await this.account();
