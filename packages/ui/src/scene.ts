@@ -58,6 +58,16 @@ export interface PCScene {
 type Vec3 = [number, number, number];
 interface MatOpts { op?: number; emissive?: string; ei?: number }
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
+/** The camera's vertical field of view on a landscape stage, in degrees. */
+const BASE_FOV = 32;
+
+/** Widens the view on a stage taller than it is wide, so the sides of the PC aren't cut off. */
+export function fovFor(aspect: number) {
+  if (aspect >= 1) return BASE_FOV;
+  const half = Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2));
+  return THREE.MathUtils.radToDeg(2 * Math.atan(half / aspect));
+}
+
 interface Framing { target: THREE.Vector3; cam: THREE.Vector3; camExploded: THREE.Vector3 }
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -85,7 +95,7 @@ export function createScene(
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+  const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 200);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -870,6 +880,7 @@ export function createScene(
     renderer.setSize(w, h, false);
     labels.setSize(w, h);
     camera.aspect = w / h;
+    camera.fov = fovFor(camera.aspect);
     camera.updateProjectionMatrix();
   }
   const ro = new ResizeObserver(resize);

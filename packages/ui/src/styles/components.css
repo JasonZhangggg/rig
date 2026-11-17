@@ -149,7 +149,7 @@
 }
 
 /* ---------- 3D stage. One WebGL view moves between slots, so the card behind it paints the light. ---------- */
-.stage { position: relative; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
+.stage { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
 .stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 .stage-park { position: absolute; left: -9999px; top: 0; width: 600px; height: 400px; }
 .stage-slot { position: absolute; inset: 0; }

@@ -29,6 +29,17 @@ export function Palette() {
   const open = (route: Route, patch: Parameters<typeof set>[0] = {}) => { set(patch); go(route); close(); };
 
   useEffect(() => { if (ui.palette) setTimeout(() => input.current?.focus(), 0); }, [ui.palette]);
+  // Escape closes it wherever focus is, and focus goes back where it was.
+  useEffect(() => {
+    if (!ui.palette) return;
+    const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("keydown", esc);
+      if (!document.activeElement || document.activeElement === document.body) back?.focus();
+    };
+  }, [ui.palette]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = useMemo<Item[]>(() => {
     const items: Item[] = [];
@@ -56,11 +67,10 @@ export function Palette() {
 
   if (!ui.palette) return null;
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setActive((idx + 1) % total); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((idx + 1) % total); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((idx - 1 + total) % total); }
-    else if (e.key === "Enter") { e.preventDefault(); if (idx < shown.length) shown[idx].run(); else runAsk(); }
-    else if (e.key === "Tab") { e.preventDefault(); runAsk(); }
+    else if (e.key === "Enter" && e.target === input.current) { e.preventDefault(); if (idx < shown.length) shown[idx].run(); else runAsk(); }
+    else if (e.key === "Tab" && words && !e.shiftKey && e.target === input.current) { e.preventDefault(); runAsk(); }
   };
 
   let n = -1;
