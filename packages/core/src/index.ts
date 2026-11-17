@@ -5,6 +5,7 @@ export * from "./client";
 export * from "./health";
 export * from "./history";
 export * from "./insights";
+export * from "./alerts";
 export * from "./view";
 export * from "./upgrades";
 export * from "./api";

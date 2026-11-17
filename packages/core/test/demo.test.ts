@@ -60,3 +60,15 @@ describe("demo history", () => {
     expect(Math.max(...at(18).map((c) => c.level!))).toBe(1);
   });
 });
+
+describe("demo alerts", () => {
+  it("shows the desktop's graphics card running hotter than it used to, and nothing on the laptop", async () => {
+    const { pc } = await demoWeek("demo-atlas");
+    expect(pc.alerts).toEqual([expect.objectContaining({ id: "hotter-than-usual:gpu", severity: "warn", title: "Graphics card runs hotter than it used to" })]);
+    expect(pc.alerts![0].detail).toMatch(/^In .+ it's been at \d+°C lately, up from its usual \d+°C\./);
+    expect(new Date(pc.alerts![0].since).getTime()).toBeLessThan(Date.now() - 864e5);
+    expect(pc.health).toBeGreaterThanOrEqual(75);
+    const { pc: laptop } = await demoWeek("demo-pebble");
+    expect(laptop.alerts).toBeUndefined();
+  });
+});

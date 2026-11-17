@@ -7,6 +7,7 @@ import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
+import { emptyAlertState, stepAlerts, USUAL, type AlertState } from "../alerts";
 import { applyToFacts } from "./apply";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
@@ -19,7 +20,7 @@ export { applyToFacts } from "./apply";
 export { SimulatedLink } from "./link";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[] }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] } }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -38,7 +39,7 @@ export class DemoClient implements RigClient {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => ({ inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [] });
+    const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => ({ inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState() });
     this.pcs = {
       "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E" }, 1),
       "demo-pebble": mk(fixtures.pebble.inv, fixtures.pebble.facts, { name: "Pebble", accent: "#3C7BF0" }, 0),
@@ -53,10 +54,14 @@ export class DemoClient implements RigClient {
 
   private view(id: string): PC {
     const p = this.pcs[id];
-    const snap = simulate(p.inv, Date.now(), { dust: p.dust });
+    const now = Date.now();
+    const snap = simulate(p.inv, now, { dust: p.dust });
     for (const s of snap.sensors) if (s.type === "temperature" && s.value != null) p.dayMax[s.id] = Math.max(p.dayMax[s.id] ?? 0, s.value);
+    if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now) };
+    const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
+    p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax);
-    return { ...pc, lastSync: "Demo PC" };
+    return { ...pc, lastSync: "Demo PC", ...(alerts.length ? { alerts } : {}) };
   }
 
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }
@@ -90,8 +95,12 @@ export class DemoClient implements RigClient {
     const p = this.pcs[id];
     if (!p) return [];
     const now = Date.now();
+    return this.points(p, now - rangeMs[range], now);
+  }
+
+  private points(p: DemoPC, since: number, now: number): HistoryPoint[] {
     const out: HistoryPoint[] = [];
-    for (let from = Math.ceil((now - rangeMs[range]) / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
+    for (let from = Math.ceil(since / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
       const dust = p.dust * (1 - (now - from) / rangeMs["30d"]);
       const w = new HistoryWindow(from);
       for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));

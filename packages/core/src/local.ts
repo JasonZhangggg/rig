@@ -4,11 +4,12 @@
 // the view so the website shows it and reaches the other PCs on the account.
 
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
+import { emptyAlertState, stepAlerts, USUAL, type AlertState } from "./alerts";
 import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
 import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
-import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
+import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -42,6 +43,8 @@ export interface LocalOptions {
   syncEveryMs?: number;
   /** Settings are re-read this often, and right after every change. */
   factsEveryMs?: number;
+  /** Drives and the rest of the inventory are re-read this often, so free space stays current. */
+  inventoryEveryMs?: number;
   now?: () => number;
 }
 
@@ -55,6 +58,11 @@ export class LocalClient implements RigClient {
   private inv: Inventory | null = null;
   private facts: SystemFacts | null = null;
   private factsAt = 0;
+  private invAt = 0;
+  private alertState: AlertState = emptyAlertState();
+  private alerts: Alert[] = [];
+  /** History the alerts compare against, oldest first. */
+  private recent: HistoryPoint[] = [];
   private snap: Snapshot | null = null;
   private identity: Identity & { at?: string } = {};
   private dayMax: DayMax = {};
@@ -69,7 +77,7 @@ export class LocalClient implements RigClient {
   private o: Required<LocalOptions>;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, now: Date.now, ...opts };
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, ...opts };
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
   }
 
@@ -82,7 +90,9 @@ export class LocalClient implements RigClient {
       [this.inv, this.facts, this.identity] = await Promise.all([
         this.link.inventory(), this.link.facts(), this.store.get<Identity>("identity").then((v) => v ?? {}),
       ]);
-      this.factsAt = this.o.now();
+      this.factsAt = this.invAt = this.o.now();
+      this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
+      this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
       this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
       await this.tick();
       this.timers.push(setInterval(() => void this.tick(), this.o.tickMs));
@@ -103,11 +113,13 @@ export class LocalClient implements RigClient {
     try {
       const now = this.o.now();
       if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts(); this.factsAt = now; }
+      if (now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
       this.lastError = null;
       if (dayKey(now) !== this.day) { this.day = dayKey(now); this.dayMax = {}; }
       for (const s of this.snap.sensors) if (s.type === "temperature" && s.value != null) this.dayMax[s.id] = Math.max(this.dayMax[s.id] ?? 0, s.value);
       await this.record(now);
+      await this.watchAlerts(now);
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -123,9 +135,23 @@ export class LocalClient implements RigClient {
       const p = w.point();
       this.window = null;
       await this.store.addHistory(p);
+      this.recent.push(p);
+      const keep = now - USUAL.baselineFrom * 864e5;
+      if (this.recent[0]?.t < keep) this.recent = this.recent.filter((x) => x.t >= keep);
       this.unsynced.push(p);
       await this.store.set("unsynced", this.unsynced.slice(-720));
     }
+  }
+
+  /** Moves the alerts on by this reading, and keeps them on disk when one starts or ends so a restart carries on where it left off. */
+  private async watchAlerts(now: number) {
+    if (!this.inv) return;
+    const { state, alerts } = stepAlerts(this.alertState, { inv: this.inv, snap: this.snap, history: this.recent, now });
+    this.alertState = state;
+    const ids = (xs: Alert[]) => xs.map((a) => `${a.id}@${a.since}`).sort().join();
+    const changed = ids(alerts) !== ids(this.alerts);
+    this.alerts = alerts;
+    if (changed) await this.store.set("alerts", state);
   }
 
   /** The live view of this PC. */
@@ -133,6 +159,7 @@ export class LocalClient implements RigClient {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
     const { findings: _f, ...pc } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
     pc.id = this.id;
+    if (this.alerts.length) pc.alerts = this.alerts;
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
   }
