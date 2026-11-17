@@ -1,5 +1,5 @@
 /* Home reads top to bottom: the PC, what needs a look, then the week.
-   A few type sizes used the same way everywhere, quiet text links instead of round buttons,
+   A few type sizes used the same way everywhere, round bubbles only where you act (the greeting's controls and the rows to look at),
    and only two tiles on graphite (health and the week's readings). */
 .f-home { max-width: 1880px; gap: 56px; container: home / inline-size; }
 
@@ -10,7 +10,7 @@
 .f-link em { color: var(--look-text); font-style: normal; font-variant-numeric: tabular-nums; }
 .f-go { width: 16px; height: 16px; flex: none; color: var(--text-3); transition: transform .2s var(--ease-out), color .2s; }
 @media (hover: hover) and (pointer: fine) {
-  .f-link:hover .f-go, .f-todo-row:hover .f-go, .f-asks button:hover .f-go { color: var(--text); transform: translateX(3px); }
+  .f-link:hover .f-go, .f-asks button:hover .f-go { color: var(--text); transform: translateX(3px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .f-go { transition: none; }
@@ -20,7 +20,25 @@
 .f-head-text { min-width: 0; }
 .f-head h1 { color: var(--text); font: 500 clamp(2rem, 2.6vw, 2.75rem)/1.05 var(--font); letter-spacing: -.03em; }
 .f-head p { margin-top: 10px; color: var(--text-2); font-size: 16px; font-weight: 500; line-height: 1.45; }
-.f-head-tools { display: flex; align-items: center; gap: 28px; }
+.f-head-tools { display: flex; align-items: center; gap: 8px; }
+.f-date { display: flex; align-items: center; gap: 11px; height: 52px; padding: 0 16px 0 6px; border-radius: var(--r-pill); background: var(--surface); }
+.f-date b { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; font: 500 18px/1 var(--font); letter-spacing: -.02em; }
+.f-date span { color: var(--text-2); font-size: 12.5px; font-weight: 500; line-height: 1.3; }
+.f-cta {
+  display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 6px 0 20px; border: 0; border-radius: var(--r-pill);
+  background: var(--graphite); color: #FFFFFF; font: 500 15px/1 var(--font); white-space: nowrap; cursor: pointer; transition: transform .12s;
+}
+.f-cta:active { transform: scale(.98); }
+.f-cta i { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, .12); }
+.f-cta svg { width: 18px; height: 18px; }
+.f-cta em { min-width: 26px; height: 26px; margin-left: -4px; padding: 0 8px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--look); color: var(--graphite); font: 600 13px var(--font); font-style: normal; }
+.f-round { width: 52px; height: 52px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface); color: var(--text); cursor: pointer; transition: transform .12s; }
+.f-round:active { transform: scale(.96); }
+.f-round svg { width: 18px; height: 18px; }
+.f-mic svg { width: 22px; height: 22px; }
+@media (prefers-reduced-motion: reduce) {
+  .f-cta, .f-round { transition: none; }
+}
 
 /* The PC leads at more than two thirds of the width, on a soft light of its own rather than in a card. The side column takes its height and never sets it. */
 .f-top { display: grid; grid-template-columns: minmax(0, 2.3fr) minmax(320px, 1fr); gap: 56px; }
@@ -49,31 +67,32 @@
 .f-stage { position: relative; min-height: 0; }
 .f-pc .stage-slot { inset: -60px 0 -30px; -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); }
 
-.f-parts { position: relative; z-index: 2; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.f-parts > li { min-width: 0; display: flex; }
-.f-parts > li.plain { display: none; }
-.f-parts > li + li { border-left: 1px solid var(--line); }
-.f-part {
-  flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; gap: 4px 10px;
-  padding: 14px 16px 4px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer;
-}
-.f-parts > li:first-child .f-part { padding-left: 0; }
-.f-part > span { color: var(--text-3); font-size: 13px; font-weight: 600; }
-.f-part > b { color: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.f-part.hot > b { color: var(--warn); }
-.f-part > em { grid-column: 1 / -1; display: -webkit-box; overflow: hidden; color: var(--text); font-size: 14px; font-weight: 500; font-style: normal; line-height: 1.35; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* The model names stand once, beside the PC; the temperatures read large under it, by part kind only. */
+.f-specs { display: none; margin: 0; }
+.f-specs > div { display: grid; gap: 4px; padding: 14px 0; }
+.f-specs > div + div { border-top: 1px solid var(--line); }
+.f-specs dt { color: var(--text-3); font-size: 13px; font-weight: 600; }
+.f-specs dd { margin: 0; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.35; }
+.f-pc.no-reads .f-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); column-gap: 20px; position: relative; z-index: 2; border-top: 1px solid var(--line); }
+.f-pc.no-reads .f-specs > div + div { border-top: 0; }
+
+.f-reads { position: relative; z-index: 2; grid-column: 1 / -1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-top: 1px solid var(--line); }
+.f-read { min-width: 0; display: grid; justify-items: start; gap: 8px; padding: 16px 20px 4px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.f-read:first-child { padding-left: 0; border-left: 0; }
+.f-read > span { color: var(--text-3); font-size: 13px; font-weight: 600; transition: color .15s; }
+.f-read b { font: 500 clamp(2.25rem, 2.9vw, 3.25rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.f-read.hot b { color: var(--warn); }
 @media (hover: hover) and (pointer: fine) {
-  .f-part:hover > em { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .f-read:hover > span { color: var(--text); }
 }
 
-/* Wide enough, the parts stand in a column of their own beside the PC. */
+/* Wide enough, the model names stand in a column of their own beside the PC, over the temperatures. */
 @container hero (min-width: 900px) {
-  .f-pc-in { grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .f-pc-in { grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   .f-stage { grid-column: 2; grid-row: 2; }
-  .f-parts { grid-column: 1; grid-row: 2; align-self: center; display: flex; flex-direction: column; border-top: 0; }
-  .f-parts > li.plain { display: flex; }
-  .f-parts > li + li { border-left: 0; border-top: 1px solid var(--line); }
-  .f-part, .f-parts > li:first-child .f-part { padding: 14px 0; }
+  .f-specs, .f-pc.no-reads .f-specs { grid-column: 1; grid-row: 2; align-self: end; position: relative; z-index: 2; display: flex; flex-direction: column; padding-bottom: 20px; border-top: 0; }
+  .f-pc.no-reads .f-specs { align-self: center; }
+  .f-pc.no-reads .f-specs > div + div { border-top: 1px solid var(--line); }
 }
 
 .f-health { flex: none; display: flex; align-items: center; gap: 26px; padding: 28px; border-radius: calc(var(--r) - 6px); }
@@ -85,27 +104,40 @@
 .f-ring { position: relative; width: 116px; height: 116px; flex: none; }
 .f-ring svg { width: 100%; height: 100%; }
 .f-ring .tr { fill: none; stroke: var(--s-track); stroke-width: 10; }
-.f-ring .vl { fill: none; stroke: var(--good); stroke-width: 10; stroke-linecap: round; }
+.f-ring .vl { fill: none; stroke: var(--look); stroke-width: 10; stroke-linecap: round; }
 .f-ring > div { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; }
-.f-ring b { font: 600 38px/1 var(--font); letter-spacing: -.04em; }
+.f-ring b { color: var(--look); font: 600 38px/1 var(--font); letter-spacing: -.04em; }
 .f-ring span { margin-top: 3px; color: var(--text-3); font-size: 12px; font-weight: 600; }
 
 /* Things to look at sits on the page as a list, so it reads apart from the health tile above it.
-   A short rule on each row marks what needs a look; the rest are worth knowing. */
+   A rust bubble with the part marks what needs a look; a check marks what's only worth knowing. */
 .f-todo { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .f-todo-head, .f-week-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.f-todo-head { align-items: center; justify-content: flex-start; gap: 12px; }
 .f-todo-head h2, .f-week-head h2 { font: 500 clamp(1.5rem, 1.6vw, 1.75rem)/1.1 var(--font); letter-spacing: -.025em; }
-.f-count { color: var(--look-text); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.f-todo-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 14px 0 0; padding: 0; overflow-y: auto; scrollbar-width: thin; list-style: none; border-top: 1px solid var(--line); }
-.f-todo-list > li { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
-.f-todo-row { position: relative; flex: none; display: flex; align-items: flex-start; gap: 16px; padding: 18px 2px 18px 18px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.f-todo-row::before { content: ""; position: absolute; left: 0; top: 21px; bottom: 21px; width: 3px; border-radius: 2px; background: var(--line-strong); }
-.f-todo-row:is(.warn, .bad)::before { background: var(--look); }
-.f-todo-row > span { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.f-count { min-width: 26px; height: 26px; padding: 0 8px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--look); color: var(--graphite); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.f-todo-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 14px -8px 0; padding: 0 8px; overflow-y: auto; scrollbar-width: thin; list-style: none; }
+.f-todo-list > li { display: flex; flex-direction: column; }
+.f-todo-list > li + li { border-top: 1px solid var(--line); }
+.f-todo-row { flex: none; display: flex; align-items: flex-start; gap: 16px; margin: 0 -8px; padding: 18px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background .15s; }
+.f-todo-ico { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface); color: var(--text); }
+.f-todo-ico svg { width: 18px; height: 18px; }
+.f-todo-row:is(.warn, .bad) .f-todo-ico { background: var(--look); color: var(--graphite); }
+.f-todo-row > span { flex: 1; min-width: 0; display: grid; gap: 5px; padding-top: 1px; }
 .f-todo-row b { font-size: 15px; font-weight: 600; line-height: 1.35; }
 .f-todo-row small { display: -webkit-box; overflow: hidden; color: var(--text-2); font-size: 14px; font-weight: 500; line-height: 1.45; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.f-todo-row .f-go { margin-top: 2px; }
-.f-todo-empty { max-width: 34ch; margin-top: 14px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
+.f-todo-go { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--text-2); transition: background .15s, color .15s; }
+.f-todo-go svg { width: 13px; height: 13px; }
+@media (hover: hover) and (pointer: fine) {
+  .f-todo-row:hover { background: var(--surface); }
+  .f-todo-row:hover .f-todo-go { background: var(--graphite); color: #FFFFFF; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .f-todo-row, .f-todo-go { transition: none; }
+}
+.f-todo-empty { display: flex; align-items: center; gap: 16px; margin-top: 14px; padding: 12px 0; }
+.f-todo-empty .f-todo-ico { width: 48px; height: 48px; background: var(--good); color: var(--graphite); }
+.f-todo-empty p { max-width: 32ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
 
 .f-asks { display: none; flex-direction: column; margin-top: 32px; }
 .f-asks > span { padding-bottom: 6px; color: var(--text-3); font-size: 13px; font-weight: 600; }
@@ -236,16 +268,19 @@
 }
 @container home (max-width: 640px) {
   .f-home { gap: 44px; }
-  .f-head-tools { gap: 24px; }
+  .f-head-tools { flex-wrap: wrap; }
+  .f-mic { display: none; }
+  .f-cta { font-size: 14px; padding-left: 18px; }
   .f-pc { height: auto; }
   .f-pc-in { grid-template-rows: auto 360px auto; }
   .f-pc .stage-slot { inset: -20px 0 -10px; }
   .f-pc-top { flex-direction: column; gap: 14px; }
   .f-pc-name { font-size: 2.5rem; }
-  .f-parts { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; border-top: 0; }
-  .f-parts > li { border-top: 1px solid var(--line); }
-  .f-parts > li + li { border-left: 0; }
-  .f-part, .f-parts > li:first-child .f-part { padding: 12px 0; }
+  .f-reads { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .f-read { padding: 14px 16px 12px; }
+  .f-read:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .f-read:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .f-read b { font-size: 2.25rem; }
   .f-health { gap: 20px; padding: 22px; }
   .f-ring { width: 96px; height: 96px; }
   .f-ring b { font-size: 32px; }
@@ -255,4 +290,7 @@
   .pl-rt-n { font-size: 14px; }
   .pl-tl-row, .pl-tl-axis { grid-template-columns: 34px minmax(0, 1fr); column-gap: 8px; }
   .pl-figure b { font-size: 1.85rem; }
+}
+@container home (max-width: 440px) {
+  .f-date { display: none; }
 }

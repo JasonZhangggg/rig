@@ -80,14 +80,24 @@ describe("Home hero", () => {
   afterEach(() => cleanup());
   const last = (method: string) => sceneCalls.filter(([k]) => k === method).at(-1)?.[1][0];
 
-  it("names the main parts beside the 3D PC with their temperatures, each opening in My PC", async () => {
+  it("names each main part's model once and shows its temperature as a big figure by part kind, opening in My PC", async () => {
     render(<RigApp client={new DemoClient()} />);
     const hero = (await screen.findByRole("link", { name: "Open 3D view" })).closest("section")!;
-    const parts = within(within(hero).getByRole("list", { name: "Main parts" })).getAllByRole("button");
-    expect(parts.slice(0, 3).map((b) => b.getAttribute("aria-label")!.split(",")[0])).toEqual(["Processor", "Graphics card", "Memory"]);
-    expect(parts[0].getAttribute("aria-label")).toMatch(/^Processor, .*Ryzen.*, \d+°$/);
-    fireEvent.click(parts[0]);
+    const reads = within(within(hero).getByRole("group", { name: "Temperatures" })).getAllByRole("button");
+    expect(reads.map((b) => b.textContent!.replace(/\d+°$/, ""))).toEqual(["Processor", "Graphics card", "Motherboard", "Storage"]);
+    for (const b of reads) expect(b.textContent).toMatch(/^\D+\d+°$/);
+    expect(within(hero).getAllByText(/Ryzen 7 7800X3D/)).toHaveLength(1);
+    expect(within(hero).getAllByText(/RTX 4070 SUPER/)).toHaveLength(1);
+    fireEvent.click(reads[0]);
     expect(await screen.findByRole("button", { name: "Reset view" })).toBeTruthy();
+  });
+
+  it("counts what needs a look beside the heading and opens it from the greeting", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const todo = within((await screen.findByText("Things to look at")).closest("section")!);
+    expect(todo.getByLabelText("1 open").textContent).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: /^Review\s*1/ }));
+    await waitFor(() => expect(screen.queryByText("Things to look at")).toBeNull());
   });
 
   it("turns heat and the exploded view on in the hero, and puts the scene back on leaving", async () => {
