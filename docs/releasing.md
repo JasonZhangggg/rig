@@ -18,7 +18,7 @@ Set the repository variable `RIG_API_URL` to the server's address ending in `/ap
    ```
 4. Watch Actions, Release. When it's done the release is under Releases, with the notes written for you.
 
-To build and publish a tag again (say a step failed), use Actions, Release, Run workflow, and give the tag. Running it again for a tag that already has a release replaces its files and keeps its notes.
+You can also release without pushing a tag yourself: Actions, Release, Run workflow on main, and give the new tag. The workflow checks the version, tags main and publishes. To build and publish a tag again (say a step failed), do the same with the existing tag. Running it again for a tag that already has a release replaces its files and keeps its notes.
 
 A tag with a hyphen, like `v0.2.0-beta.1`, is published as a pre-release.
 
