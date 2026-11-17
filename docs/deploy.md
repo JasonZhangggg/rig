@@ -20,7 +20,7 @@ One Cloudflare Worker serves the website and, under `/api`, accounts, sync and c
    - `ANTHROPIC_API_KEY`, for chat (without it, chat says it isn't set up)
    - Optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
 4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. Leave the address empty to use `https://rig.<your-subdomain>.workers.dev`, or give your own. It creates the tables, connects Hyperdrive, builds the website and deploys. Running it again updates everything.
-5. Add the repository variable `RIG_API_URL` = `<that address>/api`, so installers built by CI use this server.
+5. Add the repository variable `RIG_API_URL` = `<that address>/api`, so installers built by CI use this server. CI and releases stop with an error without it. To publish an installer, see [releasing.md](releasing.md).
 
 Nothing secret goes in the repo or the logs; the workflow passes secrets straight to Cloudflare.
 

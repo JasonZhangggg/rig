@@ -1,6 +1,7 @@
 // Settings: reached from the account menu and Ctrl K, temperatures in the
 // chosen unit everywhere, the data download, account deletion and starting
 // with Windows.
+import rootPackage from "../../../package.json";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DataExport } from "@rig/core";
@@ -143,5 +144,28 @@ describe("Settings", () => {
     fireEvent.click(sw);
     expect(set).toHaveBeenCalledWith(true);
     await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("shows the version from the root package.json, and on desktop the server it signs in to", async () => {
+    const { version } = rootPackage;
+    const { unmount } = render(<RigApp client={new DemoClient()} />);
+    await open("settings");
+    const about = await screen.findByRole("region", { name: "About" });
+    expect(within(about).getByText(`Rig ${version}`)).toBeTruthy();
+    expect(within(about).queryByText("Server")).toBeNull();
+    unmount();
+
+    render(<RigApp client={new DemoClient()} host={{ server: "https://rig.example.com/api" }} />);
+    await open("settings");
+    expect(within(await screen.findByRole("region", { name: "About" })).getByText("Signs in and syncs with https://rig.example.com/api")).toBeTruthy();
+  });
+
+  it("finds the version in Ctrl K search", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Search" }), { target: { value: "version" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^About/ }));
+    await waitFor(() => expect(location.hash).toBe("#settings"));
   });
 });

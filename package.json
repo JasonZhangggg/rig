@@ -1,6 +1,7 @@
 {
   "name": "rig",
   "private": true,
+  "version": "0.1.0",
   "description": "Rig, a helper app that reads, explains and fixes PCs and laptops.",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
@@ -9,7 +10,9 @@
     "dev:desktop": "pnpm --filter @rig/desktop tauri dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "node --test tools/version.test.mjs && pnpm -r test",
+    "version:set": "node tools/version.mjs set",
+    "version:check": "node tools/version.mjs check"
   },
   "engines": {
     "node": ">=20"
