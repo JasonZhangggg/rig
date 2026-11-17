@@ -624,6 +624,9 @@
 [data-style="studio"][data-colors="periwinkle"] { --coral: #6A82EE; --accent: #6A82EE; --accent-bg: #ECEFFD; --accent-ink: #4A61CE; --focus: #6A82EE; }
 [data-style="studio"][data-colors="teal"] { --coral: #22A493; --accent: #22A493; --accent-bg: #E2F4F1; --accent-ink: #16806F; --focus: #22A493; }
 
+/* Sage is a pastel, so text on it is dark instead of white */
+[data-style="studio"][data-colors="sage"] { --coral: #A9C7A4; --accent: #A9C7A4; --accent-bg: #EAF2E8; --accent-ink: #4C7448; --focus: #6E9A69; --on-accent: #1C1A18; }
+
 /* Friendly in the sidebar shell: band-colored frame, light sheet, round and soft */
 .shell-fside { --crimson: var(--coral); background: var(--band); }
 .shell-fside .w-logo { background: var(--text); color: #fff; font-family: var(--display); }
