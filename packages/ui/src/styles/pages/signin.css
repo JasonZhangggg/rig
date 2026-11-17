@@ -10,6 +10,8 @@
 .ascii canvas { display: block; width: 100%; height: 100%; }
 .ascii-temp { position: absolute; top: 0; left: 0; padding: 3px 7px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--graphite) 82%, transparent); color: var(--text); font: 600 12px/1.2 ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; opacity: 0; pointer-events: none; transition: opacity .25s ease; will-change: transform; }
 
+.art-note { position: absolute; z-index: 1; left: 36px; right: 36px; bottom: 34px; margin: 0; color: var(--text-2); font-size: clamp(15px, .95vw, 19px); font-weight: 500; letter-spacing: -.01em; pointer-events: none; }
+
 .signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); background: var(--bg); }
 .signin-box { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 14px; }
 .signin-box h1 { margin-bottom: 2px; font-size: 2.25rem; line-height: 1.05; letter-spacing: -.035em; }
@@ -32,6 +34,7 @@
   .signin { grid-template-columns: 1fr; grid-template-rows: 220px 1fr; }
   .signin-art { min-height: 0; }
   .signin-art .brand { top: 20px; left: 20px; }
+  .art-note { display: none; }
   .signin-form { padding-top: 32px; }
 }
 :root:has(.signin) { scrollbar-gutter: auto; }

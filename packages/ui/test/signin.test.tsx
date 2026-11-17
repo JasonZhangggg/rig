@@ -46,4 +46,10 @@ describe("Sign-in screen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(onSkip).toHaveBeenCalled();
   });
+
+  it("shows one quiet line beside the art", () => {
+    const client = { kind: "web", signInEmail: vi.fn() } as unknown as RigClient;
+    render(<SignIn client={client} onDone={() => {}} />);
+    expect(screen.getByText("See inside your PC.")).toBeTruthy();
+  });
 });

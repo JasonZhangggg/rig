@@ -12,6 +12,8 @@ const EDGE = RAMP.length;
 const LEVELS = 16;
 const SHADES = 5;
 const MAX_CELLS = 14000;
+// A big tower would otherwise draw thousands more glyphs; past this many cells over it, the cells grow with it.
+const TOWER_CELLS = 6000;
 // Characters read fine at 30 frames a second, and it halves the drawing.
 const FRAME_MS = 1000 / 30 - 2;
 const MONO = 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace';
@@ -104,10 +106,17 @@ function extent(cams: Camera[], pts = HULL) {
 // Fit the whole turn, so the tower keeps its size as it spins.
 const TURN = extent(Array.from({ length: 48 }, (_, k) => camera((k / 48) * Math.PI * 2)));
 
-/** Where the tower sits: centered with room around it; on a short wide band it fills the height. */
-function stage(w: number, h: number) {
+/** Where the tower sits and how big: `size` is the share of the panel's height its whole turn fills, `x` and `y` place its center, `width` caps its share of the width. */
+export interface TowerFit { size: number; x?: number; y?: number; width?: number }
+
+/** Where the tower sits: centered with room around it, or where a fit puts it; on a short wide band it fills the height. */
+function stage(w: number, h: number, fit?: TowerFit) {
   const ew = TURN.x1 - TURN.x0, eh = TURN.y1 - TURN.y0;
   const wide = w / h > 1.6;
+  if (fit && !wide) {
+    const s = Math.min((h * fit.size) / eh, (w * (fit.width ?? 0.92)) / ew);
+    return { s, cx: w * (fit.x ?? 0.5) - (s * (TURN.x0 + TURN.x1)) / 2, cy: h * (fit.y ?? 0.5) + (s * (TURN.y0 + TURN.y1)) / 2 };
+  }
   const bh = wide ? h * 0.86 : Math.min(h * 0.56, w * 0.74), bw = wide ? w * 0.6 : w * 0.72;
   const s = Math.min(bw / ew, bh / eh);
   return { s, cx: w / 2 - (s * (TURN.x0 + TURN.x1)) / 2, cy: h / 2 + (s * (TURN.y0 + TURN.y1)) / 2 };
@@ -121,14 +130,19 @@ interface Grid {
 }
 const INNER = 1, INSIDE = 2, GLINT = 4, FAN = 8, LINE = 16;
 
-function build(w: number, h: number): Grid {
+function build(w: number, h: number, fit?: TowerFit): Grid {
   let cw = w < 600 ? 4 : 5.4, ch = w < 600 ? 6.6 : 9;
   const n = (w / cw) * (h / ch);
   if (n > MAX_CELLS) { const k = Math.sqrt(n / MAX_CELLS); cw *= k; ch *= k; }
+  const st = stage(w, h, fit);
+  const tw = Math.min(w, st.cx + st.s * TURN.x1) - Math.max(0, st.cx + st.s * TURN.x0);
+  const th = Math.min(h, st.cy - st.s * TURN.y0) - Math.max(0, st.cy - st.s * TURN.y1);
+  const over = (tw * th) / (cw * ch);
+  if (over > TOWER_CELLS) { const k = Math.sqrt(over / TOWER_CELLS); cw *= k; ch *= k; }
   const cols = Math.max(1, Math.ceil(w / cw)), rows = Math.max(1, Math.ceil(h / ch));
   const size = cols * rows;
   return {
-    w, h, cols, rows, cw, ch, ...stage(w, h),
+    w, h, cols, rows, cw, ch, ...st,
     id: new Int32Array(size).fill(-1), depth: new Float32Array(size), flags: new Uint8Array(size), dir: new Uint8Array(size),
     bright: new Float32Array(size), tex: new Float32Array(size), accent: new Float32Array(size), therm: new Float32Array(size),
     heat: new Float32Array(size), tmp: new Float32Array(size),
@@ -392,8 +406,11 @@ function atlas(cw: number, ch: number, dpr: number, colors: string[]) {
   return { canvas: a, sw, sh };
 }
 
-export function AsciiField() {
+/** The turning tower; `fit` sets its size and place in the box. */
+export function AsciiField({ fit }: { fit?: TowerFit }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
   const canvas = useRef<HTMLCanvasElement>(null);
   const readout = useRef<HTMLSpanElement>(null);
 
@@ -421,7 +438,7 @@ export function AsciiField() {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       cv.width = Math.round(r.width * dpr);
       cv.height = Math.round(r.height * dpr);
-      grid = build(r.width, r.height);
+      grid = build(r.width, r.height, fitRef.current);
       colors = palette(el);
       sprites = atlas(grid.cw, grid.ch, dpr, colors.shaded);
       const gc = document.createElement("canvas");

@@ -2,12 +2,13 @@ import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
 import { AsciiField } from "../components/AsciiField";
 
-/** The left half of sign-in screens: a PC in thermal characters that warms under the pointer. */
+/** The left half of sign-in screens: a large PC in thermal characters that warms under the pointer, with one quiet line. */
 export function SignInArt() {
   return (
     <div className="signin-art tone-dark">
-      <AsciiField />
+      <AsciiField fit={{ size: 0.78 }} />
       <div className="brand"><span className="brand-mark" />Rig</div>
+      <p className="art-note">See inside your PC.</p>
     </div>
   );
 }
