@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
 
 /** Sign-in for the website (email or Google) and the desktop app (a code approved in the browser). */
-export function SignIn({ client, onDone, onSkip }: { client: RigClient; onDone: (a: Account) => void; onSkip?: () => void }) {
+export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; onDone: (a: Account) => void; onSkip?: () => void; note?: string }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,7 +50,7 @@ export function SignIn({ client, onDone, onSkip }: { client: RigClient; onDone: 
           <form className="signin-box" onSubmit={(e) => { e.preventDefault(); run(() => client.signInEmail!(email, password, mode === "up" ? { name: name || email.split("@")[0] } : undefined)); }}>
             <div className="brand" style={{ padding: 0, marginBottom: 8 }}><span className="brand-mark" />Rig</div>
             <h1>{mode === "in" ? "Sign in" : "Make an account"}</h1>
-            <p className="muted">Your PCs, their history and every change stay in sync between the app and the web.</p>
+            <p className="muted">{note ?? "Your PCs, their history and every change stay in sync between the app and the web."}</p>
             {mode === "up" && <div className="field"><label className="label" htmlFor="name">Your name</label><input className="input" id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></div>}
             <div className="field"><label className="label" htmlFor="email">Email</label><input className="input" id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></div>
             <div className="field"><label className="label" htmlFor="password">Password</label><input className="input" id="password" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "in" ? "current-password" : "new-password"} /></div>

@@ -6,13 +6,15 @@
 import type { ActionCall } from "./actions";
 import {
   ApiError, desktopClientId, errorText, paths, readChatStream,
-  type ChatRequest, type MachineSync,
+  type ChatRequest, type MachineSync, type SyncReply,
 } from "./api";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { SystemFacts } from "./telemetry";
 
 const POLL_MS = 15_000;
+/** The browser page (the website only). */
+const page = () => (globalThis as unknown as { location: { href: string } }).location;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface CloudOptions {
@@ -22,6 +24,8 @@ export interface CloudOptions {
   token?: { get(): Promise<string | null>; set(token: string | null): Promise<void> };
   /** Desktop: opens a page in the person's browser. */
   openUrl?: (url: string) => void;
+  /** Website: the server has Google sign-in turned on. */
+  google?: boolean;
 }
 
 export class CloudClient implements RigClient {
@@ -30,9 +34,10 @@ export class CloudClient implements RigClient {
 
   constructor(private opts: CloudOptions) {
     // Offer only the sign-in that fits: browser code on the desktop, email and Google on the web.
-    const self = this as Partial<Record<"signInWithBrowser" | "signInEmail" | "signInGoogle", unknown>>;
+    const self = this as Partial<Record<"signInWithBrowser" | "signInEmail" | "signInGoogle" | "approveDevice", unknown>>;
     if (!(opts.token && opts.openUrl)) self.signInWithBrowser = undefined;
-    if (opts.token) { self.signInEmail = undefined; self.signInGoogle = undefined; }
+    if (opts.token) { self.signInEmail = undefined; self.signInGoogle = undefined; self.approveDevice = undefined; }
+    if (!opts.google) self.signInGoogle = undefined;
   }
 
   private async headers(json: boolean): Promise<Record<string, string>> {
@@ -43,8 +48,10 @@ export class CloudClient implements RigClient {
   }
 
   private async send(path: string, init: RequestInit = {}): Promise<Response> {
+    // `credentials` is a browser option; written this way so the server can share this file's types.
+    const credentials = { credentials: this.opts.token ? "omit" : "include" } as RequestInit;
     return fetch(this.opts.base + path, {
-      credentials: this.opts.token ? "omit" : "include",
+      ...credentials,
       ...init,
       headers: { ...(await this.headers(init.body != null)), ...init.headers },
     });
@@ -81,9 +88,9 @@ export class CloudClient implements RigClient {
   async signInGoogle() {
     const r = await this.req<{ url: string }>(paths.signInSocial, {
       method: "POST",
-      body: JSON.stringify({ provider: "google", callbackURL: `${location.origin}/app/` }),
+      body: JSON.stringify({ provider: "google", callbackURL: page().href.split("#")[0] }),
     });
-    location.href = r.url;
+    page().href = r.url;
   }
 
   /** Desktop: shows a code, opens the website to approve it, and saves the token once approved. */
@@ -118,6 +125,14 @@ export class CloudClient implements RigClient {
     return { code: start.user_code, url, done };
   }
 
+  /** Website: checks the code from the desktop's link, then approves or refuses it. */
+  async approveDevice(userCode: string, approve: boolean) {
+    const code = userCode.trim().toUpperCase();
+    const check = await this.send(paths.deviceCheck(code));
+    if (!check.ok) throw new Error("That sign-in code isn't valid or has run out. Start again from the Rig app.");
+    await this.req(approve ? paths.deviceApprove : paths.deviceDeny, { method: "POST", body: JSON.stringify({ userCode: code }) });
+  }
+
   machines() { return this.req<PC[]>(paths.machines); }
 
   watch(id: string, cb: (pc: PC) => void) {
@@ -147,8 +162,8 @@ export class CloudClient implements RigClient {
   redo(): Promise<Change> { return this.local(); }
 
   /** Desktop: uploads this PC's latest view so the website shows it. */
-  async sync(id: string, payload: MachineSync) {
-    await this.req(paths.sync(id), { method: "PUT", body: JSON.stringify(payload) });
+  sync(id: string, payload: MachineSync) {
+    return this.req<SyncReply>(paths.sync(id), { method: "PUT", body: JSON.stringify(payload) });
   }
 
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */

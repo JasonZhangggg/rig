@@ -1,0 +1,31 @@
+{
+  "name": "@rig/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Rig's server: accounts, PC sync and chat. Runs on Cloudflare Workers with D1.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply rig --local",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "auth:schema": "vite-node scripts/auth-schema.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.9.0",
+    "@rig/core": "workspace:*",
+    "better-auth": "^1.7.25",
+    "hono": "^4.13.19"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261117.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^4.163.0",
+    "vite-node": "^2.1.9",
+    "@types/node": "^22.10.0"
+  }
+}

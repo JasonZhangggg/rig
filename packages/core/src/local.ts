@@ -57,7 +57,7 @@ export class LocalClient implements RigClient {
   private facts: SystemFacts | null = null;
   private factsAt = 0;
   private snap: Snapshot | null = null;
-  private identity: Identity = {};
+  private identity: Identity & { at?: string } = {};
   private dayMax: DayMax = {};
   private day = "";
   private window: { cpu: number | null; gpu: number | null; busy: boolean; from: number } | null = null;
@@ -152,11 +152,19 @@ export class LocalClient implements RigClient {
     const payload: MachineSync = {
       at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
       history: this.unsynced, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
+      identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt }, identityAt: this.identity.at,
     };
+    const sent = payload.history.length;
     try {
-      await this.cloud.sync(this.id, payload);
-      this.unsynced = [];
-      await this.store.set("unsynced", []);
+      const reply = await this.cloud.sync(this.id, payload);
+      this.unsynced = this.unsynced.slice(sent);
+      await this.store.set("unsynced", this.unsynced);
+      // Renamed on the website since this PC last changed it: take the website's version.
+      if (reply?.identityAt && (!this.identity.at || reply.identityAt > this.identity.at)) {
+        this.identity = { ...reply.identity, at: reply.identityAt };
+        await this.store.set("identity", this.identity);
+        this.emit();
+      }
     } catch { /* try again on the next round */ }
   }
 
@@ -184,7 +192,7 @@ export class LocalClient implements RigClient {
 
   async rename(id: string, patch: Identity) {
     if (!this.isLocal(id)) return this.cloud?.rename(id, patch);
-    this.identity = { ...this.identity, ...patch };
+    this.identity = { ...this.identity, ...patch, at: new Date(this.o.now()).toISOString() };
     await this.store.set("identity", this.identity);
     this.emit();
     void this.sync();

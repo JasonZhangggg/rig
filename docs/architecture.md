@@ -20,6 +20,16 @@ Both apps mount the same `RigApp` from `packages/ui` and differ only in the clie
 
 The PC view the screens draw is built by one function, `buildPC` (`packages/core/src/view.ts`), from the helper's raw readings. The desktop runs it live and uploads the result, so the website shows exactly what the app shows.
 
+## The server
+
+`apps/server` is one Cloudflare Worker (Hono) with a D1 database. It serves the website's files and, under `/api`:
+
+- **Accounts** with [Better Auth](https://better-auth.com): email and password on the website, Google when it's configured, and the desktop sign-in. The desktop asks for a code (`/api/auth/device/code`) and opens `/app/?user_code=…`, where the person checks the code and approves. The app then gets a bearer token, kept in Windows Credential Manager.
+- **PCs**: the desktop uploads its view, settings, change log and new history points (`PUT /api/machines/:id/sync`). The website reads them back. A PC is keyed by account and machine id, and counts as online when it synced in the last 12 minutes. Name and color can be changed on either side; whichever changed last wins.
+- **Chat** (`POST /api/chat`, streamed): Claude (`claude-opus-5-5`) gets the PC's readings and settings, can search the web and read manuals and maker pages, and has two tools. `propose_change` shows a fix card; the server checks it against the fix catalog and against what's actually on that PC (the power plan, startup app or display has to exist) before the person sees it. `show_steps` shows numbered steps for things only the person can do. One card per answer, and nothing changes until the person approves in the app on that PC. Each account gets a daily allowance of questions.
+
+How to put it online: [deploy.md](deploy.md).
+
 ## Changes are safe by construction
 
 1. Every change Rig can make is in one list, the fix catalog (`packages/core/src/actions.ts`): power plan, startup apps, Game Mode, visual effects, processor speed cap, screen refresh rate. Chat can only propose calls from this list, and they're checked with `validateCall` on the server, in the app and again in the helper.
@@ -55,9 +65,15 @@ CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver.
 Tested here (Linux, no Windows):
 
 - Core logic: health checks, the fix catalog, the PC view, LocalClient's apply, undo, redo, rollback on failure, history and upload (`pnpm --filter @rig/core test`).
+- Server: sign-up, the desktop's code sign-in from start to bearer token, CORS for the app, upload and read-back, privacy between accounts, which name wins, offline after 12 minutes, and chat with a stand-in for Claude: streamed text, a proposal checked against the PC, refusing changes that don't exist on the PC, steps, the daily limit (`pnpm --filter @rig/server test`, Better Auth on a D1 stand-in). The Worker was also run locally with `wrangler dev` and a real local D1: sign-up, the device code, upload and listing all worked.
 - Screens: every page renders, the account sits at the bottom of the sidebar, a change goes through review before it's made and can be undone (`pnpm --filter @rig/ui test`, jsdom with the 3D scene stubbed).
 - Desktop Rust: the store and the helper protocol over an in-memory pipe (`cargo test`). The Windows-only launch code type-checks for Windows.
 - The helper compiles; the website and the desktop front end build.
+
+Not tried yet:
+
+- Chat against the real Claude API (needs the API key on the server).
+- Google sign-in (needs a Google OAuth client).
 
 Needs a Windows PC to try:
 

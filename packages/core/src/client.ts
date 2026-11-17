@@ -76,6 +76,8 @@ export interface RigClient {
   signInGoogle?(): Promise<void>;
   /** Desktop: show a code, open the website, and finish when the person approves there. */
   signInWithBrowser?(): Promise<{ code: string; url: string; done: Promise<Account> }>;
+  /** Website: approve or refuse a desktop sign-in code (from the link the desktop opened). */
+  approveDevice?(userCode: string, approve: boolean): Promise<void>;
 
   /** Every PC on the account (or just this one when signed out on the desktop). */
   machines(): Promise<PC[]>;

@@ -15,6 +15,7 @@ import { Games } from "./pages/Games";
 import { History } from "./pages/History";
 import { Web } from "./pages/Web";
 import { SignIn } from "./pages/SignIn";
+import { DeviceApprove } from "./pages/DeviceApprove";
 
 export interface RigAppProps {
   client: RigClient;
@@ -28,6 +29,8 @@ export function RigApp({ client, requireAccount }: RigAppProps) {
   document.documentElement.dataset.colors = "watermelon";
   const [account, setAccount] = useState<Account | null | undefined>(requireAccount ? undefined : null);
   const [signin, setSignin] = useState(location.hash === "#signin");
+  // The desktop app opens /app/?user_code=… so the person can approve its sign-in here.
+  const [userCode, setUserCode] = useState(() => (client.approveDevice ? new URLSearchParams(location.search).get("user_code") : null));
   useEffect(() => {
     if (requireAccount) client.account().then(setAccount).catch(() => setAccount(null));
     const on = () => setSignin(location.hash === "#signin");
@@ -36,8 +39,16 @@ export function RigApp({ client, requireAccount }: RigAppProps) {
   }, [client, requireAccount]);
 
   if (requireAccount && account === undefined) return <Splash text="Loading…" />;
+  if (account && userCode) {
+    return <DeviceApprove client={client} account={account} code={userCode} onClose={() => {
+      const url = new URL(location.href);
+      url.searchParams.delete("user_code");
+      history.replaceState(null, "", url);
+      setUserCode(null);
+    }} />;
+  }
   if ((requireAccount && !account) || signin) {
-    return <SignIn client={client}
+    return <SignIn client={client} note={userCode ? "Sign in here to finish signing in the Rig app on your PC." : undefined}
       onDone={() => { location.hash = "overview"; location.reload(); }}
       onSkip={requireAccount ? undefined : () => { location.hash = "overview"; }} />;
   }

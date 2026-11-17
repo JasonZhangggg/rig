@@ -4,6 +4,7 @@
 import type { Change, ChatEvent, ChatMessage } from "./client";
 import type { Game, HistoryPoint, PC } from "./model";
 import type { Inventory, SystemFacts } from "./telemetry";
+import type { Identity } from "./view";
 
 /** What the desktop app uploads for its PC every few minutes and after a change. */
 export interface MachineSync {
@@ -16,7 +17,16 @@ export interface MachineSync {
   /** The newest 200 changes, so the web shows the same log. */
   changes: Change[];
   games: Game[];
+  /** Name, color and dust-clean date, with when they last changed here. */
+  identity: Identity;
+  identityAt?: string;
 }
+
+/** Reply to a sync: the account's identity for this PC, which wins when it was changed on the web later. */
+export interface SyncReply { identity: Identity; identityAt?: string }
+
+/** GET /api/config: what this server has turned on. */
+export interface ServerConfig { google: boolean; chat: boolean }
 
 /** Body of POST /api/chat. The desktop sends its live view; the web sends only the id. */
 export interface ChatRequest {
@@ -36,6 +46,7 @@ export const paths = {
   upgrades: (id: string) => `/machines/${encodeURIComponent(id)}/upgrades`,
   sync: (id: string) => `/machines/${encodeURIComponent(id)}/sync`,
   chat: "/chat",
+  config: "/config",
   // Better Auth
   signInEmail: "/auth/sign-in/email",
   signUpEmail: "/auth/sign-up/email",
@@ -43,6 +54,9 @@ export const paths = {
   signOut: "/auth/sign-out",
   deviceCode: "/auth/device/code",
   deviceToken: "/auth/device/token",
+  deviceCheck: (code: string) => `/auth/device?user_code=${encodeURIComponent(code)}`,
+  deviceApprove: "/auth/device/approve",
+  deviceDeny: "/auth/device/deny",
 } as const;
 
 /** The desktop app's client id for the device sign-in flow. */

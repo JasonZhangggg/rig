@@ -69,3 +69,20 @@ describe("Rig app on demo data", () => {
     await waitFor(() => expect(screen.getByRole("switch", { name: /Game Mode/i }).getAttribute("aria-checked")).toBe(before));
   });
 });
+
+describe("Desktop sign-in on the website", () => {
+  afterEach(() => { cleanup(); history.replaceState(null, "", "/"); });
+
+  it("asks before signing a PC in, then sends the approval", async () => {
+    history.replaceState(null, "", "/app/?user_code=W4XKLL2V");
+    const client = new DemoClient();
+    const approve = vi.fn(async () => {});
+    Object.assign(client, { approveDevice: approve, account: async () => ({ id: "u1", name: "Jo", email: "jo@example.com" }) });
+    render(<RigApp client={client} requireAccount />);
+    expect(await screen.findByText("W4XKLL2V")).toBeTruthy();
+    expect(screen.getByText("jo@example.com")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in on that PC" }));
+    await screen.findByText("Your PC is signed in");
+    expect(approve).toHaveBeenCalledWith("W4XKLL2V", true);
+  });
+});
