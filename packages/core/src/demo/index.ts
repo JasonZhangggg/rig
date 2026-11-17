@@ -7,7 +7,7 @@ import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
-import { emptyAlertState, stepAlerts, USUAL, type AlertState } from "../alerts";
+import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts } from "./apply";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
@@ -61,7 +61,7 @@ export class DemoClient implements RigClient {
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax);
-    return { ...pc, lastSync: "Demo PC", ...(alerts.length ? { alerts } : {}) };
+    return withAlerts({ ...pc, lastSync: "Demo PC" }, alerts);
   }
 
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }

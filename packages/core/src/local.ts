@@ -4,7 +4,7 @@
 // the view so the website shows it and reaches the other PCs on the account.
 
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
-import { emptyAlertState, stepAlerts, USUAL, type AlertState } from "./alerts";
+import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
 import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
@@ -157,9 +157,8 @@ export class LocalClient implements RigClient {
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...pc } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
-    pc.id = this.id;
-    if (this.alerts.length) pc.alerts = this.alerts;
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
+    const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
   }

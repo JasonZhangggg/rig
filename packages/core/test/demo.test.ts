@@ -68,6 +68,7 @@ describe("demo alerts", () => {
     expect(pc.alerts![0].detail).toMatch(/^In .+ it's been at \d+°C lately, up from its usual \d+°C\./);
     expect(new Date(pc.alerts![0].since).getTime()).toBeLessThan(Date.now() - 864e5);
     expect(pc.health).toBeGreaterThanOrEqual(75);
+    expect(pc.summary).toBe("Running well. One thing needs a look.");
     const { pc: laptop } = await demoWeek("demo-pebble");
     expect(laptop.alerts).toBeUndefined();
   });

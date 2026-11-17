@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  alertRules, alertsToNotify, alertTiming, coveredIssues, emptyAlertState, shownAlerts, sortAlerts, stepAlerts,
+  alertRules, alertsToNotify, alertTiming, coveredIssues, emptyAlertState, shownAlerts, sortAlerts, stepAlerts, withAlerts, type PC,
   LocalClient, MemoryStore, type Alert, type AlertState, type HistoryPoint, type Inventory, type Sensor, type Snapshot,
 } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
@@ -253,6 +253,23 @@ describe("showing and notifying", () => {
     const next = alertsToNotify([a("y", "warn", "2026-11-01T00:00:00Z")], log, week);
     expect(next.notify).toEqual([]);
     expect(Object.keys(next.log)).toEqual(["y"]);
+  });
+});
+
+describe("the PC view", () => {
+  const pc = (issues: PC["issues"]): PC => ({ id: "x", name: "X", kind: "tower", accent: "", nickname: "", os: "", health: 96, lastSync: "", online: true, summary: "Running well. Nothing needs a look.", issues });
+  const full: Alert = { id: "drive-full:C:", kind: "drive-full", part: "ssd", severity: "warn", title: "", detail: "", since: "2026-11-17T10:00:00Z", covers: ["vol-C:"] };
+
+  it("counts alerts in its summary, once each with the issues they cover", () => {
+    const view = withAlerts(pc([{ id: "vol-C:", severity: "warn", title: "", body: "", action: "", go: "chat" }]), [full]);
+    expect(view.alerts).toEqual([full]);
+    expect(view.summary).toBe("Running well. One thing needs a look.");
+    expect(withAlerts(pc([{ id: "cpu-warm", severity: "warn", title: "", body: "", action: "", go: "chat" }]), [full]).summary).toBe("Running well. 2 things need a look.");
+  });
+
+  it("is left as it is without alerts", () => {
+    const view = pc([]);
+    expect(withAlerts(view, [])).toBe(view);
   });
 });
 

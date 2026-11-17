@@ -6,8 +6,8 @@
 // after, so one event is one alert. Pure, so the desktop, the demo and the
 // tests agree.
 
-import { cpuLimit, cpuTemp, gpuLimit, gpuTemp } from "./health";
-import { HISTORY_WINDOW_MS, type Alert, type AlertKind, type HistoryPoint, type Severity } from "./model";
+import { cpuLimit, cpuTemp, gpuLimit, gpuTemp, summaryLine } from "./health";
+import { HISTORY_WINDOW_MS, type Alert, type AlertKind, type HistoryPoint, type PC, type Severity } from "./model";
 import { findSensor, type Inventory, type Sensor, type Snapshot } from "./telemetry";
 
 const MIN = 60_000;
@@ -339,6 +339,14 @@ export function shownAlerts(alerts: readonly Alert[] | undefined, off: readonly 
 /** Ids of the issues these alerts already cover. */
 export function coveredIssues(alerts: readonly Alert[]): Set<string> {
   return new Set(alerts.flatMap((a) => a.covers ?? []));
+}
+
+/** The PC view with its alerts on, and a summary that counts them alongside the issues they don't cover. */
+export function withAlerts<T extends PC>(pc: T, alerts: readonly Alert[]): T {
+  if (!alerts.length) return pc;
+  const covered = coveredIssues(alerts);
+  const rest = (pc.issues ?? []).filter((i) => !covered.has(i.id));
+  return { ...pc, alerts: [...alerts], summary: summaryLine(pc.health, [...rest, ...alerts]) };
 }
 
 /** Per alert id: the start time last notified about, and when. */
