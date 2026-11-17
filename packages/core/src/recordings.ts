@@ -238,13 +238,17 @@ function cleanSample(raw: unknown): RecordingSample | null {
   return out;
 }
 
+/** The busiest few by processor share, always with the one holding the most memory, so a memory hog that sits idle still shows. */
 export function cleanProcesses(raw: unknown, max = TOP_PROCESSES): ProcessUse[] {
   if (!Array.isArray(raw)) return [];
-  return (raw as Partial<ProcessUse>[])
+  const all = (raw as Partial<ProcessUse>[])
     .filter((p) => p && typeof p.name === "string" && p.name && typeof p.cpu === "number" && typeof p.memMb === "number")
     .map((p) => ({ name: p.name!.slice(0, 60), cpu: Math.round(p.cpu! * 10) / 10, memMb: Math.round(p.memMb!), ...(typeof p.gpu === "number" ? { gpu: Math.round(p.gpu) } : {}) }))
-    .sort((a, b) => b.cpu - a.cpu || b.memMb - a.memMb)
-    .slice(0, max);
+    .sort((a, b) => b.cpu - a.cpu || b.memMb - a.memMb);
+  if (all.length <= max) return all;
+  const biggest = all.reduce((a, b) => (b.memMb > a.memMb ? b : a));
+  const top = all.slice(0, max);
+  return top.includes(biggest) ? top : [...top.slice(0, max - 1), biggest];
 }
 
 const states: RecordingState[] = ["pending", "recording", "done", "cancelled", "failed"];
