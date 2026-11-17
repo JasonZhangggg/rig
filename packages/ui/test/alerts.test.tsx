@@ -60,6 +60,17 @@ describe("alerts in Things to look at", () => {
     expect(await screen.findByText(hot.ask!)).toBeTruthy();
   });
 
+  it("shows an alert's temperatures in °F once picked, and asks in °F", async () => {
+    localStorage.setItem("rig.tempUnit", "f");
+    render(<RigApp client={demoWith([hot])} />);
+    const list = await todo();
+    expect(await list.findByText("Graphics card is staying at its 190°F limit")).toBeTruthy();
+    expect(list.getByText(/It's at 192°F\.$/)).toBeTruthy();
+    expect(list.queryByText(/°C/)).toBeNull();
+    fireEvent.click(list.getByText("Graphics card is staying at its 190°F limit"));
+    expect(await screen.findByText("My graphics card has been at 192°F for a while. What should I do?")).toBeTruthy();
+  });
+
   it("hides a kind that was turned off on this device", async () => {
     render(<><RigApp client={demoWith([full, hot])} /><NotificationSettings /></>);
     await (await todo()).findByText(hot.title);

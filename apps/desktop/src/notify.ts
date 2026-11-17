@@ -3,8 +3,8 @@
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { alertsToNotify, shownAlerts, type LocalClient, type NotifyLog } from "@rig/core";
-import { alertKindsOff } from "@rig/ui";
+import { alertInUnit, alertsToNotify, shownAlerts, type LocalClient, type NotifyLog } from "@rig/core";
+import { alertKindsOff, storedTempUnit } from "@rig/ui";
 
 const LOG = "rig.alerts.notified";
 
@@ -35,7 +35,8 @@ export function notifyAlerts(client: LocalClient): () => void {
       if (after !== before) { try { localStorage.setItem(LOG, after); } catch { /* storage unavailable */ } }
       if (!notify.length || (await focused())) return;
       if (!(await (permission ??= allowed().catch(() => false)))) return;
-      for (const a of notify) sendNotification({ title: a.title, body: a.detail });
+      const unit = storedTempUnit();
+      for (const a of notify.map((x) => alertInUnit(x, unit))) sendNotification({ title: a.title, body: a.detail });
     }).catch(() => {});
   });
 }

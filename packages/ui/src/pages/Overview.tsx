@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
+import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, weekEvenings, weekTemps, type HistoryPoint, type Issue, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
 import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../state";
 import { FansCard } from "./overview/FansCard";
@@ -43,6 +43,7 @@ export function Overview() {
   const week = useWeekInsights(pc, useHistory("7d"));
   const temp = useTemp();
   const inUnit = useTempText();
+  const goTo = (i: Issue) => issueGo(i.ask ? { ...i, ask: inUnit(i.ask) } : i, pc, ctx);
 
   return (
     <div className="page f-home">
@@ -50,7 +51,7 @@ export function Overview() {
         <div className="f-band-left">
           <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
-            <button type="button" className="f-cta" onClick={() => issueGo(top, pc, ctx)}>
+            <button type="button" className="f-cta" onClick={() => goTo(top)}>
               <span>{open.length ? "Review" : "See what's new"}</span>
               {open.length > 0 && <em>{open.length}</em>}
               <i><Arrow /></i>
@@ -100,7 +101,7 @@ export function Overview() {
         <section className="f-card f-todo">
           <div className="f-card-head"><span>Things to look at</span>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
           {issues.map((i) => (
-            <button key={i.id} type="button" className={`f-todo-row ${i.severity}`} onClick={() => issueGo(i, pc, ctx)}>
+            <button key={i.id} type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
               <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
               <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
               <i className="f-todo-go"><Arrow /></i>

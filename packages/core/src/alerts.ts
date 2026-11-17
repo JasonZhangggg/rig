@@ -5,8 +5,13 @@
 // recovery, and keeps its start time when the same problem comes back soon
 // after, so one event is one alert. Pure, so the desktop, the demo and the
 // tests agree.
+//
+// Alert text is written in °C like the PC's findings: a temperature as "72°C"
+// and a difference between two as a bare "5°", so tempsInText (alertInUnit)
+// can show it in °F with differences scaled but not offset.
 
 import { cpuLimit, cpuTemp, gpuLimit, gpuTemp, summaryLine } from "./health";
+import { tempsInText, type TempUnit } from "./units";
 import { HISTORY_WINDOW_MS, type Alert, type AlertKind, type HistoryPoint, type PC, type Severity } from "./model";
 import { findSensor, type Inventory, type Sensor, type Snapshot } from "./telemetry";
 
@@ -347,6 +352,12 @@ export function withAlerts<T extends PC>(pc: T, alerts: readonly Alert[]): T {
   const covered = coveredIssues(alerts);
   const rest = (pc.issues ?? []).filter((i) => !covered.has(i.id));
   return { ...pc, alerts: [...alerts], summary: summaryLine(pc.health, [...rest, ...alerts]) };
+}
+
+/** An alert's words with its temperatures in the viewer's unit. */
+export function alertInUnit(a: Alert, unit: TempUnit): Alert {
+  if (unit === "c") return a;
+  return { ...a, title: tempsInText(a.title, unit), detail: tempsInText(a.detail, unit), ...(a.ask ? { ask: tempsInText(a.ask, unit) } : {}) };
 }
 
 /** Per alert id: the start time last notified about, and when. */

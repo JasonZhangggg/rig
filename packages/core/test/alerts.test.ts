@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  alertRules, alertsToNotify, alertTiming, coveredIssues, emptyAlertState, shownAlerts, sortAlerts, stepAlerts, withAlerts, type PC,
+  alertInUnit, alertRules, alertsToNotify, alertTiming, coveredIssues, emptyAlertState, shownAlerts, sortAlerts, stepAlerts, withAlerts, type PC,
   LocalClient, MemoryStore, type Alert, type AlertState, type HistoryPoint, type Inventory, type Sensor, type Snapshot,
 } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
@@ -194,6 +194,17 @@ describe("running hotter than usual", () => {
     expect(last).toEqual([expect.objectContaining({ id: "hotter-than-usual:gpu", kind: "hotter-than-usual", part: "gpu", severity: "warn", title: "Graphics card runs hotter than it used to" })]);
     expect(last[0].detail).toBe("In Baldur's Gate 3 it's been at 78°C lately, up from its usual 71°C. Dust on the filters and fans is the usual cause.");
     expect(last[0].since).toBe(new Date(T0 - 6 * DAY).toISOString());
+  });
+
+  it("reads in °F, with a difference scaled but not offset", () => {
+    const a = check(history(78, 71)).last[0];
+    expect(alertInUnit(a, "c")).toBe(a);
+    const f = alertInUnit(a, "f");
+    expect(f.detail).toBe("In Baldur's Gate 3 it's been at 172°F lately, up from its usual 160°F. Dust on the filters and fans is the usual cause.");
+    expect(f.ask).toBe("My graphics card runs at 172°F in Baldur's Gate 3, up from 160°F a few weeks ago. Why, and what should I do?");
+    expect(f.title).toBe(a.title);
+    // Alert text writes a difference as a bare degree, so it scales by 1.8 without the 32 offset.
+    expect(alertInUnit({ ...a, detail: "It's 5° warmer than its usual 72°C." }, "f").detail).toBe("It's 9° warmer than its usual 162°F.");
   });
 
   it("dates it from the evening it started running warm", () => {

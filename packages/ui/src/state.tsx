@@ -87,6 +87,12 @@ const AppCtx = createContext<Ctx | null>(null);
 export const useApp = () => useContext(AppCtx)!;
 
 /** The viewer's temperature unit. Outside the app (as in a test of one card) it's °C. */
+/** The temperature unit picked on this device, for code outside the screens such as notifications. */
+export function storedTempUnit(): TempUnit {
+  const u = storage.get("rig.tempUnit");
+  return isTempUnit(u) ? u : "c";
+}
+
 export const useTempUnit = (): TempUnit => useContext(AppCtx)?.ui.tempUnit ?? "c";
 
 /** Formats a Celsius temperature in the viewer's unit. */
@@ -125,7 +131,7 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
     pcId: storage.get("rig.pc"),
     exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1",
-    tempUnit: ((u) => (isTempUnit(u) ? u : "c"))(storage.get("rig.tempUnit")),
+    tempUnit: storedTempUnit(),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false });
   const [loaded, setLoaded] = useState(false);
