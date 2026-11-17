@@ -3,11 +3,14 @@ import { useEffect, useRef } from "react";
 /* A PC tower drawn in characters, turning slowly on a turntable and read like a
    thermal camera: denser glyphs face the light and the data colors mean hotter.
    Each cell casts one ray at a few boxes and fan planes, so near parts hide far
-   ones. The pointer is a heat source that spreads and cools; dragging turns it. */
+   ones. Edges take the slant of the 3D edge they sit on. The pointer is a heat
+   source that spreads and cools; dragging turns it. */
 
-const RAMP = " .:-=+*#%@";
+const RAMP = " .:+*#%@";
+const GLYPHS = RAMP + "-/|\\";
+const EDGE = RAMP.length;
 const LEVELS = 16;
-const SHADES = 4;
+const SHADES = 5;
 const MAX_CELLS = 14000;
 // Characters read fine at 30 frames a second, and it halves the drawing.
 const FRAME_MS = 1000 / 30 - 2;
@@ -20,43 +23,49 @@ const DIST = 11;
 const REST_YAW = -0.62;
 
 type V3 = [number, number, number];
-type Tex = "vent" | "grille" | "board" | "fins" | "back" | "strip" | "ram";
+type Tex = "side" | "vent" | "grille" | "board" | "fins" | "back" | "shroud" | "plate" | "ram" | "cap";
 type Box = { kind: "box"; lo: V3; hi: V3; heat: number; albedo: number; inner?: boolean; tex?: Tex; glass?: boolean; holes?: [number, number, number][] };
 type Fan = { kind: "fan"; c: V3; half: number; r: number; blades: number; speed: number; heat: number; albedo: number };
 type Part = Box | Fan;
 
-const W = 0.42, H = 1, D = 0.78, T = 0.03;
+const W = 0.42, H = 1, D = 0.78, T = 0.03, RIM = 0.055;
 const box = (lo: V3, hi: V3, heat: number, albedo: number, more: Partial<Box> = {}): Box => ({ kind: "box", lo, hi, heat, albedo, ...more });
-const fan = (c: V3, half: number, speed: number, heat: number): Fan => ({ kind: "fan", c, half, r: half * 0.94, blades: 7, speed, heat, albedo: 0.95 });
+const fan = (c: V3, half: number, speed: number, heat: number): Fan => ({ kind: "fan", c, half, r: half * 0.92, blades: 5, speed, heat, albedo: 0.95 });
 const part = (lo: V3, hi: V3, heat: number, albedo: number, more: Partial<Box> = {}) => box(lo, hi, heat, albedo, { inner: true, ...more });
+const RAM = [0, 1, 2, 3].map((k) => -0.2 + k * 0.058);
 
 // The glass side is x-, the front z+; fans all face along z.
 const PARTS: Part[] = [
-  box([-W, H - T, -D], [W, H, D], 0.4, 1, { tex: "grille" }),
-  box([-W, -H, -D], [W, -H + T, D], 0.36, 1),
-  box([W - T, -H, -D], [W, H, D], 0.38, 1),
-  box([-W, -H, -D], [W, H, -D + T], 0.4, 1, { tex: "back", holes: [[-0.1, 0.5, 0.16]] }),
-  box([-W, -H, -D], [-W + 0.012, H, D], 0.4, 1, { glass: true }),
-  box([-W, -H, D - T], [W, H, D], 0.42, 0.95, { holes: [[0, 0.58, 0.235], [0, 0.04, 0.235], [0, -0.5, 0.235]] }),
-  ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => box([sx * 0.34 - 0.05, -H - 0.05, sz * 0.6 - 0.09], [sx * 0.34 + 0.05, -H, sz * 0.6 + 0.09], 0.3, 0.8))),
-  part([0.35, -0.5, -0.74], [0.39, 0.88, 0.14], 0.56, 0.7, { tex: "board" }),
-  part([-0.02, 0.22, -0.52], [0.35, 0.7, -0.24], 0.5, 0.95, { tex: "fins" }),
-  fan([0.165, 0.46, -0.225], 0.19, 5.5, 0.55),
-  part([0.22, 0.16, -0.17], [0.35, 0.78, 0.0], 0.66, 1, { tex: "ram" }),
-  part([-0.2, -0.27, -0.75], [0.35, -0.06, 0.38], 0.6, 1, { tex: "strip" }),
-  part([-W + 0.012, -H + T, -D + T], [W - T, -0.6, 0.46], 0.52, 0.9, { tex: "vent" }),
-  fan([0, 0.58, 0.68], 0.25, 4.2, 0.58), fan([0, 0.04, 0.68], 0.25, 4.4, 0.58), fan([0, -0.5, 0.68], 0.25, 4.0, 0.58),
-  fan([-0.1, 0.5, -0.71], 0.17, -4.8, 0.45),
-  box([0.14, 0.12, -0.81], [0.35, 0.78, -D + T], 0.32, 0.9),
+  box([-W, H - T, -D], [W, H, D], 0.2, 1, { tex: "grille" }),
+  box([-W, -H, -D], [W, -H + T, D], 0.18, 1),
+  box([W - T, -H, -D], [W, H, D], 0.2, 1, { tex: "side" }),
+  box([-W, -H, -D], [W, H, -D + T], 0.22, 1, { tex: "back", holes: [[-0.1, 0.5, 0.16]] }),
+  box([-W, -H, -D], [-W + 0.012, H, D], 0.22, 1, { glass: true }),
+  box([-W, -H, D - T], [W, H, D], 0.24, 0.95, { holes: [[0, 0.58, 0.235], [0, 0.04, 0.235], [0, -0.5, 0.235]] }),
+  ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => box([sx * 0.34 - 0.05, -H - 0.05, sz * 0.6 - 0.09], [sx * 0.34 + 0.05, -H, sz * 0.6 + 0.09], 0.16, 0.8))),
+  part([0.35, -0.5, -0.74], [0.39, 0.88, 0.14], 0.34, 0.75, { tex: "board" }),
+  part([0.3, 0.74, -0.62], [0.35, 0.84, -0.18], 0.42, 0.95),
+  part([0.32, -0.04, -0.66], [0.35, 0.02, -0.3], 0.42, 1),
+  part([-0.02, 0.22, -0.52], [0.35, 0.7, -0.26], 0.5, 1, { tex: "fins" }),
+  part([-0.03, 0.7, -0.53], [0.35, 0.73, -0.25], 0.52, 1, { tex: "cap" }),
+  fan([0.165, 0.46, -0.235], 0.19, 5.5, 0.62),
+  ...RAM.map((z) => part([0.24, 0.18, z], [0.35, 0.72, z + 0.036], 0.4, 1, { tex: "ram" })),
+  ...RAM.map((z) => part([0.235, 0.72, z - 0.004], [0.35, 0.77, z + 0.04], 0.7, 1, { tex: "cap" })),
+  part([-0.22, -0.31, -0.75], [0.35, -0.13, 0.38], 0.66, 1, { tex: "shroud" }),
+  part([-0.22, -0.13, -0.75], [0.35, -0.1, 0.38], 0.46, 1, { tex: "plate" }),
+  part([-W + 0.012, -H + T, -D + T], [W - T, -0.6, 0.46], 0.26, 0.9, { tex: "vent" }),
+  fan([0, 0.58, 0.68], 0.25, 4.2, 0.6), fan([0, 0.04, 0.68], 0.25, 4.4, 0.6), fan([0, -0.5, 0.68], 0.25, 4.0, 0.6),
+  fan([-0.1, 0.5, -0.71], 0.17, -4.8, 0.55),
+  box([0.14, 0.12, -0.81], [0.35, 0.78, -D + T], 0.24, 0.9),
 ];
 const BOUND = { lo: [-W - 0.01, -H - 0.06, -0.83] as V3, hi: [W + 0.01, H + 0.01, D + 0.01] as V3 };
 const FLOOR_Y = -H - 0.055, FLOOR_R = 1.0;
 // Heat sources inside the case: x, y, z, strength, spread.
 const HEAT: [number, number, number, number, number][] = [
-  [0.28, 0.46, -0.38, 0.75, 0.2],
-  [0.12, -0.16, -0.2, 0.6, 0.28],
-  [0.0, -0.82, -0.45, 0.32, 0.3],
-  [0.37, 0.78, -0.5, 0.3, 0.12],
+  [0.2, 0.46, -0.38, 0.5, 0.18],
+  [0.1, -0.2, -0.2, 0.42, 0.3],
+  [0.0, -0.82, -0.45, 0.14, 0.3],
+  [0.35, 0.79, -0.4, 0.2, 0.12],
 ];
 
 const clamp = (v: number, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
@@ -95,52 +104,81 @@ function extent(cams: Camera[], pts = HULL) {
 // Fit the whole turn, so the tower keeps its size as it spins.
 const TURN = extent(Array.from({ length: 48 }, (_, k) => camera((k / 48) * Math.PI * 2)));
 
-/** Where the tower sits: on wide bands it moves right, so the copy keeps the left. */
+/** Where the tower sits: centered with room around it; on a short wide band it fills the height. */
 function stage(w: number, h: number) {
   const ew = TURN.x1 - TURN.x0, eh = TURN.y1 - TURN.y0;
-  let x: number, y: number, bw: number, bh: number;
-  if (w / h > 1.6) {
-    bh = h * 0.92; bw = Math.min(w * 0.44, bh * 1.05);
-    x = w - bw - Math.max(12, w * 0.04); y = (h - bh) / 2;
-  } else {
-    const top = 80;
-    bh = Math.max(160, h - top - 170); bw = w * 0.88;
-    x = (w - bw) / 2; y = top;
-  }
+  const wide = w / h > 1.6;
+  const bh = wide ? h * 0.86 : Math.min(h * 0.56, w * 0.74), bw = wide ? w * 0.6 : w * 0.72;
   const s = Math.min(bw / ew, bh / eh);
-  return { s, cx: x + bw / 2 - (s * (TURN.x0 + TURN.x1)) / 2, cy: y + bh / 2 + (s * (TURN.y0 + TURN.y1)) / 2 };
+  return { s, cx: w / 2 - (s * (TURN.x0 + TURN.x1)) / 2, cy: h / 2 + (s * (TURN.y0 + TURN.y1)) / 2 };
 }
 
 interface Grid {
   w: number; h: number; cols: number; rows: number; cw: number; ch: number;
   s: number; cx: number; cy: number;
-  id: Int32Array; depth: Float32Array; soft: Uint8Array; bright: Float32Array; tex: Float32Array; therm: Float32Array;
+  id: Int32Array; depth: Float32Array; flags: Uint8Array; dir: Uint8Array; bright: Float32Array; tex: Float32Array; accent: Float32Array; therm: Float32Array;
   heat: Float32Array; tmp: Float32Array;
 }
+const INNER = 1, INSIDE = 2, GLINT = 4, FAN = 8, LINE = 16;
 
 function build(w: number, h: number): Grid {
-  let cw = w < 600 ? 4.5 : 6, ch = w < 600 ? 7.5 : 10;
+  let cw = w < 600 ? 4 : 5.4, ch = w < 600 ? 6.6 : 9;
   const n = (w / cw) * (h / ch);
   if (n > MAX_CELLS) { const k = Math.sqrt(n / MAX_CELLS); cw *= k; ch *= k; }
   const cols = Math.max(1, Math.ceil(w / cw)), rows = Math.max(1, Math.ceil(h / ch));
   const size = cols * rows;
   return {
     w, h, cols, rows, cw, ch, ...stage(w, h),
-    id: new Int32Array(size).fill(-1), depth: new Float32Array(size), soft: new Uint8Array(size), bright: new Float32Array(size), tex: new Float32Array(size), therm: new Float32Array(size),
+    id: new Int32Array(size).fill(-1), depth: new Float32Array(size), flags: new Uint8Array(size), dir: new Uint8Array(size),
+    bright: new Float32Array(size), tex: new Float32Array(size), accent: new Float32Array(size), therm: new Float32Array(size),
     heat: new Float32Array(size), tmp: new Float32Array(size),
   };
 }
 
+// A texture writes how dense the glyph is, how much it lights up, and the axis of any stroke it draws.
+const TX = { d: 1, a: 0, l: -1 };
+const line = (v: number, step: number, width: number) => Math.abs(fract(v / step + 0.5) - 0.5) * step < width;
+const stroke = (axis: number, a: number) => { TX.l = axis; TX.a = a; };
+
 function texture(t: Tex | undefined, axis: number, p: V3) {
+  TX.d = 1; TX.a = 0; TX.l = -1;
   switch (t) {
-    case "vent": return axis === 1 && Math.abs(p[0]) < 0.32 && Math.abs(p[2]) < 0.65 && fract(p[2] * 13) < 0.45 ? 0.35 : 1;
-    case "board": return fract(p[1] * 7) < 0.1 || fract(p[2] * 7) < 0.1 ? 1.15 : 0.75;
-    case "fins": return axis !== 1 && fract(p[1] * 26) < 0.5 ? 0.4 : 1.05;
-    case "back": return axis === 2 && p[0] > -0.3 && p[0] < 0.1 && p[1] > -0.5 && p[1] < 0.05 && fract(p[1] * 12) < 0.4 ? 0.4 : 1;
-    case "strip": return axis === 0 ? 1.15 : 0.8;
-    case "grille": return axis === 1 && Math.abs(p[0]) < 0.26 && p[2] > -0.65 && p[2] < -0.08 && fract(p[2] * 12) < 0.4 ? 0.45 : 1;
-    case "ram": return axis !== 2 && fract(p[2] * 18) < 0.4 ? 0.35 : 1.1;
-    default: return 1;
+    case "side":
+      if (axis !== 0 || p[0] < 0) return;
+      if (Math.abs(Math.abs(p[2]) - (D - 0.1)) < 0.018 && Math.abs(p[1]) < H - 0.1) stroke(1, 0.15);
+      else if (Math.abs(Math.abs(p[1]) - (H - 0.1)) < 0.022 && Math.abs(p[2]) < D - 0.1) stroke(2, 0.15);
+      return;
+    case "grille":
+      if (axis === 1 && Math.abs(p[0]) < 0.26 && Math.abs(p[2]) < 0.6) { if (line(p[2], 0.1, 0.022)) stroke(0, 0.2); else TX.d = 0.3; }
+      return;
+    case "back":
+      if (axis !== 2) return;
+      if (p[0] > -0.32 && p[0] < 0.1 && p[1] > -0.56 && p[1] < 0.02) { if (line(p[1], 0.09, 0.02)) stroke(0, 0.1); else TX.d = 0.3; }
+      else if (Math.abs(Math.hypot(p[0] + 0.05, p[1] + 0.8) - 0.1) < 0.02) TX.d = 1.6;
+      return;
+    case "board":
+      if (axis !== 0) return;
+      TX.d = 0.6;
+      if (line(p[1], 0.2, 0.022) && fract(p[2] * 2.2 + Math.floor(p[1] * 5 + 0.5) * 0.41) < 0.55) stroke(2, 0.6);
+      else if (line(p[2], 0.18, 0.02) && fract(p[1] * 1.9 + Math.floor(p[2] * 5.5 + 0.5) * 0.53) < 0.5) stroke(1, 0.6);
+      return;
+    case "fins":
+      if (axis === 1) TX.d = 1.1;
+      else if (line(p[1], 0.09, 0.022)) stroke(axis === 0 ? 2 : 0, 0.5);
+      else TX.d = 0.3;
+      return;
+    case "cap": TX.d = 1.3; TX.a = 0.8; return;
+    case "ram": TX.d = axis === 0 ? 1.1 : line(p[1], 0.11, 0.025) ? 0.35 : 1.05; return;
+    case "shroud":
+      if (axis !== 1 && p[1] > -0.24 && p[1] < -0.2) stroke(axis === 0 ? 2 : 0, 1);
+      return;
+    case "plate":
+      if (axis === 1 && Math.abs(p[0] + 0.15) < 0.025) stroke(2, 0.7); else TX.d = 0.9;
+      return;
+    case "vent":
+      if (axis === 1 && Math.abs(p[0]) < 0.3 && p[2] > 0.08 && p[2] < 0.42) { if (line(p[0], 0.09, 0.02)) stroke(2, 0.1); else TX.d = 0.3; }
+      else if (axis === 0 && p[1] > -0.8 && p[1] < -0.76 && p[2] > -0.55 && p[2] < 0.25) stroke(2, 0.7);
+      return;
   }
 }
 
@@ -152,9 +190,16 @@ const CORNERS: V3[][] = PARTS.map((q) => {
 });
 const RECT = new Int32Array(PARTS.length * 4);
 
+/** Picks the edge glyph whose slant matches a 3D direction seen on screen. */
+function slant(cam: Camera, x: number, y: number, z: number) {
+  const sx = x * cam.r[0] + z * cam.r[2], sy = x * cam.u[0] + y * cam.u[1] + z * cam.u[2];
+  const a = fract(Math.atan2(sy, sx) / Math.PI);
+  return a < 0.13 || a > 0.87 ? 0 : a < 0.37 ? 1 : a < 0.63 ? 2 : 3;
+}
+
 /** Casts one ray per cell over the tower's screen box and keeps the nearest surface. */
 function trace(gd: Grid, cam: Camera, spin: number) {
-  const { cols, rows, cw, ch, s, cx, cy, id, depth, soft, bright, tex, therm } = gd;
+  const { cols, rows, cw, ch, s, cx, cy, id, depth, flags, dir, bright, tex, accent, therm } = gd;
   id.fill(-1);
   const toCol = (x: number) => (cx + x * s) / cw, toRow = (y: number) => (cy - y * s) / ch;
   // Each part only tests the cells its projected corners can cover.
@@ -173,7 +218,7 @@ function trace(gd: Grid, cam: Camera, spin: number) {
     const sx = ((col + 0.5) * cw - cx) / s, sy = (cy - (row + 0.5) * ch) / s;
     const dx = f[0] * DIST + rt[0] * sx + u[0] * sy, dy = f[1] * DIST + rt[1] * sx + u[1] * sy, dz = f[2] * DIST + rt[2] * sx + u[2] * sy;
     const ix = 1 / dx, iy = 1 / dy, iz = 1 / dz;
-    let best = Infinity, hit = -1, face = 0, axis = 1, glass = Infinity, fanTex = 1;
+    let best = Infinity, hit = -1, face = 0, axis = 1, glass = Infinity, fx = 0, fy = 0;
 
     for (let i = 0; i < PARTS.length; i++) {
       const k4 = i * 4;
@@ -191,7 +236,11 @@ function trace(gd: Grid, cam: Camera, spin: number) {
         if (lo > near) { near = lo; ax = 2; }
         if (hi < far) far = hi;
         if (near > far || near <= 0 || near >= best) continue;
-        if (q.glass && ax === 0) { if (near < glass) glass = near; continue; }
+        // The glass is clear inside a thin frame.
+        if (q.glass && ax === 0) {
+          const gy = o[1] + dy * near, gz = o[2] + dz * near;
+          if (Math.abs(gy) < H - RIM && Math.abs(gz) < D - RIM) { if (near < glass) glass = near; continue; }
+        }
         if (q.holes && ax === 2) {
           const hx = o[0] + dx * near, hy = o[1] + dy * near;
           let open = false;
@@ -204,17 +253,15 @@ function trace(gd: Grid, cam: Camera, spin: number) {
         if (tt <= 0 || tt >= best) continue;
         const px = o[0] + dx * tt - q.c[0], py = o[1] + dy * tt - q.c[1];
         if (px > q.half || px < -q.half || py > q.half || py < -q.half) continue;
-        const rr = Math.sqrt(px * px + py * py) / q.r;
-        best = tt; hit = i; axis = 2; face = 6;
-        fanTex = rr > 1 ? 0.55 : rr < 0.26 ? 1.9 : Math.cos(q.blades * (Math.atan2(py, px) - spin * q.speed) + 2.6 * rr) > 0.3 ? 1.7 : 0.25;
+        best = tt; hit = i; axis = 2; face = 6; fx = px; fy = py;
       }
     }
     const i = row * cols + col;
     if (hit < 0) {
       if (dy >= 0) continue;
-      const tt = (FLOOR_Y - o[1]) * iy, fx = o[0] + dx * tt, fz = o[2] + dz * tt, fr = Math.hypot(fx, fz) / FLOOR_R;
+      const tt = (FLOOR_Y - o[1]) * iy, gx = o[0] + dx * tt, gz = o[2] + dz * tt, fr = Math.hypot(gx, gz) / FLOOR_R;
       if (fr > 1) continue;
-      const tick = fr > 0.86 && Math.abs(fract((Math.atan2(fz, fx) / (Math.PI * 2)) * 24) - 0.5) > 0.44;
+      const tick = fr > 0.86 && Math.abs(fract((Math.atan2(gz, gx) / (Math.PI * 2)) * 24) - 0.5) > 0.44;
       if (fr < 0.97 && !tick) continue;
       id[i] = -2; bright[i] = tick ? 0.26 : 0.16; therm[i] = 0.1;
       continue;
@@ -226,12 +273,59 @@ function trace(gd: Grid, cam: Camera, spin: number) {
     for (const [hx, hy, hz, amp, sg] of HEAT) heat += amp * Math.exp(-((p[0] - hx) ** 2 + (p[1] - hy) ** 2 + (p[2] - hz) ** 2) / (2 * sg * sg));
     id[i] = hit * 8 + face;
     depth[i] = best;
-    // Fans glow on their own, so their blades read whichever way they face.
-    bright[i] = q.kind === "fan" ? Math.max(0.8, lam) : (0.2 + 0.8 * lam) * q.albedo;
-    const sheen = glass < best ? (fract((o[1] + dy * glass + (o[2] + dz * glass) * 0.7) * 2.2) < 0.1 ? 1.5 : 0.85) : 1;
-    tex[i] = (q.kind === "box" ? texture(q.tex, axis, p) : fanTex) * sheen;
-    soft[i] = q.kind === "box" && q.inner ? 1 : 0;
+    let fl = 0;
+    if (q.kind === "fan") {
+      const rr = Math.hypot(fx, fy) / q.r;
+      const blade = Math.cos(q.blades * (Math.atan2(fy, fx) - spin * q.speed) + 3.2 * rr) > 0.2;
+      bright[i] = Math.max(0.75, lam);
+      // A fan's density is set outright: solid blades brightening to the tips, open gaps, a hot hub.
+      fl |= FAN;
+      tex[i] = rr > 1 ? 0.2 : rr < 0.22 ? 1 : blade ? 0.55 + 0.4 * rr : 0;
+      accent[i] = rr < 0.22 ? 1 : blade ? 0.2 + 0.6 * rr : 0;
+      if (rr < 0.22) heat += 0.25;
+      const ex = q.half - Math.abs(fx), ey = q.half - Math.abs(fy);
+      dir[i] = Math.min(ex, ey) < q.half * 0.1 ? slant(cam, ex < ey ? 0 : 1, ex < ey ? 1 : 0, 0) : slant(cam, -fy, fx, 0);
+    } else {
+      bright[i] = (q.inner ? 0.3 + 0.7 * lam : 0.14 + 0.86 * lam) * q.albedo;
+      texture(q.tex, axis, p);
+      tex[i] = TX.d; accent[i] = TX.a;
+      if (TX.l >= 0) fl |= LINE;
+      if (q.inner) fl |= INNER;
+      else if (glass < best) fl |= INSIDE;
+      // The edge glyph follows whichever edge of this face is closest.
+      const t1 = axis === 0 ? 1 : 0, t2 = axis === 2 ? 1 : 2;
+      const d1 = Math.min(p[t1] - q.lo[t1], q.hi[t1] - p[t1]), d2 = Math.min(p[t2] - q.lo[t2], q.hi[t2] - p[t2]);
+      let along = d1 < d2 ? t2 : t1, near = Math.min(d1, d2), tx = 0, ty = 0, round = false;
+      if (q.holes && axis === 2) for (const [x, y, rr] of q.holes) {
+        const hx = p[0] - x, hy = p[1] - y, gap = Math.abs(Math.hypot(hx, hy) - rr);
+        if (gap < near) { near = gap; tx = -hy; ty = hx; round = true; }
+      }
+      if (q.glass) { const gy = Math.abs(H - RIM - Math.abs(p[1])), gz = Math.abs(D - RIM - Math.abs(p[2])); if (Math.min(gy, gz) < near) along = gy < gz ? 2 : 1; }
+      if (TX.l >= 0) { along = TX.l; round = false; }
+      dir[i] = round ? slant(cam, tx, ty, 0) : slant(cam, along === 0 ? 1 : 0, along === 1 ? 1 : 0, along === 2 ? 1 : 0);
+    }
+    // A pane of glass catches two soft streaks that stay put as the case turns.
+    if (glass < best) {
+      const g = fract((col * cw * 0.55 + row * ch) / (s * 1.1));
+      if (g < 0.05 || (g > 0.11 && g < 0.13)) fl |= GLINT;
+    }
+    flags[i] = fl;
     therm[i] = clamp(heat);
+  }
+}
+
+/** A five-cell soft blur along one axis: stride 1 runs along rows, stride cols down columns. */
+function blur(src: Float32Array, dst: Float32Array, cols: number, rows: number, stride: number) {
+  const n = cols * rows, len = stride === 1 ? cols : rows;
+  for (let i = 0; i < n; i++) {
+    const at = stride === 1 ? i % cols : Math.floor(i / cols);
+    let sum = 3 * src[i], wt = 3;
+    for (let k = 1; k <= 2; k++) {
+      const w = 3 - k;
+      if (at - k >= 0) { sum += w * src[i - k * stride]; wt += w; }
+      if (at + k < len) { sum += w * src[i + k * stride]; wt += w; }
+    }
+    dst[i] = sum / wt;
   }
 }
 
@@ -256,10 +350,15 @@ function readColors(el: HTMLElement, names: string[]) {
 }
 
 function palette(el: HTMLElement) {
-  const [bg, grey, expected, good, look] = readColors(el, ["--graphite", "--text-3", "--expected", "--good", "--look"]);
+  const [bg, grey, expected, good, look, light] = readColors(el, ["--graphite", "--text-3", "--expected", "--good", "--look", "--text"]);
   const mix = (a: number[], b: number[], k: number) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+  // The tokens are soft for text on light pages; on graphite the art pushes them further from grey.
+  const vivid = (c: number[], k: number) => { const m = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return c.map((v) => Math.round(clamp(m + (v - m) * k, 0, 255))); };
+  const brass = vivid(good, 1.9), coral = vivid(look, 1.3);
   // Cool parts sit in warm grey, working parts in brass, the hottest in coral.
-  const stops: [number, number[]][] = [[0, mix(bg, grey, 0.7)], [0.25, expected], [0.55, good], [0.85, look], [1, look]];
+  const stops: [number, number[]][] = [
+    [0, mix(bg, grey, 0.75)], [0.28, vivid(expected, 1.4)], [0.5, brass], [0.66, mix(brass, coral, 0.45)], [0.82, coral], [1, mix(coral, light, 0.18)],
+  ];
   const rgb: number[][] = [];
   for (let l = 0; l < LEVELS; l++) {
     const t = l / (LEVELS - 1);
@@ -268,24 +367,27 @@ function palette(el: HTMLElement) {
     const [t0, c0] = stops[k - 1], [t1, c1] = stops[k];
     rgb.push(mix(c0, c1, clamp((t - t0) / (t1 - t0))));
   }
+  // Shades run from a face turned away from the light to a lit edge catching it.
   const shaded: string[] = [];
-  for (const c of rgb) for (let s = 0; s < SHADES; s++) shaded.push(`rgb(${mix(bg, c, 0.5 + (0.5 * s) / (SHADES - 1)).join(",")})`);
+  for (const c of rgb) for (const k of [0.3, 0.5, 0.74, 1, -0.42]) shaded.push(`rgb(${(k < 0 ? mix(c, light, -k) : mix(bg, c, k)).join(",")})`);
   return { bg: `rgb(${bg.join(",")})`, rgb, shaded };
 }
 
 function atlas(cw: number, ch: number, dpr: number, colors: string[]) {
   const a = document.createElement("canvas");
   const sw = Math.ceil(cw * dpr), sh = Math.ceil(ch * dpr);
-  a.width = sw * RAMP.length;
+  a.width = sw * GLYPHS.length;
   a.height = sh * colors.length;
   const g = a.getContext("2d");
   if (!g) return null;
-  g.font = `600 ${Math.round(ch * 0.95 * dpr)}px ${MONO}`;
   g.textAlign = "center";
   g.textBaseline = "middle";
   colors.forEach((col, l) => {
     g.fillStyle = col;
-    for (let k = 1; k < RAMP.length; k++) g.fillText(RAMP[k], k * sw + sw / 2, l * sh + sh / 2);
+    for (let k = 1; k < GLYPHS.length; k++) {
+      g.font = `${k >= EDGE ? 700 : 600} ${Math.round(ch * (k >= EDGE ? 1.02 : 0.95) * dpr)}px ${MONO}`;
+      g.fillText(GLYPHS[k], k * sw + sw / 2, l * sh + sh / 2);
+    }
   });
   return { canvas: a, sw, sh };
 }
@@ -309,7 +411,7 @@ export function AsciiField() {
     let visible = true, raf = 0, last = 0, clock = 0, shown = 0, leftAt = 0;
     let yaw = REST_YAW, vel = still ? 0 : AUTO;
     let drag: { x: number; at: number } | null = null;
-    let glow: { canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; img: ImageData } | null = null;
+    let glow: { canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; img: ImageData; v: Float32Array; w: Float32Array } | null = null;
     let pointer: { x: number; y: number; inside: boolean } | null = null;
     const pulses: { x: number; y: number; age: number }[] = [];
 
@@ -325,7 +427,7 @@ export function AsciiField() {
       const gc = document.createElement("canvas");
       gc.width = grid.cols; gc.height = grid.rows;
       const gg = gc.getContext("2d");
-      glow = gg ? { canvas: gc, g: gg, img: gg.createImageData(grid.cols, grid.rows) } : null;
+      glow = gg ? { canvas: gc, g: gg, img: gg.createImageData(grid.cols, grid.rows), v: new Float32Array(grid.cols * grid.rows), w: new Float32Array(grid.cols * grid.rows) } : null;
       draw();
     };
 
@@ -384,7 +486,7 @@ export function AsciiField() {
       if (!grid || !sprites) return;
       const t = still ? 0 : clock;
       trace(grid, camera(yaw), t);
-      const { cols, rows, cw, ch, id, depth, soft, bright, tex, therm, heat } = grid;
+      const { cols, rows, cw, ch, id, depth, flags, dir, bright, tex, accent, therm, heat } = grid;
       // Only the nearer side of a step in depth draws the line, so edges stay one cell thin.
       const owns = (i: number, j: number) => {
         const o = id[j];
@@ -398,10 +500,13 @@ export function AsciiField() {
       g.fillStyle = colors.bg;
       g.fillRect(0, 0, cv.width, cv.height);
       if (glow) {
-        const px = glow.img.data;
+        const px = glow.img.data, v = glow.v, w = glow.w;
+        // Only the warm parts and the pointer glow, so cool metal stays crisp on graphite.
+        for (let i = 0; i < cols * rows; i++) v[i] = clamp(((id[i] >= 0 ? therm[i] : 0) + heat[i] - 0.55) * 2.4);
+        blur(v, w, cols, rows, 1); blur(w, v, cols, rows, cols);
         for (let i = 0; i < cols * rows; i++) {
-          const v = clamp((id[i] >= 0 ? therm[i] * 0.75 : 0) + heat[i]), c = colors.rgb[Math.round(v * (LEVELS - 1))];
-          px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = v * v * 110;
+          const k = v[i], c = colors.rgb[Math.round((0.5 + k * 0.5) * (LEVELS - 1))];
+          px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = Math.min(255, k * 115);
         }
         glow.g.putImageData(glow.img, 0, 0);
         g.imageSmoothingEnabled = true;
@@ -409,25 +514,39 @@ export function AsciiField() {
       }
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
         const i = r * cols + c, me = id[i], hp = heat[i];
-        let dens: number, col: number, shade = SHADES - 1;
+        let glyph: number, col: number, shade = SHADES - 2;
         if (me >= 0) {
           const edge = (c > 0 && owns(i, i - 1)) || (c < cols - 1 && owns(i, i + 1)) || (r > 0 && owns(i, i - cols)) || (r < rows - 1 && owns(i, i + cols));
-          const b = bright[i], hb = therm[i];
-          const shimmer = hb > 0.55 ? (hb - 0.55) * 0.14 * Math.sin(c * 0.55 + t * 1.4) * Math.sin(r * 0.8 - t * 1.1) : 0;
-          // Parts inside the case draw lighter than the shell, so the box outline leads.
-          const sf = soft[i] ? 0.78 : 1;
-          dens = (edge ? (0.58 + 0.34 * b) * sf : (0.06 + 0.4 * b) * tex[i] * sf) + hp * 0.7 + shimmer;
-          col = hb + hp;
-          shade = Math.min(SHADES - 1, Math.round((edge ? 0.5 + 0.5 * b : b) * (SHADES - 1)));
+          const b = bright[i], hb = therm[i], fl = flags[i], ac = accent[i];
+          if (fl & LINE && !edge && !(fl & INSIDE)) {
+            glyph = EDGE + dir[i];
+            col = hb + ac * 0.3 + hp;
+            shade = ac > 0.4 ? 4 : b > 0.4 ? 3 : 2;
+          } else if (edge) {
+            // Edges lead: the case outline in brass, parts inside in their own heat.
+            glyph = EDGE + dir[i];
+            col = (fl & INNER ? hb + 0.08 : Math.max(hb, 0.5)) + hp;
+            shade = b > 0.5 ? 4 : b > 0.25 ? 3 : 2;
+            if (fl & INSIDE) { shade = 1; col = hb; }
+          } else {
+            const shimmer = hb > 0.7 ? (hb - 0.7) * 0.2 * Math.sin(c * 0.55 + t * 1.4) * Math.sin(r * 0.8 - t * 1.1) : 0;
+            // The case's inner walls stay dark so the parts inside stand clear of them; the outer skin keeps a light grain.
+            const base = fl & FAN ? tex[i] : fl & INSIDE ? 0.05 * tex[i] : fl & INNER ? (0.06 + 0.3 * b) * tex[i] : (0.13 + 0.16 * b) * tex[i];
+            const dens = base + hp * 0.7 + shimmer;
+            glyph = Math.round(clamp(dens) * (RAMP.length - 1) - 0.2);
+            // The outer skin is colored by the light, so lit faces turn brass and the far ones stay grey.
+            col = (fl & (INNER | INSIDE | FAN) ? hb : hb + 0.32 * b) + ac * 0.22 + hp;
+            shade = ac > 0.5 ? 4 : Math.min(3, Math.round(b * 3 + ac));
+          }
+          if (fl & GLINT) { shade = Math.min(4, shade + 1); if (glyph <= 0) { glyph = 1; shade = 1; col = 0.3; } }
         } else if (me === -2) {
-          dens = bright[i] + hp * 0.6; col = therm[i] + hp; shade = 1;
+          glyph = Math.round(clamp(bright[i] + hp * 0.6) * (RAMP.length - 1) - 0.15); col = therm[i] + hp; shade = 1;
         } else {
-          dens = hp * 0.9; col = hp;
+          glyph = Math.round(clamp(hp * 0.9) * (RAMP.length - 1) - 0.15); col = hp;
         }
-        const k = Math.round(clamp(dens) * (RAMP.length - 1) - 0.15);
-        if (k <= 0) continue;
+        if (glyph <= 0) continue;
         const l = Math.round(clamp(col) * (LEVELS - 1)) * SHADES + shade;
-        g.drawImage(a, k * sw, l * sh, sw, sh, Math.round(c * cw * dpr), Math.round(r * ch * dpr), sw, sh);
+        g.drawImage(a, glyph * sw, l * sh, sw, sh, Math.round(c * cw * dpr), Math.round(r * ch * dpr), sw, sh);
       }
     };
 
