@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { reducedMotion } from "../../appearance";
 import { useApp } from "../../state";
 import { SettingsSection, sectionAnchor, settingsSections, takeFocusSection } from "./sections";
 
@@ -16,7 +17,7 @@ export function Settings() {
       </div>
       <div className="set-layout">
         <nav className="set-nav" aria-label="Settings sections">
-          {shown.map((s) => <button key={s.id} type="button" onClick={() => document.getElementById(sectionAnchor(s.id))?.scrollIntoView({ behavior: "smooth", block: "start" })}>{s.title}</button>)}
+          {shown.map((s) => <button key={s.id} type="button" onClick={() => document.getElementById(sectionAnchor(s.id))?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" })}>{s.title}</button>)}
         </nav>
         <div className="set-list">
           {shown.map(({ id, title, intro, Body }) => <SettingsSection key={id} id={id} title={title} intro={intro}><Body /></SettingsSection>)}

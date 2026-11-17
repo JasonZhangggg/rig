@@ -10,6 +10,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, type PC, type Part, type TempUnit } from "@rig/core";
+import { reducedMotion } from "./appearance";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -72,7 +73,6 @@ export function fovFor(aspect: number) {
 
 interface Framing { target: THREE.Vector3; cam: THREE.Vector3; camExploded: THREE.Vector3 }
 
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function createScene(
   container: HTMLElement,
@@ -633,7 +633,7 @@ export function createScene(
     if (!a.group.visible) return;
     const speed = (parts().fans?.fan ?? 1100) / 1100;
     for (const m of a.mats) {
-      if (!reduceMotion) m.uniforms.time.value += dt * speed;
+      if (!reducedMotion()) m.uniforms.time.value += dt * speed;
       m.uniforms.opacity.value = (theme().air ?? 0) * vis;
     }
   }
@@ -910,11 +910,11 @@ export function createScene(
     const dt = Math.min(clock.getDelta(), 0.05);
     const target = state.exploded ? 1 : 0;
     if (state.explodeT !== target) {
-      const step = reduceMotion ? 1 : dt * 1.6;
+      const step = reducedMotion() ? 1 : dt * 1.6;
       state.explodeT = target > state.explodeT ? Math.min(1, state.explodeT + step) : Math.max(0, state.explodeT - step);
       applyExplode(false);
     }
-    if (spin && !camAnim && !dragging && !reduceMotion) {
+    if (spin && !camAnim && !dragging && !reducedMotion()) {
       spinT += dt;
       const off = Math.sin(spinT * 0.35) * 0.32;
       const d = off - spinOff;
@@ -924,11 +924,11 @@ export function createScene(
       camera.position.copy(controls.target).add(v);
     }
     if (camAnim) {
-      camAnim.t = Math.min(1, camAnim.t + (reduceMotion ? 1 : dt * 1.4));
+      camAnim.t = Math.min(1, camAnim.t + (reducedMotion() ? 1 : dt * 1.4));
       camera.position.lerpVectors(camAnim.from, camAnim.to, easeInOut(camAnim.t));
       if (camAnim.t >= 1) camAnim = null;
     }
-    if (!reduceMotion) {
+    if (!reducedMotion()) {
       for (const { rotor, partId } of state.rotors) {
         const rpm = parts()[partId]?.fan ?? 1200;
         rotor.rotation.z -= dt * rpm * 0.012;
@@ -936,7 +936,7 @@ export function createScene(
     }
     stepAir(dt);
     if (state.pulses.length) {
-      const k = reduceMotion ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
+      const k = reducedMotion() ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
     controls.update();
