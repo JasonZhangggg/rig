@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync } from "../src";
+import { LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type Snapshot } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -70,6 +70,39 @@ describe("LocalClient", () => {
     expect(pts).toHaveLength(1);
     expect(pts[0].cpu).toBeGreaterThan(30);
     expect(await client.history(client.id, "24h")).toHaveLength(1);
+    client.stop();
+  });
+
+  it("keeps the fastest fan and the game played most in each window", async () => {
+    const reads: { game: string | null; fans: number[] }[] = [
+      { game: null, fans: [900, 0] },
+      { game: "Hades II", fans: [1400, 2100] },
+      { game: "Hades II", fans: [1300, 1900] },
+      { game: "Balatro", fans: [1000, 800] },
+      { game: null, fans: [700, 0] },
+    ];
+    let i = 0;
+    const snapshot = async (): Promise<Snapshot> => {
+      const r = reads[Math.min(i++, reads.length - 1)];
+      return {
+        at: 0, elevated: true, game: r.game,
+        sensors: r.fans.map((rpm, n) => ({ id: `/fan/${n}`, hw: "board", hwName: "Board", type: "fan", name: `Fan #${n + 1}`, value: rpm })),
+      };
+    };
+    const { client, store, advance } = setup({ snapshot });
+    await client.start();
+    for (let n = 0; n < 5; n++) { advance(2 * 60_000); await client.tick(); }
+    const [p] = await store.history(0);
+    expect(p).toMatchObject({ fan: 2100, game: "Hades II", busy: true, cpu: null, gpu: null });
+    client.stop();
+  });
+
+  it("records no fan or game when the PC reports neither", async () => {
+    const quiet = async (): Promise<Snapshot> => ({ at: 0, elevated: true, sensors: [{ id: "/fan/0", hw: "gpu", hwName: "GPU", type: "fan", name: "GPU Fan", value: 0 }] });
+    const { client, store, advance } = setup({ snapshot: quiet });
+    await client.start();
+    for (let n = 0; n < 6; n++) { advance(2 * 60_000); await client.tick(); }
+    expect((await store.history(0))[0]).toMatchObject({ fan: null, game: null, busy: false });
     client.stop();
   });
 

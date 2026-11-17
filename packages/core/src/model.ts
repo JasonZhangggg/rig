@@ -93,6 +93,10 @@ export interface HistoryPoint {
   gpu: number | null;
   /** A game or heavy load was running. */
   busy: boolean;
+  /** The fastest fan in the window, in rpm. Null when no fan reported a speed; missing on points recorded before Rig kept it. */
+  fan?: number | null;
+  /** The game in the foreground for most of the window. Null when none ran; missing on points recorded before Rig kept it. */
+  game?: string | null;
 }
 
 export interface Upgrade { part: string; title: string; fit: "fits" | "check" | "no" | "later"; detail: string; gain: string; price: string }

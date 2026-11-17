@@ -48,6 +48,11 @@ export interface LocalOptions {
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const rangeMs: Record<Range, number> = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 };
 const dayKey = (t: number) => new Date(t).toDateString();
+const max = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
+const round = (v: number | null) => (v == null ? null : Math.round(v));
+const fastestFan = (s: Snapshot | null) =>
+  s?.sensors.reduce<number | null>((top, x) => (x.type === "fan" && x.value != null && x.value > 0 ? max(top, x.value) : top), null) ?? null;
+const mostSeen = (counts: Map<string, number>) => [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
 export class LocalClient implements RigClient {
   readonly kind = "desktop" as const;
@@ -60,7 +65,7 @@ export class LocalClient implements RigClient {
   private identity: Identity & { at?: string } = {};
   private dayMax: DayMax = {};
   private day = "";
-  private window: { cpu: number | null; gpu: number | null; busy: boolean; from: number } | null = null;
+  private window: { cpu: number | null; gpu: number | null; fan: number | null; busy: boolean; games: Map<string, number>; from: number } | null = null;
   private unsynced: HistoryPoint[] = [];
   private listeners = new Set<(pc: PC) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
@@ -120,12 +125,14 @@ export class LocalClient implements RigClient {
   private async record(now: number) {
     const cpu = cpuTemp(this.snap)?.value ?? null;
     const gpu = gpuTemp(this.snap)?.value ?? null;
-    const busy = !!this.snap?.game || (findSensor(this.snap, "gpu", "load", /core|d3d 3d/i)?.value ?? 0) > 70 || (findSensor(this.snap, "cpu", "load", /total/i)?.value ?? 0) > 70;
-    const max = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
-    const w = this.window ??= { cpu: null, gpu: null, busy: false, from: now };
-    w.cpu = max(w.cpu, cpu); w.gpu = max(w.gpu, gpu); w.busy ||= busy;
+    const fan = fastestFan(this.snap);
+    const game = this.snap?.game || null;
+    const busy = !!game || (findSensor(this.snap, "gpu", "load", /core|d3d 3d/i)?.value ?? 0) > 70 || (findSensor(this.snap, "cpu", "load", /total/i)?.value ?? 0) > 70;
+    const w = this.window ??= { cpu: null, gpu: null, fan: null, busy: false, games: new Map(), from: now };
+    w.cpu = max(w.cpu, cpu); w.gpu = max(w.gpu, gpu); w.fan = max(w.fan, fan); w.busy ||= busy;
+    if (game) w.games.set(game, (w.games.get(game) ?? 0) + 1);
     if (now - w.from >= this.o.historyEveryMs) {
-      const p: HistoryPoint = { t: w.from, cpu: w.cpu == null ? null : Math.round(w.cpu), gpu: w.gpu == null ? null : Math.round(w.gpu), busy: w.busy };
+      const p: HistoryPoint = { t: w.from, cpu: round(w.cpu), gpu: round(w.gpu), busy: w.busy, fan: round(w.fan), game: mostSeen(w.games) };
       this.window = null;
       await this.store.addHistory(p);
       this.unsynced.push(p);
