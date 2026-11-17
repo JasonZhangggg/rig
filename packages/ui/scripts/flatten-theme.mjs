@@ -16,7 +16,7 @@ import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import { cmp, overlap, sameProp, specificity, subject } from "./css-cascade.mjs";
 
-export const look = { "data-style": "blend", "data-skin": "mix", "data-colors": "denim", "data-widgets": "accents", "data-mode": "light" };
+export const look = { "data-style": "blend", "data-skin": "mix", "data-colors": "brass", "data-widgets": "accents", "data-mode": "light" };
 export const files = ["styles.css", "styles-v6.css", "styles-v9.css", "styles-v10.css", "styles-v11.css"];
 
 const rootAttrs = new Set(Object.keys(look));
