@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RigClient, type Route } from "@rig/core";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { alertRules, titleFor, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RigClient, type Route } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
 
@@ -230,4 +230,42 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
 
   if (!value) return <>{fallback(loaded && !data.pcs.some((p) => p.parts) ? "empty" : "loading")}</>;
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
+}
+
+// ----- Alert preferences, kept on this device -----
+
+const ALERTS_OFF = "rig.alerts.off";
+const alertListeners = new Set<() => void>();
+let alertsOffCache: { raw: string | null; kinds: AlertKind[] } = { raw: null, kinds: [] };
+
+/** The alert kinds turned off on this device. Every kind is on until someone turns it off. */
+export function alertKindsOff(): AlertKind[] {
+  const raw = storage.get(ALERTS_OFF);
+  if (raw !== alertsOffCache.raw) {
+    let kinds: AlertKind[] = [];
+    try {
+      const v: unknown = JSON.parse(raw ?? "[]");
+      if (Array.isArray(v)) kinds = alertRules.map((r) => r.kind).filter((k) => v.includes(k));
+    } catch { /* a damaged value turns everything back on */ }
+    alertsOffCache = { raw, kinds };
+  }
+  return alertsOffCache.kinds;
+}
+
+export function setAlertKind(kind: AlertKind, on: boolean) {
+  const rest = alertKindsOff().filter((k) => k !== kind);
+  storage.set(ALERTS_OFF, JSON.stringify(on ? rest : [...rest, kind]));
+  alertListeners.forEach((f) => f());
+}
+
+function onAlertPrefs(f: () => void) {
+  const fromOtherWindow = (e: StorageEvent) => { if (e.key === ALERTS_OFF) f(); };
+  alertListeners.add(f);
+  window.addEventListener("storage", fromOtherWindow);
+  return () => { alertListeners.delete(f); window.removeEventListener("storage", fromOtherWindow); };
+}
+
+/** The alert kinds turned off on this device, kept current as they change. */
+export function useAlertKindsOff(): AlertKind[] {
+  return useSyncExternalStore(onAlertPrefs, alertKindsOff, () => []);
 }

@@ -1,4 +1,4 @@
-import type { Issue, PC } from "@rig/core";
+import type { Alert, Issue, PC, Severity } from "@rig/core";
 import type { Ctx } from "../state";
 
 export const partIcon: Record<string, JSX.Element> = {
@@ -44,3 +44,23 @@ export function greeting() {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
+
+/** When an alert's problem started, in the viewer's words: a time today, yesterday, a weekday this week, or a date. */
+export function sinceText(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+  if (days <= 0) return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (days === 1) return "yesterday";
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** An alert as a row in Things to look at. Opening it asks Rig about it. */
+export function alertIssue(a: Alert, now = new Date()): Issue {
+  return { id: `alert-${a.id}`, severity: a.severity, part: a.part, go: "chat", ask: a.ask, action: "Ask about it", title: a.title, body: `Since ${sinceText(a.since, now)}. ${a.detail}` };
+}
+
+const severityOrder: Record<Severity, number> = { bad: 0, warn: 1, info: 2, ok: 3 };
+
+/** Most severe first. Items of the same severity keep their order. */
+export const bySeverity = (items: Issue[]) => [...items].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
