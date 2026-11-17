@@ -6,47 +6,21 @@ import type { Inventory, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
 import { gameLoad, simulate } from "./simulate";
+import { applyToFacts } from "./apply";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
 import atlasFacts from "./fixtures/atlas.facts.json";
 import pebbleFacts from "./fixtures/pebble.facts.json";
 
 export { simulate } from "./simulate";
+export { applyToFacts } from "./apply";
+export { SimulatedLink } from "./link";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
 interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[] }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
-
-/** Applies a call to the demo PC and returns the call that undoes it. */
-function applyCall(pc: DemoPC, call: ActionCall): ActionCall {
-  const f = pc.facts;
-  switch (call.kind) {
-    case "power.plan": {
-      const was = f.powerPlans.find((p) => p.active)!;
-      f.powerPlans.forEach((p) => (p.active = p.guid === call.guid));
-      return { kind: "power.plan", guid: was.guid };
-    }
-    case "startup.app": {
-      const app = f.startupApps.find((a) => a.name === call.name);
-      if (!app) throw new Error(`${call.name} isn't a startup app on this PC`);
-      const was = app.enabled;
-      app.enabled = call.enabled;
-      return { kind: "startup.app", name: call.name, enabled: was };
-    }
-    case "windows.gameMode": { const was = f.gameMode; f.gameMode = call.enabled; return { kind: "windows.gameMode", enabled: was }; }
-    case "windows.visualEffects": { const was = f.visualEffects; f.visualEffects = call.mode; return { kind: "windows.visualEffects", mode: was === "custom" ? "auto" : was }; }
-    case "power.maxProcessorState": { const was = { ...f.maxProcessorState }; f.maxProcessorState = { ac: call.ac, dc: call.dc }; return { kind: "power.maxProcessorState", ...was }; }
-    case "display.refreshRate": {
-      const d = pc.inv.displays.find((x) => x.name === call.display);
-      if (!d) throw new Error(`No display called ${call.display}`);
-      const was = d.refreshHz;
-      d.refreshHz = Math.min(call.hz, d.maxRefreshHz);
-      return { kind: "display.refreshRate", display: d.name, hz: was };
-    }
-  }
-}
 
 const demoGames: Game[] = [
   { id: "cp2077", name: "Cyberpunk 2077", res: "2560 × 1440", now: { avg: 78, low: 61 }, tuned: { avg: 96, low: 74 }, settings: [["DLSS", "Off", "Quality"], ["Ray tracing", "Ultra", "Medium"], ["Crowd density", "High", "Medium"]], measured: "Sample numbers in the demo" },
@@ -140,7 +114,7 @@ export class DemoClient implements RigClient {
     const p = this.pcs[id];
     const rows = await this.preview(id, calls);
     await sleep(400);
-    const applied = calls.map((call, i) => ({ call, undo: applyCall(p, call), row: rows[i] }));
+    const applied = calls.map((call, i) => ({ call, undo: applyToFacts(p.inv, p.facts, call), row: rows[i] }));
     const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? titleFor(calls), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, applied };
     p.changes.unshift(change);
     this.emit(id);
@@ -150,7 +124,7 @@ export class DemoClient implements RigClient {
   async undo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
-    [...c.applied].reverse().forEach((a) => applyCall(p, a.undo));
+    [...c.applied].reverse().forEach((a) => applyToFacts(p.inv, p.facts, a.undo));
     c.status = "undone";
     this.emit(id);
     return { ...c };
@@ -159,7 +133,7 @@ export class DemoClient implements RigClient {
   async redo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
-    c.applied = c.applied.map((a) => ({ ...a, undo: applyCall(p, a.call) }));
+    c.applied = c.applied.map((a) => ({ ...a, undo: applyToFacts(p.inv, p.facts, a.call) }));
     c.status = "applied";
     this.emit(id);
     return { ...c };

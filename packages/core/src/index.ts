@@ -5,3 +5,6 @@ export * from "./client";
 export * from "./health";
 export * from "./view";
 export * from "./upgrades";
+export * from "./api";
+export * from "./cloud";
+export * from "./local";

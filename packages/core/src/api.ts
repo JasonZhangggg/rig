@@ -1,0 +1,82 @@
+// The Rig server's HTTP API, shared by the website, the desktop app and the
+// server so all three agree on paths and payloads.
+
+import type { Change, ChatEvent, ChatMessage } from "./client";
+import type { Game, HistoryPoint, PC } from "./model";
+import type { Inventory, SystemFacts } from "./telemetry";
+
+/** What the desktop app uploads for its PC every few minutes and after a change. */
+export interface MachineSync {
+  at: string;
+  view: PC;
+  inventory: Inventory;
+  facts: SystemFacts;
+  /** Hourly points since the last upload (the server keeps 30 days). */
+  history: HistoryPoint[];
+  /** The newest 200 changes, so the web shows the same log. */
+  changes: Change[];
+  games: Game[];
+}
+
+/** Body of POST /api/chat. The desktop sends its live view; the web sends only the id. */
+export interface ChatRequest {
+  machineId: string;
+  messages: Pick<ChatMessage, "from" | "text">[];
+  view?: PC;
+  facts?: SystemFacts;
+}
+
+export const paths = {
+  me: "/me",
+  machines: "/machines",
+  machine: (id: string) => `/machines/${encodeURIComponent(id)}`,
+  history: (id: string, range: string) => `/machines/${encodeURIComponent(id)}/history?range=${range}`,
+  changes: (id: string) => `/machines/${encodeURIComponent(id)}/changes`,
+  games: (id: string) => `/machines/${encodeURIComponent(id)}/games`,
+  upgrades: (id: string) => `/machines/${encodeURIComponent(id)}/upgrades`,
+  sync: (id: string) => `/machines/${encodeURIComponent(id)}/sync`,
+  chat: "/chat",
+  // Better Auth
+  signInEmail: "/auth/sign-in/email",
+  signUpEmail: "/auth/sign-up/email",
+  signInSocial: "/auth/sign-in/social",
+  signOut: "/auth/sign-out",
+  deviceCode: "/auth/device/code",
+  deviceToken: "/auth/device/token",
+} as const;
+
+/** The desktop app's client id for the device sign-in flow. */
+export const desktopClientId = "rig-desktop";
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
+/** Reads a server-sent event stream of ChatEvents. */
+export async function readChatStream(res: Response, onEvent: (e: ChatEvent) => void): Promise<void> {
+  if (!res.ok || !res.body) throw new ApiError(res.status, await errorText(res));
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let cut: number;
+    while ((cut = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      const data = frame.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
+      if (!data) continue;
+      const e = JSON.parse(data) as ChatEvent;
+      onEvent(e);
+      if (e.type === "done") return;
+    }
+  }
+}
+
+export async function errorText(res: Response): Promise<string> {
+  try {
+    const body = await res.json() as { message?: string; error?: string };
+    return body.message ?? body.error ?? res.statusText;
+  } catch { return res.statusText || `Error ${res.status}`; }
+}
