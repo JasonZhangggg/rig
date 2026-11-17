@@ -1,7 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { alertRules, formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
-export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "web", "signin"];
+export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "web", "signin", "settings"];
+
+/** What the app around the screens can do beyond the client. The desktop app passes these; the website passes none. */
+export interface AppHost {
+  /** Start Rig when the person signs in to Windows. */
+  autostart?: { get(): Promise<boolean>; set(on: boolean): Promise<void> };
+}
 
 /** The review sheet shown before any change is made. */
 export interface Review {
@@ -35,6 +41,8 @@ export interface UI {
   sideMini: boolean;
   /** The recording open on the Logs page. */
   recordingId: string | null;
+  /** Temperatures on screen, saved on this device. */
+  tempUnit: TempUnit;
 }
 
 export interface Data {
@@ -62,6 +70,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 export interface Ctx {
   client: RigClient;
+  host: AppHost;
   ui: UI;
   data: Data;
   /** The PC on screen. Pages only render once it has loaded. */
@@ -85,6 +94,27 @@ export interface Ctx {
 const AppCtx = createContext<Ctx | null>(null);
 export const useApp = () => useContext(AppCtx)!;
 
+/** The temperature unit picked on this device, for code outside the screens such as notifications. */
+export function storedTempUnit(): TempUnit {
+  const u = storage.get("rig.tempUnit");
+  return isTempUnit(u) ? u : "c";
+}
+
+/** The viewer's temperature unit. Outside the app (as in a test of one card) it's °C. */
+export const useTempUnit = (): TempUnit => useContext(AppCtx)?.ui.tempUnit ?? "c";
+
+/** Formats a Celsius temperature in the viewer's unit. */
+export function useTemp() {
+  const unit = useTempUnit();
+  return useCallback((celsius: number | null | undefined, opts?: TempFormat) => formatTemp(celsius, unit, opts), [unit]);
+}
+
+/** Rewrites the °C figures in a sentence from the PC, like a finding's title, into the viewer's unit. */
+export function useTempText() {
+  const unit = useTempUnit();
+  return useCallback((text: string) => tempsInText(text, unit), [unit]);
+}
+
 /** The on-screen PC's recorded history over a range. Null while it loads, empty when there is none or it couldn't be read. */
 export function useHistory(range: Range): HistoryPoint[] | null {
   const { client, pc } = useApp();
@@ -98,15 +128,23 @@ export function useHistory(range: Range): HistoryPoint[] | null {
   return points;
 }
 
-export function AppProvider({ client, children, fallback }: { client: RigClient; children: ReactNode; fallback: (state: "loading" | "empty") => ReactNode }) {
+/** What shows before a PC is on screen: still reading, no PCs, or the list couldn't be read (with a way to try again). */
+export type Pending = "loading" | "empty" | "error";
+
+const noHost: AppHost = {};
+
+export function AppProvider({ client, host = noHost, children, fallback }: { client: RigClient; host?: AppHost; children: ReactNode; fallback: (state: Pending, retry: () => void) => ReactNode }) {
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
+    tempUnit: storedTempUnit(),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [] });
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   const set = useCallback((patch: Partial<UI> | ((u: UI) => Partial<UI>)) => {
     setUI((u) => ({ ...u, ...(typeof patch === "function" ? patch(u) : patch) }));
@@ -119,10 +157,11 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
       if (!live) return;
       setData((d) => ({ ...d, account, pcs }));
       setUI((u) => ({ ...u, pcId: pcs.some((p) => p.id === u.pcId && p.parts) ? u.pcId : pcs.find((p) => p.parts)?.id ?? null }));
+      setFailed(false);
       setLoaded(true);
-    }).catch(() => { if (live) setLoaded(true); });
+    }).catch(() => { if (live) { setFailed(true); setLoaded(true); } });
     return () => { live = false; };
-  }, [client]);
+  }, [client, attempt]);
 
   // Live view of the chosen PC, its changes and a fresh chat
   useEffect(() => {
@@ -143,6 +182,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
   useEffect(() => { storage.set("rig.sideMini", ui.sideMini ? "1" : "0"); }, [ui.sideMini]);
+  useEffect(() => { storage.set("rig.tempUnit", ui.tempUnit); }, [ui.tempUnit]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]") !== null;
@@ -180,7 +220,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
       setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...patch } } : m)) }));
 
     const ctx: Ctx = {
-      client, ui, data, pc, set, toast,
+      client, host, ui, data, pc, set, toast,
       go: (r) => { location.hash = r; },
       pickPC: (id) => set({ pcId: id, selected: null }),
 
@@ -264,8 +304,61 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
       },
     };
     return ctx;
-  }, [client, ui, data, pcId, set, toast]);
+  }, [client, host, ui, data, pcId, set, toast]);
 
-  if (!value) return <>{fallback(loaded && !data.pcs.some((p) => p.parts) ? "empty" : "loading")}</>;
+  const retry = () => { setLoaded(false); setFailed(false); setAttempt((n) => n + 1); };
+  if (!value) return <>{fallback(!loaded ? "loading" : failed ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry)}</>;
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
+}
+
+// ----- Alert preferences, kept on this device -----
+
+const ALERTS_OFF = "rig.alerts.off";
+const alertListeners = new Set<() => void>();
+let alertsOffCache: { raw: string | null; kinds: AlertKind[] } = { raw: null, kinds: [] };
+
+/** The alert kinds turned off on this device. Every kind is on until someone turns it off. */
+export function alertKindsOff(): AlertKind[] {
+  const raw = storage.get(ALERTS_OFF);
+  if (raw !== alertsOffCache.raw) {
+    let kinds: AlertKind[] = [];
+    try {
+      const v: unknown = JSON.parse(raw ?? "[]");
+      if (Array.isArray(v)) kinds = alertRules.map((r) => r.kind).filter((k) => v.includes(k));
+    } catch { /* a damaged value turns everything back on */ }
+    alertsOffCache = { raw, kinds };
+  }
+  return alertsOffCache.kinds;
+}
+
+export function setAlertKind(kind: AlertKind, on: boolean) {
+  const rest = alertKindsOff().filter((k) => k !== kind);
+  storage.set(ALERTS_OFF, JSON.stringify(on ? rest : [...rest, kind]));
+  alertListeners.forEach((f) => f());
+}
+
+function onAlertPrefs(f: () => void) {
+  const fromOtherWindow = (e: StorageEvent) => { if (e.key === ALERTS_OFF || e.key === RECORDING_NOTICE) f(); };
+  alertListeners.add(f);
+  window.addEventListener("storage", fromOtherWindow);
+  return () => { alertListeners.delete(f); window.removeEventListener("storage", fromOtherWindow); };
+}
+
+/** The alert kinds turned off on this device, kept current as they change. */
+export function useAlertKindsOff(): AlertKind[] {
+  return useSyncExternalStore(onAlertPrefs, alertKindsOff, () => []);
+}
+
+const RECORDING_NOTICE = "rig.notify.recordingDone";
+
+/** Whether the Rig app on this PC sends a notification when a recording finishes. On until someone turns it off. */
+export const recordingNoticeOn = () => storage.get(RECORDING_NOTICE) !== "off";
+
+export function setRecordingNotice(on: boolean) {
+  storage.set(RECORDING_NOTICE, on ? "on" : "off");
+  alertListeners.forEach((f) => f());
+}
+
+export function useRecordingNoticeOn(): boolean {
+  return useSyncExternalStore(onAlertPrefs, recordingNoticeOn, () => true);
 }

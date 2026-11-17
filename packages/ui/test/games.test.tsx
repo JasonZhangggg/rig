@@ -1,6 +1,6 @@
 // The Games page reads what was played from recorded history, opens a game
 // for its sessions and notes, and says so plainly when nothing was played.
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
 
@@ -8,6 +8,8 @@ vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => (
 vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
+const { noteText } = await import("../src/pages/games/words");
+const { headroomWords } = await import("../src/pages/games/Library");
 
 async function openGames(client = new DemoClient()) {
   location.hash = "games";
@@ -16,7 +18,7 @@ async function openGames(client = new DemoClient()) {
 }
 
 describe("Games", () => {
-  beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });
+  beforeEach(() => { location.hash = ""; localStorage.clear(); });
   afterEach(() => cleanup());
 
   it("lists the week's games most played first and opens one", async () => {
@@ -68,5 +70,20 @@ describe("Games", () => {
     await openGames(client);
     expect(await screen.findByText("No games this week")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show the month" })).toBeTruthy();
+  });
+
+  it("writes differences as differences in °F", () => {
+    expect(noteText({ kind: "hotter", by: 13 }, "gpu", "f")).toBe("Runs 23°F hotter than your other games.");
+    expect(noteText({ kind: "hotter", by: 13 }, "gpu")).toBe("Runs 13°C hotter than your other games.");
+    expect(headroomWords(6, "f")).toBe("11° under the limit");
+    expect(headroomWords(-3, "f")).toBe("5° over the limit");
+  });
+
+  it("shows the games in °F once picked", async () => {
+    localStorage.setItem("rig.tempUnit", "f");
+    await openGames();
+    await screen.findByRole("list");
+    await waitFor(() => expect(screen.getByRole("main").textContent).toMatch(/\d+°F/));
+    expect(screen.getByRole("main").textContent).not.toMatch(/°C/);
   });
 });

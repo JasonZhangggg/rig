@@ -19,20 +19,6 @@ export const tauriLink: HelperLink = {
   processes: () => call<ProcessUse[]>("processes", { top: 8 }),
 };
 
-/**
- * A notification outside Rig's window. The app has no native notification
- * plugin yet, so this uses the web view's own; clicking it opens the page.
- */
-export function notify({ title, body, route }: { title: string; body: string; route: string }) {
-  if (!("Notification" in window)) return;
-  const show = () => {
-    const n = new Notification(title, { body });
-    n.onclick = () => { window.focus(); location.hash = route; };
-  };
-  if (Notification.permission === "granted") show();
-  else if (Notification.permission !== "denied") void Notification.requestPermission().then((p) => { if (p === "granted") show(); });
-}
-
 /** SQLite file in the app's data folder. */
 export const tauriStore: LocalStore = {
   get: <T>(key: string) => invoke<T | null>("kv_get", { key }),
@@ -47,4 +33,10 @@ export const tauriStore: LocalStore = {
 export const tauriToken = {
   get: () => invoke<string | null>("token_get"),
   set: (token: string | null) => invoke<void>("token_set", { token }),
+};
+
+/** Starting with Windows, through Tauri's autostart plugin (a Run entry for this user). */
+export const tauriAutostart = {
+  get: () => invoke<boolean>("plugin:autostart|is_enabled"),
+  set: (on: boolean) => invoke<void>(on ? "plugin:autostart|enable" : "plugin:autostart|disable"),
 };

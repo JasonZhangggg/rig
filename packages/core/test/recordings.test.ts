@@ -266,7 +266,7 @@ describe("the desktop client and recordings", () => {
   function desktop() {
     let now = T0;
     const uploads: Recording[] = [];
-    const notes: { title: string; route: string }[] = [];
+    const notes: { title: string; body: string }[] = [];
     let reply: { identity: object; recordings?: { start: RecordingRequest[]; stop: string[] } } = { identity: {} };
     const chatEvents: unknown[] = [];
     const cloud = {
@@ -296,7 +296,7 @@ describe("the desktop client and recordings", () => {
     await vi.waitFor(() => expect(t.uploads.at(-1)).toMatchObject({ id: "chat0001", state: "done" }));
     expect(t.uploads.at(-1)!.samples.length).toBeGreaterThan(8);
     expect(t.uploads.at(-1)!.samples[0].top!.length).toBeGreaterThan(0);
-    expect(t.notes).toEqual([{ title: "Rig finished recording", body: "Tap to see what it found.", route: "logs" }]);
+    expect(t.notes).toEqual([{ title: "Rig finished recording", body: "Open Logs in Rig to see what it found." }]);
     expect(lists).toBeGreaterThan(3);
     expect((await t.client.recording(t.client.id, "chat0001"))!.state).toBe("done");
     stop();

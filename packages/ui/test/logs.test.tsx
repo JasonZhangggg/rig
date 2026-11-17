@@ -7,6 +7,7 @@ vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => (
 vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
+const { LineChart } = await import("../src/chart");
 
 async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
@@ -74,5 +75,42 @@ describe("Logs", () => {
     await open("logs");
     await screen.findByText(/Nothing went wrong on Pebble in the last 30 days/);
     screen.getByText(/No recordings yet/);
+  });
+
+  it("shows a recording in °F when that's the unit picked", async () => {
+    localStorage.setItem("rig.tempUnit", "f");
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
+    const found = await screen.findByText("What Rig found");
+    const page = found.closest(".page")!;
+    await waitFor(() => expect(page.textContent).toMatch(/\d+°F/));
+    expect(page.textContent).not.toMatch(/°C/);
+    expect(screen.getByRole("img", { name: "Temperatures during the recording" }).textContent).toMatch(/°F limit/);
+  });
+
+  it("finds the Logs screen and a recording from the search palette", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const search = await screen.findByRole("textbox", { name: "Search" });
+    fireEvent.change(search, { target: { value: "crashes" } });
+    screen.getByRole("button", { name: /^Logs Windows errors/ });
+    fireEvent.change(search, { target: { value: "while you play" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
+    await waitFor(() => expect(location.hash).toBe("#logs"));
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    await screen.findByText("What Rig found");
+  });
+
+  it("labels the start and end of a chart with only a few readings", () => {
+    const t0 = new Date(2026, 10, 17, 21, 0, 3).getTime();
+    const points = [0, 2000, 4000].map((d, i) => ({ t: t0 + d, cpu: 60 + i, gpu: null, busy: false }));
+    render(<LineChart points={points} series={[{ key: "cpu", cls: "gpu" }]} label="Short" />);
+    const ticks = [...screen.getByRole("img", { name: "Short" }).querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "");
+    const times = ticks.filter((x) => /\d:\d\d/.test(x));
+    expect(times).toHaveLength(2);
+    expect(times[0]).not.toBe(times[1]);
   });
 });

@@ -5,8 +5,10 @@ import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC 
 import type { Inventory, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
+import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
+import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts } from "./apply";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
@@ -24,7 +26,7 @@ export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -55,7 +57,7 @@ export class DemoClient implements RigClient {
         source: { events: async (since) => demoEvents(inv.machine.kind, Date.now(), since), processes: async () => demoProcesses(inv, Date.now()) },
         onChange: () => recListeners.forEach((cb) => cb(recorder.list())),
       });
-      return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], recorder, recListeners };
+      return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners };
     };
     this.pcs = {
       "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E" }, 1),
@@ -71,16 +73,30 @@ export class DemoClient implements RigClient {
 
   private view(id: string): PC {
     const p = this.pcs[id];
-    const snap = simulate(p.inv, Date.now(), { dust: p.dust });
+    const now = Date.now();
+    const snap = simulate(p.inv, now, { dust: p.dust });
     for (const s of snap.sensors) if (s.type === "temperature" && s.value != null) p.dayMax[s.id] = Math.max(p.dayMax[s.id] ?? 0, s.value);
+    if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now) };
+    const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
+    p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax);
-    return { ...pc, lastSync: "Demo PC" };
+    return withAlerts({ ...pc, lastSync: "Demo PC" }, alerts);
   }
 
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }
 
   async account() { return { id: "demo", name: "You", email: "demo@rig.app" }; }
   async signOut() {}
+
+  /** The demo PCs and a month of their made-up history, so the download can be tried. Deleting the demo account isn't offered. */
+  async exportData(): Promise<DataExport> {
+    const machines = await Promise.all(Object.entries(this.pcs).map(async ([id, p]) => ({
+      id, view: this.view(id), inventory: p.inv, facts: p.facts, identity: { ...p.id },
+      changes: await this.changes(id), games: await this.games(id), history: await this.history(id, "30d"),
+      events: await this.events(id), recordings: await p.recorder.all(),
+    })));
+    return makeExport({ account: await this.account(), machines, notes: ["Made-up data from Rig's demo."] });
+  }
 
   async machines(): Promise<PC[]> {
     const live = Object.keys(this.pcs).map((id) => this.view(id));
@@ -111,8 +127,12 @@ export class DemoClient implements RigClient {
     const p = this.pcs[id];
     if (!p) return [];
     const now = Date.now();
+    return this.points(p, now - rangeMs[range], now);
+  }
+
+  private points(p: DemoPC, since: number, now: number): HistoryPoint[] {
     const out: HistoryPoint[] = [];
-    for (let from = Math.ceil((now - rangeMs[range]) / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
+    for (let from = Math.ceil(since / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
       const dust = p.dust * (1 - (now - from) / rangeMs["30d"]);
       const w = new HistoryWindow(from);
       for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));

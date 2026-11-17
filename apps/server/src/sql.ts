@@ -34,7 +34,15 @@ export interface RigTables {
   chat_usage: { user_id: string; day: string; count: number };
 }
 
-export type DB = Kysely<RigTables>;
+/** The columns of Better Auth's tables that Rig reads or clears itself (export and account deletion). */
+export interface AuthTables {
+  user: { id: string; name: string; email: string; createdAt: Time };
+  session: { id: string; userId: string };
+  account: { id: string; userId: string };
+  deviceCode: { id: string; userId: string | null };
+}
+
+export type DB = Kysely<RigTables & AuthTables>;
 
 export interface Connection { db: DB; close(): Promise<void> }
 
@@ -42,6 +50,6 @@ export function connect(env: Env): Connection {
   const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
   if (!connectionString) throw new Error("No database: set the HYPERDRIVE binding or DATABASE_URL.");
   const pool = new pg.Pool({ connectionString, max: 5 });
-  const db = new Kysely<RigTables>({ dialect: new PostgresDialect({ pool }) });
+  const db = new Kysely<RigTables & AuthTables>({ dialect: new PostgresDialect({ pool }) });
   return { db, close: () => db.destroy() };
 }

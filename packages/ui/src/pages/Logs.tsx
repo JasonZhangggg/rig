@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isActive, type PCEvent } from "@rig/core";
 import { Icon } from "../components/common";
-import { useApp } from "../state";
+import { useApp, useTempText } from "../state";
 import { Detail } from "./logs/Detail";
 import { Events } from "./logs/Events";
 import { Progress, StateChip } from "./logs/RecordingCard";
@@ -12,6 +12,7 @@ const lengths = [15, 30, 60];
 /** What went wrong on this PC according to Windows, and the recordings Rig made to find out why. */
 export function Logs() {
   const { client, pc, data, ui, startRecording, stopRecording, openRecording } = useApp();
+  const inUnit = useTempText();
   const [events, setEvents] = useState<PCEvent[] | null>(null);
   const [length, setLength] = useState(30);
   const [starting, setStarting] = useState(false);
@@ -71,7 +72,7 @@ export function Logs() {
                   <button type="button" className="rec-row" onClick={() => openRecording(r.id)}>
                     <span className="rec-row-top"><b>{r.reason}</b><StateChip state={r.state} /></span>
                     <span className="muted">{whenRan(r)} · {minutes(r.minutes)}</span>
-                    {r.headline && <span className="rec-found">{r.headline}</span>}
+                    {r.headline && <span className="rec-found">{inUnit(r.headline)}</span>}
                     {r.error && <span className="muted">{r.error}</span>}
                     <span className="rec-go" aria-hidden="true"><Icon d="M8 4l6 6-6 6" /></span>
                   </button>

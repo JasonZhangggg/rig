@@ -3,6 +3,7 @@
 // the data comes from.
 
 import type { ActionCall } from "./actions";
+import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 
@@ -84,6 +85,10 @@ export interface RigClient {
   signInWithBrowser?(): Promise<{ code: string; url: string; done: Promise<Account> }>;
   /** Website: approve or refuse a desktop sign-in code (from the link the desktop opened). */
   approveDevice?(userCode: string, approve: boolean): Promise<void>;
+  /** Deletes the account with all its PCs, their history and chat use. Missing where it can't be done (signed out, the demo). */
+  deleteAccount?(): Promise<void>;
+  /** Everything kept for the account: its PCs, their settings and recorded history. */
+  exportData?(): Promise<DataExport>;
 
   /** Every PC on the account (or just this one when signed out on the desktop). */
   machines(): Promise<PC[]>;

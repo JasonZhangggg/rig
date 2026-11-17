@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
+import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, shownSummary, weekEvenings, weekTemps, type HistoryPoint, type Issue, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
-import { useApp, useHistory } from "../state";
+import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../state";
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
 import { WeekCard } from "./overview/WeekCard";
-import { dustIssue, greeting, issueGo, partIcon, shortType } from "./shared";
+import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
 
 const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
@@ -28,15 +28,23 @@ export function Overview() {
   const ctx = useApp();
   const { pc, data, client, set, go, ask } = ctx;
   const dust = dustIssue(pc);
-  const issues = dust ? [...(pc.issues ?? []), dust] : pc.issues ?? [];
+  const off = useAlertKindsOff();
+  const alerts = shownAlerts(pc.alerts, off);
+  const summary = shownSummary(pc, alerts);
+  const covered = coveredIssues(alerts);
+  const found = (dust ? [...(pc.issues ?? []), dust] : pc.issues ?? []).filter((i) => !covered.has(i.id) && !(alerts.length && i.severity === "ok"));
+  const issues = bySeverity([...alerts.map((a) => alertIssue(a)), ...found]);
   const open = issues.filter((i) => i.severity === "warn" || i.severity === "bad");
   const top = open[0] ?? issues[0];
   const chips = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp != null).slice(0, 4);
-  const name = client.kind === "demo" ? null : data.account?.name.split(" ")[0];
+  const name = client.kind === "demo" ? null : firstName(data.account?.name);
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
   const ringC = 2 * Math.PI * 52;
   const week = useWeekInsights(pc, useHistory("7d"));
+  const temp = useTemp();
+  const inUnit = useTempText();
+  const goTo = (i: Issue) => issueGo(i.ask ? { ...i, ask: inUnit(i.ask) } : i, pc, ctx);
 
   return (
     <div className="page f-home">
@@ -44,7 +52,7 @@ export function Overview() {
         <div className="f-band-left">
           <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
-            <button type="button" className="f-cta" onClick={() => issueGo(top, pc, ctx)}>
+            <button type="button" className="f-cta" onClick={() => goTo(top)}>
               <span>{open.length ? "Review" : "See what's new"}</span>
               {open.length > 0 && <em>{open.length}</em>}
               <i><Arrow /></i>
@@ -54,7 +62,7 @@ export function Overview() {
         </div>
         <div className="f-band-right">
           <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
-          <p>{pc.name} is {pc.health >= 75 ? "running well" : "not at its best"}. {status}</p>
+          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
         </div>
         <button type="button" className="f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
       </section>
@@ -69,7 +77,7 @@ export function Overview() {
           <div className="f-pc-chips">
             {chips.map(([id, p]) => (
               <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
-                <i>{partIcon[id]}</i>{shortType(p.type)}<b>{p.temp}°</b>
+                <i>{partIcon[id]}</i>{shortType(p.type)}<b>{temp(p.temp, { mark: "degree" })}</b>
               </button>
             ))}
           </div>
@@ -84,7 +92,7 @@ export function Overview() {
             </svg>
             <div><b>{pc.health}</b><span>of 100</span></div>
           </div>
-          <p>{pc.summary}</p>
+          <p>{summary}</p>
         </section>
 
         <FansCard fans={pc.fans} trend={week?.fans ?? null} />
@@ -94,9 +102,9 @@ export function Overview() {
         <section className="f-card f-todo">
           <div className="f-card-head"><span>Things to look at</span>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
           {issues.map((i) => (
-            <button key={i.id} type="button" className={`f-todo-row ${i.severity}`} onClick={() => issueGo(i, pc, ctx)}>
+            <button key={i.id} type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
               <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
-              <span><b>{i.title}</b><small>{i.body}</small></span>
+              <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
               <i className="f-todo-go"><Arrow /></i>
             </button>
           ))}

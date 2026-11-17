@@ -4,8 +4,8 @@
 
 import { sql, type Selectable } from "kysely";
 import {
-  cleanEvents, isActive, newRecording, toInfo, toRequest,
-  type Change, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type PC, type PCEvent,
+  cleanEvents, isActive, makeExport, newRecording, toInfo, toRequest,
+  type Change, type DataExport, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type PC, type PCEvent,
   type Recording, type RecordingInfo, type RecordingRequest, type SystemFacts,
 } from "@rig/core";
 import type { DB, RigTables } from "./sql";
@@ -52,6 +52,11 @@ export function present(m: MachineRow, now = Date.now()): PC {
   const seen = Date.parse(m.syncedAt);
   const id = Object.fromEntries(Object.entries(m.identity).filter(([, v]) => v != null)) as Identity;
   return { ...m.view, ...id, id: m.id, lastSync: m.syncedAt, seenAt: m.view.seenAt ?? m.syncedAt, online: now - seen < ONLINE_MS };
+}
+
+function withData(r: { info: unknown; data: unknown }): Recording {
+  const data = (r.data ?? {}) as Partial<Pick<Recording, "samples" | "events">>;
+  return { ...(r.info as RecordingInfo), samples: data.samples ?? [], events: data.events ?? [] };
 }
 
 export class Store {
@@ -111,9 +116,13 @@ export class Store {
 
   async recording(userId: string, machineId: string, id: string): Promise<Recording | null> {
     const r = await this.db.selectFrom("recording").select(["info", "data"]).where("user_id", "=", userId).where("machine_id", "=", machineId).where("id", "=", id).executeTakeFirst();
-    if (!r) return null;
-    const data = (r.data ?? {}) as Partial<Pick<Recording, "samples" | "events">>;
-    return { ...(r.info as RecordingInfo), samples: data.samples ?? [], events: data.events ?? [] };
+    return r ? withData(r) : null;
+  }
+
+  /** Every recording kept for a PC with its readings, for the data export. */
+  private async allRecordings(userId: string, machineId: string): Promise<Recording[]> {
+    const rows = await this.db.selectFrom("recording").select(["info", "data"]).where("user_id", "=", userId).where("machine_id", "=", machineId).orderBy("created_at", "desc").execute();
+    return rows.map(withData);
   }
 
   /** Files a request for the PC to pick up. One at a time: returns the one already waiting or running instead. */
@@ -205,5 +214,43 @@ export class Store {
       .onConflict((oc) => oc.columns(["user_id", "day"]).doUpdateSet({ count: sql<number>`chat_usage.count + 1` }))
       .returning("count").executeTakeFirst();
     return (r?.count ?? 1) <= limit;
+  }
+
+  /** Everything kept for the account: its PCs, all their history, Windows events and recordings, and chat use. */
+  async exportAccount(userId: string, now = new Date()): Promise<DataExport | null> {
+    const user = await this.db.selectFrom("user").select(["id", "name", "email", "createdAt"]).where("id", "=", userId).executeTakeFirst();
+    if (!user) return null;
+    const rows = await this.machines(userId);
+    const machines = await Promise.all(rows.map(async (m) => ({
+      id: m.id, view: present(m, now.getTime()), inventory: m.inventory, facts: m.facts, identity: m.identity,
+      syncedAt: m.syncedAt, changes: m.changes, games: m.games, history: await this.history(userId, m.id, 0),
+      events: m.events, recordings: await this.allRecordings(userId, m.id),
+    })));
+    const usage = await this.db.selectFrom("chat_usage").select([sql<string>`to_char(day, 'YYYY-MM-DD')`.as("day"), "count"]).where("user_id", "=", userId).execute();
+    return makeExport({
+      account: { id: user.id, name: user.name, email: user.email, createdAt: iso(user.createdAt) ?? undefined },
+      machines,
+      chatUsage: usage,
+      notes: [`The server keeps ${HISTORY_DAYS} days of history. The Rig app on each PC keeps more.`],
+      now,
+    });
+  }
+
+  /**
+   * Deletes the account and everything on it in one transaction: chat use,
+   * history, PCs (with their recordings), desktop sign-in codes, sign-ins and the account itself.
+   * Returns false when there was no such account.
+   */
+  async deleteAccount(userId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom("chat_usage").where("user_id", "=", userId).execute();
+      await trx.deleteFrom("machine_history").where("user_id", "=", userId).execute();
+      await trx.deleteFrom("machine").where("user_id", "=", userId).execute();
+      await trx.deleteFrom("deviceCode").where("userId", "=", userId).execute();
+      await trx.deleteFrom("session").where("userId", "=", userId).execute();
+      await trx.deleteFrom("account").where("userId", "=", userId).execute();
+      const r = await trx.deleteFrom("user").where("id", "=", userId).executeTakeFirst();
+      return Number(r.numDeletedRows) > 0;
+    });
   }
 }

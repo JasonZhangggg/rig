@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import type { ActionCall, Part } from "@rig/core";
+import { useEffect, useRef, useState } from "react";
+import { formatTemp, type ActionCall, type Part, type TempUnit } from "@rig/core";
 import { Sparkline } from "../chart";
 import { StageSlot, getStage } from "../components/Stage";
-import { useApp } from "../state";
+import { useApp, useTemp, useTempText, useTempUnit } from "../state";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince } from "./shared";
 
@@ -26,6 +26,18 @@ const driverPages: Record<string, string> = {
 export function PCPage() {
   const { ui, pc, set } = useApp();
   const [customize, setCustomize] = useState(false);
+  const customizeBtn = useRef<HTMLButtonElement>(null);
+  const closeCustomize = () => { setCustomize(false); customizeBtn.current?.focus(); };
+  // Escape closes the open panel: Customize first, then the part's details.
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || ui.palette || ui.review) return;
+      if (customize) closeCustomize();
+      else if (ui.selected) getStage().scene.select(null);
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  });
   const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
   return (
     <div className="page">
@@ -37,10 +49,10 @@ export function PCPage() {
             <div className="id-chip">
               <span className="dot" />
               <div><strong>{pc.name}</strong><div className="src">{pc.model?.label}</div></div>
-              <button className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
+              <button ref={customizeBtn} className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
             </div>
           </div>
-          {customize && <Customize onDone={() => setCustomize(false)} />}
+          {customize && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
             <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => toggle("exploded")}>Exploded view</button>
             <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => toggle("heat")}>Heat</button>
@@ -63,7 +75,7 @@ function Customize({ onDone }: { onDone: () => void }) {
   const update = (patch: { name?: string; accent?: string }) => client.rename(pc.id, patch).catch(() => toast("Couldn't save that. Try again."));
   return (
     <div className="card customize" role="dialog" aria-label="Customize">
-      <div className="field"><label className="label" htmlFor="pc-name">Name</label><input className="input" id="pc-name" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== pc.name && update({ name: name.trim() })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} /></div>
+      <div className="field"><label className="label" htmlFor="pc-name">Name</label><input className="input" id="pc-name" autoFocus value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== pc.name && update({ name: name.trim() })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} /></div>
       <div className="field">
         <span className="label">Accent color</span>
         <div className="swatches">
@@ -104,6 +116,7 @@ function QuickSwitches() {
 
 function Detail() {
   const { ui, pc, set } = useApp();
+  const temp = useTemp();
   const parts = pc.parts ?? {};
   const select = (id: string | null) => getStage().scene.select(id);
   if (!ui.selected || !parts[ui.selected]) {
@@ -114,7 +127,7 @@ function Detail() {
           {Object.entries(parts).map(([k, v]) => (
             <button key={k} type="button" onClick={() => select(k)}>
               <span><div className="pt">{v.type}</div>{v.name}</span>
-              {v.temp !== undefined && <span className={`num${v.warn ? "" : " faint"}`} style={v.warn ? { color: "var(--warn)" } : undefined}>{v.temp}°C</span>}
+              {v.temp !== undefined && <span className={`num${v.warn ? "" : " faint"}`} style={v.warn ? { color: "var(--warn)" } : undefined}>{temp(v.temp)}</span>}
             </button>
           ))}
         </div>
@@ -138,6 +151,16 @@ function Detail() {
       <div className="detail-body"><DetailTab part={part} id={id} tab={tab} /></div>
     </>
   );
+}
+
+/** How a temperature sits against the part's safe limit, in words. */
+/** "8° under its 88°C limit", in the viewer's unit; the gap is a difference, so it's scaled but not offset. */
+export function limitWords(temp: number | undefined, limit: number | undefined, unit: TempUnit = "c") {
+  if (temp == null || !limit) return "running warm";
+  const d = Math.round(limit - temp);
+  const gap = formatTemp(Math.abs(limit - temp), unit, { delta: true, mark: "degree" });
+  const lim = formatTemp(limit, unit);
+  return d > 0 ? `${gap} under its ${lim} limit` : d < 0 ? `${gap} over its ${lim} limit` : `right at its ${lim} limit`;
 }
 
 const size = (gb: number) => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${gb} GB`);
@@ -179,10 +202,13 @@ function SourceBadge({ part }: { part: Part }) {
 
 function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const { pc, ask } = useApp();
+  const temp = useTemp();
+  const unit = useTempUnit();
+  const inUnit = useTempText();
   const [q, setQ] = useState("");
   const trail = useTrail(`${pc.id}:${id}`, part.temp, pc.seenAt);
   if (tab === "specs") {
-    return <><table className="kv"><tbody>{part.specs.map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody></table><SourceBadge part={part} /></>;
+    return <><table className="kv"><tbody>{part.specs.map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table><SourceBadge part={part} /></>;
   }
   if (tab === "manual") {
     return (
@@ -214,8 +240,8 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
     );
   }
   const tiles: JSX.Element[] = [];
-  if (part.temp !== undefined) tiles.push(<div key="t" className={`live${part.warn ? " warn" : ""}`}><span className="label">Temperature</span><span className="big">{part.temp}°C</span><Sparkline values={trail} w={130} h={26} warn={part.warn} /></div>);
-  if (part.tempMax !== undefined) tiles.push(<div key="m" className="live"><span className="label">Highest today</span><span className="big">{part.tempMax}°C</span></div>);
+  if (part.temp !== undefined) tiles.push(<div key="t" className={`live${part.warn ? " warn" : ""}`}><span className="label">Temperature</span><span className="big">{temp(part.temp)}</span><Sparkline values={trail} w={130} h={26} warn={part.warn} /></div>);
+  if (part.tempMax !== undefined) tiles.push(<div key="m" className="live"><span className="label">Highest today</span><span className="big">{temp(part.tempMax)}</span></div>);
   if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span className="big">{part.load}%</span></div>);
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
@@ -223,10 +249,10 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
     <>
       {tiles.length
         ? <div className="live-grid">{tiles}</div>
-        : <table className="kv"><tbody>{part.specs.slice(0, 3).map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody></table>}
+        : <table className="kv"><tbody>{part.specs.slice(0, 3).map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table>}
       {part.warn && (
         <>
-          <div className="callout warn">{part.temp}°C is {part.limit ? `${Math.max(0, part.limit - (part.temp ?? 0))}° under its ${part.limit}°C limit` : "running warm"}. {pc.issues?.find((i) => i.part === id)?.body}</div>
+          <div className="callout warn">{temp(part.temp)} is {limitWords(part.temp, part.limit, unit)}. {inUnit(pc.issues?.find((i) => i.part === id)?.body ?? "")}</div>
           <a className="btn" href="#chat">Ask what to do</a>
         </>
       )}

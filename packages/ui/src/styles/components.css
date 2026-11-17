@@ -149,7 +149,7 @@
 }
 
 /* ---------- 3D stage. One WebGL view moves between slots, so the card behind it paints the light. ---------- */
-.stage { position: relative; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
+.stage { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
 .stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 .stage-park { position: absolute; left: -9999px; top: 0; width: 600px; height: 400px; }
 .stage-slot { position: absolute; inset: 0; }
@@ -174,6 +174,7 @@
 .spark.warn .spark-dot { fill: var(--warn); }
 
 .chart { display: block; width: 100%; height: 300px; }
+.chart-empty { display: grid; place-items: center; padding: 0 24px; text-align: center; }
 .chart-grid { stroke: var(--line); stroke-width: 1; }
 .chart-tick { fill: var(--text-3); font: 11px var(--font); }
 .chart-band { fill: color-mix(in srgb, var(--text-3) 9%, transparent); }
@@ -188,3 +189,5 @@
 .legend .lg-cpu { background: var(--text); }
 .legend .lg-gpu { background: var(--look); }
 .legend .lg-limit { height: 0; border-top: 1.5px dashed var(--text-3); border-radius: 0; background: none; }
+
+.notify-note { max-width: 58ch; margin: 0; padding: 6px 0 4px; font-size: 13px; }

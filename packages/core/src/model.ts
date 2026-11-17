@@ -4,7 +4,7 @@
 import type { ActionCall } from "./actions";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
-export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "web" | "signin";
+export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "web" | "signin" | "settings";
 
 /** One row of a before and after table: [setting, now, after]. */
 export type DiffRow = [string, string, string];
@@ -77,6 +77,29 @@ export interface PC {
   settings?: PCSettings;
   /** ISO date the person last cleaned the dust out, if they told Rig. */
   cleanedAt?: string;
+  /** Problems that started while Rig was watching and are still going on, from alerts.ts. */
+  alerts?: Alert[];
+}
+
+/** The kinds of alert Rig raises. Each one can be turned off on a device. */
+export type AlertKind = "too-hot" | "fan-stopped" | "drive-full" | "drive-wearing" | "hotter-than-usual";
+
+/** Something that went wrong and is still going on, worth telling the person about even when they aren't looking. */
+export interface Alert {
+  /** Stable for one source of trouble, such as "too-hot:gpu", so the same problem keeps the same id. */
+  id: string;
+  kind: AlertKind;
+  /** The part it's about, as a key of PC.parts. */
+  part: string;
+  severity: Extract<Severity, "warn" | "bad">;
+  title: string;
+  detail: string;
+  /** ISO time the problem started. */
+  since: string;
+  /** A question to start the chat with when the alert is opened. */
+  ask?: string;
+  /** Ids of issues that say the same thing, left out wherever this alert shows. */
+  covers?: string[];
 }
 
 export interface PCSettings {

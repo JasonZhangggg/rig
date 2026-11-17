@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { RecordingInfo, RecordingRequest } from "@rig/core";
-import { useApp } from "../../state";
+import { useApp, useTempText } from "../../state";
 import { clock, minutes, stateWord } from "./words";
 
 /** The clock, ticking once a second while something on screen counts down. */
@@ -34,6 +34,7 @@ export const StateChip = ({ state }: { state: RecordingInfo["state"] }) =>
 /** A recording inside a chat answer. It follows the recording live: waiting, running, then what it found. */
 export function RecordingCard({ request }: { request: RecordingRequest }) {
   const { data, pc, ask, stopRecording, openRecording } = useApp();
+  const inUnit = useTempText();
   const live = data.recordings.find((r) => r.id === request.id);
   const state = live?.state ?? "pending";
   const finished = state === "done" || state === "cancelled";
@@ -47,7 +48,7 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
         <p>{request.reason}</p>
         {live && <Progress r={live} />}
         {state === "pending" && <p className="muted">Waiting for the Rig app on {pc.name} to pick it up. That takes up to five minutes while the PC is on.</p>}
-        {finished && <p className="rec-found">{live?.headline ?? "Rig has the readings."}</p>}
+        {finished && <p className="rec-found">{live?.headline ? inUnit(live.headline) : "Rig has the readings."}</p>}
         {state === "failed" && <p className="muted">{live?.error ?? "No readings came in."}</p>}
       </div>
       <div className="proposal-foot">

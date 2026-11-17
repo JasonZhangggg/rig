@@ -1,4 +1,4 @@
-import type { PC } from "@rig/core";
+import { seenLabel, type PC } from "@rig/core";
 import { useApp } from "../state";
 
 function PCArt({ pc }: { pc: PC }) {
@@ -27,7 +27,7 @@ export function Web() {
               <div className="faint">{x.nickname} · {x.os}</div>
               <p className="muted" style={{ fontSize: ".93em" }}>{x.summary}</p>
               <div className="row">
-                <span className={`chip${x.online ? " ok" : ""}`}>{x.lastSync}</span>
+                <span className={`chip${x.online ? " ok" : ""}`}>{seenLabel(x)}</span>
                 <button className="btn sm" type="button" onClick={() => {
                   if (!x.parts) { toast(`${x.name} hasn't sent its details yet. Open Rig on it once.`); return; }
                   pickPC(x.id); go("overview");

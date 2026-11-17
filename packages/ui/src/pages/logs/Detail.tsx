@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { isActive, limitsOf, summarise, type HistoryPoint, type Recording, type RecordingInfo } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
-import { useApp } from "../../state";
+import { useApp, useTemp, useTempText } from "../../state";
 import { EventRow } from "./Events";
 import { Progress, StateChip } from "./RecordingCard";
 import { clock, clockSec, gb, whenRan } from "./words";
@@ -10,6 +10,8 @@ import { clock, clockSec, gb, whenRan } from "./words";
 /** One recording: what Rig found, the readings with those moments marked, the busiest apps and the Windows events inside it. */
 export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
   const { client, pc, ask, stopRecording, data } = useApp();
+  const temp = useTemp();
+  const inUnit = useTempText();
   const [rec, setRec] = useState<Recording | null | undefined>(undefined);
   // Fetch again as it grows and when it finishes.
   const version = `${info.id}|${info.state}|${Math.floor(info.sampleCount / 6)}`;
@@ -61,8 +63,8 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
                 return (
                   <div key={k} className="card card-pad">
                     <div className="label">{k === "gpu" ? "Graphics card" : "Processor"} at its hottest</div>
-                    <p className="num big-figure" style={near ? { color: "var(--warn)" } : undefined}>{s.max}°C</p>
-                    <p className="muted">At {clock(s.maxAt)}, {s.avg}°C on average.{limit != null ? ` Its safe limit is ${limit}°C.` : ""}</p>
+                    <p className="num big-figure" style={near ? { color: "var(--warn)" } : undefined}>{temp(s.max)}</p>
+                    <p className="muted">At {clock(s.maxAt)}, {temp(s.avg)} on average.{limit != null ? ` Its safe limit is ${temp(limit)}.` : ""}</p>
                   </div>
                 );
               })}
@@ -76,13 +78,13 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
 
           <section className="card card-pad rec-found-card">
             <h2>What Rig found</h2>
-            {sum.moments.length === 0 ? <p className="muted">{active ? "Nothing unusual so far." : sum.headline}</p> : (
+            {sum.moments.length === 0 ? <p className="muted">{active ? "Nothing unusual so far." : inUnit(sum.headline)}</p> : (
               <ol className="rec-moments">
                 {sum.moments.map((m, i) => (
                   <li key={`${m.t}${m.title}`} className={m.severity}>
                     <span className="rec-n num">{i + 1}</span>
                     <span className="num faint">{clockSec(m.t)}</span>
-                    <span className="ev-text"><b>{m.title}</b><span className="muted">{m.detail}</span></span>
+                    <span className="ev-text"><b>{inUnit(m.title)}</b><span className="muted">{inUnit(m.detail)}</span></span>
                   </li>
                 ))}
               </ol>
@@ -100,11 +102,11 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
                   {marks.length > 0 && <span><i className="lg-mark" />Numbers match the list above</span>}
                 </div>
               </div>
-              <LineChart points={temps} series={series} limit={mainLimit != null ? { v: mainLimit, label: `${mainLimit}°C limit` } : undefined} h={240} marks={marks} label="Temperatures during the recording" />
+              <LineChart points={temps} series={series} limit={mainLimit != null ? { v: mainLimit, label: `${temp(mainLimit)} limit` } : undefined} h={240} marks={marks} label="Temperatures during the recording" />
               {loads.some((p) => p.cpu != null || p.gpu != null) && (
                 <>
                   <h2>How hard each part worked</h2>
-                  <LineChart points={loads} series={series} h={180} unit="%" marks={marks} label="Load during the recording" />
+                  <LineChart points={loads} series={series} h={180} percent marks={marks} label="Load during the recording" />
                 </>
               )}
             </section>

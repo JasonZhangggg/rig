@@ -60,6 +60,13 @@ export class Recorder {
     return info ? cleanRecording(await this.o.store.get(key(id)), info.pcId) : null;
   }
 
+  /** Every recording with its readings, newest first, for the data export. */
+  async all(): Promise<Recording[]> {
+    await this.load();
+    const list = await Promise.all(this.list().map((r) => this.get(r.id)));
+    return list.filter((r): r is Recording => r != null);
+  }
+
   /** Starts recording now. Starting one that already exists, or while another runs, changes nothing. */
   async start(req: RecordingRequest): Promise<RecordingInfo> {
     await this.load();

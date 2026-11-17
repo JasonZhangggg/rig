@@ -1,10 +1,12 @@
+import { sql } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildPC, desktopClientId, type ChatEvent, type MachineSync, type Recording, type RecordingInfo, type SyncReply } from "@rig/core";
+import { buildPC, desktopClientId, type ChatEvent, type DataExport, type MachineSync, type Recording, type RecordingInfo, type SyncReply } from "@rig/core";
 import { SimulatedLink, demoEvents, demoRecording, fixtures } from "@rig/core/demo";
 import { createApp } from "../src/app";
+import { Store } from "../src/db";
 import type { Streamer } from "../src/chat";
 import type { Env } from "../src/env";
-import type { RigTables } from "../src/sql";
+import type { AuthTables, RigTables } from "../src/sql";
 import { testDb } from "./pglite";
 
 const ORIGIN = "http://localhost:8787";
@@ -40,7 +42,7 @@ function fakeClaude(rounds: { text?: string; tool?: { name: string; input: unkno
 }
 
 async function setup(env: Partial<Env> = {}, claude?: Streamer) {
-  const db = await testDb<RigTables>();
+  const db = await testDb<RigTables & AuthTables>();
   const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", ...env };
   const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }) });
   const call = (path: string, init: RequestInit & { json?: unknown; cookie?: string; token?: string } = {}) => {
@@ -56,7 +58,7 @@ async function setup(env: Partial<Env> = {}, claude?: Streamer) {
     const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
     return cookie;
   };
-  return { call, signUp, env: e };
+  return { call, signUp, env: e, db };
 }
 
 async function syncPayload(over: Partial<MachineSync> = {}): Promise<MachineSync> {
@@ -421,3 +423,99 @@ describe("recordings and Windows events", () => {
     expect(sources.sources.map((x) => x.label)).toContain("Recording, 45 minutes");
   });
 });
+
+describe("your data", () => {
+  /** Two accounts, each with the same PC uploaded, history and chat use. */
+  async function twoAccounts() {
+    const t = await setup();
+    const jo = await t.signUp("jo@example.com");
+    const max = await t.signUp("max@example.com");
+    const s = await syncPayload();
+    const id = s.inventory.machine.id;
+    const rec = demoRecording(fixtures.atlas.inv, Date.now());
+    for (const cookie of [jo, max]) {
+      expect((await t.call(`/api/machines/${id}/sync`, { method: "PUT", json: { ...s, events: demoEvents("tower", Date.now()) }, cookie })).status).toBe(200);
+      expect((await t.call(`/api/machines/${id}/recordings/${rec.id}`, { method: "PUT", json: rec, cookie })).status).toBe(204);
+    }
+    const uid = async (cookie: string) => ((await (await t.call("/api/me", { cookie })).json()) as { id: string }).id;
+    const ids = { jo: await uid(jo), max: await uid(max) };
+    const store = new Store(t.db);
+    for (const u of [ids.jo, ids.jo, ids.max]) await store.useChat(u, 40);
+    for (const u of [ids.jo, ids.max]) {
+      await sql`insert into "deviceCode" ("id", "deviceCode", "userCode", "userId", "expiresAt", "status") values (${`dc-${u}`}, ${`code-${u}`}, ${`U-${u}`}, ${u}, now() + interval '5 minutes', 'approved')`.execute(t.db);
+    }
+    return { ...t, jo, max, id, ids, rec };
+  }
+
+  /** How many rows each table holds for one account. */
+  async function rows(db: Awaited<ReturnType<typeof setup>>["db"], userId: string) {
+    const count = async (q: { executeTakeFirstOrThrow(): Promise<{ n: string | number | bigint }> }) => Number((await q.executeTakeFirstOrThrow()).n);
+    return {
+      user: await count(db.selectFrom("user").select((e) => e.fn.countAll().as("n")).where("id", "=", userId)),
+      session: await count(db.selectFrom("session").select((e) => e.fn.countAll().as("n")).where("userId", "=", userId)),
+      account: await count(db.selectFrom("account").select((e) => e.fn.countAll().as("n")).where("userId", "=", userId)),
+      deviceCode: await count(db.selectFrom("deviceCode").select((e) => e.fn.countAll().as("n")).where("userId", "=", userId)),
+      machine: await count(db.selectFrom("machine").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+      history: await count(db.selectFrom("machine_history").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+      chat: await count(db.selectFrom("chat_usage").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+      recording: await count(db.selectFrom("recording").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+    };
+  }
+
+  it("downloads the account's PCs with all their history, events and recordings, and nobody else's", async () => {
+    const { call, jo, id, ids, rec } = await twoAccounts();
+    expect((await call("/api/me/export")).status).toBe(401);
+
+    const res = await call("/api/me/export", { cookie: jo });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="rig-data-\d{4}-\d{2}-\d{2}\.json"$/);
+    const out = await res.json() as DataExport;
+    expect(out.format).toBe("rig-export/1");
+    expect(out.account).toMatchObject({ id: ids.jo, email: "jo@example.com", name: "jo" });
+    expect(out.account?.createdAt).toMatch(/^\d{4}-/);
+    expect(out.machines).toHaveLength(1);
+    expect(out.machines[0]).toMatchObject({ id, name: "Atlas" });
+    expect(out.machines[0].inventory?.machine.id).toBe(id);
+    expect(out.machines[0].history.map((p) => p.cpu)).toEqual([61, 70]);
+    expect(out.machines[0].events.length).toBeGreaterThan(4);
+    expect(out.machines[0].recordings.map((r) => [r.id, r.samples.length])).toEqual([[rec.id, rec.samples.length]]);
+    expect(out.chatUsage).toEqual([{ day: new Date().toISOString().slice(0, 10), count: 2 }]);
+    expect(JSON.stringify(out)).not.toContain("max@example.com");
+  });
+
+  it("deletes the account with its PCs, history, recordings, chat use and sign-ins, and leaves other accounts alone", async () => {
+    const { call, db, signUp, jo, max, ids } = await twoAccounts();
+    const maxBefore = await rows(db, ids.max);
+    expect(await rows(db, ids.jo)).toMatchObject({ user: 1, session: 1, account: 1, deviceCode: 1, machine: 1, history: 2, chat: 1, recording: 1 });
+
+    expect((await call("/api/me", { method: "DELETE", json: { confirm: "DELETE" } })).status).toBe(401);
+    expect((await call("/api/me", { method: "DELETE", json: {}, cookie: jo })).status).toBe(400);
+    expect((await call("/api/me", { method: "DELETE", json: { confirm: "delete" }, cookie: jo })).status).toBe(400);
+    expect((await rows(db, ids.jo)).user).toBe(1);
+
+    const res = await call("/api/me", { method: "DELETE", json: { confirm: "DELETE" }, cookie: jo });
+    expect(res.status).toBe(204);
+    const cleared = res.headers.getSetCookie();
+    expect(cleared.some((c) => c.startsWith("better-auth.session_token=;") && /Max-Age=0/.test(c))).toBe(true);
+
+    expect(await rows(db, ids.jo)).toEqual({ user: 0, session: 0, account: 0, deviceCode: 0, machine: 0, history: 0, chat: 0, recording: 0 });
+    expect(await rows(db, ids.max)).toEqual(maxBefore);
+    expect((await call("/api/me", { cookie: jo })).status).toBe(401);
+    expect((await call("/api/machines", { cookie: max })).status).toBe(200);
+    expect(await (await call("/api/machines", { cookie: max })).json()).toHaveLength(1);
+
+    // The same email can make a new, empty account afterwards.
+    const again = await signUp("jo@example.com");
+    expect(await (await call("/api/machines", { cookie: again })).json()).toEqual([]);
+  });
+
+  it("rolls the whole deletion back if any part of it fails", async () => {
+    const { db, ids } = await twoAccounts();
+    await sql`create function stop_user_delete() returns trigger language plpgsql as $$ begin raise exception 'blocked'; end $$`.execute(db);
+    await sql`create trigger stop_user_delete before delete on "user" for each row execute function stop_user_delete()`.execute(db);
+    const before = await rows(db, ids.jo);
+    await expect(new Store(db).deleteAccount(ids.jo)).rejects.toThrow(/blocked/);
+    expect(await rows(db, ids.jo)).toEqual(before);
+  });
+});
+

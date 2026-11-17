@@ -4,11 +4,13 @@
 // the view so the website shows it and reaches the other PCs on the account.
 
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
+import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
+import { makeExport, type DataExport } from "./export";
 import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
-import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
+import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
 import { checkRequest, cleanEvents, limitsOf, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
@@ -48,9 +50,11 @@ export interface LocalOptions {
   syncEveryMs?: number;
   /** Settings are re-read this often, and right after every change. */
   factsEveryMs?: number;
+  /** Drives and the rest of the inventory are re-read this often, so free space stays current. */
+  inventoryEveryMs?: number;
   now?: () => number;
-  /** Shows a notification outside the app's window, with the page to open when it's clicked. */
-  notify?: (n: { title: string; body: string; route: string }) => void;
+  /** Shows a notification outside the app's window when a recording finishes. */
+  notify?: (n: { title: string; body: string }) => void;
 }
 
 const EVENTS_DAYS = 30;
@@ -66,6 +70,11 @@ export class LocalClient implements RigClient {
   private inv: Inventory | null = null;
   private facts: SystemFacts | null = null;
   private factsAt = 0;
+  private invAt = 0;
+  private alertState: AlertState = emptyAlertState();
+  private alerts: Alert[] = [];
+  /** History the alerts compare against, oldest first. */
+  private recent: HistoryPoint[] = [];
   private snap: Snapshot | null = null;
   private identity: Identity & { at?: string } = {};
   private dayMax: DayMax = {};
@@ -85,16 +94,17 @@ export class LocalClient implements RigClient {
   private eventLog: { at: number; list: PCEvent[] } | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, now: Date.now, notify: () => {}, ...opts };
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, ...opts };
     this.recorder = new Recorder({
       pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
       onChange: () => { const list = this.recorder.list(); this.recListeners.forEach((cb) => cb(list)); },
       onFinish: (r) => {
-        this.o.notify({ title: "Rig finished recording", body: r.state === "failed" ? "It couldn't collect readings. Open Rig to see why." : "Tap to see what it found.", route: "logs" });
+        this.o.notify({ title: "Rig finished recording", body: r.state === "failed" ? "It couldn't collect readings. Open Rig to see why." : "Open Logs in Rig to see what it found." });
         void this.sendRecording(r.id);
       },
     });
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
+    if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
   }
 
   /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
@@ -106,7 +116,9 @@ export class LocalClient implements RigClient {
       [this.inv, this.facts, this.identity] = await Promise.all([
         this.link.inventory(), this.link.facts(), this.store.get<Identity>("identity").then((v) => v ?? {}),
       ]);
-      this.factsAt = this.o.now();
+      this.factsAt = this.invAt = this.o.now();
+      this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
+      this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
       this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
       this.unsent = new Set(await this.store.get<string[]>("recordingsUnsent") ?? []);
       await this.recorder.load();
@@ -129,11 +141,13 @@ export class LocalClient implements RigClient {
     try {
       const now = this.o.now();
       if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts(); this.factsAt = now; }
+      if (now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
       this.lastError = null;
       if (dayKey(now) !== this.day) { this.day = dayKey(now); this.dayMax = {}; }
       for (const s of this.snap.sensors) if (s.type === "temperature" && s.value != null) this.dayMax[s.id] = Math.max(this.dayMax[s.id] ?? 0, s.value);
       await this.record(now);
+      await this.watchAlerts(now);
       await this.recorder.tick(this.snap);
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e);
@@ -150,16 +164,30 @@ export class LocalClient implements RigClient {
       const p = w.point();
       this.window = null;
       await this.store.addHistory(p);
+      this.recent.push(p);
+      const keep = now - USUAL.baselineFrom * 864e5;
+      if (this.recent[0]?.t < keep) this.recent = this.recent.filter((x) => x.t >= keep);
       this.unsynced.push(p);
       await this.store.set("unsynced", this.unsynced.slice(-720));
     }
   }
 
+  /** Moves the alerts on by this reading, and keeps them on disk when one starts or ends so a restart carries on where it left off. */
+  private async watchAlerts(now: number) {
+    if (!this.inv) return;
+    const { state, alerts } = stepAlerts(this.alertState, { inv: this.inv, snap: this.snap, history: this.recent, now });
+    this.alertState = state;
+    const ids = (xs: Alert[]) => xs.map((a) => `${a.id}@${a.since}`).sort().join();
+    const changed = ids(alerts) !== ids(this.alerts);
+    this.alerts = alerts;
+    if (changed) await this.store.set("alerts", state);
+  }
+
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...pc } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
-    pc.id = this.id;
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
+    const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
   }
@@ -220,6 +248,29 @@ export class LocalClient implements RigClient {
   // ----- Account -----
   async account() { return this.cloud ? this.cloud.account().catch(() => null) : null; }
   async signOut() { await this.cloud?.signOut(); }
+  /** Deletes the account on the server. What's kept on this PC stays, so Rig keeps working signed out. */
+  async deleteAccount() {
+    await this.cloud!.deleteAccount();
+    this.unsynced = [];
+    await this.store.set("unsynced", []);
+  }
+
+  /** The account's data when signed in; otherwise what this PC keeps on disk. */
+  async exportData(): Promise<DataExport> {
+    if (this.cloud && (await this.signedIn())) return this.cloud.exportData();
+    await this.start();
+    return makeExport({
+      account: null,
+      machines: [{
+        id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt },
+        changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
+        events: await this.events(this.id), recordings: await this.recorder.all(),
+      }],
+      notes: ["Exported from the Rig app on this PC while signed out."],
+      now: new Date(this.o.now()),
+    });
+  }
+
   async signInWithBrowser() {
     const r = await this.cloud!.signInWithBrowser!();
     return { ...r, done: r.done.then(async (a) => { await this.sync(); return a; }) };

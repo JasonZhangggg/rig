@@ -48,6 +48,7 @@ export interface ChatRequest {
 
 export const paths = {
   me: "/me",
+  exportData: "/me/export",
   machines: "/machines",
   machine: (id: string) => `/machines/${encodeURIComponent(id)}`,
   history: (id: string, range: string) => `/machines/${encodeURIComponent(id)}/history?range=${range}`,
@@ -72,6 +73,10 @@ export const paths = {
   deviceApprove: "/auth/device/approve",
   deviceDeny: "/auth/device/deny",
 } as const;
+
+/** Body of DELETE /api/me. The person types this word to confirm. */
+export interface DeleteAccountRequest { confirm: typeof DELETE_WORD }
+export const DELETE_WORD = "DELETE";
 
 /** The desktop app's client id for the device sign-in flow. */
 export const desktopClientId = "rig-desktop";
@@ -102,9 +107,15 @@ export async function readChatStream(res: Response, onEvent: (e: ChatEvent) => v
   }
 }
 
+/** Shown when the request never reached the server. */
+export const unreachableText = "Rig can't reach its server. Check your internet connection and try again.";
+/** Shown when the server failed without saying why. */
+export const serverDownText = "Rig's server isn't answering right now. Try again in a minute.";
+
 export async function errorText(res: Response): Promise<string> {
+  const fallback = res.status >= 500 ? serverDownText : res.statusText || `Error ${res.status}`;
   try {
     const body = await res.json() as { message?: string; error?: string };
-    return body.message ?? body.error ?? res.statusText;
-  } catch { return res.statusText || `Error ${res.status}`; }
+    return body.message ?? body.error ?? fallback;
+  } catch { return fallback; }
 }

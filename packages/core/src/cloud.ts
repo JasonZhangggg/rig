@@ -5,9 +5,10 @@
 
 import type { ActionCall } from "./actions";
 import {
-  ApiError, desktopClientId, errorText, paths, readChatStream,
-  type ChatRequest, type MachineSync, type SyncReply,
+  ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, unreachableText,
+  type ChatRequest, type DeleteAccountRequest, type MachineSync, type SyncReply,
 } from "./api";
+import type { DataExport } from "./export";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { PCEvent, Recording, RecordingInfo } from "./recordings";
@@ -51,11 +52,13 @@ export class CloudClient implements RigClient {
   private async send(path: string, init: RequestInit = {}): Promise<Response> {
     // `credentials` is a browser option; written this way so the server can share this file's types.
     const credentials = { credentials: this.opts.token ? "omit" : "include" } as RequestInit;
-    return fetch(this.opts.base + path, {
-      ...credentials,
-      ...init,
-      headers: { ...(await this.headers(init.body != null)), ...init.headers },
-    });
+    const headers = { ...(await this.headers(init.body != null)), ...init.headers };
+    try {
+      return await fetch(this.opts.base + path, { ...credentials, ...init, headers });
+    } catch (e) {
+      if (init.signal?.aborted) throw e;
+      throw new ApiError(0, unreachableText);
+    }
   }
 
   private async req<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -77,6 +80,14 @@ export class CloudClient implements RigClient {
   async signOut() {
     try { await this.req(paths.signOut, { method: "POST", body: "{}" }); } finally { await this.opts.token?.set(null); }
   }
+
+  async deleteAccount() {
+    const body: DeleteAccountRequest = { confirm: DELETE_WORD };
+    await this.req(paths.me, { method: "DELETE", body: JSON.stringify(body) });
+    await this.opts.token?.set(null);
+  }
+
+  exportData() { return this.req<DataExport>(paths.exportData); }
 
   async signInEmail(email: string, password: string, create?: { name: string }): Promise<Account> {
     const r = await this.req<{ user: Account }>(create ? paths.signUpEmail : paths.signInEmail, {

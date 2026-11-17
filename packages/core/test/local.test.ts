@@ -120,4 +120,24 @@ describe("LocalClient", () => {
     await off.client.chat(off.client.id, [{ id: "1", from: "you", text: "hi" }], (e) => events.push(e));
     expect(events[0]).toMatchObject({ type: "error" });
   });
+
+  it("exports this PC from disk when signed out, and the account when signed in", async () => {
+    const { client, advance } = setup();
+    await client.start();
+    for (let i = 0; i < 3; i++) { advance(10 * 60_000); await client.tick(); }
+    const out = await client.exportData();
+    client.stop();
+    expect(out.account).toBeNull();
+    expect(out.machines).toHaveLength(1);
+    expect(out.machines[0].id).toBe(client.id);
+    expect(out.machines[0].history.length).toBeGreaterThan(0);
+    expect(client.deleteAccount).toBeUndefined();
+
+    const fromServer = { format: "rig-export/1", machines: [] };
+    const cloud = { signedIn: async () => true, exportData: async () => fromServer, sync: async () => ({ identity: {} }), deleteAccount: vi.fn(async () => {}) } as unknown as CloudClient;
+    const on = setup({}, cloud);
+    expect(await on.client.exportData()).toBe(fromServer);
+    await on.client.deleteAccount!();
+    expect(cloud.deleteAccount).toHaveBeenCalledTimes(1);
+  });
 });

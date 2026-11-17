@@ -12,9 +12,11 @@ const fitChip: Record<Upgrade["fit"], JSX.Element> = {
 export function Upgrades() {
   const { pc, client, ask } = useApp();
   const [list, setList] = useState<Upgrade[] | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
-    client.upgrades(pc.id).then((u) => live && setList(u)).catch(() => live && setList([]));
+    setList(null); setFailed(false);
+    client.upgrades(pc.id).then((u) => live && setList(u)).catch(() => { if (live) { setFailed(true); setList([]); } });
     return () => { live = false; };
   }, [client, pc.id]);
   const laptop = pc.kind === "laptop";
@@ -22,8 +24,8 @@ export function Upgrades() {
     <div className="page">
       <div className="page-head"><div><h1>Upgrades for {pc.name}</h1><p className="sub">Worked out from the parts Rig found in your {laptop ? "laptop" : "PC"}. Ask about any of them to check your exact model's manual.</p></div></div>
       <section className="card">
-        {list == null && <p className="card-pad muted">Loading…</p>}
-        {list?.length === 0 && <p className="card-pad muted">Nothing to suggest right now.</p>}
+        {list == null && <p className="card-pad muted" role="status">Loading…</p>}
+        {list?.length === 0 && <p className="card-pad muted">{failed ? "Couldn't load upgrades just now. Open this page again in a minute." : "Nothing to suggest right now."}</p>}
         {list?.map((u) => (
           <div key={u.title} className="upg">
             <div><div className="label">{u.part}</div></div>

@@ -9,7 +9,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
-import type { PC, Part } from "@rig/core";
+import { formatTemp, type PC, type Part, type TempUnit } from "@rig/core";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -52,12 +52,24 @@ export interface PCScene {
   setSpin(v: boolean): void;
   /** Show air moving through the case. */
   setAirflow(v: boolean): void;
+  /** The unit the part labels show temperatures in. */
+  setTempUnit(unit: TempUnit): void;
   dispose(): void;
 }
 
 type Vec3 = [number, number, number];
 interface MatOpts { op?: number; emissive?: string; ei?: number }
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
+/** The camera's vertical field of view on a landscape stage, in degrees. */
+const BASE_FOV = 32;
+
+/** Widens the view on a stage taller than it is wide, so the sides of the PC aren't cut off. */
+export function fovFor(aspect: number) {
+  if (aspect >= 1) return BASE_FOV;
+  const half = Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2));
+  return THREE.MathUtils.radToDeg(2 * Math.atan(half / aspect));
+}
+
 interface Framing { target: THREE.Vector3; cam: THREE.Vector3; camExploded: THREE.Vector3 }
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -85,7 +97,7 @@ export function createScene(
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+  const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 200);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -202,6 +214,7 @@ export function createScene(
     pulses: [] as THREE.Sprite[],
     air: null as null | { group: THREE.Group; mats: THREE.ShaderMaterial[] },
     airOn: true,
+    tempUnit: "c" as TempUnit,
   };
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
   const theme = (): SceneTheme => state.theme!;
@@ -351,6 +364,17 @@ export function createScene(
     return obj;
   }
 
+  const labelHTML = (part: Part) =>
+    `<span class="pl-name">${part.type}</span>${part.temp ? `<span class="pl-temp${part.warn ? " warn" : ""}">${formatTemp(part.temp, state.tempUnit, { mark: "degree" })}</span>` : ""}`;
+
+  function refreshLabels() {
+    for (const [id, l] of Object.entries(state.labels)) {
+      const part = parts()[id];
+      const html = part ? labelHTML(part) : "";
+      if (part && l.el.innerHTML !== html) l.el.innerHTML = html;
+    }
+  }
+
   function addLabel(partId: string, anchor: THREE.Object3D, pos: Vec3) {
     const part = parts()[partId];
     if (!part) return;
@@ -358,7 +382,7 @@ export function createScene(
     el.className = "part-label";
     el.type = "button";
     el.dataset.part = partId;
-    el.innerHTML = `<span class="pl-name">${part.type}</span>${part.temp ? `<span class="pl-temp${part.warn ? " warn" : ""}">${part.temp}°</span>` : ""}`;
+    el.innerHTML = labelHTML(part);
     el.addEventListener("click", (e) => { e.stopPropagation(); select(partId); });
     const obj = new CSS2DObject(el);
     obj.position.set(...pos);
@@ -870,6 +894,7 @@ export function createScene(
     renderer.setSize(w, h, false);
     labels.setSize(w, h);
     camera.aspect = w / h;
+    camera.fov = fovFor(camera.aspect);
     camera.updateProjectionMatrix();
   }
   const ro = new ResizeObserver(resize);
@@ -925,7 +950,7 @@ export function createScene(
       rebuild(); resize(); frame(state.exploded, true);
       if (!raf) tick();
     },
-    update(pc) { state.pc = pc; applyHighlights(); },
+    update(pc) { state.pc = pc; refreshLabels(); applyHighlights(); },
     setTheme(t) { state.theme = t; if (state.pc) rebuild(); },
     setExploded(v) { state.exploded = v; applyHighlights(); frame(v, false); },
     setHeat(v) { state.heat = v; applyHighlights(); },
@@ -934,6 +959,7 @@ export function createScene(
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
     setAirflow(v) { state.airOn = v; },
+    setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); },
     dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); },
   };
 }
