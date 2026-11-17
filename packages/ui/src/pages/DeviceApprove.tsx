@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
+import { SignInArt } from "./SignIn";
 
 /** Website: the desktop app opened this page with its sign-in code. The person checks the code and approves. */
 export function DeviceApprove({ client, account, code, onClose }: { client: RigClient; account: Account; code: string; onClose: () => void }) {
@@ -13,12 +14,9 @@ export function DeviceApprove({ client, account, code, onClose }: { client: RigC
   };
   return (
     <div className="signin">
-      <div className="signin-art">
-        <blockquote>Know what's inside your PC, what's wrong with it and what to do next.</blockquote>
-      </div>
-      <div className="signin-form">
+      <SignInArt />
+      <main className="signin-form">
         <div className="signin-box">
-          <div className="brand"><span className="brand-mark" />Rig</div>
           {state === "approved" ? (
             <>
               <h1>Your PC is signed in</h1>
@@ -42,7 +40,7 @@ export function DeviceApprove({ client, account, code, onClose }: { client: RigC
             </>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

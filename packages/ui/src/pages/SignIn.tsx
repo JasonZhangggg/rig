@@ -1,5 +1,24 @@
 import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
+import { AsciiField } from "../components/AsciiField";
+
+/** The left half of sign-in screens: a PC in thermal characters that warms under the pointer. */
+export function SignInArt() {
+  return (
+    <div className="signin-art tone-dark">
+      <AsciiField />
+      <div className="brand"><span className="brand-mark" />Rig</div>
+      <div className="signin-pitch">
+        <p className="signin-line">Know what's inside your PC, what's wrong with it and what to do next.</p>
+        <ul className="signin-facts">
+          <li>Live temperatures and fans</li>
+          <li>Every fix shown before it happens</li>
+          <li>Undo anything</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 /** Sign-in for the website (email or Google) and the desktop app (a code approved in the browser). */
 export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; onDone: (a: Account) => void; onSkip?: () => void; note?: string }) {
@@ -24,13 +43,10 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
 
   return (
     <div className="signin">
-      <div className="signin-art">
-        <blockquote>Know what's inside your PC, what's wrong with it and what to do next.</blockquote>
-      </div>
-      <div className="signin-form">
+      <SignInArt />
+      <main className="signin-form">
         {client.signInWithBrowser ? (
           <div className="signin-box">
-            <div className="brand"><span className="brand-mark" />Rig</div>
             <h1>Sign in</h1>
             <p className="muted">Signing in lets you see this PC from any browser and keeps its history and changes safe if you reinstall.</p>
             {code ? (
@@ -47,7 +63,6 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
           </div>
         ) : (
           <form className="signin-box" onSubmit={(e) => { e.preventDefault(); run(() => client.signInEmail!(email, password, mode === "up" ? { name: name || email.split("@")[0] } : undefined)); }}>
-            <div className="brand"><span className="brand-mark" />Rig</div>
             <h1>{mode === "in" ? "Sign in" : "Make an account"}</h1>
             <p className="muted">{note ?? "Your PCs, their history and every change stay in sync between the app and the web."}</p>
             {mode === "up" && <div className="field"><label className="label" htmlFor="name">Your name</label><input className="input" id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></div>}
@@ -61,7 +76,8 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
             </p>
           </form>
         )}
-      </div>
+        {client.kind === "web" && <p className="signin-foot faint">Just looking? <a href="/app/?demo">Try the demo</a></p>}
+      </main>
     </div>
   );
 }
