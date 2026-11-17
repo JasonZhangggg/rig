@@ -244,6 +244,24 @@
   --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
   --x: #A7A39B;
 }
+/* Denim: Brass's dusty style in blue, with its rust and warm grey */
+[data-style="blend"][data-skin="mix"][data-colors="denim"] {
+  --g: #B9C8D8; --g-mark: #4E6680; --g-text: #3E556D; --g-bg: #E6ECF2;
+  --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
+  --x: #A7A39B;
+}
+/* Olive: Brass's dusty style in green */
+[data-style="blend"][data-skin="mix"][data-colors="olive"] {
+  --g: #CDD0A6; --g-mark: #626A38; --g-text: #50572C; --g-bg: #EEF0DF;
+  --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
+  --x: #A7A39B;
+}
+/* Sea: Brass's dusty style in blue-green */
+[data-style="blend"][data-skin="mix"][data-colors="sea"] {
+  --g: #B0CCC4; --g-mark: #48706A; --g-text: #385C56; --g-bg: #E3EEEB;
+  --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
+  --x: #A7A39B;
+}
 /* Cobalt: clear blue for good, sunflower for a look, slate for expected */
 [data-style="blend"][data-skin="mix"][data-colors="cobalt"] {
   --g: #9DB8FF; --g-mark: #2F5BD3; --g-text: #2449B0; --g-bg: #E3EAFE;
