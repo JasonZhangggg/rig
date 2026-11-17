@@ -46,7 +46,7 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
 };
 
 // Color options for Friendly. accent fills buttons, ink is the dark tile color.
-export type ColorId = "coral" | "tangerine" | "watermelon" | "orchid" | "periwinkle" | "teal" | "sage";
+export type ColorId = "coral" | "tangerine" | "watermelon" | "orchid" | "periwinkle" | "teal" | "sage" | "forest" | "ocean" | "mono";
 // Accent colors for Friendly, all at the original coral's strength. Only the accent changes; the background stays neutral.
 export const colorways: { id: ColorId; name: string; accent: string; ink: string; scene: string }[] = [
   { id: "coral", name: "Coral", accent: "#EE6A4D", ink: "#1C1A18", scene: "#EE6A4D" },
@@ -56,6 +56,9 @@ export const colorways: { id: ColorId; name: string; accent: string; ink: string
   { id: "periwinkle", name: "Periwinkle", accent: "#6A82EE", ink: "#1C1A18", scene: "#6A82EE" },
   { id: "teal", name: "Teal", accent: "#22A493", ink: "#1C1A18", scene: "#22A493" },
   { id: "sage", name: "Sage", accent: "#A9C7A4", ink: "#1C1A18", scene: "#8DB889" },
+  { id: "forest", name: "Forest", accent: "#2F8A5F", ink: "#1C1A18", scene: "#3FA474" },
+  { id: "ocean", name: "Ocean", accent: "#3B82E0", ink: "#1C1A18", scene: "#3B82E0" },
+  { id: "mono", name: "Mono", accent: "#1C1A18", ink: "#1C1A18", scene: "#9C978F" },
 ];
 
 // Sidebar options for Friendly

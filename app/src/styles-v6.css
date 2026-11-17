@@ -627,6 +627,16 @@
 /* Sage is a pastel, so text on it is dark instead of white */
 [data-style="studio"][data-colors="sage"] { --coral: #A9C7A4; --accent: #A9C7A4; --accent-bg: #EAF2E8; --accent-ink: #4C7448; --focus: #6E9A69; --on-accent: #1C1A18; }
 
+[data-style="studio"][data-colors="forest"] { --coral: #2F8A5F; --accent: #2F8A5F; --accent-bg: #E3F1EA; --accent-ink: #226B48; --focus: #2F8A5F; }
+[data-style="studio"][data-colors="ocean"] { --coral: #3B82E0; --accent: #3B82E0; --accent-bg: #E5EFFC; --accent-ink: #2965B8; --focus: #3B82E0; }
+/* Mono: the accent is the ink itself, so everyday data fills step back to grey and only the important bits stay black */
+[data-style="studio"][data-colors="mono"] { --coral: #1C1A18; --accent: #1C1A18; --accent-bg: #ECEAE6; --accent-ink: #1C1A18; --focus: #1C1A18; --on-accent: #FFFFFF; }
+[data-style="studio"][data-colors="mono"] .f-eq-bar i, [data-style="studio"][data-colors="mono"] .f-dots i.on { background: #CFCAC3; }
+[data-style="studio"][data-colors="mono"] .f-eq-col.hi .f-eq-bar i { background: var(--text); }
+[data-style="studio"][data-colors="mono"] .f-bub.b0 { background: #CFCAC3; color: var(--text); }
+[data-style="studio"][data-colors="mono"] .f-ring .vl { stroke: #FFFFFF; }
+[data-style="studio"][data-colors="mono"] [aria-current="page"] :is(.fp-count, .fc-count).hot { background: #FFFFFF; color: var(--text); }
+
 /* Friendly in the sidebar shell: band-colored frame, light sheet, round and soft */
 .shell-fside { --crimson: var(--coral); background: var(--band); }
 .shell-fside .w-logo { background: var(--text); color: #fff; font-family: var(--display); }
