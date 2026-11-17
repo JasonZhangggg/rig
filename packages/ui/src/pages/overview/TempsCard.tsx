@@ -1,16 +1,15 @@
 import type { CSSProperties } from "react";
-import { tempMark, type DayTemps, type TempSubject, type WeekTemps } from "@rig/core";
+import { tempMark, toUnit, type DayTemps, type TempSubject, type WeekTemps } from "@rig/core";
 import { useTemp, useTempUnit } from "../../state";
-import { CardHead, EmptyNote, Legend, longWeekday, useGrowOnce, weekday } from "./parts";
+import { CardHead, EmptyNote, Legend, YAxis, longWeekday, scale, useGrowOnce, weekday } from "./parts";
 
 const labels: Record<TempSubject, { idle: string; typical: string; peak: string }> = {
   gpu: { idle: "Idle processor", typical: "Graphics card, gaming", peak: "Graphics card, peak" },
   cpu: { idle: "Idle processor", typical: "Busy processor", peak: "Peak processor" },
 };
 
-/** Cooler days sit lower, 9 px per °C, squeezed so the coolest day drops no more than this. */
-const MAX_LIFT = 90;
-const PX_PER_DEG = 9;
+/** The axis always spans at least this many degrees, so a quiet week doesn't fill the plot with one reading. */
+const MIN_SPAN = 20;
 
 const hasReadings = (d: DayTemps) => d.idle != null || d.typical != null || d.peak != null;
 
@@ -22,31 +21,32 @@ function describe(w: WeekTemps, temp: ReturnType<typeof useTemp>) {
   }).join(". ");
 }
 
-/** One column per day: a thin track holding peak, typical and idle, the cooler days lower. Missing figures leave a gap. */
-function CapsuleChart({ temps, grow }: { temps: WeekTemps; grow: boolean }) {
+/** Three thin bars a day, idle, typical and peak, on a degree scale. Missing figures leave a gap. */
+function BarChart({ temps, grow }: { temps: WeekTemps; grow: boolean }) {
   const temp = useTemp();
-  const bare = (v: number) => temp(v, { mark: "none" });
-  const peaks = temps.days.map((d) => d.peak).filter((v): v is number => v != null);
-  const top = temps.peak ?? 0;
-  const low = peaks.length ? Math.min(...peaks) : top;
-  const perDeg = Math.min(PX_PER_DEG, MAX_LIFT / Math.max(1, top - low));
+  const unit = useTempUnit();
+  const shown = temps.days.flatMap((d) => [d.idle, d.typical, d.peak]).filter((v): v is number => v != null).map((v) => toUnit(v, unit));
+  const lo = Math.min(...shown), hi = Math.max(...shown, lo + MIN_SPAN);
+  const axis = scale(lo, hi);
   const last = temps.days.length - 1;
+  const bar = (v: number | null, mark: "a" | "b" | "c", top = false) => v != null && (
+    <span key={mark} className={`pl-bar ${mark}${top ? " top" : ""}`} style={{ "--h": axis.at(toUnit(v, unit)) } as CSSProperties}>
+      <em>{temp(v, { mark: "none" })}</em>
+    </span>
+  );
   return (
-    <div className={`pl-caps${grow ? " grow" : ""}`} role="img" aria-label={describe(temps, temp)}>
-      {temps.days.map((d, i) => {
-        const caps = [
-          d.peak != null && <span key="b" className={`pl-cap b${d.peak === temps.peak ? " top" : ""}`}>{bare(d.peak)}</span>,
-          d.typical != null && <span key="a" className="pl-cap a">{bare(d.typical)}</span>,
-          d.idle != null && <span key="c" className="pl-cap c">{bare(d.idle)}</span>,
-        ].filter(Boolean);
-        const lift = (top - (d.peak ?? low)) * perDeg;
-        return (
-          <div key={d.day} className={`pl-cap-col${i === last ? " today" : ""}`} style={{ "--i": i, "--lift": `${lift}px` } as CSSProperties}>
-            {hasReadings(d) && <div className="pl-cap-stack">{caps.flatMap((c, k) => (k ? [<i key={`dot${k}`} />, c] : [c]))}</div>}
-            <small>{weekday(d.day)}</small>
+    <div className={`pl-plot${grow ? " grow" : ""}`}>
+      <YAxis ticks={axis.ticks} at={axis.at} format={(t) => `${t}°`} />
+      <div className="pl-field pl-days" role="img" aria-label={describe(temps, temp)}>
+        {temps.days.map((d, i) => (
+          <div key={d.day} className="pl-day" style={{ "--i": i } as CSSProperties}>
+            {bar(d.idle, "c")}{bar(d.typical, "a")}{bar(d.peak, "b", d.peak === temps.peak)}
           </div>
-        );
-      })}
+        ))}
+      </div>
+      <div className="pl-x" aria-hidden="true">
+        {temps.days.map((d, i) => <span key={d.day} className={i === last ? "today" : undefined}>{weekday(d.day)}</span>)}
+      </div>
     </div>
   );
 }
@@ -62,7 +62,7 @@ export function TempsCard({ temps, name }: { temps: WeekTemps | null; name: stri
       <CardHead title="Temperatures" note={`Each day, ${tempMark(unit)}`} figure={temps?.peak != null ? { value: temp(temps.peak), label: "Hottest", tone: "look" } : undefined} />
       {temps && (temps.days.some(hasReadings) ? (
         <>
-          <CapsuleChart temps={temps} grow={grow} />
+          <BarChart temps={temps} grow={grow} />
           <Legend items={[["c", l.idle], ["a", l.typical], ["b", l.peak]]} />
         </>
       ) : (

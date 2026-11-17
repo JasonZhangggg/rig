@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const longDayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long" });
@@ -20,10 +20,11 @@ export function useGrowOnce(key: string) {
 
 export type LegendMark = "a" | "b" | "c";
 
-export function Legend({ items }: { items: [LegendMark, string][] }) {
+export function Legend({ items, children }: { items: [LegendMark, string][]; children?: ReactNode }) {
   return (
     <div className="pl-legend">
       {items.map(([mark, text]) => <span key={text}><i className={mark} />{text}</span>)}
+      {children}
     </div>
   );
 }
@@ -37,3 +38,24 @@ export const CardHead = ({ title, note, figure }: { title: string; note?: string
 );
 
 export const EmptyNote = ({ children }: { children: ReactNode }) => <p className="bl-empty">{children}</p>;
+
+const STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000];
+
+/** A round axis from `lo` to `hi` with at most `most` steps, so the tick labels read as plain numbers. */
+export function scale(lo: number, hi: number, most = 5, floor = true) {
+  const step = STEPS.find((s) => (hi - lo) / s <= most) ?? STEPS[STEPS.length - 1];
+  const from = floor ? Math.max(0, Math.floor(lo / step) * step - step) : 0;
+  const to = Math.max(from + step, Math.ceil(hi / step) * step);
+  const ticks = Array.from({ length: Math.round((to - from) / step) + 1 }, (_, i) => from + i * step);
+  return { from, to, ticks, at: (v: number) => (v - from) / (to - from) };
+}
+
+/** Tick labels up the left of a plot and the matching rules across it. Both are decoration: the chart's own label says the numbers. */
+export function YAxis({ ticks, at, format }: { ticks: number[]; at: (v: number) => number; format: (v: number) => string }) {
+  return (
+    <>
+      <div className="pl-y" aria-hidden="true">{ticks.map((t) => <span key={t} style={{ "--y": at(t) } as CSSProperties}>{format(t)}</span>)}</div>
+      <div className="pl-rules" aria-hidden="true">{ticks.map((t) => <i key={t} style={{ "--y": at(t) } as CSSProperties} />)}</div>
+    </>
+  );
+}
