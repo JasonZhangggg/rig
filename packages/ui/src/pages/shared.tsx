@@ -39,8 +39,15 @@ export function dustIssue(pc: PC): Issue | null {
   };
 }
 
-export function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+/** Morning from 5 AM, afternoon from noon, evening from 6 PM until the small hours. */
+export function greeting(hour = new Date().getHours()) {
+  return hour >= 5 && hour < 12 ? "Good morning" : hour >= 12 && hour < 18 ? "Good afternoon" : "Good evening";
+}
+
+/** The first name to greet someone by. Null when the account's name isn't a name, such as an email address. */
+export function firstName(name: string | null | undefined): string | null {
+  const first = name?.trim().split(/\s+/)[0];
+  if (!first || first.includes("@")) return null;
+  return first === first.toLowerCase() ? first[0].toUpperCase() + first.slice(1) : first;
 }
 
