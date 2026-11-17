@@ -1,11 +1,28 @@
+import { useMemo } from "react";
+import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
-import { useApp } from "../state";
+import { useApp, useHistory } from "../state";
+import { FansCard } from "./overview/FansCard";
+import { TempsCard } from "./overview/TempsCard";
+import { WeekCard } from "./overview/WeekCard";
 import { dustIssue, greeting, issueGo, partIcon, shortType } from "./shared";
 
 const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
 const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
 const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
+
+/** The home charts from the last week of history, in the viewer's local days. Null while history loads. */
+function useWeekInsights(pc: PC, points: HistoryPoint[] | null) {
+  // The PC object is replaced on every live reading, so the memo keys on the fields the charts read.
+  const { kind } = pc;
+  const cpu = pc.parts?.cpu?.limit, gpu = pc.parts?.gpu?.limit;
+  return useMemo(() => {
+    if (!points) return null;
+    const ctx = insightContext({ kind, parts: { cpu: { limit: cpu }, gpu: { limit: gpu } } });
+    return { recorded: points.length > 0, temps: weekTemps(points, ctx), evenings: weekEvenings(points, ctx), fans: fanTrend(points, ctx) };
+  }, [points, kind, cpu, gpu]);
+}
 
 export function Overview() {
   const ctx = useApp();
@@ -19,6 +36,7 @@ export function Overview() {
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
   const ringC = 2 * Math.PI * 52;
+  const week = useWeekInsights(pc, useHistory("7d"));
 
   return (
     <div className="page f-home">
@@ -68,6 +86,10 @@ export function Overview() {
           </div>
           <p>{pc.summary}</p>
         </section>
+
+        <FansCard fans={pc.fans} trend={week?.fans ?? null} />
+        <TempsCard temps={week?.temps ?? null} name={pc.name} />
+        <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
 
         <section className="f-card f-todo">
           <div className="f-card-head"><span>Things to look at</span>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
