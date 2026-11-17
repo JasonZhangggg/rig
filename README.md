@@ -53,21 +53,21 @@ The dark panel in the bottom-right corner is only for the mockups. It switches b
 
 All data is sample data.
 
-## The three styles
+## The three mockups
 
-| Style | Feel | Navigation |
+Each one has its own layout and navigation, not just its own colors.
+
+| Mockup | Home screen | Navigation |
 | --- | --- | --- |
-| **Soft** | Light, calm and rounded. Plenty of air without wasted space. | Sidebar in two sections, with a setup card |
-| **Night** | A dark canvas for people who want every number. No glow, no neon. | Sidebar in two sections, with a setup card |
-| **Warm** | Cream and earthy color blocks with a serif display face, for people who just want their PC to work. | Tabs along the top, in two groups |
+| **Friendly** | A greeting band ("Hey Jason, need help?") with a coral "Fix what needs a look" button, then round tiles: the PC, a dark health ring, a mood check, fan bars, quick switches, days since the last dust clean, storage bubbles and a to-do list. | A round icon bar along the top. No sidebar. |
+| **Canvas** | The PC in the middle of a dark dotted canvas, with each part as a card wired to it. A warm part's wire animates, and a "Rig" cursor points at it with a Fix it button. An ask box sits at the bottom. | Floating toolbars: screens on the left, one tab per PC in the middle, search and "Fix 1 issue" on the right. |
+| **Workspace** | A big hottest-temperature number, a power-draw bar split by part, a black "Needs a look" card, the PC in 3D, a hatched bar chart, games and parts lists, and a stats row. | An icon rail plus a tree of your PCs and their parts, with the page on a lighter sheet. |
 
-Every style shares the same dashboard: the 3D PC, a health score, a strip of live readings with how they changed, a week of temperatures, and recent changes.
+The other screens (3D view, Ask, Changes and the rest) are shared and take on each mockup's colors and type inside its navigation.
 
 **Search:** Ctrl K (or /) opens one search box for parts, changes, games and upgrades, with tabs, counts and an "Ask Rig" row. Arrow keys move, Enter opens, Tab asks Rig.
 
 The 3D PC follows the style too. It stands on a lit turntable, the case is lit from inside in the PC's own accent color, fans and light strips glow, a hot part pulses gently, and flow lines show air coming in cool at the front and leaving warm at the back (Airflow on the 3D page turns them off). On the dashboard it turns slowly and doesn't grab the scroll wheel.
-
-Each reading (processor, graphics card, storage, memory, battery) keeps one color within a look, shown on a dial with its icon, so the tiles read as one family.
 
 Each PC's accent color is kept separate from the style's colors, so it reads as "this is my PC" in every style.
 
@@ -89,7 +89,8 @@ app/
     data.ts          sample PCs, chat, changes, upgrades, games
     scene.ts         the three.js scene: tower, laptop, exploded and heat views
     themes.ts        the three styles and their 3D lighting
-    styles.css       all styles, as tokens per style
-    components/      shell, shared bits and the shared 3D stage
-    pages/           one file per screen
+    styles.css       shared styles, as tokens per style
+    styles-v6.css    the three mockups: tokens, navigation and home screens
+    components/      Shells.tsx (the three navigations), shared bits and the 3D stage
+    pages/           one file per screen; pages/homes/ holds the three home screens
 ```

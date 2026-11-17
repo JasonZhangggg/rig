@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { AppProvider, useApp } from "./state";
 import { getStage } from "./components/Stage";
-import { MockPanel, Modal, Nav, Toast } from "./components/Shell";
+import { MockPanel, Modal, Toast } from "./components/Shell";
+import { Shell } from "./components/Shells";
 import { Palette } from "./components/Palette";
 import { sceneThemes } from "./themes";
 import { Overview } from "./pages/Overview";
@@ -52,10 +53,7 @@ function Root() {
   const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, web: Web }[ui.route];
   return (
     <>
-      <div className="app">
-        <Nav />
-        <main className="main" id="main"><Page /></main>
-      </div>
+      <Shell><Page /></Shell>
       <Modal />
       <Palette />
       <Toast />

@@ -4,7 +4,7 @@ import { useApp } from "../state";
 import { styles } from "../themes";
 import { DiffTable, Icon } from "./common";
 
-const navItems: [Route, string, string][] = [
+export const navItems: [Route, string, string][] = [
   ["overview", "Overview", "M3 10.5 10 4l7 6.5V17H3z"],
   ["pc", "My PC", "M6 3h8v14H6zM9 6h2M9 14h2"],
   ["chat", "Ask", "M4 5h12v8H9l-4 3v-3H4z"],

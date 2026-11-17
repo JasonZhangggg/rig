@@ -4,6 +4,9 @@ import { WeekChart } from "../chart";
 import { Ring, StatusChip } from "../components/common";
 import { StageSlot } from "../components/Stage";
 import { useApp } from "../state";
+import { FriendlyHome } from "./homes/FriendlyHome";
+import { CanvasHome } from "./homes/CanvasHome";
+import { WorkspaceHome } from "./homes/WorkspaceHome";
 
 const sevLabel = { warn: "Needs a look", info: "Suggestion", ok: "Good news", bad: "Problem" };
 
@@ -88,6 +91,14 @@ function Dial({ pct, icon }: { pct: number; icon: JSX.Element }) {
 }
 
 export function Overview() {
+  const { ui } = useApp();
+  if (ui.style === "studio") return <FriendlyHome />;
+  if (ui.style === "workbench") return <CanvasHome />;
+  if (ui.style === "checkup") return <WorkspaceHome />;
+  return <LegacyOverview />;
+}
+
+function LegacyOverview() {
   const { ui, pc, set, go, toast } = useApp();
   const mine = Object.values(ui.pcs).filter((x) => x.parts);
   const issues = pc.issues ?? [];

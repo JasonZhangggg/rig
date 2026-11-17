@@ -3,9 +3,9 @@ import type { SceneTheme } from "./scene";
 export type StyleId = "studio" | "workbench" | "checkup";
 
 export const styles: { id: StyleId; name: string; note: string }[] = [
-  { id: "studio", name: "Soft", note: "Light, calm and rounded" },
-  { id: "workbench", name: "Night", note: "Dark canvas for enthusiasts" },
-  { id: "checkup", name: "Warm", note: "Warm and bold, nested panels" },
+  { id: "studio", name: "Friendly", note: "Round tiles and a helper that talks to you" },
+  { id: "workbench", name: "Canvas", note: "Your PC in the middle, parts wired around it" },
+  { id: "checkup", name: "Workspace", note: "Two sidebars, big numbers, dense and calm" },
 ];
 
 // How the 3D scene looks in each style. UI colors live in styles.css.
@@ -16,10 +16,10 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
     gpuShroud: "#2E3238", gpuBack: "#555B63", gpuFanRing: "#5A6068", psu: "#26292E", laptopShell: "#B9BEC6",
     chip: "#1C1F23", battery: "#30343A", ssd: "#1E3A2E", keys: "#2A2D32", trackpad: "#AEB3BB",
     screenBg: "#F7F8FA", screenPanel: "#E6E9EE", screenLine: "#C7CDD5",
-    heatCool: "#3A7BD5", heatWarm: "#E0A030", heatHot: "#D8432F", highlight: "#4C7FE8",
+    heatCool: "#3A7BD5", heatWarm: "#E0A030", heatHot: "#E5533A", highlight: "#EE6A4D",
     hemi: 0.75, key: 1.8, rim: 0.6, exposure: 1.0, transparent: true, shadow: 0.26, edge: "#8F98A3", edgeOpacity: 0.35,
     glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#FFFFFF", pedestalRim: 0.55,
-    air: 0.75, airCool: "#3D8BFF", airWarm: "#FF6A2B", airBlend: "normal",
+    air: 0.7, airCool: "#4C8DFF", airWarm: "#EE6A4D", airBlend: "normal",
   },
   workbench: {
     bg: "#1C1C1E", floor: "#232326", caseColor: "#2A2E33", trim: "#0E1012", glass: "#9FB4C8", glassOpacity: 0.1,
@@ -33,15 +33,15 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
     air: 0.7, airCool: "#7CC4FF", airWarm: "#FF9A55", airBlend: "add",
   },
   checkup: {
-    bg: "#F3F0EE", floor: "#E7E1DD", caseColor: "#FAF8F7", trim: "#2A2524", glass: "#E6D6D2", glassOpacity: 0.16,
+    bg: "#F4F3F2", floor: "#E6E4E2", caseColor: "#FAFAF9", trim: "#2A2524", glass: "#E6D6D2", glassOpacity: 0.16,
     board: "#252120", heatsink: "#5C5552", fins: "#D8D1CC", copper: "#C27C4E", fanFrame: "#2F2A29", ram: "#2B2625",
     gpuShroud: "#2C2827", gpuBack: "#5E5754", gpuFanRing: "#5E5754", psu: "#2A2625", laptopShell: "#D3CAC5",
     chip: "#1E1B1A", battery: "#3A3533", ssd: "#3A2A2E", keys: "#2E2928", trackpad: "#C3BAB5",
     screenBg: "#FAF7F5", screenPanel: "#EEE8E4", screenLine: "#D3CBC6",
-    heatCool: "#3A6FD8", heatWarm: "#D99A2B", heatHot: "#D6345B", highlight: "#D6345B",
+    heatCool: "#3A6FD8", heatWarm: "#D99A2B", heatHot: "#D9304F", highlight: "#D9304F",
     hemi: 0.75, key: 1.75, rim: 0.5, exposure: 1.0, transparent: true, shadow: 0.24, edge: "#B3A69F", edgeOpacity: 0.4,
-    glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#F1E6DA", pedestalRim: 0.55,
-    air: 0.8, airCool: "#4E86D6", airWarm: "#D9572B", airBlend: "normal",
+    glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#ECEAE8", pedestalRim: 0.5,
+    air: 0.75, airCool: "#5B7FB8", airWarm: "#D9304F", airBlend: "normal",
   },
 };
 
