@@ -1,0 +1,62 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC, type WeekEvenings } from "../src";
+import { DemoClient } from "../src/demo";
+
+afterEach(() => { vi.useRealTimers(); });
+
+/** The demo on Tuesday 17 November 2026 at 9 PM, local time, with each PC's last week. */
+async function demoWeek(id: string): Promise<{ pc: PC; points: HistoryPoint[] }> {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 10, 17, 21, 0));
+  const demo = new DemoClient();
+  const pc = (await demo.machines()).find((p) => p.id === id)!;
+  return { pc, points: await demo.history(id, "7d") };
+}
+
+const sessions = (e: WeekEvenings) => e.days.map((d) => d.sessions.map((s) => [s.game, s.kind, s.start, s.hours]));
+
+describe("demo history", () => {
+  it("gives the desktop a week of evening games, one hot evening and an update in the background", async () => {
+    const { pc, points } = await demoWeek("demo-atlas");
+    const ctx = insightContext(pc);
+    expect(sessions(weekEvenings(points, ctx))).toEqual([
+      [["Cyberpunk 2077", "hot", 0.5, 4]],
+      [["Baldur's Gate 3", "played", 2, 3]],
+      [["Baldur's Gate 3", "played", 1, 4.5]],
+      [["Baldur's Gate 3", "played", 3, 4.5]],
+      [["Counter-Strike 2", "played", 1.5, 2.5]],
+      [[null, "background", 2, 1]],
+      [["Counter-Strike 2", "played", 1, 2]],
+    ]);
+
+    const temps = weekTemps(points, ctx);
+    expect(temps.subject).toBe("gpu");
+    expect(temps.days.every((d) => d.idle != null && d.typical != null && d.peak != null)).toBe(true);
+    expect(temps.peak).toBe(temps.days[0].peak);
+  });
+
+  it("gives the laptop processor-only history with hot exports and light games", async () => {
+    const { pc, points } = await demoWeek("demo-pebble");
+    const ctx = insightContext(pc);
+    expect(points.every((p) => p.gpu === null)).toBe(true);
+    expect(sessions(weekEvenings(points, ctx))).toEqual([
+      [[null, "background", 3, 1]],
+      [["Stardew Valley", "played", 0, 2.5]],
+      [[null, "hot", 2, 2]],
+      [["Minecraft", "played", 1.5, 3.5]],
+      [["Stardew Valley", "played", 1, 2]],
+      [["Minecraft", "played", 2, 1.5]],
+      [[null, "hot", 1.5, 1.5]],
+    ]);
+    expect(weekTemps(points, ctx).subject).toBe("cpu");
+  });
+
+  it("spins the fans up in the evenings", async () => {
+    const { pc, points } = await demoWeek("demo-atlas");
+    const { columns } = fanTrend(points, insightContext(pc));
+    expect(columns.every((c) => c.rpm != null)).toBe(true);
+    const at = (hour: number) => columns.filter((c) => new Date(c.from).getHours() === hour);
+    expect(at(6).every((c) => c.level! < 0.5)).toBe(true);
+    expect(Math.max(...at(18).map((c) => c.level!))).toBe(1);
+  });
+});

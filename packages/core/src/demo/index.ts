@@ -1,11 +1,12 @@
 import type { ActionCall } from "../actions";
 import { describeCall, titleFor } from "../actions";
-import type { Change, ChatEvent, ChatMessage, RigClient, Range } from "../client";
-import type { DiffRow, Game, HistoryPoint, PC } from "../model";
+import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
+import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
-import { gameLoad, simulate } from "./simulate";
+import { simulate } from "./simulate";
+import { HistoryWindow } from "../history";
 import { applyToFacts } from "./apply";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
@@ -13,6 +14,7 @@ import atlasFacts from "./fixtures/atlas.facts.json";
 import pebbleFacts from "./fixtures/pebble.facts.json";
 
 export { simulate } from "./simulate";
+export { activityAt, type Activity } from "./schedule";
 export { applyToFacts } from "./apply";
 export { SimulatedLink } from "./link";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
@@ -51,7 +53,7 @@ export class DemoClient implements RigClient {
 
   private view(id: string): PC {
     const p = this.pcs[id];
-    const snap = simulate(p.inv, Date.now(), { dust: p.dust, game: id === "demo-atlas" && gameLoad(Date.now()) > 0.9 ? "Cyberpunk 2077" : null });
+    const snap = simulate(p.inv, Date.now(), { dust: p.dust });
     for (const s of snap.sensors) if (s.type === "temperature" && s.value != null) p.dayMax[s.id] = Math.max(p.dayMax[s.id] ?? 0, s.value);
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax);
     return { ...pc, lastSync: "Demo PC" };
@@ -83,19 +85,17 @@ export class DemoClient implements RigClient {
 
   async rename(id: string, patch: Identity) { Object.assign(this.pcs[id].id, patch); this.emit(id); }
 
+  /** Ten-minute windows over the range, recorded the way the desktop app records them. Dust builds up over the month. */
   async history(id: string, range: Range): Promise<HistoryPoint[]> {
     const p = this.pcs[id];
-    const hours = range === "24h" ? 24 : range === "7d" ? 168 : 720;
-    const step = range === "30d" ? 3 : 1;
+    if (!p) return [];
     const now = Date.now();
     const out: HistoryPoint[] = [];
-    for (let h = hours; h >= 0; h -= step) {
-      const t = now - h * 36e5;
-      const age = h / 720; // dust builds up over the month
-      const s = simulate(p.inv, t, { dust: p.dust * (1 - age) });
-      const cpu = s.sensors.find((x) => x.hw === "cpu" && x.type === "temperature")?.value ?? null;
-      const gpu = s.sensors.find((x) => x.hw === "gpu" && x.type === "temperature")?.value ?? null;
-      out.push({ t, cpu, gpu, busy: gameLoad(t) > 0.9 });
+    for (let from = Math.ceil((now - rangeMs[range]) / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
+      const dust = p.dust * (1 - (now - from) / rangeMs["30d"]);
+      const w = new HistoryWindow(from);
+      for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));
+      out.push(w.point());
     }
     return out;
   }

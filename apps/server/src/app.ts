@@ -6,7 +6,7 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { suggestUpgrades, type ChatEvent, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { rangeMs, suggestUpgrades, type ChatEvent, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
@@ -25,7 +25,6 @@ export interface AppDeps {
   now?: () => Date;
 }
 
-const rangeMs: Record<Range, number> = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 };
 const validId = (id: string) => /^[\w.-]{1,128}$/.test(id);
 
 export function createApp(deps: AppDeps = {}) {

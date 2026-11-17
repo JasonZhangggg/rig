@@ -6,7 +6,7 @@
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
 import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
-import type { AppliedCall, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
+import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
@@ -46,7 +46,6 @@ export interface LocalOptions {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-const rangeMs: Record<Range, number> = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 };
 const dayKey = (t: number) => new Date(t).toDateString();
 
 export class LocalClient implements RigClient {

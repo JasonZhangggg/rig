@@ -47,6 +47,7 @@ export interface Change {
 export interface Account { id: string; name: string; email: string }
 
 export type Range = "24h" | "7d" | "30d";
+export const rangeMs: Record<Range, number> = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 };
 
 /** Streamed while Rig answers. */
 export type ChatEvent =
