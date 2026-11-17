@@ -217,6 +217,7 @@
   .f-todo-list { overflow: visible; }
   .f-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; }
   .f-grid > * { grid-area: auto; }
+  .f-grid .pl-dots { max-height: 170px; }
 }
 @media (max-width: 760px) {
   .f-band { grid-template-columns: 1fr; padding: 16px; }
