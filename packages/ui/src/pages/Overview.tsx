@@ -5,12 +5,9 @@ import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../s
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
 import { WeekCard } from "./overview/WeekCard";
-import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
+import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, shortType } from "./shared";
 
-const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
-const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
-const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
+const Go = () => <svg className="f-go" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 10h12.5M11 5l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="square" /></svg>;
 
 const SPEC_PARTS = ["cpu", "gpu", "ram"];
 
@@ -54,7 +51,6 @@ export function Overview() {
   const name = client.kind === "demo" ? null : firstName(data.account?.name);
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
-  const ringC = 2 * Math.PI * 52;
   const week = useWeekInsights(pc, useHistory("7d"));
   const temp = useTemp();
   const inUnit = useTempText();
@@ -65,92 +61,89 @@ export function Overview() {
   return (
     <div className="page f-home">
       <header className="f-head">
-        <div className="f-head-text">
-          <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
-          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
+        <div className="f-dateline">
+          <span>{now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</span>
+          <div className="f-head-tools">
+            {top && (
+              <button type="button" className="f-link f-cta" onClick={() => goTo(top)}>
+                {open.length ? "Review" : "See what's new"}
+                {open.length > 0 && <em>{open.length}</em>}
+                <Go />
+              </button>
+            )}
+            <button type="button" className="f-link" onClick={() => set({ palette: true })}>Ask Rig<Go /></button>
+          </div>
         </div>
-        <div className="f-head-tools">
-          <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
-          {top && (
-            <button type="button" className="f-cta" onClick={() => goTo(top)}>
-              <span>{open.length ? "Review" : "See what's new"}</span>
-              {open.length > 0 && <em>{open.length}</em>}
-              <i><Arrow /></i>
-            </button>
-          )}
-          <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={checkup}><Pulse /></button>
-          <button type="button" className="f-round f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
-        </div>
+        <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
+        <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
       </header>
 
       <div className="f-top">
         <section className="f-pc" aria-label={`${pc.name} in 3D`}>
-          <StageSlot id="hero-stage" zoom={false} spin />
           <div className="f-pc-top">
-            <div><div className="f-kicker">{pc.nickname}</div><div className="f-pc-name">{pc.name}</div></div>
+            <div className="f-kicker">{pc.nickname}</div>
             <div className="f-pc-tools">
               <div className="f-views" role="group" aria-label="3D view">
                 <button type="button" aria-pressed={views.heat} onClick={views.toggleHeat}>Heat</button>
                 <button type="button" aria-pressed={views.exploded} onClick={views.toggleExploded}>Exploded</button>
               </div>
-              <a className="f-arrow" href="#pc" aria-label="Open 3D view"><Arrow /></a>
+              <a className="f-link" href="#pc">Open 3D view<Go /></a>
             </div>
           </div>
-          {specs.length > 0 && (
-            <dl className="f-specs">
-              {specs.map((s) => <div key={s.id}><dt>{s.type}</dt><dd>{s.name}</dd></div>)}
-            </dl>
-          )}
-          <div className="f-pc-chips">
-            {chips.map(([id, p]) => (
-              <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
-                <i>{partIcon[id]}</i>{shortType(p.type)}<b>{temp(p.temp, { mark: "degree" })}</b>
-              </button>
-            ))}
+          <div className="f-stage">
+            <StageSlot id="hero-stage" zoom={false} spin />
+            <div className="f-pc-name">{pc.name}</div>
+            {specs.length > 0 && (
+              <dl className="f-specs">
+                {specs.map((s) => <div key={s.id}><dt>{s.type}</dt><dd>{s.name}</dd></div>)}
+              </dl>
+            )}
           </div>
+          {chips.length > 0 && (
+            <div className="f-reads">
+              {chips.map(([id, p]) => (
+                <button key={id} type="button" className={`f-read${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
+                  <span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}</b>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         <div className="f-side">
-          <section className="f-health tone-dark">
-            <div className="f-ring">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle cx="60" cy="60" r="52" className="tr" />
-                <circle cx="60" cy="60" r="52" className="vl" strokeDasharray={`${(ringC * pc.health) / 100} ${ringC}`} transform="rotate(-90 60 60)" />
-              </svg>
-              <div><b>{pc.health}</b><span>of 100</span></div>
-            </div>
-            <div className="f-health-text">
-              <div className="f-health-head"><h2>Health</h2><a className="f-mini" href="#history" aria-label="Temperature history"><Arrow /></a></div>
-              <p>{summary}</p>
-            </div>
+          <section className="f-health">
+            <div className="f-sec-head"><h2>Health</h2><a className="f-link" href="#history">History<Go /></a></div>
+            <div className="f-score"><b>{pc.health}</b><span>of 100</span></div>
+            <div className="f-meter" aria-hidden="true"><i style={{ width: `${pc.health}%` }} /></div>
+            <p>{summary}</p>
           </section>
 
           <section className="f-todo">
-            <div className="f-todo-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
+            <div className="f-sec-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count">{open.length} open</span>}</div>
             {issues.length > 0 ? (
-              <ul className="f-todo-list">
-                {issues.map((i) => (
+              <ol className="f-todo-list">
+                {issues.map((i, n) => (
                   <li key={i.id}>
                     <button type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
-                      <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
+                      <span className="f-todo-n" aria-hidden="true">{String(n + 1).padStart(2, "0")}</span>
                       <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
-                      <i className="f-todo-go"><Arrow /></i>
+                      <Go />
                     </button>
                   </li>
                 ))}
-              </ul>
+              </ol>
             ) : (
-              <div className="f-todo-empty"><i className="f-todo-ico"><Check /></i><p>Nothing to look at. Rig keeps watching while you use {pc.name}.</p></div>
+              <p className="f-todo-empty">Nothing to look at. Rig keeps watching while you use {pc.name}.</p>
             )}
             {issues.length <= 3 && (
               <div className="f-asks" role="group" aria-label="Ask Rig">
                 <span>Ask Rig</span>
-                <div>{asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>
+                {asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}<Go /></button>)}
               </div>
             )}
             <div className="f-todo-foot">
               <p>Want a fuller look at {pc.name}?</p>
-              <button type="button" className="f-todo-check" onClick={checkup}><Pulse />Run a checkup</button>
+              <button type="button" className="f-link" onClick={checkup}>Run a checkup<Go /></button>
             </div>
           </section>
         </div>
@@ -162,10 +155,8 @@ export function Overview() {
           <p>The last seven days on {pc.name}</p>
         </div>
         <div className="f-trends">
-          <div className="f-vitals tone-dark">
-            <TempsCard temps={week?.temps ?? null} name={pc.name} />
-            <FansCard fans={pc.fans} trend={week?.fans ?? null} />
-          </div>
+          <TempsCard temps={week?.temps ?? null} name={pc.name} />
+          <FansCard fans={pc.fans} trend={week?.fans ?? null} />
           <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
         </div>
       </section>
