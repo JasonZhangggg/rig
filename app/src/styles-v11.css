@@ -226,6 +226,30 @@
   --w: #EDB45E; --w-text: #94600F; --w-bg: #FBEFD9;
   --x: #CDD1D6;
 }
+/* Iris: soft periwinkle for good, apricot for a look, warm stone for expected */
+[data-style="blend"][data-skin="mix"][data-colors="iris"] {
+  --g: #B3B9F2; --g-mark: #4F58B8; --g-text: #3F47A0; --g-bg: #E7E9FB;
+  --w: #F3A683; --w-text: #A9502C; --w-bg: #FCE8DE;
+  --x: #D8D2C7;
+}
+/* Teal: sea glass for good, honey for a look, cool grey for expected */
+[data-style="blend"][data-skin="mix"][data-colors="teal"] {
+  --g: #8CCFC0; --g-mark: #2E7F6E; --g-text: #23695B; --g-bg: #DDF1EC;
+  --w: #F0BC67; --w-text: #8E5E0E; --w-bg: #FBEED6;
+  --x: #C3CBC9;
+}
+/* Brass: pale gold for good, rust for a look, warm grey for expected */
+[data-style="blend"][data-skin="mix"][data-colors="brass"] {
+  --g: #E6D3A3; --g-mark: #7C6A3A; --g-text: #6A5A2E; --g-bg: #F3EDDD;
+  --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
+  --x: #A7A39B;
+}
+/* Cobalt: clear blue for good, sunflower for a look, slate for expected */
+[data-style="blend"][data-skin="mix"][data-colors="cobalt"] {
+  --g: #9DB8FF; --g-mark: #2F5BD3; --g-text: #2449B0; --g-bg: #E3EAFE;
+  --w: #F7CD5D; --w-text: #8A6400; --w-bg: #FDF3D3;
+  --x: #C9CDD6;
+}
 /* Mono: white and greys for good and expected, one muted red for a look */
 [data-style="blend"][data-skin="mix"][data-colors="mono"] {
   --g: #ECEAE5; --g-mark: #1B1B1F; --g-text: #1B1B1F; --g-bg: #ECEAE5;

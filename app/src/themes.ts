@@ -128,7 +128,7 @@ export const heroes: { id: Hero; name: string }[] = [
 
 /** Mix's data colors. The 3D PC takes its glow, heat and airflow from the same set,
  *  and every set but Signal dims the glow so the PC reads as hardware, not neon. */
-export type ColorSet = "sage" | "ocean" | "mono" | "signal";
+export type ColorSet = "sage" | "ocean" | "iris" | "teal" | "brass" | "cobalt" | "mono" | "signal";
 export const colorSets: { id: ColorSet; name: string; accent: string; scene: Partial<SceneTheme> }[] = [
   { id: "sage", name: "Sage", accent: "#A9C4A0", scene: {
     heatCool: "#7FA376", heatWarm: "#E09A6E", heatHot: "#C4643A", highlight: "#A9C4A0",
@@ -136,6 +136,18 @@ export const colorSets: { id: ColorSet; name: string; accent: string; scene: Par
   { id: "ocean", name: "Ocean", accent: "#9EC5E8", scene: {
     heatCool: "#6E9DC8", heatWarm: "#EDB45E", heatHot: "#D9822B", highlight: "#9EC5E8",
     airCool: "#86B2DB", airWarm: "#EDB45E", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "iris", name: "Iris", accent: "#B3B9F2", scene: {
+    heatCool: "#8E95D9", heatWarm: "#F3A683", heatHot: "#D9704A", highlight: "#B3B9F2",
+    airCool: "#A2A8E6", airWarm: "#F3A683", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "teal", name: "Teal", accent: "#8CCFC0", scene: {
+    heatCool: "#5FAE9C", heatWarm: "#F0BC67", heatHot: "#D98E2B", highlight: "#8CCFC0",
+    airCool: "#7CC2B2", airWarm: "#F0BC67", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "brass", name: "Brass", accent: "#E6D3A3", scene: {
+    heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3",
+    airCool: "#D2C08F", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "cobalt", name: "Cobalt", accent: "#9DB8FF", scene: {
+    heatCool: "#6F8FE0", heatWarm: "#F7CD5D", heatHot: "#E0A21F", highlight: "#9DB8FF",
+    airCool: "#89A8F5", airWarm: "#F7CD5D", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
   { id: "mono", name: "Mono", accent: "#F2F0EB", scene: {
     heatCool: "#B9B6AF", heatWarm: "#E5A08E", heatHot: "#E5735A", highlight: "#1B1B1F",
     airCool: "#A9A6A0", airWarm: "#E5735A", glow: 0.25, interior: 1, pedestalRim: 0.2 } },
