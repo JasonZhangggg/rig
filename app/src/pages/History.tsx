@@ -16,10 +16,10 @@ export function History() {
         </div>
       </div>
       <section className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="legend">
-          <span><i style={{ background: "var(--accent)" }} />CPU</span>
-          <span><i style={{ background: "var(--warn)" }} />{laptop ? "Graphics (built in)" : "Graphics card"}</span>
-          <span><i style={{ background: "var(--bad)", height: 1 }} />Safe limit</span>
+        <div className="legend hist-legend">
+          <span><i className="lg-cpu" />CPU</span>
+          <span><i className="lg-gpu" />{laptop ? "Graphics (built in)" : "Graphics card"}</span>
+          <span><i className="lg-limit" />Safe limit</span>
         </div>
         <LineChart points={pts} series={[{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }]} limit={{ v: 90, label: "90°C limit" }} bands />
         {ui.range !== "7d" && <p className="faint">This mockup only has a week of sample data.</p>}

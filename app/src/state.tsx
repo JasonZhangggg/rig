@@ -42,12 +42,12 @@ function routeFromHash(): Route {
 function initial(): UI {
   const style = storage.get("rig.style") as StyleId | null;
   const pcId = storage.get("rig.pc");
-  const colors = storage.get("rig.colors") as ColorId | null;
+  const colors = storage.get("rig.accent") as ColorId | null;
   const side = storage.get("rig.sidebar") as SideId | null;
   return {
     route: routeFromHash(),
     style: styles.some((s) => s.id === style) ? style! : "studio",
-    colors: colorways.some((c) => c.id === colors) ? colors! : "coral",
+    colors: colorways.some((c) => c.id === colors) ? colors! : "watermelon",
     side: sidebars.some((c) => c.id === side) ? side! : "panel",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
@@ -84,7 +84,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
   useEffect(() => { storage.set("rig.style", ui.style); }, [ui.style]);
-  useEffect(() => { storage.set("rig.colors", ui.colors); }, [ui.colors]);
+  useEffect(() => { storage.set("rig.accent", ui.colors); }, [ui.colors]);
   useEffect(() => { storage.set("rig.sidebar", ui.side); }, [ui.side]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

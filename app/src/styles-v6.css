@@ -121,8 +121,7 @@
 .shell { min-height: 100%; }
 .shell .main { min-width: 0; }
 .sh-menu { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; min-width: 240px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 6px; display: flex; flex-direction: column; }
-.sh-menu > button, .sh-menu > a { display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 10px; border-radius: 10px; color: var(--text); font-size: 13.5px; line-height: 1.3; }
-.sh-menu > button:hover, .sh-menu > a:hover { background: var(--surface-2); }
+.sh-menu > button, .sh-menu > a { text-decoration: none; display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 10px; border-radius: 10px; color: var(--text); font-size: 13.5px; line-height: 1.3; }
 .sh-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 
 /* =====================================================================
@@ -740,21 +739,18 @@
 .fp-brand { position: relative; display: flex; align-items: center; gap: 6px; margin-bottom: 18px; }
 .fp-brand .sh-menu { left: 0; right: 0; top: calc(100% + 6px); }
 .fp-brand-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; padding: 4px; margin: -4px; border: 0; background: transparent; border-radius: 14px; cursor: pointer; color: var(--text); text-align: left; font-family: inherit; }
-.fp-brand-btn:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
 .fp-logo { position: relative; width: 42px; height: 42px; flex: none; border-radius: 13px; background: var(--text); color: #fff; display: grid; place-items: center; font: 800 18px var(--display); }
 .fp-logo i { position: absolute; right: 9px; bottom: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--coral); }
 .fp-brand-txt { display: grid; gap: 2px; min-width: 0; }
 .fp-brand-txt b { font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
 .fp-brand-txt small { font-size: 12.5px; color: var(--text-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fp-collapse { width: 32px; height: 32px; flex: none; border-radius: 10px; border: 0; background: transparent; color: var(--text-3); display: grid; place-items: center; cursor: pointer; }
-.fp-collapse:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
 .fp-collapse svg { width: 19px; height: 19px; }
 .fp-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
 .fp-label { font-size: 12.5px; font-weight: 600; color: var(--text-3); padding: 0 12px 8px; white-space: nowrap; }
 .fp-item { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text); text-decoration: none; font: 600 14.5px var(--font); cursor: pointer; white-space: nowrap; text-align: left; transition: background .15s, color .15s; }
 .fp-item svg { width: 19px; height: 19px; flex: none; color: var(--text-2); }
 .fp-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.fp-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .fp-item[aria-current="page"] { background: var(--text); color: #fff; }
 .fp-item[aria-current="page"] svg { color: #fff; }
 .fp-count { min-width: 26px; height: 24px; padding: 0 8px; border-radius: 999px; font: 600 12px/24px var(--font); font-style: normal; text-align: center; background: var(--surface); color: var(--text-2); box-shadow: 0 0 0 1px var(--line); }
@@ -771,9 +767,7 @@
 .fp-ring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--coral) var(--p), var(--surface-2) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
 .fp-skip, .fp-next { height: 32px; padding: 0 14px; border-radius: 999px; border: 0; font: 700 13px var(--font); cursor: pointer; }
 .fp-skip { margin-left: auto; background: transparent; color: var(--text-2); }
-.fp-skip:hover { color: var(--text); }
 .fp-next { background: var(--surface-2); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
-.fp-next:hover { background: var(--text); color: #fff; }
 .fp-me { display: flex; align-items: center; gap: 10px; padding: 14px 6px 0; color: var(--text); text-decoration: none; font-size: 13.5px; white-space: nowrap; }
 .fp-me span { width: 32px; height: 32px; flex: none; border-radius: 50%; background: var(--accent-bg); color: var(--accent-ink); display: grid; place-items: center; font-weight: 800; }
 .fp-me b { font-weight: 700; }
@@ -796,3 +790,100 @@
   .fp-setup { margin-top: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .fp-frame { transition: none; } }
+
+/* =====================================================================
+   v8: Friendly finish pass. Inner pages, sign-in, menus and motion.
+   Everything here is scoped to Friendly (studio).
+   ===================================================================== */
+
+/* Status colors follow the accent; blue info turns neutral */
+[data-style="studio"] {
+  --warn: var(--accent-ink); --warn-bg: var(--accent-bg);
+  --info: var(--text); --info-bg: var(--surface-2);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Steady page width between short and long pages */
+[data-style="studio"]:root { scrollbar-gutter: stable; }
+/* The gutter shows the page background, so match it to the Panel frame */
+[data-style="studio"] body:has(.shell-fpanel) { background: color-mix(in srgb, var(--band) 70%, var(--text) 8%); }
+
+/* Inner page titles echo the home greeting */
+[data-style="studio"] .page-head h1 { font-family: var(--display); font-weight: 800; font-size: 2.3rem; letter-spacing: -0.035em; line-height: 1.05; }
+
+/* History chart: CPU quiet, graphics card in the accent, limit neutral */
+.legend .lg-limit { background: var(--bad); height: 1px; }
+[data-style="checkup"] .hist-legend .lg-cpu { background: var(--accent); }
+[data-style="checkup"] .hist-legend .lg-gpu { background: var(--warn); }
+[data-style="studio"] .chart-line.cpu { stroke: var(--text-3); }
+[data-style="studio"] .chart-line.gpu { stroke: var(--coral); }
+[data-style="studio"] .chart-limit { stroke: var(--text-3); }
+[data-style="studio"] .chart-limit-label { fill: var(--text-2); }
+[data-style="studio"] .hist-legend .lg-cpu { background: var(--text-3); }
+[data-style="studio"] .hist-legend .lg-gpu { background: var(--coral); }
+[data-style="studio"] .hist-legend .lg-limit { height: 0; background: none; border-top: 1.5px dashed var(--text-3); border-radius: 0; }
+
+/* Sign-in fills the window so the art panel runs full height.
+   #root has no height, so the old min-height: 100% resolved to auto. */
+[data-style="studio"] .signin { min-height: 100vh; min-height: 100dvh; }
+@media (max-width: 860px) { [data-style="studio"] .signin { grid-template-rows: auto 1fr; } }
+
+/* PC switcher: check on the current PC */
+[data-style="studio"] .sh-check { width: 16px; height: 16px; flex: none; margin-left: auto; color: var(--accent-ink); }
+
+/* Panel sidebar: room between search and the setup card */
+[data-style="studio"] .fp-search { margin-bottom: 10px; }
+
+/* ---------- Motion ---------- */
+/* Press feedback */
+[data-style="studio"] :is(.f-cta, .fp-next, .fp-skip, .fp-collapse, .btn, .f-chip, .f-round, .f-mic, .seg button, .fp-brand-btn) {
+  transition: transform 160ms var(--ease-out);
+}
+[data-style="studio"] :is(.f-cta, .fp-next, .fp-skip, .fp-collapse, .btn, .f-chip, .f-round, .f-mic, .seg button, .fp-brand-btn):active {
+  transform: scale(0.97);
+}
+
+/* Hover only where there is a real pointer */
+@media (hover: hover) and (pointer: fine) {
+  .sh-menu > button:hover, .sh-menu > a:hover { background: var(--surface-2); }
+  [data-style="studio"] .sh-menu > button:hover, [data-style="studio"] .sh-menu > a:hover { background: var(--surface-2); }
+  [data-style="studio"] .fp-brand-btn:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+  [data-style="studio"] .fp-collapse:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+  [data-style="studio"] .fp-item:not([aria-current="page"]):hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  [data-style="studio"] .fp-skip:hover { color: var(--text); }
+  [data-style="studio"] .fp-next:hover { background: var(--text); color: #fff; }
+}
+
+/* PC switcher enters from its trigger */
+[data-style="studio"] .sh-menu {
+  transform-origin: top right;
+  transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+[data-style="studio"] .fp-brand .sh-menu, [data-style="studio"] .fc-pc .sh-menu { transform-origin: top left; }
+@starting-style {
+  [data-style="studio"] .sh-menu { opacity: 0; transform: scale(0.97); }
+}
+
+/* Toast rises in */
+[data-style="studio"] .toast { transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out); }
+@starting-style {
+  [data-style="studio"] .toast { opacity: 0; transform: translate(-50%, 8px); }
+}
+
+/* The command palette stays instant: no motion on purpose */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-style="studio"] :is(.f-cta, .fp-next, .fp-skip, .fp-collapse, .btn, .f-chip, .f-round, .f-mic, .seg button, .fp-brand-btn):active { transform: none; }
+  /* Keep the fades; the base sheet turns transitions off with !important */
+  [data-style="studio"] .sh-menu { transition: opacity 160ms var(--ease-out) !important; }
+  [data-style="studio"] .toast { transition: opacity 200ms var(--ease-out) !important; }
+  @starting-style {
+    [data-style="studio"] .sh-menu { opacity: 0; transform: none; }
+    [data-style="studio"] .toast { opacity: 0; transform: translateX(-50%); }
+  }
+}
+
+[data-style="studio"] .signin-form .brand { gap: 12px; font: 800 1.25rem var(--display); letter-spacing: -.02em; }
+[data-style="studio"] .signin-form .brand-mark { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; }
+[data-style="studio"] .signin-form .brand-mark::before { content: "R"; color: #fff; font: 800 18px var(--display); }
+[data-style="studio"] .signin-form .brand-mark::after { inset: auto 9px 10px auto; width: 6px; height: 6px; border: 0; border-radius: 50%; background: var(--coral); }

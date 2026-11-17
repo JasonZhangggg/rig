@@ -22,14 +22,15 @@ function useOutside(open: boolean, close: () => void) {
 }
 
 function PCMenu({ onPick }: { onPick: () => void }) {
-  const { ui, set, toast } = useApp();
+  const { ui, pc, set, toast } = useApp();
   const mine = Object.values(ui.pcs).filter((x) => x.parts);
   return (
     <div className="sh-menu" role="menu">
       {mine.map((x) => (
-        <button key={x.id} type="button" role="menuitem" onClick={() => { set({ pcId: x.id, selected: null }); onPick(); }}>
+        <button key={x.id} type="button" role="menuitem" aria-current={x.id === pc.id ? "true" : undefined} onClick={() => { set({ pcId: x.id, selected: null }); onPick(); }}>
           <span className="sh-dot" style={{ ["--pc" as string]: x.accent }} />
           <span><b>{x.name}</b><br /><span className="faint">{x.nickname}</span></span>
+          {x.id === pc.id && <svg className="sh-check" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M5 10.5 8.5 14 15 6.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
         </button>
       ))}
       <hr />
