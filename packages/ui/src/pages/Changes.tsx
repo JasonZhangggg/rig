@@ -1,8 +1,9 @@
-import { useState } from "react";
-import type { Change } from "@rig/core";
+import { useEffect, useState } from "react";
+import type { Change, DiffRow, Issue } from "@rig/core";
 import { DiffTable, Icon, StatusChip } from "../components/common";
 import { useApp } from "../state";
-import { Glance, HowChangesWork, NextChanges } from "./changes/Rail";
+import { Glance, HowChangesWork } from "./changes/Rail";
+import { bySeverity, issueGo } from "./shared";
 
 type Filter = "all" | "applied" | "undone";
 
@@ -32,6 +33,7 @@ export function Changes() {
   const [filter, setFilter] = useState<Filter>("all");
   const any = data.changes.length > 0;
   const list = data.changes.filter((c) => filter === "all" || c.status === filter);
+  const fixes = bySeverity((pc.issues ?? []).filter((i) => i.fix?.length));
   return (
     <div className="page">
       <div className="page-head">
@@ -44,7 +46,8 @@ export function Changes() {
       </div>
       <div className="pg-split">
         <div className="ch-main">
-          {!any ? <NoChanges /> : list.length === 0 ? (
+          {fixes.length > 0 && filter !== "undone" && <UpNext fixes={fixes} />}
+          {!any ? <NoChanges quiet={fixes.length > 0} /> : list.length === 0 ? (
             <section className="card card-pad empty">
               <p className="muted">No {filter} changes on {pc.name}.</p>
               <button className="btn sm" type="button" onClick={() => setFilter("all")}>Show all changes</button>
@@ -53,8 +56,7 @@ export function Changes() {
         </div>
         <aside className="pg-rail" aria-label="About your changes">
           {any && <Glance changes={data.changes} />}
-          <NextChanges />
-          {any && <HowChangesWork />}
+          <HowChangesWork />
         </aside>
       </div>
     </div>
@@ -67,6 +69,40 @@ function Day({ changes }: { changes: Change[] }) {
     <section className="ch-day" aria-label={label}>
       <h2 className="ch-day-label">{label}<span>{changes.length === 1 ? "1 change" : `${changes.length} changes`}</span></h2>
       <ol className="ch-timeline">{changes.map((c) => <Entry key={c.id} c={c} />)}</ol>
+    </section>
+  );
+}
+
+/** Fixes Rig found but hasn't made, at the top of the timeline. Each opens the review sheet. */
+function UpNext({ fixes }: { fixes: Issue[] }) {
+  const { pc, set, go, ask, review, client } = useApp();
+  const [rows, setRows] = useState<Record<string, DiffRow[]>>({});
+  // The PC object is replaced on every live reading, so the preview keys on the fixes themselves.
+  const ids = fixes.map((i) => i.id).join(" ");
+  useEffect(() => {
+    let live = true;
+    for (const i of fixes) client.preview(pc.id, i.fix!).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
+    return () => { live = false; };
+  }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <section className="ch-day" aria-label="Waiting for you">
+      <h2 className="ch-day-label">Waiting for you<span>{fixes.length === 1 ? "1 change to review" : `${fixes.length} changes to review`}</span></h2>
+      <ol className="ch-timeline">
+        {fixes.map((i) => (
+          <li key={i.id} className="ch-entry next">
+            <span className="ch-time">Next</span>
+            <article className="card change ch-next">
+              <div className="change-title">
+                <h3>{i.title}</h3>
+                <button className="btn sm primary" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>
+              </div>
+              <p className="muted">{i.body}</p>
+              {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
+              <div className="change-meta"><span>Found by Rig</span><span>Nothing changes until you review it</span></div>
+            </article>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -89,7 +125,7 @@ function Entry({ c }: { c: Change }) {
   );
 }
 
-function NoChanges() {
+function NoChanges({ quiet }: { quiet: boolean }) {
   const { go, pc } = useApp();
   return (
     <section className="card ch-empty">
@@ -98,8 +134,7 @@ function NoChanges() {
         <h2 className="plain-h">No changes yet</h2>
         <p className="muted">Every change Rig makes on {pc.name} shows up here with the before and after, and an Undo button that puts the old values back.</p>
       </div>
-      <HowChangesWork bare />
-      <div><button className="btn primary" type="button" onClick={() => go("chat")}>Ask Rig what to fix</button></div>
+      <div><button className={`btn${quiet ? "" : " primary"}`} type="button" onClick={() => go("chat")}>Ask Rig what to fix</button></div>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { HOT_MARGIN, type GameLibrary } from "@rig/core";
+import { HOT_MARGIN, type Game, type GameLibrary } from "@rig/core";
 import { useTempUnit } from "../../state";
 import { headroomWords } from "./Library";
 import { cap, day, hours, partName, temp, timeRange } from "./words";
@@ -51,6 +51,28 @@ export function RecentSessions({ library, onOpen }: { library: GameLibrary; onOp
               <b className="gm-recent-name">{g.name}</b>
               <span className="faint">{day(s.from)}, {timeRange(s.from, s.to)}</span>
               <span className="gm-recent-fig"><span className="num">{hours(s.hours)}</span>{s.hot ? <span className="gm-hot">Ran hot, {temp(s.peak, unit)}</span> : <span className="faint">peak {temp(s.peak, unit)}</span>}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Games Rig measured frame rates for, with what the suggested settings would give. Each opens its game. */
+export function Measured({ library, tuning, onOpen }: { library: GameLibrary; tuning: (name: string) => Game | undefined; onOpen: (name: string) => void }) {
+  const list = library.games.map((g) => tuning(g.name)).filter((g): g is Game => !!g);
+  if (!list.length) return null;
+  return (
+    <section className="card">
+      <div className="card-head"><h2>Settings to try</h2><span className="faint">{list.length === 1 ? "1 game" : `${list.length} games`}</span></div>
+      <ul className="gm-measured">
+        {list.map((g) => (
+          <li key={g.id}>
+            <button type="button" className="gm-measured-row" onClick={() => onOpen(g.name)}>
+              <span className="gm-recent-name">{g.name}</span>
+              <span className="muted">{g.settings.length === 1 ? "1 setting to change" : `${g.settings.length} settings to change`}{g.res ? `, ${g.res}` : ""}</span>
+              {g.now && <span className="gm-fps num">{g.now.avg}{g.tuned && <> → <b>{g.tuned.avg}</b></>} fps</span>}
             </button>
           </li>
         ))}

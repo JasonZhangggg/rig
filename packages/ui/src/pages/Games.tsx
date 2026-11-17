@@ -3,7 +3,7 @@ import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } fr
 import { useApp, useHistory } from "../state";
 import { Detail } from "./games/Detail";
 import { Library } from "./games/Library";
-import { RecentSessions, Strip } from "./games/Summary";
+import { Measured, RecentSessions, Strip } from "./games/Summary";
 import { partName } from "./games/words";
 
 type GameRange = "7d" | "30d";
@@ -50,7 +50,7 @@ export function Games() {
   const game = open ? library?.games.find((g) => g.name === open) : undefined;
   if (game && library) return <Detail key={`${game.name}-${range}`} game={game} library={library} tuning={tuning(game.name)} when={when} range={seg} onBack={() => show(null)} />;
 
-  const part = library ? partName(library.subject) : pc.kind === "tower" && pc.parts?.gpu ? "graphics card" : "processor";
+  const part = library?.games.length ? partName(library.subject) : pc.kind === "tower" && pc.parts?.gpu ? "graphics card" : "processor";
   const recorded = !!points?.length;
   return (
     <div className="page">
@@ -62,7 +62,10 @@ export function Games() {
         <>
           <Strip library={library} when={when} />
           <div className="pg-split">
-            <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show} />
+            <div className="pg-main">
+              <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show} />
+              <Measured library={library} tuning={tuning} onOpen={show} />
+            </div>
             <aside className="pg-rail" aria-label="Latest play"><RecentSessions library={library} onOpen={show} /></aside>
           </div>
         </>
