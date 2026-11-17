@@ -99,7 +99,7 @@ export function Overview() {
   if (ui.style === "paper") return <PaperHome />;
   if (ui.style === "signature") return <SignatureHome />;
   if (ui.style === "pulse") return <PulseHome />;
-  if (ui.style === "blend") return <BlendHome />;
+  if (ui.style === "blend" || ui.style === "mix") return <BlendHome />;
   if (ui.style === "studio") return <FriendlyHome />;
   if (ui.style === "workbench") return <CanvasHome />;
   if (ui.style === "checkup") return <WorkspaceHome />;

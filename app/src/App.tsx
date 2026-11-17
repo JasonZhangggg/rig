@@ -29,7 +29,9 @@ function Root() {
 
   // Theme and PC identity
   useEffect(() => {
-    document.documentElement.dataset.style = ui.style;
+    // Mix wears Blend's layout, so it sets Blend's style and adds its own skin on top
+    document.documentElement.dataset.style = ui.style === "mix" ? "blend" : ui.style;
+    document.documentElement.dataset.skin = ui.style === "mix" ? "mix" : "";
     document.documentElement.dataset.mode = ui.mode;
     document.documentElement.style.setProperty("--pc", pc.accent);
   }, [ui.style, ui.mode, pc.accent]);
@@ -38,6 +40,7 @@ function Root() {
   useEffect(() => {
     getStage().onSelect = (id) => set({ selected: id, tab: "live" });
   }, [set]);
+  useEffect(() => { scene.setFinish(ui.finish); }, [ui.finish, scene]);
   useEffect(() => {
     const th = sceneFor(ui.style, ui.mode);
     // In one-accent looks the 3D glow follows that accent so the page reads as one color

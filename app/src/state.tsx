@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { pcs as pcSeed, chat as chatSeed, changes as changeSeed, type Change, type ChatMessage, type DiffRow, type PC, type Route } from "./data";
-import { styles, type Mode, type StyleId } from "./themes";
+import { finishes, styles, type Mode, type StyleId } from "./themes";
+import type { Finish } from "./scene";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
 
@@ -11,6 +12,7 @@ export interface UI {
   route: Route;
   style: StyleId;
   mode: Mode;
+  finish: Finish;
   pcId: string;
   pcs: Record<string, PC>;
   exploded: boolean;
@@ -39,12 +41,14 @@ function routeFromHash(): Route {
 }
 
 function initial(): UI {
-  const style = storage.get("rig.style3") as StyleId | null;
+  const style = storage.get("rig.style4") as StyleId | null;
   const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
+  const finish = storage.get("rig.finish") as Finish | null;
   return {
     route: routeFromHash(),
-    style: styles.some((s) => s.id === style) ? style! : "paper",
+    style: styles.some((s) => s.id === style) ? style! : "mix",
+    finish: finishes.some((f) => f.id === finish) ? finish! : "photo",
     mode: mode === "light" ? "light" : "dark",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
@@ -80,7 +84,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
-  useEffect(() => { storage.set("rig.style3", ui.style); }, [ui.style]);
+  useEffect(() => { storage.set("rig.style4", ui.style); }, [ui.style]);
+  useEffect(() => { storage.set("rig.finish", ui.finish); }, [ui.finish]);
   useEffect(() => { storage.set("rig.mode", ui.mode); }, [ui.mode]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

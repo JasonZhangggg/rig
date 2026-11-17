@@ -1,9 +1,10 @@
-import type { SceneTheme } from "./scene";
+import type { Finish, SceneTheme } from "./scene";
 
-export type StyleId = "paper" | "signature" | "pulse" | "blend" | "studio" | "workbench" | "checkup";
+export type StyleId = "mix" | "paper" | "signature" | "pulse" | "blend" | "studio" | "workbench" | "checkup";
 export type Mode = "dark" | "light";
 
 export const styles: { id: StyleId; name: string; note: string }[] = [
+  { id: "mix", name: "Mix", note: "Signature's type and colors on Blend's panel and tiles" },
   { id: "paper", name: "Paper", note: "Calm paper, a floating numbered sidebar, coral only where it matters" },
   { id: "signature", name: "Signature", note: "Paper's calm with live charts on graphite tiles, lime for good, coral for a look" },
   { id: "pulse", name: "Pulse", note: "Black cards, lime and orange charts, pill nav on top" },
@@ -18,7 +19,7 @@ export const lime = "#C6F432";
 export const coral = "#FD754D";
 
 // How the 3D scene looks in each style. UI colors live in styles.css.
-const baseScenes: Record<Exclude<StyleId, "paper" | "signature">, SceneTheme> = {
+const baseScenes: Record<Exclude<StyleId, "mix" | "paper" | "signature">, SceneTheme> = {
   pulse: {
     bg: "#161616", floor: "#1C1C1C", caseColor: "#D9DBD4", trim: "#1D1E1C", glass: "#B9C2BC", glassOpacity: 0.12,
     board: "#151615", heatsink: "#3C3F3B", fins: "#A2A79F", copper: "#B8784A", fanFrame: "#1B1C1B", ram: "#202220",
@@ -91,6 +92,12 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
     heatCool: "#A79DDF", heatWarm: "#FDA07F", heatHot: "#FD754D", highlight: coral,
     airCool: "#A79DDF", airWarm: coral, shadow: 0.22,
   },
+  mix: {
+    ...baseScenes.blend,
+    caseColor: "#FAF9F7", trim: "#1B1B1F", glass: "#D9DCD2", pedestal: "#FFFFFF", edge: "#8F8D88",
+    heatCool: "#8DB80F", heatWarm: "#FDA07F", heatHot: "#FD754D", highlight: lime,
+    airCool: "#8DB80F", airWarm: coral, shadow: 0.22,
+  },
   signature: {
     ...baseScenes.blend,
     caseColor: "#FAF9F7", trim: "#1B1B1F", glass: "#D9DCD2", pedestal: "#FFFFFF", edge: "#8F8D88",
@@ -101,8 +108,15 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
 
 /** The color the 3D highlight and glow take in looks that keep the page to one accent. */
 export const sceneGlow: Partial<Record<StyleId, string>> = {
-  paper: coral, signature: lime, pulse: lime, blend: lime, studio: studioAccent,
+  mix: lime, paper: coral, signature: lime, pulse: lime, blend: lime, studio: studioAccent,
 };
+
+export const finishes: { id: Finish; name: string }[] = [
+  { id: "photo", name: "Real" },
+  { id: "clay", name: "Clay" },
+  { id: "ink", name: "Ink" },
+  { id: "line", name: "Drawing" },
+];
 
 export function sceneFor(style: StyleId, mode: Mode): SceneTheme {
   return style === "pulse" && mode === "light" ? pulseLightScene : sceneThemes[style];

@@ -8,7 +8,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import type { PC, Part } from "./data";
+
+/** How the PC is drawn. photo is lit like a product shot, clay is one matte tone,
+ *  ink is flat color with drawn outlines, line is a pen drawing on paper. */
+export type Finish = "photo" | "clay" | "ink" | "line";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -37,6 +42,7 @@ export interface SceneTheme {
 export interface PCScene {
   setPC(pc: PC, theme: SceneTheme): void;
   setTheme(theme: SceneTheme): void;
+  setFinish(finish: Finish): void;
   setExploded(v: boolean): void;
   setHeat(v: boolean): void;
   select(id: string | null): void;
@@ -70,6 +76,8 @@ export function createScene(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
+
+  const outlined = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultKeepAlive: true });
 
   const labels = new CSS2DRenderer();
   labels.domElement.className = "scene-labels";
@@ -196,12 +204,54 @@ export function createScene(
     pulses: [] as THREE.Sprite[],
     air: null as null | { group: THREE.Group; mats: THREE.ShaderMaterial[] },
     airOn: true,
+    finish: "photo" as Finish,
   };
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
   const theme = (): SceneTheme => state.theme!;
 
   // ---------- helpers ----------
+  const toonRamp = (() => {
+    const t = new THREE.DataTexture(new Uint8Array([96, 178, 255]), 3, 1, THREE.RedFormat);
+    t.minFilter = t.magFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  })();
+  const inkOf = (th: SceneTheme) => new THREE.Color(th.trim);
+  const paperOf = (th: SceneTheme) => new THREE.Color(th.caseColor);
+  function finishMat(color: THREE.ColorRepresentation, o: MatOpts): THREE.MeshStandardMaterial | THREE.MeshToonMaterial | THREE.MeshLambertMaterial {
+    const th = theme(), f = state.finish;
+    const op = o.op ?? 1;
+    const base = { transparent: op < 1, opacity: op, depthWrite: op >= 0.5 };
+    const ink = inkOf(th).toArray() as [number, number, number];
+    let m: THREE.MeshStandardMaterial | THREE.MeshToonMaterial | THREE.MeshLambertMaterial;
+    if (f === "clay") {
+      const c = new THREE.Color(color);
+      const hsl = { h: 0, s: 0, l: 0 };
+      c.getHSL(hsl);
+      const tone = inkOf(th).lerp(paperOf(th), 0.5).lerp(paperOf(th), Math.pow(hsl.l, 0.55));
+      m = new THREE.MeshStandardMaterial({ ...base, color: o.emissive ? color : tone, roughness: 0.92, metalness: 0, envMapIntensity: 0.55 });
+    } else if (f === "ink") {
+      m = new THREE.MeshToonMaterial({ ...base, color, gradientMap: toonRamp });
+      // A see-through panel shows its own outline hull through it as a grey sheet, so glass gets none
+      m.userData.outlineParameters = { thickness: 0.0042, color: ink, visible: op >= 0.5, keepAlive: true };
+    } else {
+      const paper = paperOf(th);
+      m = new THREE.MeshLambertMaterial({ ...base, color: paper, emissive: paper, emissiveIntensity: 0.6, opacity: op < 1 ? op * 0.5 : 1 });
+      m.userData.outlineParameters = { thickness: 0.0028, color: ink, visible: op >= 0.5, keepAlive: true };
+      m.userData.edges = true;
+    }
+    if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = (o.ei ?? 1) * (f === "ink" ? 1 : 0.7); }
+    return m;
+  }
   function M(color: THREE.ColorRepresentation, o: MatOpts = {}) {
+    if (state.finish !== "photo") {
+      const f = finishMat(color, o);
+      f.userData.glow = !!o.emissive;
+      f.userData.baseEmissive = f.emissive.clone();
+      f.userData.baseEI = f.emissiveIntensity;
+      f.userData.baseOpacity = f.opacity;
+      return f;
+    }
     const m = new THREE.MeshPhysicalMaterial({
       color, roughness: o.r ?? 0.55, metalness: o.m ?? 0.1,
       transparent: o.op !== undefined && o.op < 1, opacity: o.op ?? 1,
@@ -222,7 +272,7 @@ export function createScene(
     const add = (th.glowBlend ?? "add") === "add";
     const mat = new THREE.SpriteMaterial({
       map: dotTex, color, transparent: true, depthWrite: false, toneMapped: false,
-      opacity: opacity * (th.glow ?? 1), blending: add ? THREE.AdditiveBlending : THREE.NormalBlending,
+      opacity: opacity * (th.glow ?? 1) * (state.finish === "photo" || state.finish === "ink" ? 1 : 0.35), blending: add ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     const sp = new THREE.Sprite(mat);
     sp.scale.set(sx, sy, 1);
@@ -403,7 +453,7 @@ export function createScene(
     add(front, "case", [0, 0, 1.8], { noPick: true });
     // Glass side panel
     const glassMat = M(th.glass, { r: 0.04, m: 0.0, op: th.glassOpacity, env: th.transparent && th.hemi < 0.6 ? 1.2 : 2 });
-    glassMat.specularIntensity = 1;
+    if (glassMat instanceof THREE.MeshPhysicalMaterial) glassMat.specularIntensity = 1;
     const glass = box(0.02, H - 0.12, D - 0.12, glassMat, W / 2, H / 2, 0);
     glass.castShadow = false;
     glass.add(outline(0.02, H - 0.12, D - 0.12));
@@ -746,8 +796,28 @@ export function createScene(
     contact.position.set(mid.x, sy + 0.001, mid.z);
     (contact.material as THREE.MeshBasicMaterial).opacity = Math.min(0.9, (th.shadow ?? 0.3) * 1.5);
     contact.visible = !!th.transparent;
+    finishPass();
     applyHighlights();
     applyExplode(true);
+  }
+
+  // Line drawings get their creases drawn; only the PC's own parts get outlines.
+  function finishPass() {
+    const ink = inkOf(theme());
+    const lines: [THREE.Mesh, THREE.LineSegments][] = [];
+    root.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !o.material.userData?.edges) return;
+      const l = new THREE.LineSegments(
+        new THREE.EdgesGeometry(o.geometry, 50),
+        new THREE.LineBasicMaterial({ color: ink, transparent: true, opacity: o.material.opacity < 0.5 ? 0.35 : 0.7 }),
+      );
+      l.raycast = () => {};
+      lines.push([o, l]);
+    });
+    for (const [o, l] of lines) o.add(l);
+    scene.traverse((o) => {
+      if (o instanceof THREE.Mesh && !o.material.userData?.outlineParameters) o.material.userData.outlineParameters = { visible: false };
+    });
   }
 
   function frame(exploded: boolean, instant: boolean) {
@@ -903,7 +973,8 @@ export function createScene(
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
     controls.update();
-    renderer.render(scene, camera);
+    if (state.finish === "ink" || state.finish === "line") outlined.render(scene, camera);
+    else renderer.render(scene, camera);
     labels.render(scene, camera);
   }
 
@@ -914,6 +985,7 @@ export function createScene(
       if (!raf) tick();
     },
     setTheme(t) { state.theme = t; if (state.pc) rebuild(); },
+    setFinish(f) { if (f === state.finish) return; state.finish = f; if (state.pc) rebuild(); },
     setExploded(v) { state.exploded = v; applyHighlights(); frame(v, false); },
     setHeat(v) { state.heat = v; applyHighlights(); },
     select,

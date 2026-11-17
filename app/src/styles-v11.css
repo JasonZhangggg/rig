@@ -1,0 +1,115 @@
+/* =====================================================================
+   v11: Mix. Blend's framed panel, greeting band and round tiles, worn in
+   Signature's type and colors. The root carries data-style="blend" for the
+   layout and data-skin="mix" for the type and colors, so every rule here
+   starts with both and wins over Blend's own.
+   Lime means settled, coral means needs a look, mist means expected.
+   ===================================================================== */
+
+/* ---------- Tokens ---------- */
+[data-style="blend"][data-skin="mix"] {
+  --font: "Inter Tight", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-head: var(--font);
+  --display: var(--font);
+  --num: var(--font);
+  --fs: 15px;
+  --graphite: #1B1B1F; --mist: #C0B8E8; --foam: #ECE8FA;
+  --bg: #F2F0EC;
+  --band: #E9E6E0;
+  --surface: #FFFFFF;
+  --surface-2: #F2F0EC;
+  --surface-solid: #FFFFFF;
+  --line: rgba(27, 27, 31, .10);
+  --line-strong: rgba(27, 27, 31, .18);
+  --text: #1B1B1F;
+  --text-2: #5E5D59;
+  --text-3: #6B6A66;
+  --primary: #1B1B1F; --primary-text: #FFFFFF;
+  --accent: #1B1B1F; --accent-bg: #ECE8FA; --accent-ink: #1B1B1F;
+  --coral: #FD754D; --crimson: #FD754D; --on-accent: #1B1B1F;
+  --focus: #1B1B1F;
+  --ok: #4A6100; --ok-bg: #EAF7C0;
+  --warn: #C2451F; --warn-bg: #FFE4D9;
+  --bad: #C2451F; --bad-bg: #FFE4D9;
+  --info: #1B1B1F; --info-bg: #F2F0EC;
+  --r: 28px; --r-sm: 14px;
+  --shadow: none;
+  --shadow-lg: 0 24px 60px rgba(27, 27, 31, .16), 0 2px 6px rgba(27, 27, 31, .06);
+  --c-cpu: #1B1B1F; --c-gpu: #FD754D; --c-storage: #C6F432; --c-memory: #8C8A85; --c-battery: #C6F432;
+  --lime: #C6F432; --lime-hi: #D4FA5E; --orange: #FD754D;
+  --soft: 0 0 0 0 transparent;
+  --s-a: #C6F432; --s-mark-a: #5E7A00; --s-b: #FD754D; --s-c: #C0B8E8;
+  --s-ink: #111111; --s-c-ink: #1B1B1F;
+  --s-track: rgba(27, 27, 31, .10); --s-dim: rgba(27, 27, 31, .08); --s-edge: rgba(27, 27, 31, .08);
+}
+/* Graphite tiles: lime for good, coral for a look, mist for expected */
+[data-style="blend"][data-skin="mix"] .tone-dark {
+  --surface: #1B1B1F; --surface-2: #26262B;
+  --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
+  --line: rgba(255, 255, 255, .10);
+  --ok: #C6F432; --warn: #FD754D; --accent-ink: #C6F432; --focus: #C6F432;
+  --s-a: #C6F432; --s-mark-a: #C6F432; --s-b: #FD754D; --s-c: #C0B8E8;
+  --s-ink: #111111; --s-c-ink: #1B1B1F;
+  --s-track: rgba(255, 255, 255, .12); --s-dim: rgba(255, 255, 255, .08); --s-edge: transparent;
+  background: #1B1B1F;
+}
+
+/* ---------- Ground and frame ---------- */
+[data-style="blend"][data-skin="mix"] body,
+[data-style="blend"][data-skin="mix"] body:has(.shell-fpanel),
+[data-style="blend"][data-skin="mix"] .shell-fpanel { background: #E4E1DA; }
+[data-style="blend"][data-skin="mix"] .fp-frame { background: var(--bg); box-shadow: 0 30px 60px -44px rgba(27, 27, 31, .3); }
+[data-style="blend"][data-skin="mix"] .fp-side { background: #EAE7E1; border-right-color: transparent; }
+
+/* ---------- Type: sentence case, set tight ---------- */
+[data-style="blend"][data-skin="mix"] h1 { font-weight: 600; letter-spacing: -.035em; }
+[data-style="blend"][data-skin="mix"] :is(.page-head h1, .signin-form h1) { font-family: var(--font); font-weight: 600; text-transform: none; letter-spacing: -.045em; }
+[data-style="blend"][data-skin="mix"] .card h2:not(.plain-h) { font-weight: 600; letter-spacing: -.02em; text-transform: none; }
+[data-style="blend"][data-skin="mix"] :is(.plain-h, .sheet h2) { font-weight: 600; letter-spacing: -.025em; }
+[data-style="blend"][data-skin="mix"] .big-figure { font: 600 2.6rem/1 var(--font); letter-spacing: -.045em; }
+[data-style="blend"][data-skin="mix"] .fp-label { font: 500 12.5px/1.2 var(--font); text-transform: none; letter-spacing: 0; color: var(--text-3); }
+[data-style="blend"][data-skin="mix"] .fp-brand-txt b { font: 600 18px/1 var(--font); text-transform: none; letter-spacing: -.03em; }
+[data-style="blend"][data-skin="mix"] .f-band-right h1 { font: 600 clamp(2.2rem, 3.6vw, 3.4rem)/1 var(--font); text-transform: none; letter-spacing: -.045em; }
+[data-style="blend"][data-skin="mix"] .f-card-head { font: 600 16px/1.15 var(--font); text-transform: none; letter-spacing: -.02em; }
+[data-style="blend"][data-skin="mix"] .f-pc-name { font: 600 2.4rem/1 var(--font); text-transform: none; letter-spacing: -.045em; }
+[data-style="blend"][data-skin="mix"] .f-date b { font: 600 26px/1 var(--font); letter-spacing: -.04em; background: var(--graphite); }
+[data-style="blend"][data-skin="mix"] .signin-form .brand { font: 600 1.35rem var(--font); text-transform: none; letter-spacing: -.03em; }
+[data-style="blend"][data-skin="mix"] .signin-form .brand-mark::before { font-family: var(--font); }
+[data-style="blend"][data-skin="mix"] :is(.pl-digits, .f-ring b, .f-mini b) { letter-spacing: -.04em; }
+
+/* ---------- Sidebar: graphite current page with a lime dot ---------- */
+[data-style="blend"][data-skin="mix"] .fp-item[aria-current="page"] { background: var(--graphite); color: #fff; }
+[data-style="blend"][data-skin="mix"] .fp-count { background: var(--coral); color: var(--graphite); }
+[data-style="blend"][data-skin="mix"] .fp-item[aria-current="page"] .fp-count:not(.hot) { background: var(--lime); color: #111; }
+[data-style="blend"][data-skin="mix"] .fp-next { background: var(--graphite); }
+[data-style="blend"][data-skin="mix"] .fp-me span { background: var(--mist); color: var(--graphite); }
+
+/* ---------- Home ---------- */
+[data-style="blend"][data-skin="mix"] .f-band { background: #EAE7E1; }
+[data-style="blend"][data-skin="mix"] .card { box-shadow: none; }
+[data-style="blend"][data-skin="mix"] .f-cta { box-shadow: none; }
+[data-style="blend"][data-skin="mix"] .f-cta i { background: var(--graphite); color: var(--lime); }
+[data-style="blend"][data-skin="mix"] .f-chip.hot i,
+[data-style="blend"][data-skin="mix"] .f-todo-row.warn .f-todo-ico { background: var(--coral); color: var(--graphite); }
+[data-style="blend"][data-skin="mix"] .f-chip.hot b { color: var(--warn); }
+[data-style="blend"][data-skin="mix"] .bl-n { font-family: var(--font); font-weight: 600; }
+[data-style="blend"][data-skin="mix"] .bl-pc { background:
+    radial-gradient(70% 60% at 100% 0%, rgba(192, 184, 232, .38) 0%, rgba(192, 184, 232, 0) 62%),
+    radial-gradient(60% 55% at 0% 100%, rgba(198, 244, 50, .20) 0%, rgba(198, 244, 50, 0) 60%),
+    linear-gradient(180deg, #FFFFFF 0%, #F8F6FC 100%); }
+[data-style="blend"][data-skin="mix"] .bl-pc-glow { display: none; }
+
+/* ---------- Controls and charts ---------- */
+[data-style="blend"][data-skin="mix"] .card-head .count { background: var(--coral); color: var(--graphite); }
+[data-style="blend"][data-skin="mix"] .chart-line.gpu { stroke: var(--coral); }
+[data-style="blend"][data-skin="mix"] .hist-legend .lg-gpu { background: var(--coral); }
+[data-style="blend"][data-skin="mix"] :is(.stage-card, .signin-art) { background:
+    radial-gradient(70% 60% at 100% 0%, rgba(192, 184, 232, .42) 0%, rgba(192, 184, 232, 0) 62%),
+    radial-gradient(60% 55% at 0% 100%, rgba(253, 117, 77, .14) 0%, rgba(253, 117, 77, 0) 60%),
+    linear-gradient(180deg, #FFFFFF 0%, #F8F6FC 100%); }
+[data-style="blend"][data-skin="mix"] .signin-form .brand-mark { background: var(--graphite); }
+[data-style="blend"][data-skin="mix"] .msg.you .bubble { background: var(--graphite); color: #fff; }
+
+@media (hover: hover) and (pointer: fine) {
+  [data-style="blend"][data-skin="mix"] .fp-item:not([aria-current="page"]):hover { background: rgba(27, 27, 31, .06); }
+}

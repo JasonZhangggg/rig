@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { user, type Route } from "../data";
 import { useApp } from "../state";
-import { styles } from "../themes";
+import { finishes, styles } from "../themes";
 import { DiffTable, Icon } from "./common";
 
 export const navItems: [Route, string, string][] = [
@@ -117,6 +117,9 @@ export function MockPanel() {
           </div>
         )}
         <div className="mnote">{style.note}</div>
+        <div className="mrow wrap" role="group" aria-label="PC style">
+          {finishes.map((f) => <button key={f.id} type="button" aria-pressed={ui.finish === f.id} onClick={() => set({ finish: f.id })}>{f.name}</button>)}
+        </div>
         <div className="mrow">
           <button type="button" aria-pressed={ui.pcId === "atlas"} onClick={() => pickPC("atlas")}>Tower</button>
           <button type="button" aria-pressed={ui.pcId === "pebble"} onClick={() => pickPC("pebble")}>Laptop</button>
