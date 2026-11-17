@@ -1,2 +1,55 @@
 .trend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
 @media (max-width: 860px) { .trend { grid-template-columns: 1fr; } }
+
+.hi-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: var(--gap); }
+.hi-card { display: flex; flex-direction: column; gap: 16px; }
+.hi-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.hi-card-head .faint { font-size: 13px; }
+
+.hi-ranges { display: flex; flex-direction: column; }
+.hi-range { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; border-top: 1px solid var(--line); }
+.hi-range:first-child { padding-top: 0; border-top: 0; }
+.hi-range:last-child { padding-bottom: 0; }
+.hi-range-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; font-size: 14px; }
+.hi-range-head b { font-weight: 600; }
+.hi-range-head .faint { font-size: 13px; }
+.hi-track { position: relative; height: 10px; border-radius: var(--r-pill); background: var(--surface-2); }
+.hi-track i { position: absolute; top: 0; height: 100%; }
+.hi-span { border-radius: var(--r-pill); background: var(--good); }
+.hi-span.look { background: var(--look); }
+.hi-typical { width: 3px; margin-left: -1.5px; top: -3px !important; height: 16px !important; border-radius: 2px; background: var(--graphite); }
+.hi-limit { width: 0; top: -5px !important; height: 20px !important; border-left: 1.5px dashed var(--text-3); }
+.hi-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.hi-figs div { display: flex; flex-direction: column; gap: 2px; }
+.hi-figs dt { color: var(--text-3); font-size: 12.5px; font-weight: 500; }
+.hi-figs dd { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -.02em; }
+.hi-figs dd.look { color: var(--look-text); }
+
+.hi-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.hi-events li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.hi-events li:first-child { padding-top: 0; border-top: 0; }
+.hi-ev-ico { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text-2); }
+.hi-ev-ico.look { background: var(--look-bg); color: var(--look-text); }
+.hi-ev-ico svg { width: 18px; height: 18px; }
+.hi-ev-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+.hi-ev-main b { overflow: hidden; font-size: 14.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.hi-ev-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+.hi-ev-fig b { color: var(--text); font-size: 14.5px; font-weight: 600; }
+.hi-ev-fig.look :is(b, span) { color: var(--look-text); }
+.hi-more { align-self: flex-start; }
+
+.hi-empty { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; padding: 28px; }
+.hi-empty-text { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.hi-empty-text p { max-width: 58ch; }
+.hi-empty-list { list-style: none; margin: 0; padding: 0 0 0 28px; display: flex; flex-direction: column; gap: 14px; border-left: 1px solid var(--line); }
+.hi-empty-list li { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.hi-empty-list b { font-weight: 600; }
+
+@media (max-width: 1100px) { .hi-row { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .hi-empty { grid-template-columns: minmax(0, 1fr); padding: 22px; }
+  .hi-empty-list { padding: 22px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .hi-events li { grid-template-columns: 36px minmax(0, 1fr); }
+  .hi-events li > :last-child:not(.hi-ev-main) { grid-column: 2; justify-self: start; }
+  .hi-ev-fig { flex-direction: row; align-items: baseline; gap: 6px; }
+}

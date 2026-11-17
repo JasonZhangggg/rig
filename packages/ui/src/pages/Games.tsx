@@ -3,6 +3,7 @@ import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } fr
 import { useApp, useHistory } from "../state";
 import { Detail } from "./games/Detail";
 import { Library } from "./games/Library";
+import { RecentSessions, Strip } from "./games/Summary";
 import { partName } from "./games/words";
 
 type GameRange = "7d" | "30d";
@@ -57,18 +58,34 @@ export function Games() {
         <div><h1>Games</h1><p className="sub">What you played on {pc.name} and how warm the {part} ran while you did. Rig only watches temperatures and never touches the game itself, so anti-cheat stays happy.</p></div>
         {seg}
       </div>
-      {library == null ? <p className="muted">Loading…</p> : library.games.length ? (
-        <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show} />
+      {library == null ? <p className="muted" role="status">Loading…</p> : library.games.length ? (
+        <>
+          <Strip library={library} when={when} />
+          <div className="pg-split">
+            <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show} />
+            <aside className="pg-rail" aria-label="Latest play"><RecentSessions library={library} onOpen={show} /></aside>
+          </div>
+        </>
       ) : (
-        <section className="card card-pad empty">
-          <h2 className="plain-h">{!recorded ? "No games recorded yet" : range === "7d" ? "No games this week" : "No games this month"}</h2>
-          <p className="muted" style={{ maxWidth: "56ch" }}>
-            {recorded && `Rig didn't see a game running on ${pc.name} in the last ${range === "7d" ? 7 : 30} days. `}
-            Leave Rig open while you play and each game shows up here with how long you played and how warm {pc.name} ran.
-          </p>
-          <div className="gm-actions">
-            {recorded && range === "7d" && <button className="btn" type="button" onClick={() => setRange("30d")}>Show the month</button>}
-            <button className="btn" type="button" onClick={() => ask("What settings should I use for my games?")}>Ask about game settings</button>
+        <section className="card gm-empty">
+          <div className="empty">
+            <h2 className="plain-h">{!recorded ? "No games recorded yet" : range === "7d" ? "No games this week" : "No games this month"}</h2>
+            <p className="muted" style={{ maxWidth: "56ch" }}>
+              {recorded && `Rig didn't see a game running on ${pc.name} in the last ${range === "7d" ? 7 : 30} days. `}
+              Leave Rig open while you play and each game shows up here with how long you played and how warm {pc.name} ran.
+            </p>
+            <div className="gm-actions">
+              {recorded && range === "7d" && <button className="btn" type="button" onClick={() => setRange("30d")}>Show the month</button>}
+              <button className="btn" type="button" onClick={() => ask("What settings should I use for my games?")}>Ask about game settings</button>
+            </div>
+          </div>
+          <div className="gm-empty-list">
+            <span className="label">What shows up here</span>
+            <ul>
+              <li><b>Time played</b><span className="muted">Each game, most played first, with every session.</span></li>
+              <li><b>How warm it ran</b><span className="muted">The {part}'s usual and hottest temperature while you played.</span></li>
+              <li><b>Close calls</b><span className="muted">Sessions that came near the safe limit, and what to do about it.</span></li>
+            </ul>
           </div>
         </section>
       )}

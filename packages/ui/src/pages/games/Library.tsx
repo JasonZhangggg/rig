@@ -24,7 +24,7 @@ export function Library({ library, when, tuned, onOpen }: { library: GameLibrary
   return (
     <section className="card">
       <div className="card-head"><h2>Most played {when}</h2><span className="faint">{hours(library.hours)} in all</span></div>
-      <ul className="gm-list">
+      <ul className="gm-list" aria-label="Games">
         {library.games.map((g) => (
           <li key={g.name}>
             <button type="button" className="gm-row" onClick={() => onOpen(g.name)}>
