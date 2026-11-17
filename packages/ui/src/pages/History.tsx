@@ -1,19 +1,12 @@
-import { useEffect, useState } from "react";
 import type { HistoryPoint } from "@rig/core";
 import { LineChart } from "../chart";
-import { useApp } from "../state";
+import { useApp, useHistory } from "../state";
 
 const avg = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
 
 export function History() {
-  const { ui, pc, set, client } = useApp();
-  const [pts, setPts] = useState<HistoryPoint[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    setPts(null);
-    client.history(pc.id, ui.range).then((p) => live && setPts(p)).catch(() => live && setPts([]));
-    return () => { live = false; };
-  }, [client, pc.id, ui.range]);
+  const { ui, pc, set } = useApp();
+  const pts = useHistory(ui.range);
   const laptop = pc.kind === "laptop";
   const main: "gpu" | "cpu" = pc.parts?.gpu ? "gpu" : "cpu";
   const limit = pc.parts?.[main]?.limit ?? 90;

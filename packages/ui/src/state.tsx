@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type PC, type Range, type RigClient, type Route } from "@rig/core";
+import { titleFor, type Account, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RigClient, type Route } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
 
@@ -76,6 +76,19 @@ export interface Ctx {
 
 const AppCtx = createContext<Ctx | null>(null);
 export const useApp = () => useContext(AppCtx)!;
+
+/** The on-screen PC's recorded history over a range. Null while it loads, empty when there is none or it couldn't be read. */
+export function useHistory(range: Range): HistoryPoint[] | null {
+  const { client, pc } = useApp();
+  const [points, setPoints] = useState<HistoryPoint[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPoints(null);
+    client.history(pc.id, range).then((p) => live && setPoints(p)).catch(() => live && setPoints([]));
+    return () => { live = false; };
+  }, [client, pc.id, range]);
+  return points;
+}
 
 export function AppProvider({ client, children, fallback }: { client: RigClient; children: ReactNode; fallback: (state: "loading" | "empty") => ReactNode }) {
   const [ui, setUI] = useState<UI>(() => ({

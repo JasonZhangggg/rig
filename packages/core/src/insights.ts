@@ -29,7 +29,10 @@ export interface InsightContext {
 /** A session ran hot when a part came within this many °C of its safe limit. */
 export const HOT_MARGIN = 6;
 
-export function insightContext(pc: Pick<PC, "kind" | "parts">, now = Date.now(), offset = viewerOffset): InsightContext {
+/** What the context needs from a PC: its kind and its parts' safe limits. A PC fits as it is. */
+export type InsightSubject = Pick<PC, "kind"> & { parts?: { cpu?: { limit?: number }; gpu?: { limit?: number } } };
+
+export function insightContext(pc: InsightSubject, now = Date.now(), offset = viewerOffset): InsightContext {
   return {
     now, offset, kind: pc.kind,
     limits: { cpu: pc.parts?.cpu?.limit ?? cpuLimit(""), gpu: pc.parts?.gpu?.limit ?? gpuLimit("") },

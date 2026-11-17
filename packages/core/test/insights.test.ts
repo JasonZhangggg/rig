@@ -176,7 +176,7 @@ describe("fanTrend", () => {
 
 describe("insightContext", () => {
   it("reads the PC's kind and safe limits", () => {
-    const c = insightContext({ kind: "laptop", parts: { cpu: { name: "", type: "", modelSource: "generic", specs: [], manual: [], limit: 89 } } }, 0, ny);
+    const c = insightContext({ kind: "laptop", parts: { cpu: { limit: 89 } } }, 0, ny);
     expect(c).toMatchObject({ kind: "laptop", now: 0, limits: { cpu: 89, gpu: 88 } });
   });
 });
