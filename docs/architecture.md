@@ -14,7 +14,7 @@
 
 Both apps mount the same `RigApp` from `packages/ui` and differ only in the client they pass in. Every client implements one interface, `RigClient` (`packages/core/src/client.ts`):
 
-- `DemoClient`: two made-up PCs in memory. Powers the website's demo and the UI tests.
+- `DemoClient`: two made-up PCs in memory, each following a weekly schedule of work, evening games and background tasks. Powers the website's demo and the UI tests.
 - `LocalClient`: this PC, through the helper. History and the change log are kept on disk. When signed in it uploads a snapshot every five minutes and after each change, and reaches the account's other PCs through the server.
 - `CloudClient`: the website. Reads what each PC uploaded. It can't make changes; those happen in the app on the PC itself.
 
@@ -53,7 +53,8 @@ CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver.
 ## Defaults chosen
 
 - **Monorepo with pnpm workspaces.** The website and the app share every screen.
-- **Desktop data in SQLite** in the app's data folder; history keeps 90 days, one point per ten minutes with the highest temperatures in that window.
+- **Desktop data in SQLite** in the app's data folder; history keeps 90 days, one point per ten minutes with the highest temperatures and fan speed in that window, whether it was busy, and the game in front for most of it.
+- **Home charts come from history** (`packages/core/src/insights.ts`), in the viewer's local days. Idle is the processor's median while nothing heavy ran; typical and peak are the graphics card's busy median and highest reading (the processor's on a laptop or a desktop without graphics card readings). An evening runs 6 PM to 6 AM; a session is busy windows joined across at most one quiet window, and it ran hot when a part came within 6°C of its safe limit. Fans show the fastest speed per six-hour slice against the fastest slice shown.
 - **Server database is Postgres (Neon), not Cloudflare D1.** D1 stops at 10 GB per database and is meant to be split per user; one Postgres database can keep growing. Accounts stay in Rig's own database with Better Auth, so there's no per-user cost for sign-in.
 - **Sign-in token in Windows Credential Manager**, not in a file.
 - **Desktop sign-in through the browser** with a short code (OAuth device flow), so the app never handles a password.
@@ -65,7 +66,7 @@ CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver.
 
 Tested here (Linux, no Windows):
 
-- Core logic: health checks, the fix catalog, the PC view, LocalClient's apply, undo, redo, rollback on failure, history and upload (`pnpm --filter @rig/core test`).
+- Core logic: health checks, the fix catalog, the PC view, LocalClient's apply, undo, redo, rollback on failure, history and upload, and the home charts' insights (days, evening sessions, fan slices, time zones and daylight saving, empty and partial history) (`pnpm --filter @rig/core test`).
 - Server: sign-up, the desktop's code sign-in from start to bearer token, CORS for the app, upload and read-back, privacy between accounts, which name wins, offline after 12 minutes, and chat with a stand-in for Claude: streamed text, a proposal checked against the PC, refusing changes that don't exist on the PC, steps, the daily limit (`pnpm --filter @rig/server test`, on real Postgres running in memory through PGlite). The Worker was also run with `wrangler dev` against a local Postgres 16 after the migration script: sign-up, the desktop's code sign-in to a bearer token, upload, re-upload, renaming on the web, listing, history and chat's not-set-up message all worked.
 - Screens: every page renders, the account sits at the bottom of the sidebar, a change goes through review before it's made and can be undone (`pnpm --filter @rig/ui test`, jsdom with the 3D scene stubbed).
 - Desktop Rust: the store and the helper protocol over an in-memory pipe (`cargo test`). The Windows-only launch code type-checks for Windows.
