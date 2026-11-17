@@ -43,13 +43,14 @@
   color-scheme: light;
 }
 
-/* Graphite tiles inside a light page. Data stays in warm greys with the set as an accent. */
+/* Graphite tiles inside a light page. Data uses the full brass set, with dark ink on the brass and rust fills. */
 .tone-dark {
   --surface: var(--graphite); --surface-2: #26262B;
   --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
   --line: rgba(255, 255, 255, .10);
   --ok: var(--good); --warn: var(--look); --focus: var(--good);
-  --s-a: #A8A59E; --s-mark-a: #A8A59E; --s-b: color-mix(in srgb, var(--look) 45%, #3F3E3B); --s-c: #E6E3DC;
+  --s-a: var(--good); --s-mark-a: var(--good); --s-b: var(--look); --s-c: var(--expected);
+  --s-ink: #111111; --s-c-ink: var(--graphite);
   --s-track: rgba(255, 255, 255, .12); --s-dim: rgba(255, 255, 255, .08); --s-edge: transparent;
   background: var(--graphite);
   color: var(--text);

@@ -53,3 +53,7 @@
   .hi-events li > :last-child:not(.hi-ev-main) { grid-column: 2; justify-self: start; }
   .hi-ev-fig { flex-direction: row; align-items: baseline; gap: 6px; }
 }
+
+/* The line charts on History, Games and Logs share these. The processor takes brass so both lines are data colors. */
+.chart-line.cpu { stroke: var(--good-mark); }
+.legend .lg-cpu { background: var(--good-mark); }

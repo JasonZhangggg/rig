@@ -12,7 +12,7 @@
 .gm-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 15px; }
 .gm-title b { font-weight: 600; }
 .gm-hours { display: grid; grid-template-columns: minmax(0, 1fr) 52px; align-items: center; gap: 10px; font-size: 13px; }
-.gm-hours .bar i { background: var(--text); }
+.gm-hours .bar i { background: var(--good); }
 .gm-temp { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--text-2); }
 .gm-temp b { color: var(--text); font-weight: 600; }
 .gm-go { color: var(--text-3); }

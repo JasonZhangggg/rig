@@ -40,7 +40,7 @@
 .space { display: flex; flex-direction: column; gap: 10px; }
 .space-head { display: flex; justify-content: space-between; align-items: baseline; }
 .space-bar { display: flex; gap: 3px; height: 12px; }
-.space-bar i { min-width: 6px; border-radius: var(--r-pill); background: var(--graphite); }
+.space-bar i { min-width: 6px; border-radius: var(--r-pill); background: var(--good-mark); }
 .space-bar i:nth-child(2) { background: var(--look); }
 .space-bar i:nth-child(3) { background: var(--good); }
 .space-bar i:nth-child(n + 4) { background: var(--expected); }
