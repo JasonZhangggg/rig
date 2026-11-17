@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import type { PC, Part } from "./data";
 
@@ -17,6 +18,12 @@ export interface SceneTheme {
   screenBg: string; screenPanel: string; screenLine: string;
   heatCool: string; heatWarm: string; heatHot: string; highlight: string;
   hemi: number; key: number; rim: number; rimColor?: string; exposure?: number;
+  /** Let the page show through behind the model; only a soft shadow stays on the floor. */
+  transparent?: boolean;
+  /** Strength of the soft shadow under the PC (0 to 1). */
+  shadow?: number;
+  /** Thin outline on glass and panel edges, so the case reads clearly. */
+  edge?: string; edgeOpacity?: number;
 }
 
 export interface PCScene {
@@ -26,11 +33,15 @@ export interface PCScene {
   setHeat(v: boolean): void;
   select(id: string | null): void;
   resetView(): void;
+  /** Wheel zoom on or off, so a page can scroll past a small preview. */
+  setZoomable(v: boolean): void;
+  /** Slow side-to-side sway, for previews. */
+  setSpin(v: boolean): void;
   dispose(): void;
 }
 
 type Vec3 = [number, number, number];
-interface MatOpts { r?: number; m?: number; op?: number; emissive?: string; ei?: number }
+interface MatOpts { r?: number; m?: number; op?: number; emissive?: string; ei?: number; cc?: number; env?: number }
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
 interface Framing { target: THREE.Vector3; cam: THREE.Vector3; camExploded: THREE.Vector3 }
 
@@ -40,7 +51,8 @@ export function createScene(
   container: HTMLElement,
   { onSelect, onHover }: { onSelect?: (id: string | null) => void; onHover?: (id: string | null) => void } = {},
 ): PCScene {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -66,7 +78,7 @@ export function createScene(
   controls.maxDistance = 22;
   controls.enablePan = false;
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 0.6);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f99, 0.6);
   scene.add(hemi);
   const key = new THREE.DirectionalLight(0xffffff, 1.6);
   key.position.set(6, 10, 7);
@@ -80,11 +92,51 @@ export function createScene(
   const rim = new THREE.DirectionalLight(0xffffff, 0.5);
   rim.position.set(-6, 5, -6);
   scene.add(rim);
+  // Soft fill from the front left so the dark side never goes flat black
+  const fill = new THREE.DirectionalLight(0xdfe8ff, 0.45);
+  fill.position.set(-7, 3, 6);
+  scene.add(fill);
 
   const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 1 }));
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
+  const shadowFloor = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.ShadowMaterial({ opacity: 0.45 }));
+  shadowFloor.rotation.x = -Math.PI / 2;
+  shadowFloor.position.y = 0.001;
+  shadowFloor.receiveShadow = true;
+  shadowFloor.visible = false;
+  scene.add(shadowFloor);
+  // Soft contact shadow under the PC, like a product photo
+  const blobTex = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 256;
+    const g = c.getContext("2d");
+    if (g) {
+      // alphaMap reads the green channel, so paint an opaque gray ramp
+      g.fillStyle = "#000"; g.fillRect(0, 0, 256, 256);
+      const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+      grad.addColorStop(0, "#fff");
+      grad.addColorStop(0.35, "#b3b3b3");
+      grad.addColorStop(0.7, "#333");
+      grad.addColorStop(1, "#000");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 256, 256);
+    }
+    return new THREE.CanvasTexture(c);
+  })();
+  const blob = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: blobTex, transparent: true, depthWrite: false, opacity: 0.3, toneMapped: false }),
+  );
+  blob.rotation.x = -Math.PI / 2;
+  blob.position.y = 0.003;
+  blob.renderOrder = -1;
+  scene.add(blob);
+  const contact = blob.clone();
+  contact.material = (blob.material as THREE.MeshBasicMaterial).clone();
+  contact.position.y = 0.004;
+  scene.add(contact);
 
   let root = new THREE.Group();
   scene.add(root);
@@ -105,10 +157,12 @@ export function createScene(
 
   // ---------- helpers ----------
   function M(color: THREE.ColorRepresentation, o: MatOpts = {}) {
-    const m = new THREE.MeshStandardMaterial({
+    const m = new THREE.MeshPhysicalMaterial({
       color, roughness: o.r ?? 0.55, metalness: o.m ?? 0.1,
       transparent: o.op !== undefined && o.op < 1, opacity: o.op ?? 1,
       depthWrite: o.op === undefined || o.op >= 0.5,
+      clearcoat: o.cc ?? 0, clearcoatRoughness: 0.25,
+      envMapIntensity: o.env ?? 1,
     });
     if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei ?? 1; }
     m.userData.glow = !!o.emissive;
@@ -117,13 +171,40 @@ export function createScene(
     m.userData.baseOpacity = m.opacity;
     return m;
   }
+  // Boxes get slightly rounded edges so light catches them, like real parts.
   function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0) {
-    const g = new THREE.BoxGeometry(w, h, d);
+    const r = Math.min(0.035, Math.min(w, h, d) * 0.45);
+    const g = r > 0.006 ? new RoundedBoxGeometry(w, h, d, 2, r) : new THREE.BoxGeometry(w, h, d);
     const mesh = new THREE.Mesh(g, mat);
     mesh.position.set(x, y, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;
+  }
+  function outline(w: number, h: number, d: number) {
+    const th = theme();
+    const lines = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
+      new THREE.LineBasicMaterial({ color: th.edge ?? "#ffffff", transparent: true, opacity: th.edgeOpacity ?? 0.5 }),
+    );
+    lines.raycast = () => {};
+    return lines;
+  }
+  // Perforated mesh pattern for the front panel (holes are see-through).
+  function meshTexture(repeatX: number, repeatY: number) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 32;
+    const g = c.getContext("2d");
+    if (g) {
+      g.fillStyle = "#fff"; g.fillRect(0, 0, 32, 32);
+      g.fillStyle = "#000";
+      for (const [x, y] of [[8, 8], [24, 24]]) { g.beginPath(); g.arc(x, y, 5.2, 0, Math.PI * 2); g.fill(); }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeatX, repeatY);
+    t.anisotropy = 4;
+    return t;
   }
   function roundBox(w: number, h: number, d: number, r: number, mat: THREE.Material, x = 0, y = 0, z = 0) {
     const shape = new THREE.Shape();
@@ -157,10 +238,19 @@ export function createScene(
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.16, s * 0.16, t * 0.8, 24), M(frameColor, { r: 0.4 }));
     hub.rotation.x = Math.PI / 2;
     rotor.add(hub);
-    const bladeMat = M(opts.blade ?? frameColor, { r: 0.5, op: opts.bladeOp ?? 1 });
+    const bladeMat = M(opts.blade ?? frameColor, { r: 0.45, op: opts.bladeOp ?? 1 });
+    bladeMat.side = THREE.DoubleSide;
+    const r0 = s * 0.15, r1 = s * 0.43;
+    const bs = new THREE.Shape();
+    bs.moveTo(r0, -s * 0.05);
+    bs.quadraticCurveTo((r0 + r1) / 2, -s * 0.15, r1, -s * 0.07);
+    bs.quadraticCurveTo(r1 + s * 0.03, s * 0.04, r1 * 0.88, s * 0.11);
+    bs.quadraticCurveTo((r0 + r1) / 2, s * 0.07, r0, s * 0.05);
+    const bladeGeo = new THREE.ExtrudeGeometry(bs, { depth: 0.012, bevelEnabled: false, curveSegments: 10 });
     for (let i = 0; i < 7; i++) {
-      const b = box(s * 0.3, 0.012, t * 0.55, bladeMat, s * 0.26, 0, 0);
-      b.rotation.x = 0.5;
+      const b = new THREE.Mesh(bladeGeo, bladeMat);
+      b.rotation.x = 0.42;
+      b.castShadow = true;
       const holder = new THREE.Group();
       holder.add(b);
       holder.rotation.z = (i / 7) * Math.PI * 2;
@@ -205,7 +295,7 @@ export function createScene(
   // ---------- tower ----------
   function buildTower(pc: PC, th: SceneTheme): Framing {
     const W = 2.27, H = 4.46, D = 4.64;
-    const caseMat = () => M(th.caseColor, { r: 0.45, m: 0.15 });
+    const caseMat = () => M(th.caseColor, { r: 0.38, m: 0.12, cc: 0.5 });
     const accent = pc.accent;
 
     // Case shell
@@ -221,16 +311,34 @@ export function createScene(
     }
     add(shell, "case");
     const top = box(W, 0.04, D, caseMat(), 0, H - 0.02, 0);
+    top.add(outline(W, 0.04, D));
     add(top, "case", [0, 1.2, 0]);
     // Front mesh panel
     const front = new THREE.Group();
-    front.add(box(W, H, 0.05, M(th.caseColor, { r: 0.8, op: 0.55 }), 0, H / 2, D / 2));
+    const meshMat = M(th.caseColor, { r: 0.6, m: 0.2 });
+    meshMat.alphaMap = meshTexture(W * 14, H * 14);
+    meshMat.transparent = true;
+    meshMat.alphaTest = 0.4;
+    meshMat.side = THREE.DoubleSide;
+    meshMat.userData.baseOpacity = 1;
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.12, H - 0.12), meshMat);
+    panel.position.set(0, H / 2, D / 2 + 0.02);
+    front.add(panel);
+    // Frame around the mesh
+    const fm = caseMat();
+    front.add(box(W, 0.08, 0.06, fm, 0, 0.04, D / 2));
+    front.add(box(W, 0.08, 0.06, fm, 0, H - 0.04, D / 2));
+    front.add(box(0.08, H, 0.06, fm, -W / 2 + 0.04, H / 2, D / 2));
+    front.add(box(0.08, H, 0.06, fm, W / 2 - 0.04, H / 2, D / 2));
     // Accent light strip: part of identity
     front.add(box(0.05, H * 0.82, 0.02, M(accent, { emissive: accent, ei: 1.4 }), W / 2 - 0.12, H / 2, D / 2 + 0.03));
     add(front, "case", [0, 0, 1.8], { noPick: true });
     // Glass side panel
-    const glass = box(0.02, H - 0.12, D - 0.12, M(th.glass, { r: 0.05, m: 0.0, op: th.glassOpacity }), W / 2, H / 2, 0);
+    const glassMat = M(th.glass, { r: 0.04, m: 0.0, op: th.glassOpacity, env: th.transparent && th.hemi < 0.6 ? 1.2 : 2 });
+    glassMat.specularIntensity = 1;
+    const glass = box(0.02, H - 0.12, D - 0.12, glassMat, W / 2, H / 2, 0);
     glass.castShadow = false;
+    glass.add(outline(0.02, H - 0.12, D - 0.12));
     add(glass, "case", [2.6, 0, 0], { noPick: true, fade: true });
 
     // Motherboard against the right side
@@ -290,7 +398,10 @@ export function createScene(
     // Graphics card
     const gpu = new THREE.Group();
     gpu.position.set(bx + 0.72, 2.0, -0.93);
-    gpu.add(box(1.34, 0.42, 2.67, M(th.gpuShroud, { r: 0.4, m: 0.25 }), 0, 0, 0));
+    gpu.add(box(1.34, 0.42, 2.67, M(th.gpuShroud, { r: 0.35, m: 0.3, cc: 0.4 }), 0, 0, 0));
+    // Fin stack peeking out of the sides
+    const gfin = M(th.fins, { r: 0.3, m: 0.75 });
+    for (let i = 0; i < 22; i++) gpu.add(box(1.36, 0.26, 0.012, gfin, 0, -0.02, -1.15 + i * 0.105));
     gpu.add(box(1.3, 0.04, 2.6, M(th.gpuBack, { r: 0.35, m: 0.7 }), 0, 0.23, 0)); // backplate
     gpu.add(box(0.03, 0.06, 1.6, M(accent, { emissive: accent, ei: 1.0 }), 0.68, 0.12, 0.2)); // light bar
     for (const z of [-0.62, 0.62]) {
@@ -319,6 +430,19 @@ export function createScene(
     rear.position.set(-0.1, 3.4, -D / 2 + 0.18);
     add(rear, "fans", [0, 0, -1.0]);
 
+    // Sleeved cables from the power supply; hidden in the exploded view
+    const cables = new THREE.Group();
+    const cable = (pts: Vec3[], color: string, r = 0.045) => {
+      const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
+      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, r, 10, false), M(color, { r: 0.65 }));
+      m.castShadow = true;
+      cables.add(m);
+    };
+    cable([[bx + 0.1, 0.95, 0.35], [bx + 0.35, 1.3, 0.4], [bx + 0.5, 2.2, 0.38], [bx + 0.12, 2.6, 0.36]], th.trim, 0.06); // 24-pin
+    cable([[bx + 0.6, 0.95, 0.2], [bx + 0.85, 1.45, 0.25], [bx + 1.05, 1.95, 0.32]], th.trim);
+    cable([[bx + 0.7, 0.95, 0.12], [bx + 0.95, 1.5, 0.16], [bx + 1.15, 1.98, 0.22]], accent, 0.03);
+    add(cables, "psu", [0, 0, 0], { fade: true, noPick: true });
+
     // Labels
     const lp = (id: string, obj: THREE.Object3D, p: Vec3) => addLabel(id, obj, p);
     lp("gpu", gpu, [0.9, 0, 0.9]);
@@ -329,7 +453,7 @@ export function createScene(
     lp("motherboard", mb, [0, -1.5, 1.2]);
     lp("fans", fans, [0.6, 3.7, D / 2]);
 
-    return { target: new THREE.Vector3(0, 2.2, 0), cam: new THREE.Vector3(7.6, 4.6, 8.4), camExploded: new THREE.Vector3(10.5, 6.4, 10.2) };
+    return { target: new THREE.Vector3(0, 2.05, 0), cam: new THREE.Vector3(8.1, 4.9, 9.0), camExploded: new THREE.Vector3(10.5, 6.4, 10.2) };
   }
 
   // ---------- laptop ----------
@@ -443,13 +567,26 @@ export function createScene(
     scene.add(root);
     state.entries = []; state.rotors = []; state.pickables = []; state.labels = {};
     const th = theme();
-    scene.background = new THREE.Color(th.bg);
-    scene.fog = new THREE.Fog(th.bg, 18, 38);
+    scene.background = th.transparent ? null : new THREE.Color(th.bg);
+    scene.fog = th.transparent ? null : new THREE.Fog(th.bg, 18, 38);
     floor.material.color.set(th.floor);
+    floor.visible = !th.transparent;
+    shadowFloor.visible = false;
     hemi.intensity = th.hemi; key.intensity = th.key; rim.intensity = th.rim;
     rim.color.set(th.rimColor ?? "#ffffff");
     renderer.toneMappingExposure = th.exposure ?? 1;
+    (shadowFloor.material as THREE.ShadowMaterial).opacity = (th.shadow ?? 0.3) * 0.55;
     framing = state.pc!.kind === "laptop" ? buildLaptop(state.pc!, th) : buildTower(state.pc!, th);
+    const bb = new THREE.Box3().setFromObject(root);
+    const size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
+    blob.scale.set(size.x * 1.9 + 0.8, size.z * 1.45 + 0.8, 1);
+    blob.position.set(mid.x, 0.003, mid.z);
+    (blob.material as THREE.MeshBasicMaterial).opacity = th.shadow ?? 0.3;
+    blob.visible = !!th.transparent;
+    contact.scale.set(size.x * 1.2 + 0.2, size.z * 1.08 + 0.2, 1);
+    contact.position.set(mid.x, 0.004, mid.z);
+    (contact.material as THREE.MeshBasicMaterial).opacity = Math.min(0.9, (th.shadow ?? 0.3) * 1.5);
+    contact.visible = !!th.transparent;
     applyHighlights();
     applyExplode(true);
   }
@@ -567,6 +704,9 @@ export function createScene(
   const ro = new ResizeObserver(resize);
   ro.observe(container);
 
+  let spin = false, spinT = 0, spinOff = 0, dragging = false;
+  controls.addEventListener("start", () => { dragging = true; spin = false; });
+  controls.addEventListener("end", () => { dragging = false; });
   const clock = new THREE.Clock();
   let raf = 0;
   function tick() {
@@ -577,6 +717,15 @@ export function createScene(
       const step = reduceMotion ? 1 : dt * 1.6;
       state.explodeT = target > state.explodeT ? Math.min(1, state.explodeT + step) : Math.max(0, state.explodeT - step);
       applyExplode(false);
+    }
+    if (spin && !camAnim && !dragging && !reduceMotion) {
+      spinT += dt;
+      const off = Math.sin(spinT * 0.35) * 0.32;
+      const d = off - spinOff;
+      spinOff = off;
+      const v = camera.position.clone().sub(controls.target);
+      v.applyAxisAngle(new THREE.Vector3(0, 1, 0), d);
+      camera.position.copy(controls.target).add(v);
     }
     if (camAnim) {
       camAnim.t = Math.min(1, camAnim.t + (reduceMotion ? 1 : dt * 1.4));
@@ -605,6 +754,8 @@ export function createScene(
     setHeat(v) { state.heat = v; applyHighlights(); },
     select,
     resetView() { frame(state.exploded, false); },
+    setZoomable(v) { controls.enableZoom = v; },
+    setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
     dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); },
   };
 }

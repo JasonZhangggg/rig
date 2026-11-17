@@ -14,9 +14,15 @@ const navItems: [Route, string, string][] = [
   ["history", "History", "M3 15l4-5 3 3 5-7M3 17h14"],
 ];
 
+const navGroups: [string, Route[]][] = [
+  ["Your PC", ["overview", "pc", "games", "upgrades"]],
+  ["Help", ["chat", "changes", "history"]],
+];
+
 export function Nav() {
   const { ui, pc, set, toast } = useApp();
   const [open, setOpen] = useState(false);
+  const [setupDone, setSetupDone] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -52,15 +58,34 @@ export function Nav() {
           </div>
         )}
       </div>
-      <ul className="nav-list">
-        {navItems.map(([id, label, d]) => (
-          <li key={id}>
-            <a href={`#${id}`} aria-current={ui.route === id ? "page" : undefined}>
-              <Icon d={d} />{label}{id === "overview" && warnCount > 0 && <span className="count">{warnCount}</span>}
-            </a>
-          </li>
-        ))}
-      </ul>
+      {navGroups.map(([label, ids]) => (
+        <div key={label} className="nav-group">
+          <div className="nav-label">{label}</div>
+          <ul className="nav-list">
+            {navItems.filter(([id]) => ids.includes(id)).map(([id, text, d]) => (
+              <li key={id}>
+                <a href={`#${id}`} aria-current={ui.route === id ? "page" : undefined}>
+                  <Icon d={d} />{text}
+                  {id === "overview" && warnCount > 0 && <span className="count">{warnCount}</span>}
+                  {id === "changes" && <span className="count plain">{ui.changes.length}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {!setupDone && (
+        <div className="nav-setup">
+          <span className="setup-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" /></svg></span>
+          <b>Finish setup</b>
+          <p>Let Rig control the fans so {pc.name} stays quiet when you're not gaming.</p>
+          <div className="setup-row">
+            <span className="setup-ring" style={{ ["--p" as string]: "75%" }} aria-hidden="true" /><span className="faint">3 of 4</span>
+            <button type="button" className="btn ghost sm" onClick={() => setSetupDone(true)}>Skip</button>
+            <button type="button" className="btn primary sm" onClick={() => { setSetupDone(true); toast("Fan control is set up. Rig will ask before it changes a fan curve."); }}>Next</button>
+          </div>
+        </div>
+      )}
       <div className="nav-foot">
         <span className="avatar">{user.name[0]}</span>
         <span className="who">{user.name}<br /><span className="faint">Synced</span></span>

@@ -9,7 +9,7 @@ export function Chat() {
   const { ui, pc, ask } = useApp();
   const [q, setQ] = useState("");
   return (
-    <div className="page">
+    <div className="page mid">
       <div className="page-head"><div><h1>Ask</h1><p className="sub">Answers come from your parts' manuals, maker support pages and {pc.name}'s own readings. Every fix is shown to you first and can be undone.</p></div></div>
       <div className="chat-wrap">
         <section className="card">

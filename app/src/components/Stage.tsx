@@ -20,13 +20,15 @@ export function getStage() {
   return host;
 }
 
-export function StageSlot({ id, interactive = true }: { id: string; interactive?: boolean }) {
+export function StageSlot({ id, interactive = true, zoom = true, spin = false }: { id: string; interactive?: boolean; zoom?: boolean; spin?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const s = getStage();
     ref.current!.appendChild(s.el);
     s.el.style.pointerEvents = interactive ? "" : "none";
-    return () => { s.park.appendChild(s.el); };
-  }, [interactive]);
+    s.scene.setZoomable(zoom);
+    s.scene.setSpin(spin);
+    return () => { s.scene.setZoomable(true); s.scene.setSpin(false); s.park.appendChild(s.el); };
+  }, [interactive, zoom, spin]);
   return <div className="stage-slot" id={id} ref={ref} />;
 }

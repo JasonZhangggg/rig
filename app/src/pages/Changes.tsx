@@ -7,7 +7,7 @@ export function Changes() {
   const [filter, setFilter] = useState<"all" | "applied" | "undone">("all");
   const list = ui.changes.filter((c) => filter === "all" || c.status === filter);
   return (
-    <div className="page">
+    <div className="page mid">
       <div className="page-head">
         <div><h1>Changes</h1><p className="sub">Everything Rig or you changed on {pc.name}, with what it was before. Undo puts back the old values from the restore point.</p></div>
         <div className="seg" role="group" aria-label="Filter">

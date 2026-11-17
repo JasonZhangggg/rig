@@ -57,9 +57,15 @@ All data is sample data.
 
 | Style | Feel | Navigation |
 | --- | --- | --- |
-| **Studio** | Light, calm and precise, like a well-made instrument. Geist type, lots of white space. | Sidebar |
-| **Workbench** | Dark and dense for people who want every number. IBM Plex type, no glow. | Sidebar |
-| **Checkup** | Warm and friendly, for people who just want their PC to work. Figtree type, rounder shapes. | Tabs along the top |
+| **Soft** | Light, calm and rounded. Plenty of air without wasted space. | Sidebar in two sections, with a setup card |
+| **Night** | A dark canvas for people who want every number. No glow, no neon. | Sidebar in two sections, with a setup card |
+| **Warm** | Warm neutrals and bolder nested panels, for people who just want their PC to work. | Tabs along the top, in two groups |
+
+Every style shares the same dashboard: the 3D PC, a health score, a strip of live readings with how they changed, a week of temperatures, and recent changes.
+
+**Search:** Ctrl K (or /) opens one search box for parts, changes, games and upgrades, with tabs, counts and an "Ask Rig" row. Arrow keys move, Enter opens, Tab asks Rig.
+
+The 3D PC follows the style too: rounded parts, glass and clearcoat materials, a perforated front panel, curved fan blades, real cable runs and a soft shadow under the case. On the dashboard it turns slowly and doesn't grab the scroll wheel.
 
 Each PC's accent color is kept separate from the style's colors, so it reads as "this is my PC" in every style.
 

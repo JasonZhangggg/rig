@@ -7,7 +7,7 @@ export function SignIn() {
   return (
     <div className="signin">
       <div className="signin-art">
-        <StageSlot id="signin-stage" interactive={false} />
+        <StageSlot id="signin-stage" interactive={false} spin />
         <blockquote>Know what's inside your PC, what's wrong with it and what to do next.</blockquote>
       </div>
       <div className="signin-form">

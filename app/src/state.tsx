@@ -23,6 +23,7 @@ export interface UI {
   modal: ModalState | null;
   toast: ToastState | null;
   mockMin: boolean;
+  palette: boolean;
 }
 
 const storage = {
@@ -46,7 +47,7 @@ function initial(): UI {
     exploded: false, heat: false, selected: null, tab: "live", range: "7d",
     changes: structuredClone(changeSeed),
     chat: structuredClone(chatSeed),
-    proposalApplied: false, modal: null, toast: null, mockMin: false,
+    proposalApplied: false, modal: null, toast: null, mockMin: false, palette: false,
   };
 }
 
@@ -76,6 +77,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
   useEffect(() => { storage.set("rig.style", ui.style); }, [ui.style]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.closest("input, textarea, [contenteditable]") !== null);
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) { e.preventDefault(); set({ palette: true }); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [set]);
   useEffect(() => { storage.set("rig.pc", ui.pcId); }, [ui.pcId]);
 
   const timer = useRef(0);

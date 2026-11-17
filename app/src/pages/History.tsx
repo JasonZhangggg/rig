@@ -17,7 +17,7 @@ export function History() {
       </div>
       <section className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="legend">
-          <span><i style={{ background: "var(--info)" }} />CPU</span>
+          <span><i style={{ background: "var(--accent)" }} />CPU</span>
           <span><i style={{ background: "var(--warn)" }} />{laptop ? "Graphics (built in)" : "Graphics card"}</span>
           <span><i style={{ background: "var(--bad)", height: 1 }} />Safe limit</span>
         </div>

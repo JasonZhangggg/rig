@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { history, sparkData, user, type Severity } from "../data";
-import { LineChart } from "../chart";
+import { WeekChart } from "../chart";
 import { Ring, StatusChip } from "../components/common";
 import { StageSlot } from "../components/Stage";
 import { useApp } from "../state";
 
 const sevLabel = { warn: "Needs a look", info: "Suggestion", ok: "Good news", bad: "Problem" };
-const suggestions = ["Why is my PC loud?", "Can I add more RAM?", "Is my driver up to date?"];
 
 // How the health score breaks down, per PC (sample data for the mockup).
 const breakdown: Record<string, { label: string; value: number; note: string; sev: Severity }[]> = {
@@ -23,6 +22,32 @@ const breakdown: Record<string, { label: string; value: number; note: string; se
     { label: "Storage", value: 94, note: "57% free", sev: "ok" },
   ],
 };
+
+// Change since the last comparable period, per tile (sample data).
+const deltas: Record<string, { text: string; dir: "up-bad" | "down-good" | "up-good" | "down-bad" | "flat" }> = {
+  "atlas:CPU": { text: "2° cooler than last week", dir: "down-good" },
+  "atlas:GPU": { text: "+9° vs last month", dir: "up-bad" },
+  "atlas:Storage": { text: "+3% this month", dir: "flat" },
+  "atlas:Memory": { text: "Normal for you", dir: "flat" },
+  "pebble:CPU": { text: "Normal on calls", dir: "flat" },
+  "pebble:Battery": { text: "-2% this year", dir: "down-bad" },
+  "pebble:Storage": { text: "+1% this month", dir: "flat" },
+  "pebble:Memory": { text: "+12% vs usual", dir: "up-bad" },
+};
+
+const metricIcon: Record<string, JSX.Element> = {
+  CPU: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="6" y="6" width="12" height="12" rx="2" /><rect x="9.5" y="9.5" width="5" height="5" rx="1" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" strokeLinecap="round" /></svg>,
+  GPU: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="6" width="20" height="11" rx="2" /><circle cx="9" cy="11.5" r="3" /><circle cx="16.5" cy="11.5" r="2" /><path d="M5 17v3M2 9H1" strokeLinecap="round" /></svg>,
+  Storage: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 14h18" /><circle cx="17" cy="17" r="1" fill="currentColor" /></svg>,
+  Memory: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="7" width="20" height="9" rx="1.5" /><path d="M6 10.5v2M10 10.5v2M14 10.5v2M18 10.5v2M5 16v3M19 16v3" strokeLinecap="round" /></svg>,
+  Battery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="7" width="18" height="10" rx="2.5" /><path d="M22 10.5v3" strokeLinecap="round" /><rect x="4.5" y="9.5" width="11" height="5" rx="1" fill="currentColor" stroke="none" /></svg>,
+};
+
+const actIcons = [
+  "M12 3v9M7.5 5.5a8 8 0 1 0 9 0",
+  "M4 10v4h3l5 4V6L7 10zM16 9a4 4 0 0 1 0 6",
+  "M13 3 5 13h6l-1 8 8-10h-6z",
+];
 
 function greeting() {
   const h = new Date().getHours();
@@ -44,8 +69,8 @@ function AreaSpark({ values, warn }: { values: number[]; warn?: boolean }) {
 }
 
 export function Overview() {
-  const { ui, pc, set, go, ask } = useApp();
-  const [q, setQ] = useState("");
+  const { ui, pc, set, go, toast } = useApp();
+  const mine = Object.values(ui.pcs).filter((x) => x.parts);
   const issues = pc.issues ?? [];
   const needs = issues.filter((i) => i.severity !== "ok").length;
   const pts = useMemo(() => history(7), []);
@@ -56,20 +81,33 @@ export function Overview() {
   return (
     <div className="page dash">
       <header className="dash-head">
-        <div>
+        <div className="dash-hello">
           <div className="faint">{today}</div>
           <h1>{greeting()}, {user.name}</h1>
+          <p className="dash-sub">{pc.name}: {pc.summary}</p>
         </div>
-        <form className="command" onSubmit={(e) => { e.preventDefault(); ask(q); setQ(""); }}>
-          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M13.5 13.5 17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Ask anything about ${pc.name}`} aria-label="Ask a question" />
-          <kbd>Ctrl K</kbd>
-        </form>
+        <div className="dash-tools">
+          <div className="pc-pills" role="group" aria-label="Your PCs">
+            {mine.map((x) => (
+              <button key={x.id} type="button" className="pc-pill" aria-pressed={x.id === pc.id} onClick={() => set({ pcId: x.id, selected: null })}>
+                <span className="pc-ava" style={{ ["--pc" as string]: x.accent }}>{x.name[0]}</span>
+                <span className="pc-pill-text"><b>{x.name}</b><span>{x.nickname}</span></span>
+                {(x.issues ?? []).some((i) => i.severity === "warn") && <span className="pc-pill-flag" aria-label="Needs a look" />}
+              </button>
+            ))}
+            <button type="button" className="pc-pill add" onClick={() => toast("Adding a PC opens a download link and a pairing code.")} aria-label="Add a PC">+</button>
+          </div>
+          <button type="button" className="command" onClick={() => set({ palette: true })} aria-label="Search or ask">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M13.5 13.5 17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+            <span className="command-ph">Search parts, changes, games, or ask</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+        </div>
       </header>
 
       <div className="bento">
         <section className="card b-hero">
-          <StageSlot id="hero-stage" />
+          <StageSlot id="hero-stage" zoom={false} spin />
           <div className="hero-over top">
             <div className="identity"><span className="dot" /><div><h2 className="plain-h">{pc.name}</h2><div className="muted">{pc.nickname} · {pc.os}</div></div></div>
             <span className="chip ok">{pc.lastSync}</span>
@@ -102,53 +140,67 @@ export function Overview() {
           </div>
         </section>
 
-        <section className="card b-needs">
-          <div className="card-head"><h2>Worth a look</h2>{needs > 0 && <span className="count">{needs}</span>}</div>
-          <div className="issues compact">
-            {issues.map((i) => (
-              <button key={i.id} type="button" className={`issue ${i.severity}`} onClick={() => {
-                if (i.part && i.go === "pc") set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
-                go(i.go);
-              }}>
-                <span className={`sev ${i.severity}`} />
-                <span className="issue-text"><span className="label">{sevLabel[i.severity]}</span><b>{i.title}</b><span className="muted">{i.body}</span></span>
-                <span className="issue-go">{i.action} ›</span>
-              </button>
-            ))}
-          </div>
+        <section className="card b-strip" aria-label="Right now">
+          {(pc.stats ?? []).map((s, i) => {
+            const dl = deltas[`${pc.id}:${s.label}`];
+            return (
+              <div key={s.label} className={`metric${s.warn ? " warn" : ""}`}>
+                <div className="metric-top">
+                  <span className="metric-icon">{metricIcon[s.label]}</span>
+                  <span className="label">{s.label}</span>
+                  {s.warn && <span className="chip warn">High</span>}
+                </div>
+                <div className="big num">{s.value}<small>{s.unit}</small></div>
+                <div className="metric-foot">
+                  {dl ? <span className={`delta ${dl.dir}`}><i />{dl.text}</span> : <span />}
+                  <span className="faint metric-note">{s.note}</span>
+                </div>
+                <AreaSpark values={sparkData(s.value, 36, 3 + i, s.unit === "%" ? 3 : 8)} warn={s.warn} />
+              </div>
+            );
+          })}
         </section>
-
-        {(pc.stats ?? []).map((s, i) => (
-          <section key={s.label} className={`card b-metric${s.warn ? " warn" : ""}`}>
-            <div className="metric-top">
-              <span className="label">{s.label}</span>
-              {s.warn && <span className="chip warn">High</span>}
-            </div>
-            <div className="big num">{s.value}<small>{s.unit}</small></div>
-            <div className="faint metric-note">{s.note}</div>
-            <AreaSpark values={sparkData(s.value, 36, 3 + i, s.unit === "%" ? 3 : 8)} warn={s.warn} />
-          </section>
-        ))}
 
         <section className="card b-temps">
           <div className="card-head">
-            <h2>Temperatures this week</h2>
+            <div><h2>Temperatures this week</h2><div className="faint">Evenings are gaming. The graphics card peak is creeping up.</div></div>
             <div className="legend">
-              <span><i style={{ background: "var(--info)" }} />CPU</span>
-              <span><i style={{ background: "var(--warn)" }} />{pc.kind === "laptop" ? "Graphics" : "Graphics card"}</span>
+              <span><i className="lg-cpu" />Processor</span>
+              <span><i className="lg-gpu" />{pc.kind === "laptop" ? "Graphics" : "Graphics card"}</span>
               <a className="btn ghost sm" href="#history">History</a>
             </div>
           </div>
-          <div className="temps-body"><LineChart points={pts} series={[{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }]} w={900} h={230} limit={{ v: 90, label: "90° limit" }} bands /></div>
+          <div className="temps-body"><WeekChart points={pts} names={{ cpu: "Processor", gpu: pc.kind === "laptop" ? "Graphics" : "Graphics card" }} /></div>
         </section>
 
-        <section className="card b-changes">
-          <div className="card-head"><h2>Recent changes</h2><a className="btn ghost sm" href="#changes">See all</a></div>
-          {ui.changes.slice(0, 3).map((c) => (
-            <div key={c.id} className="list-row"><div><h3>{c.title}</h3><div className="faint">{c.when}</div></div><StatusChip status={c.status} /></div>
-          ))}
-          <div className="suggest tight">{suggestions.map((s) => <button key={s} type="button" onClick={() => ask(s)}>{s}</button>)}</div>
-        </section>
+        <div className="b-side">
+          <section className="card b-needs">
+            <div className="card-head"><h2>Worth a look</h2>{needs > 0 && <span className="count">{needs}</span>}</div>
+            <div className="issues compact">
+              {issues.map((i) => (
+                <button key={i.id} type="button" className={`issue ${i.severity}`} onClick={() => {
+                  if (i.part && i.go === "pc") set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
+                  go(i.go);
+                }}>
+                  <span className={`sev ${i.severity}`} />
+                  <span className="issue-text"><span className="label">{sevLabel[i.severity]}</span><b>{i.title}</b><span className="muted">{i.body}</span></span>
+                  <span className="issue-go">{i.action} ›</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="card b-changes">
+            <div className="card-head"><h2>Recent changes</h2><a className="btn ghost sm" href="#changes">See all</a></div>
+            {ui.changes.slice(0, 3).map((c, i) => (
+              <a key={c.id} href="#changes" className="act-row">
+                <span className="act-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={actIcons[i % actIcons.length]} /></svg></span>
+                <span className="act-text"><b>{c.title}</b><span>{c.when} · {c.by === "You" ? "by you" : "you said yes"}</span></span>
+                <StatusChip status={c.status} />
+              </a>
+            ))}
+          </section>
+        </div>
       </div>
     </div>
   );

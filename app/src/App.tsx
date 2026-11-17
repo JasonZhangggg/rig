@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { AppProvider, useApp } from "./state";
 import { getStage } from "./components/Stage";
 import { MockPanel, Modal, Nav, Toast } from "./components/Shell";
+import { Palette } from "./components/Palette";
 import { sceneThemes } from "./themes";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
@@ -55,6 +56,7 @@ function Root() {
         <main className="main" id="main"><Page /></main>
       </div>
       <Modal />
+      <Palette />
       <Toast />
       <MockPanel />
     </>
