@@ -20,13 +20,3 @@ export function DiffTable({ rows }: { rows: DiffRow[] }) {
   );
 }
 
-export function Ring({ value }: { value: number }) {
-  const c = 2 * Math.PI * 32;
-  return (
-    <svg className="ring" viewBox="0 0 76 76" role="img" aria-label={`Health ${value} out of 100`}>
-      <circle cx="38" cy="38" r="32" fill="none" strokeWidth="7" className="track" />
-      <circle cx="38" cy="38" r="32" fill="none" strokeWidth="7" className="val" strokeDasharray={`${(c * value) / 100} ${c}`} />
-      <text x="38" y="45" textAnchor="middle">{value}</text>
-    </svg>
-  );
-}

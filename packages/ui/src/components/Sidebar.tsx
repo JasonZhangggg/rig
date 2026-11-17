@@ -31,7 +31,7 @@ function PCMenu({ onPick }: { onPick: () => void }) {
     <div className="sh-menu" role="menu">
       {mine.map((x) => (
         <button key={x.id} type="button" role="menuitem" aria-current={x.id === pc.id ? "true" : undefined} onClick={() => { pickPC(x.id); onPick(); }}>
-          <span className="sh-dot" style={{ ["--pc" as string]: x.accent }} />
+          <span className="sh-dot" />
           <span><b>{x.name}</b><br /><span className="faint">{x.nickname}</span></span>
           {x.id === pc.id && <Check />}
         </button>
@@ -75,6 +75,8 @@ function SetupCard() {
   );
 }
 
+const Caret = () => <svg className="fp-me-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 8 10 5l3 3M7 12l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+
 /** Account pinned to the bottom of the sidebar. */
 function AccountBlock() {
   const { data, client, ui, go } = useApp();
@@ -83,21 +85,22 @@ function AccountBlock() {
   const a = data.account;
   if (!a) {
     return (
-      <div className="fp-account">
+      <div className="fp-foot">
         <a className="fp-me" href="#signin" title={ui.sideMini ? "Sign in" : undefined}><span aria-hidden="true">?</span><b>Not signed in</b><small>Sign in</small></a>
       </div>
     );
   }
   return (
-    <div className="fp-account" ref={box}>
-      <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" title={ui.sideMini ? a.name : undefined}>
+    <div className="fp-foot" ref={box}>
+      <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={`Account, ${a.name}`} title={ui.sideMini ? a.name : undefined}>
         <span aria-hidden="true">{a.name[0]?.toUpperCase()}</span>
         <b>{a.name}</b>
         <small>{client.kind === "demo" ? "Demo" : "Synced"}</small>
+        <Caret />
       </button>
       {open && (
         <div className="sh-menu up" role="menu">
-          <div className="sh-menu-who"><b>{a.name}</b><span className="faint">{a.email}</span></div>
+          <div className="sh-menu-head" role="presentation"><b>{a.name}</b><span>{a.email}</span></div>
           <hr />
           <a href="#web" role="menuitem" onClick={() => setOpen(false)}>All your PCs</a>
           {client.kind !== "demo" && <button type="button" role="menuitem" onClick={() => { setOpen(false); client.signOut().then(() => { go("signin"); location.reload(); }); }}>Sign out</button>}
@@ -113,41 +116,41 @@ export function Sidebar({ children }: { children: ReactNode }) {
   const box = useOutside(open, () => setOpen(false));
   const mini = ui.sideMini;
   const warn = (pc.issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
-  const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count hot">{warn}</em>
+  const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count">{warn}</em>
     : r === "changes" && data.changes.length ? <em className="fp-count">{data.changes.length}</em> : null;
   return (
-    <div className={`shell shell-fpanel${mini ? " mini" : ""}`}>
+    <div className={`shell-fpanel${mini ? " mini" : ""}`}>
       <div className="fp-frame">
         <aside className="fp-side" aria-label="Main">
-          <div className="fp-brand" ref={box}>
-            <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Switch PC, now ${pc.name}`}>
-              <span className="fp-logo">R<i /></span>
-              <span className="fp-brand-txt"><b>Rig</b><small>{pc.name} · {pc.nickname}</small></span>
-            </button>
-            <button type="button" className="fp-collapse" onClick={() => set({ sideMini: !mini })} aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}>
-              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 4v12" stroke="currentColor" strokeWidth="1.5" /><path d={mini ? "M11.5 8.5 13 10l-1.5 1.5" : "M13 8.5 11.5 10l1.5 1.5"} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </button>
-            {open && <PCMenu onPick={() => setOpen(false)} />}
-          </div>
-          {groups.map(([g, ids]) => (
-            <div key={g} className="fp-group">
-              <div className="fp-label">{g}</div>
-              {ids.map((r) => (
-                <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={ui.route === r ? "page" : undefined}>
-                  <Icon d={path(r)} /><span>{label(r)}</span>{count(r)}
-                </a>
-              ))}
+          <div className="fp-nav">
+            <div className="fp-brand" ref={box}>
+              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Switch PC, now ${pc.name}`}>
+                <span className="fp-logo">R<i /></span>
+                <span className="fp-brand-txt"><b>Rig</b><small>{pc.name} · {pc.nickname}</small></span>
+              </button>
+              <button type="button" className="fp-collapse" onClick={() => set({ sideMini: !mini })} aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 4v12" stroke="currentColor" strokeWidth="1.5" /><path d={mini ? "M11.5 8.5 13 10l-1.5 1.5" : "M13 8.5 11.5 10l1.5 1.5"} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
+              {open && <PCMenu onPick={() => setOpen(false)} />}
             </div>
-          ))}
-          <button type="button" className="fp-item fp-search" onClick={() => set({ palette: true })} title={mini ? "Search or ask" : undefined}>
-            <Search /><span>Search or ask</span><kbd>Ctrl K</kbd>
-          </button>
-          <div className="fp-bottom">
+            {groups.map(([g, ids]) => (
+              <div key={g} className="fp-group">
+                <div className="fp-label">{g}</div>
+                {ids.map((r) => (
+                  <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={ui.route === r ? "page" : undefined}>
+                    <Icon d={path(r)} /><span>{label(r)}</span>{count(r)}
+                  </a>
+                ))}
+              </div>
+            ))}
+            <button type="button" className="fp-item fp-search" onClick={() => set({ palette: true })} title={mini ? "Search or ask" : undefined}>
+              <Search /><span>Search or ask</span><kbd>Ctrl K</kbd>
+            </button>
             <SetupCard />
-            <AccountBlock />
           </div>
+          <AccountBlock />
         </aside>
-        <main className="main fp-main" id="main">{children}</main>
+        <main className="fp-main" id="main">{children}</main>
       </div>
     </div>
   );

@@ -14,12 +14,11 @@ export function DeviceApprove({ client, account, code, onClose }: { client: RigC
   return (
     <div className="signin">
       <div className="signin-art">
-        <div className="signin-art-mark" aria-hidden="true"><span className="fp-logo">R<i /></span></div>
         <blockquote>Know what's inside your PC, what's wrong with it and what to do next.</blockquote>
       </div>
       <div className="signin-form">
         <div className="signin-box">
-          <div className="brand" style={{ padding: 0, marginBottom: 8 }}><span className="brand-mark" />Rig</div>
+          <div className="brand"><span className="brand-mark" />Rig</div>
           {state === "approved" ? (
             <>
               <h1>Your PC is signed in</h1>
