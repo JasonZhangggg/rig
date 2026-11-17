@@ -88,9 +88,15 @@ export async function readChatStream(res: Response, onEvent: (e: ChatEvent) => v
   }
 }
 
+/** Shown when the request never reached the server. */
+export const unreachableText = "Rig can't reach its server. Check your internet connection and try again.";
+/** Shown when the server failed without saying why. */
+export const serverDownText = "Rig's server isn't answering right now. Try again in a minute.";
+
 export async function errorText(res: Response): Promise<string> {
+  const fallback = res.status >= 500 ? serverDownText : res.statusText || `Error ${res.status}`;
   try {
     const body = await res.json() as { message?: string; error?: string };
-    return body.message ?? body.error ?? res.statusText;
-  } catch { return res.statusText || `Error ${res.status}`; }
+    return body.message ?? body.error ?? fallback;
+  } catch { return fallback; }
 }

@@ -1,8 +1,22 @@
-import type { HistoryPoint } from "@rig/core";
-import { LineChart } from "../chart";
+import { historySummary, STEADY_MARGIN, type BusySummary, type HistorySummary, type Range } from "@rig/core";
+import { ChartNote, LineChart } from "../chart";
 import { useApp, useHistory } from "../state";
 
-const avg = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+function busyNote(b: BusySummary | null, laptop: boolean) {
+  if (!b) return "Nothing heavy ran in this range.";
+  if (b.change == null) return `Typical during ${laptop ? "busy periods" : "games and heavy work"}.`;
+  if (b.change >= STEADY_MARGIN) return `${b.change}° warmer than earlier in this range. Dust is the usual cause.`;
+  if (b.change <= -STEADY_MARGIN) return `${-b.change}° cooler than earlier in this range.`;
+  return "About the same as earlier in this range.";
+}
+
+function peakNote(peak: NonNullable<HistorySummary["peak"]>, range: Range) {
+  const when = new Date(peak.t).toLocaleString(undefined, range === "30d"
+    ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+    : { weekday: "short", hour: "numeric", minute: "2-digit" });
+  const margin = peak.headroom > 0 ? `${peak.headroom}° under the limit` : peak.headroom < 0 ? `${-peak.headroom}° over the limit` : "right at the limit";
+  return `${when}, ${margin}.`;
+}
 
 export function History() {
   const { ui, pc, set } = useApp();
@@ -10,11 +24,8 @@ export function History() {
   const laptop = pc.kind === "laptop";
   const main: "gpu" | "cpu" = pc.parts?.gpu ? "gpu" : "cpu";
   const limit = pc.parts?.[main]?.limit ?? 90;
-  const busy = (pts ?? []).filter((p) => p.busy && p[main] != null).map((p) => p[main]!);
-  const idleCpu = (pts ?? []).filter((p) => !p.busy && p.cpu != null).map((p) => p.cpu!);
-  const half = Math.floor(busy.length / 2);
-  const trend = busy.length > 20 ? avg(busy.slice(half))! - avg(busy.slice(0, half))! : null;
-  const peak = (pts ?? []).reduce<HistoryPoint | null>((b, p) => (p[main] != null && (!b || p[main]! > b[main]!) ? p : b), null);
+  const { busy, idleCpu, peak } = historySummary(pts ?? [], main, limit);
+  const warmer = busy?.change != null && busy.change >= STEADY_MARGIN;
   const partName = main === "gpu" ? "Graphics card" : "Processor";
 
   return (
@@ -27,28 +38,28 @@ export function History() {
       </div>
       <section className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="legend">
-          <span><i className="lg-cpu" />Processor</span>
+          <span><i className={pc.parts?.gpu ? "lg-cpu" : "lg-gpu"} />Processor</span>
           {pc.parts?.gpu && <span><i className="lg-gpu" />Graphics card</span>}
           <span><i className="lg-limit" />Safe limit</span>
         </div>
-        {pts == null ? <p className="muted">Loading…</p> : <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]} limit={{ v: limit, label: `${limit}°C limit` }} bands />}
+        {pts == null ? <ChartNote busy>Loading…</ChartNote> : <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]} limit={{ v: limit, label: `${limit}°C limit` }} bands />}
       </section>
       {pts && pts.length > 1 && (
         <section className="trend">
           <div className="card card-pad">
             <div className="label">{partName} when busy</div>
-            <p className="num big-figure" style={trend != null && trend >= 3 ? { color: "var(--warn)" } : undefined}>{trend == null ? "–" : `${trend >= 0 ? "+" : ""}${trend.toFixed(0)}°C`}</p>
-            <p className="muted">{trend == null ? "Needs a few busy sessions to compare." : trend >= 3 ? "Warmer than earlier in this range. Dust is the usual cause." : "Steady across this range."}</p>
+            <p className="num big-figure" style={warmer ? { color: "var(--warn)" } : undefined}>{busy ? `${busy.typical}°C` : "–"}</p>
+            <p className="muted">{busyNote(busy, laptop)}</p>
           </div>
           <div className="card card-pad">
             <div className="label">Processor at rest</div>
-            <p className="num big-figure">{idleCpu.length ? `${avg(idleCpu)!.toFixed(0)}°C` : "–"}</p>
-            <p className="muted">Average when nothing heavy is running.</p>
+            <p className="num big-figure">{idleCpu != null ? `${idleCpu}°C` : "–"}</p>
+            <p className="muted">{idleCpu != null ? "Typical when nothing heavy is running." : "Nothing quiet was recorded in this range."}</p>
           </div>
           <div className="card card-pad">
             <div className="label">Hottest moment</div>
-            <p className="num big-figure">{peak ? `${Math.round(peak[main]!)}°C` : "–"}</p>
-            <p className="muted">{peak ? new Date(peak.t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : ""}{peak && peak[main]! < limit ? `, ${Math.round(limit - peak[main]!)}° under the limit.` : "."}</p>
+            <p className="num big-figure" style={peak && peak.headroom <= 0 ? { color: "var(--warn)" } : undefined}>{peak ? `${peak.temp}°C` : "–"}</p>
+            <p className="muted">{peak ? peakNote(peak, ui.range) : "No readings in this range."}</p>
           </div>
         </section>
       )}

@@ -90,7 +90,10 @@ export function useHistory(range: Range): HistoryPoint[] | null {
   return points;
 }
 
-export function AppProvider({ client, children, fallback }: { client: RigClient; children: ReactNode; fallback: (state: "loading" | "empty") => ReactNode }) {
+/** What shows before a PC is on screen: still reading, no PCs, or the list couldn't be read (with a way to try again). */
+export type Pending = "loading" | "empty" | "error";
+
+export function AppProvider({ client, children, fallback }: { client: RigClient; children: ReactNode; fallback: (state: Pending, retry: () => void) => ReactNode }) {
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
@@ -99,6 +102,8 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false });
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   const set = useCallback((patch: Partial<UI> | ((u: UI) => Partial<UI>)) => {
     setUI((u) => ({ ...u, ...(typeof patch === "function" ? patch(u) : patch) }));
@@ -111,10 +116,11 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
       if (!live) return;
       setData((d) => ({ ...d, account, pcs }));
       setUI((u) => ({ ...u, pcId: pcs.some((p) => p.id === u.pcId && p.parts) ? u.pcId : pcs.find((p) => p.parts)?.id ?? null }));
+      setFailed(false);
       setLoaded(true);
-    }).catch(() => { if (live) setLoaded(true); });
+    }).catch(() => { if (live) { setFailed(true); setLoaded(true); } });
     return () => { live = false; };
-  }, [client]);
+  }, [client, attempt]);
 
   // Live view of the chosen PC, its changes and a fresh chat
   useEffect(() => {
@@ -228,6 +234,7 @@ export function AppProvider({ client, children, fallback }: { client: RigClient;
     return ctx;
   }, [client, ui, data, pcId, set, toast]);
 
-  if (!value) return <>{fallback(loaded && !data.pcs.some((p) => p.parts) ? "empty" : "loading")}</>;
+  const retry = () => { setLoaded(false); setFailed(false); setAttempt((n) => n + 1); };
+  if (!value) return <>{fallback(!loaded ? "loading" : failed ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry)}</>;
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

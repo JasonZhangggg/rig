@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ActionCall, Part } from "@rig/core";
 import { Sparkline } from "../chart";
 import { StageSlot, getStage } from "../components/Stage";
@@ -26,6 +26,18 @@ const driverPages: Record<string, string> = {
 export function PCPage() {
   const { ui, pc, set } = useApp();
   const [customize, setCustomize] = useState(false);
+  const customizeBtn = useRef<HTMLButtonElement>(null);
+  const closeCustomize = () => { setCustomize(false); customizeBtn.current?.focus(); };
+  // Escape closes the open panel: Customize first, then the part's details.
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || ui.palette || ui.review) return;
+      if (customize) closeCustomize();
+      else if (ui.selected) getStage().scene.select(null);
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  });
   const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
   return (
     <div className="page">
@@ -37,10 +49,10 @@ export function PCPage() {
             <div className="id-chip">
               <span className="dot" />
               <div><strong>{pc.name}</strong><div className="src">{pc.model?.label}</div></div>
-              <button className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
+              <button ref={customizeBtn} className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
             </div>
           </div>
-          {customize && <Customize onDone={() => setCustomize(false)} />}
+          {customize && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
             <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => toggle("exploded")}>Exploded view</button>
             <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => toggle("heat")}>Heat</button>
@@ -63,7 +75,7 @@ function Customize({ onDone }: { onDone: () => void }) {
   const update = (patch: { name?: string; accent?: string }) => client.rename(pc.id, patch).catch(() => toast("Couldn't save that. Try again."));
   return (
     <div className="card customize" role="dialog" aria-label="Customize">
-      <div className="field"><label className="label" htmlFor="pc-name">Name</label><input className="input" id="pc-name" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== pc.name && update({ name: name.trim() })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} /></div>
+      <div className="field"><label className="label" htmlFor="pc-name">Name</label><input className="input" id="pc-name" autoFocus value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== pc.name && update({ name: name.trim() })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} /></div>
       <div className="field">
         <span className="label">Accent color</span>
         <div className="swatches">
@@ -138,6 +150,13 @@ function Detail() {
       <div className="detail-body"><DetailTab part={part} id={id} tab={tab} /></div>
     </>
   );
+}
+
+/** How a temperature sits against the part's safe limit, in words. */
+export function limitWords(temp: number | undefined, limit: number | undefined) {
+  if (temp == null || !limit) return "running warm";
+  const d = Math.round(limit - temp);
+  return d > 0 ? `${d}° under its ${limit}°C limit` : d < 0 ? `${-d}° over its ${limit}°C limit` : `right at its ${limit}°C limit`;
 }
 
 const size = (gb: number) => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${gb} GB`);
@@ -226,7 +245,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
         : <table className="kv"><tbody>{part.specs.slice(0, 3).map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody></table>}
       {part.warn && (
         <>
-          <div className="callout warn">{part.temp}°C is {part.limit ? `${Math.max(0, part.limit - (part.temp ?? 0))}° under its ${part.limit}°C limit` : "running warm"}. {pc.issues?.find((i) => i.part === id)?.body}</div>
+          <div className="callout warn">{part.temp}°C is {limitWords(part.temp, part.limit)}. {pc.issues?.find((i) => i.part === id)?.body}</div>
           <a className="btn" href="#chat">Ask what to do</a>
         </>
       )}

@@ -26,16 +26,21 @@ export interface RigAppProps {
 /** The whole Rig app. The desktop app and the website mount this with their own client. */
 export function RigApp({ client, requireAccount }: RigAppProps) {
   const [account, setAccount] = useState<Account | null | undefined>(requireAccount ? undefined : null);
+  const [down, setDown] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [signin, setSignin] = useState(location.hash === "#signin");
   // The desktop app opens /app/?user_code=… so the person can approve its sign-in here.
   const [userCode, setUserCode] = useState(() => (client.approveDevice ? new URLSearchParams(location.search).get("user_code") : null));
   useEffect(() => {
-    if (requireAccount) client.account().then(setAccount).catch(() => setAccount(null));
+    if (requireAccount) client.account().then((a) => { setDown(false); setAccount(a); }).catch(() => setDown(true));
+  }, [client, requireAccount, attempt]);
+  useEffect(() => {
     const on = () => setSignin(location.hash === "#signin");
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
-  }, [client, requireAccount]);
+  }, []);
 
+  if (requireAccount && down) return <Splash text="Rig can't reach its server right now. Check your internet connection, then try again." retry={() => { setDown(false); setAttempt((n) => n + 1); }} />;
   if (requireAccount && account === undefined) return <Splash text="Loading…" />;
   if (account && userCode) {
     return <DeviceApprove client={client} account={account} code={userCode} onClose={() => {
@@ -51,14 +56,22 @@ export function RigApp({ client, requireAccount }: RigAppProps) {
       onSkip={requireAccount ? undefined : () => { location.hash = "overview"; }} />;
   }
   return (
-    <AppProvider client={client} fallback={(s) => <Splash text={s === "loading" ? "Reading your PC…" : client.kind === "web" ? "No PCs yet. Install Rig on a PC and sign in with this account, and it shows up here." : "Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it."} />}>
+    <AppProvider client={client} fallback={(s, retry) => s === "error" && client.kind === "web"
+      ? <Splash text="Rig can't reach your PCs right now. Check your internet connection, then try again." retry={retry} />
+      : <Splash text={s === "loading" ? "Reading your PC…" : client.kind === "web" ? "No PCs yet. Install Rig on a PC and sign in with this account, and it shows up here." : "Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it."} />}>
       <Root />
     </AppProvider>
   );
 }
 
-function Splash({ text }: { text: string }) {
-  return <div className="splash" role="status"><span className="fp-logo">R<i /></span><p>{text}</p></div>;
+function Splash({ text, retry }: { text: string; retry?: () => void }) {
+  return (
+    <div className="splash" role={retry ? "alert" : "status"}>
+      <span className="fp-logo">R<i /></span>
+      <p>{text}</p>
+      {retry && <button className="btn" type="button" onClick={retry}>Try again</button>}
+    </div>
+  );
 }
 
 function Root() {

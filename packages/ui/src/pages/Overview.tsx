@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
+import { fanTrend, insightContext, seenLabel, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
 import { useApp, useHistory } from "../state";
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
 import { WeekCard } from "./overview/WeekCard";
-import { dustIssue, greeting, issueGo, partIcon, shortType } from "./shared";
+import { dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
 
 const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
@@ -32,7 +32,7 @@ export function Overview() {
   const open = issues.filter((i) => i.severity === "warn" || i.severity === "bad");
   const top = open[0] ?? issues[0];
   const chips = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp != null).slice(0, 4);
-  const name = client.kind === "demo" ? null : data.account?.name.split(" ")[0];
+  const name = client.kind === "demo" ? null : firstName(data.account?.name);
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
   const ringC = 2 * Math.PI * 52;
@@ -54,7 +54,7 @@ export function Overview() {
         </div>
         <div className="f-band-right">
           <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
-          <p>{pc.name} is {pc.health >= 75 ? "running well" : "not at its best"}. {status}</p>
+          <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
         </div>
         <button type="button" className="f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
       </section>
