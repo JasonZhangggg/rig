@@ -182,7 +182,7 @@ export function CapsuleChart({ days, label, grow }: { days: DayTemps[]; label: s
       {days.map((d, i) => (
         <div key={d.d} className={`pl-cap-col${i === days.length - 1 ? " today" : ""}`} style={{ "--i": i, "--lift": `${(top - d.peak) * 9}px` } as CSSProperties}>
           <div className="pl-cap-stack">
-            <span className="pl-cap b">{d.peak}</span><i />
+            <span className={`pl-cap b${d.peak === top ? " top" : ""}`}>{d.peak}</span><i />
             <span className="pl-cap a">{d.typical}</span><i />
             <span className="pl-cap c">{d.idle}</span>
           </div>

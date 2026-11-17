@@ -244,23 +244,23 @@
   --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
   --x: #A7A39B;
 }
-/* Denim: Brass's dusty style, all in blue. Pale for good, deeper blue for a look, blue grey for expected */
+/* Denim: Brass's spread, all in blue. Near white for good, deep blue for a look, blue grey for expected */
 [data-style="blend"][data-skin="mix"][data-colors="denim"] {
-  --g: #C6D4E3; --g-mark: #4E6680; --g-text: #3E556D; --g-bg: #E6ECF2;
-  --w: #6B93C9; --w-text: #2D5A96; --w-bg: #DCE6F4;
-  --x: #97A3B0;
+  --g: #E3EBF4; --g-mark: #4E6680; --g-text: #3E556D; --g-bg: #EAF0F6;
+  --w: #5F89C4; --w-text: #2D5A96; --w-bg: #DCE6F4;
+  --x: #A4AFBB;
 }
-/* Olive: the same, all in green */
+/* Olive: dull pastel sage in three steps. Deep sage for a look, mid sage for good, near white for expected, so the lightest always sits at the bottom */
 [data-style="blend"][data-skin="mix"][data-colors="olive"] {
-  --g: #D4D9B4; --g-mark: #626A38; --g-text: #50572C; --g-bg: #EEF0DF;
-  --w: #8FA35A; --w-text: #4A5E1E; --w-bg: #E6EDD3;
-  --x: #A2A595;
+  --g: #B7C2AB; --g-mark: #56664A; --g-text: #45533B; --g-bg: #E9EDE3;
+  --w: #7E8E70; --w-text: #4F5E44; --w-bg: #DDE3D5;
+  --x: #E3E8DC;
 }
 /* Sea: the same, all in blue-green */
 [data-style="blend"][data-skin="mix"][data-colors="sea"] {
-  --g: #C3DCD5; --g-mark: #48706A; --g-text: #385C56; --g-bg: #E3EEEB;
-  --w: #5FA394; --w-text: #24675A; --w-bg: #D9EEE8;
-  --x: #95A8A3;
+  --g: #E0EFEB; --g-mark: #48706A; --g-text: #385C56; --g-bg: #E7F2EF;
+  --w: #4F9584; --w-text: #24675A; --w-bg: #D9EEE8;
+  --x: #A0B3AE;
 }
 /* Cobalt: clear blue for good, sunflower for a look, slate for expected */
 [data-style="blend"][data-skin="mix"][data-colors="cobalt"] {
@@ -275,3 +275,22 @@
   --x: #8C8A85;
 }
 [data-style="blend"][data-skin="mix"][data-colors="mono"] .tone-dark { --s-c: #6E6C68; }
+
+/* The PC's own accent dot stays ink so no off-set color leaks into the chrome */
+[data-style="blend"][data-skin="mix"] :is(.sh-dot, .dot) { background: var(--text); box-shadow: none; }
+
+/* ---------- Accents only: the data sits in warm greys, lightest at the bottom, and color marks only what needs a look ---------- */
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .tone-dark {
+  --s-a: #A8A59E; --s-mark-a: #A8A59E; --s-b: #55534F; --s-c: #E6E3DC; --s-c-ink: #1B1B1F;
+}
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .tone-dark .pl-cap.b { color: #F2F0EB; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .pl-cap.b.top { background: var(--w); color: #111111; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-temps .pl-total b { color: var(--w); }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-fans .pl-dot.b { fill: #77756F; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .pl-stat.warn .pl-tri { color: var(--w); }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .f-ring .vl { stroke: #E6E3DC; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week {
+  --s-a: #E4E1DA; --s-mark-a: #8C8A85; --s-c: #F3F1EC; --s-b: var(--w); --s-c-ink: #55534F;
+}
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-tl-bar.background { box-shadow: inset 0 0 0 1px #DDD9D1; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-legend i.c { --x: #CFCBC3; }

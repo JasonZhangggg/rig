@@ -145,15 +145,15 @@ export const colorSets: { id: ColorSet; name: string; accent: string; scene: Par
   { id: "brass", name: "Brass", accent: "#E6D3A3", scene: {
     heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3",
     airCool: "#D2C08F", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "denim", name: "Denim", accent: "#C6D4E3", scene: {
-    heatCool: "#A9BBCE", heatWarm: "#6B93C9", heatHot: "#2D5A96", highlight: "#C6D4E3",
-    airCool: "#B7C7D9", airWarm: "#6B93C9", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "olive", name: "Olive", accent: "#D4D9B4", scene: {
-    heatCool: "#B9C091", heatWarm: "#8FA35A", heatHot: "#4A5E1E", highlight: "#D4D9B4",
-    airCool: "#C7CDA2", airWarm: "#8FA35A", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "sea", name: "Sea", accent: "#C3DCD5", scene: {
-    heatCool: "#A3C4BB", heatWarm: "#5FA394", heatHot: "#24675A", highlight: "#C3DCD5",
-    airCool: "#B3D0C8", airWarm: "#5FA394", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "denim", name: "Denim", accent: "#E3EBF4", scene: {
+    heatCool: "#A4AFBB", heatWarm: "#5F89C4", heatHot: "#2D5A96", highlight: "#E3EBF4",
+    airCool: "#C9D6E5", airWarm: "#5F89C4", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "olive", name: "Olive", accent: "#B7C2AB", scene: {
+    heatCool: "#C9D1BF", heatWarm: "#9AA88C", heatHot: "#6E7E60", highlight: "#B7C2AB",
+    airCool: "#B7C2AB", airWarm: "#9AA88C", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "sea", name: "Sea", accent: "#E0EFEB", scene: {
+    heatCool: "#A0B3AE", heatWarm: "#4F9584", heatHot: "#24675A", highlight: "#E0EFEB",
+    airCool: "#C3DDD6", airWarm: "#4F9584", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
   { id: "cobalt", name: "Cobalt", accent: "#9DB8FF", scene: {
     heatCool: "#6F8FE0", heatWarm: "#F7CD5D", heatHot: "#E0A21F", highlight: "#9DB8FF",
     airCool: "#89A8F5", airWarm: "#F7CD5D", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
@@ -162,6 +162,11 @@ export const colorSets: { id: ColorSet; name: string; accent: string; scene: Par
     airCool: "#A9A6A0", airWarm: "#E5735A", glow: 0.25, interior: 1, pedestalRim: 0.2 } },
   { id: "signal", name: "Signal", accent: "#C6F432", scene: {} },
 ];
+
+/** How much color Mix's widgets carry. Accents keeps the data in greys and colors only what needs a look. */
+export type WidgetColor = "accents" | "full";
+export const widgetColors: { id: WidgetColor; name: string }[] = [{ id: "accents", name: "Accents only" }, { id: "full", name: "Full color" }];
+
 
 export function sceneFor(style: StyleId, mode: Mode): SceneTheme {
   return style === "pulse" && mode === "light" ? pulseLightScene : sceneThemes[style];

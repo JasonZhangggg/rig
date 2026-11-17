@@ -33,9 +33,10 @@ function Root() {
     document.documentElement.dataset.style = ui.style === "mix" ? "blend" : ui.style;
     document.documentElement.dataset.skin = ui.style === "mix" ? "mix" : "";
     document.documentElement.dataset.colors = ui.style === "mix" ? ui.colors : "";
+    document.documentElement.dataset.widgets = ui.style === "mix" ? ui.widgets : "";
     document.documentElement.dataset.mode = ui.mode;
     document.documentElement.style.setProperty("--pc", pc.accent);
-  }, [ui.style, ui.mode, ui.colors, pc.accent]);
+  }, [ui.style, ui.mode, ui.colors, ui.widgets, pc.accent]);
 
   // Keep the 3D scene in step with the app
   useEffect(() => {
