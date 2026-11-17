@@ -32,3 +32,9 @@ export const tauriToken = {
   get: () => invoke<string | null>("token_get"),
   set: (token: string | null) => invoke<void>("token_set", { token }),
 };
+
+/** Starting with Windows, through Tauri's autostart plugin (a Run entry for this user). */
+export const tauriAutostart = {
+  get: () => invoke<boolean>("plugin:autostart|is_enabled"),
+  set: (on: boolean) => invoke<void>(on ? "plugin:autostart|enable" : "plugin:autostart|disable"),
+};

@@ -5,9 +5,10 @@
 
 import type { ActionCall } from "./actions";
 import {
-  ApiError, desktopClientId, errorText, paths, readChatStream, unreachableText,
-  type ChatRequest, type MachineSync, type SyncReply,
+  ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, unreachableText,
+  type ChatRequest, type DeleteAccountRequest, type MachineSync, type SyncReply,
 } from "./api";
+import type { DataExport } from "./export";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { SystemFacts } from "./telemetry";
@@ -78,6 +79,14 @@ export class CloudClient implements RigClient {
   async signOut() {
     try { await this.req(paths.signOut, { method: "POST", body: "{}" }); } finally { await this.opts.token?.set(null); }
   }
+
+  async deleteAccount() {
+    const body: DeleteAccountRequest = { confirm: DELETE_WORD };
+    await this.req(paths.me, { method: "DELETE", body: JSON.stringify(body) });
+    await this.opts.token?.set(null);
+  }
+
+  exportData() { return this.req<DataExport>(paths.exportData); }
 
   async signInEmail(email: string, password: string, create?: { name: string }): Promise<Account> {
     const r = await this.req<{ user: Account }>(create ? paths.signUpEmail : paths.signInEmail, {

@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Game, Route, Upgrade } from "@rig/core";
-import { useApp } from "../state";
+import { useApp, useTemp } from "../state";
+import { focusSection, settingsSections } from "../pages/settings/sections";
 
-type Kind = "parts" | "changes" | "games" | "upgrades";
-interface Item { id: string; kind: Kind; title: string; sub: string; badge?: { text: string; tone: string }; run: () => void }
+type Kind = "parts" | "changes" | "games" | "upgrades" | "settings";
+interface Item { id: string; kind: Kind; title: string; sub: string; keys?: string; badge?: { text: string; tone: string }; run: () => void }
 
-const kindLabel: Record<Kind, string> = { parts: "Parts", changes: "Changes", games: "Games", upgrades: "Upgrades" };
+const kindLabel: Record<Kind, string> = { parts: "Parts", changes: "Changes", games: "Games", upgrades: "Upgrades", settings: "Settings" };
 const icon: Record<Kind, string> = {
   parts: "M6 6h12v12H6zM9.5 9.5h5v5h-5zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3",
   changes: "M4 12a8 8 0 1 0 2.5-5.8M4 4v4h4M12 8v4l3 2",
   games: "M5 9h14v7H5zM8.5 11v3M7 12.5h3M15 12h.01M17 13.5h.01",
   upgrades: "M12 19V6M7 11l5-5 5 5",
+  settings: "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4",
 };
 
 // Ctrl K search across the PC: parts, changes, games and upgrades, plus "Ask Rig".
 export function Palette() {
-  const { ui, pc, data, set, go, ask, client } = useApp();
+  const ctx = useApp();
+  const { ui, pc, data, set, go, ask, client } = ctx;
+  const temp = useTemp();
   const [extra, setExtra] = useState<{ games: Game[]; upgrades: Upgrade[] }>({ games: [], upgrades: [] });
   useEffect(() => {
     if (!ui.palette) return;
@@ -45,7 +49,7 @@ export function Palette() {
     const items: Item[] = [];
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({
-        id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${p.temp}°C now` : p.sub].filter(Boolean).join(" · "),
+        id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${temp(p.temp)} now` : p.sub].filter(Boolean).join(" · "),
         badge: p.warn ? { text: "Running warm", tone: "warn" } : undefined,
         run: () => open("pc", { selected: id, tab: "live" }),
       });
@@ -53,13 +57,19 @@ export function Palette() {
     for (const c of data.changes) items.push({ id: `c-${c.id}`, kind: "changes", title: c.title, sub: `${new Date(c.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${c.by === "you" ? "You" : "Rig"}`, badge: { text: c.status === "applied" ? "Applied" : "Undone", tone: c.status === "applied" ? "ok" : "muted" }, run: () => open("changes") });
     for (const g of extra.games) items.push({ id: `g-${g.id}`, kind: "games", title: g.name, sub: [g.res, g.now && `${g.now.avg} FPS`].filter(Boolean).join(" · "), badge: g.now && g.tuned ? { text: `+${g.tuned.avg - g.now.avg} FPS possible`, tone: "info" } : undefined, run: () => open("games") });
     for (const u of extra.upgrades) items.push({ id: `u-${u.title}`, kind: "upgrades", title: u.title, sub: [u.part, u.price].filter(Boolean).join(" · "), badge: u.fit === "fits" ? { text: "Fits", tone: "ok" } : u.fit === "check" ? { text: "Check first", tone: "warn" } : undefined, run: () => open("upgrades") });
+    for (const sec of settingsSections) {
+      if (sec.show && !sec.show(ctx)) continue;
+      items.push({ id: `s-${sec.id}`, kind: "settings", title: sec.title, sub: `Settings · ${sec.intro}`, keys: sec.keywords, run: () => { focusSection(sec.id); open("settings"); } });
+    }
     return items;
-  }, [pc, data.changes, extra]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pc, data.changes, extra, temp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const words = q.trim().toLowerCase();
-  const matched = all.filter((i) => !words || `${i.title} ${i.sub}`.toLowerCase().includes(words));
+  const matched = all.filter((i) => (words ? `${i.title} ${i.sub} ${i.keys ?? ""}`.toLowerCase().includes(words) : i.kind !== "settings"));
   const counts = matched.reduce<Record<string, number>>((a, i) => ({ ...a, [i.kind]: (a[i.kind] ?? 0) + 1 }), {});
-  const shown = (tab === "all" ? matched : matched.filter((i) => i.kind === tab)).slice(0, tab === "all" ? 9 : 20);
+  const shown = tab === "all"
+    ? [...matched.filter((i) => i.kind !== "settings").slice(0, 9), ...matched.filter((i) => i.kind === "settings")]
+    : matched.filter((i) => i.kind === tab).slice(0, 20);
   const askText = words ? `Ask Rig about "${q.trim()}"` : `What's going on with ${pc.name}?`;
   const runAsk = () => { ask(words ? q.trim() : `What's going on with ${pc.name}?`); close(); };
   const total = shown.length + 1;
@@ -74,7 +84,7 @@ export function Palette() {
   };
 
   let n = -1;
-  const groups = (["parts", "changes", "games", "upgrades"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
+  const groups = (["parts", "changes", "games", "upgrades", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return (
     <div className="palette-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKey}>

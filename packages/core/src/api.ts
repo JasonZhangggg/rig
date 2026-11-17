@@ -38,6 +38,7 @@ export interface ChatRequest {
 
 export const paths = {
   me: "/me",
+  exportData: "/me/export",
   machines: "/machines",
   machine: (id: string) => `/machines/${encodeURIComponent(id)}`,
   history: (id: string, range: string) => `/machines/${encodeURIComponent(id)}/history?range=${range}`,
@@ -58,6 +59,10 @@ export const paths = {
   deviceApprove: "/auth/device/approve",
   deviceDeny: "/auth/device/deny",
 } as const;
+
+/** Body of DELETE /api/me. The person types this word to confirm. */
+export interface DeleteAccountRequest { confirm: typeof DELETE_WORD }
+export const DELETE_WORD = "DELETE";
 
 /** The desktop app's client id for the device sign-in flow. */
 export const desktopClientId = "rig-desktop";

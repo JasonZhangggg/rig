@@ -1,7 +1,7 @@
 //! Rig's desktop shell. The screens and all the logic live in TypeScript
 //! (packages/core and packages/ui); this side only does what a web page can't:
-//! start the elevated helper, keep data on disk and keep the sign-in token in
-//! the keychain.
+//! start the elevated helper, keep data on disk, keep the sign-in token in
+//! the keychain and start with Windows when the person turns that on.
 
 mod helper;
 mod secrets;
@@ -45,6 +45,7 @@ fn token_set(token: Option<String>) -> R<()> { secrets::set(token.as_deref()) }
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::Builder::new().app_name("Rig").build())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;

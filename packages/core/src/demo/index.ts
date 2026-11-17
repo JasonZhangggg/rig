@@ -5,6 +5,7 @@ import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC 
 import type { Inventory, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
+import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
 import { applyToFacts } from "./apply";
@@ -63,6 +64,15 @@ export class DemoClient implements RigClient {
 
   async account() { return { id: "demo", name: "You", email: "demo@rig.app" }; }
   async signOut() {}
+
+  /** The demo PCs and a month of their made-up history, so the download can be tried. Deleting the demo account isn't offered. */
+  async exportData(): Promise<DataExport> {
+    const machines = await Promise.all(Object.entries(this.pcs).map(async ([id, p]) => ({
+      id, view: this.view(id), inventory: p.inv, facts: p.facts, identity: { ...p.id },
+      changes: await this.changes(id), games: await this.games(id), history: await this.history(id, "30d"),
+    })));
+    return makeExport({ account: await this.account(), machines, notes: ["Made-up data from Rig's demo."] });
+  }
 
   async machines(): Promise<PC[]> {
     const live = Object.keys(this.pcs).map((id) => this.view(id));

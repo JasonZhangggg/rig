@@ -1,25 +1,30 @@
-import { historySummary, STEADY_MARGIN, type BusySummary, type HistorySummary, type Range } from "@rig/core";
+import { historySummary, STEADY_MARGIN, type BusySummary, type HistorySummary, type Range, type TempFormat } from "@rig/core";
 import { ChartNote, LineChart } from "../chart";
-import { useApp, useHistory } from "../state";
+import { useApp, useHistory, useTemp } from "../state";
 
-function busyNote(b: BusySummary | null, laptop: boolean) {
+type Temp = (celsius: number | null | undefined, opts?: TempFormat) => string;
+/** A difference between two temperatures, like "6° warmer": scaled to the unit, not offset. */
+const diff = (temp: Temp, celsius: number) => temp(celsius, { delta: true, mark: "degree" });
+
+function busyNote(b: BusySummary | null, laptop: boolean, temp: Temp) {
   if (!b) return "Nothing heavy ran in this range.";
   if (b.change == null) return `Typical during ${laptop ? "busy periods" : "games and heavy work"}.`;
-  if (b.change >= STEADY_MARGIN) return `${b.change}° warmer than earlier in this range. Dust is the usual cause.`;
-  if (b.change <= -STEADY_MARGIN) return `${-b.change}° cooler than earlier in this range.`;
+  if (b.change >= STEADY_MARGIN) return `${diff(temp, b.change)} warmer than earlier in this range. Dust is the usual cause.`;
+  if (b.change <= -STEADY_MARGIN) return `${diff(temp, -b.change)} cooler than earlier in this range.`;
   return "About the same as earlier in this range.";
 }
 
-function peakNote(peak: NonNullable<HistorySummary["peak"]>, range: Range) {
+function peakNote(peak: NonNullable<HistorySummary["peak"]>, range: Range, temp: Temp) {
   const when = new Date(peak.t).toLocaleString(undefined, range === "30d"
     ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
     : { weekday: "short", hour: "numeric", minute: "2-digit" });
-  const margin = peak.headroom > 0 ? `${peak.headroom}° under the limit` : peak.headroom < 0 ? `${-peak.headroom}° over the limit` : "right at the limit";
+  const margin = peak.headroom > 0 ? `${diff(temp, peak.headroom)} under the limit` : peak.headroom < 0 ? `${diff(temp, -peak.headroom)} over the limit` : "right at the limit";
   return `${when}, ${margin}.`;
 }
 
 export function History() {
   const { ui, pc, set } = useApp();
+  const temp = useTemp();
   const pts = useHistory(ui.range);
   const laptop = pc.kind === "laptop";
   const main: "gpu" | "cpu" = pc.parts?.gpu ? "gpu" : "cpu";
@@ -42,24 +47,24 @@ export function History() {
           {pc.parts?.gpu && <span><i className="lg-gpu" />Graphics card</span>}
           <span><i className="lg-limit" />Safe limit</span>
         </div>
-        {pts == null ? <ChartNote busy>Loading…</ChartNote> : <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]} limit={{ v: limit, label: `${limit}°C limit` }} bands />}
+        {pts == null ? <ChartNote busy>Loading…</ChartNote> : <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]} limit={{ v: limit, label: `${temp(limit)} limit` }} bands />}
       </section>
       {pts && pts.length > 1 && (
         <section className="trend">
           <div className="card card-pad">
             <div className="label">{partName} when busy</div>
-            <p className="num big-figure" style={warmer ? { color: "var(--warn)" } : undefined}>{busy ? `${busy.typical}°C` : "–"}</p>
-            <p className="muted">{busyNote(busy, laptop)}</p>
+            <p className="num big-figure" style={warmer ? { color: "var(--warn)" } : undefined}>{temp(busy?.typical)}</p>
+            <p className="muted">{busyNote(busy, laptop, temp)}</p>
           </div>
           <div className="card card-pad">
             <div className="label">Processor at rest</div>
-            <p className="num big-figure">{idleCpu != null ? `${idleCpu}°C` : "–"}</p>
+            <p className="num big-figure">{temp(idleCpu)}</p>
             <p className="muted">{idleCpu != null ? "Typical when nothing heavy is running." : "Nothing quiet was recorded in this range."}</p>
           </div>
           <div className="card card-pad">
             <div className="label">Hottest moment</div>
-            <p className="num big-figure" style={peak && peak.headroom <= 0 ? { color: "var(--warn)" } : undefined}>{peak ? `${peak.temp}°C` : "–"}</p>
-            <p className="muted">{peak ? peakNote(peak, ui.range) : "No readings in this range."}</p>
+            <p className="num big-figure" style={peak && peak.headroom <= 0 ? { color: "var(--warn)" } : undefined}>{temp(peak?.temp)}</p>
+            <p className="muted">{peak ? peakNote(peak, ui.range, temp) : "No readings in this range."}</p>
           </div>
         </section>
       )}
