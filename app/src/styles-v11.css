@@ -13,7 +13,12 @@
   --display: var(--font);
   --num: var(--font);
   --fs: 15px;
-  --graphite: #1B1B1F; --mist: #C0B8E8; --foam: #ECE8FA;
+  --graphite: #1B1B1F; --foam: #ECE8FA;
+  /* Data colors: g is good, w needs a look, x is expected. The color sets below swap only these. */
+  --g: #C6F432; --g-mark: #5E7A00; --g-text: #4A6100; --g-bg: #EAF7C0;
+  --w: #FD754D; --w-text: #C2451F; --w-bg: #FFE4D9;
+  --x: #C0B8E8;
+  --mist: var(--x);
   --bg: #F2F0EC;
   --band: #E9E6E0;
   --surface: #FFFFFF;
@@ -26,19 +31,19 @@
   --text-3: #6B6A66;
   --primary: #1B1B1F; --primary-text: #FFFFFF;
   --accent: #1B1B1F; --accent-bg: #ECE8FA; --accent-ink: #1B1B1F;
-  --coral: #FD754D; --crimson: #FD754D; --on-accent: #1B1B1F;
+  --coral: var(--w); --crimson: var(--w); --on-accent: #1B1B1F;
   --focus: #1B1B1F;
-  --ok: #4A6100; --ok-bg: #EAF7C0;
-  --warn: #C2451F; --warn-bg: #FFE4D9;
-  --bad: #C2451F; --bad-bg: #FFE4D9;
+  --ok: var(--g-text); --ok-bg: var(--g-bg);
+  --warn: var(--w-text); --warn-bg: var(--w-bg);
+  --bad: var(--w-text); --bad-bg: var(--w-bg);
   --info: #1B1B1F; --info-bg: #F2F0EC;
   --r: 28px; --r-sm: 14px;
   --shadow: none;
   --shadow-lg: 0 24px 60px rgba(27, 27, 31, .16), 0 2px 6px rgba(27, 27, 31, .06);
-  --c-cpu: #1B1B1F; --c-gpu: #FD754D; --c-storage: #C6F432; --c-memory: #8C8A85; --c-battery: #C6F432;
-  --lime: #C6F432; --lime-hi: #D4FA5E; --orange: #FD754D;
+  --c-cpu: #1B1B1F; --c-gpu: var(--w); --c-storage: var(--g); --c-memory: #8C8A85; --c-battery: var(--g);
+  --lime: var(--g); --lime-hi: color-mix(in srgb, var(--g) 80%, #fff); --orange: var(--w);
   --soft: 0 0 0 0 transparent;
-  --s-a: #C6F432; --s-mark-a: #5E7A00; --s-b: #FD754D; --s-c: #C0B8E8;
+  --s-a: var(--g); --s-mark-a: var(--g-mark); --s-b: var(--w); --s-c: var(--x);
   --s-ink: #111111; --s-c-ink: #1B1B1F;
   --s-track: rgba(27, 27, 31, .10); --s-dim: rgba(27, 27, 31, .08); --s-edge: rgba(27, 27, 31, .08);
 }
@@ -47,8 +52,8 @@
   --surface: #1B1B1F; --surface-2: #26262B;
   --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
   --line: rgba(255, 255, 255, .10);
-  --ok: #C6F432; --warn: #FD754D; --accent-ink: #C6F432; --focus: #C6F432;
-  --s-a: #C6F432; --s-mark-a: #C6F432; --s-b: #FD754D; --s-c: #C0B8E8;
+  --ok: var(--g); --warn: var(--w); --accent-ink: var(--g); --focus: var(--g);
+  --s-a: var(--g); --s-mark-a: var(--g); --s-b: var(--w); --s-c: var(--x);
   --s-ink: #111111; --s-c-ink: #1B1B1F;
   --s-track: rgba(255, 255, 255, .12); --s-dim: rgba(255, 255, 255, .08); --s-edge: transparent;
   background: #1B1B1F;
@@ -94,9 +99,9 @@
 [data-style="blend"][data-skin="mix"] .f-chip.hot b { color: var(--warn); }
 [data-style="blend"][data-skin="mix"] .bl-n { font-family: var(--font); font-weight: 600; }
 [data-style="blend"][data-skin="mix"] .bl-pc { background:
-    radial-gradient(70% 60% at 100% 0%, rgba(192, 184, 232, .38) 0%, rgba(192, 184, 232, 0) 62%),
-    radial-gradient(60% 55% at 0% 100%, rgba(198, 244, 50, .20) 0%, rgba(198, 244, 50, 0) 60%),
-    linear-gradient(180deg, #FFFFFF 0%, #F8F6FC 100%); }
+    radial-gradient(70% 60% at 100% 0%, color-mix(in srgb, var(--x) 38%, transparent) 0%, transparent 62%),
+    radial-gradient(60% 55% at 0% 100%, color-mix(in srgb, var(--g) 20%, transparent) 0%, transparent 60%),
+    linear-gradient(180deg, #FFFFFF 0%, #FAF9F7 100%); }
 [data-style="blend"][data-skin="mix"] .bl-pc-glow { display: none; }
 
 /* ---------- Controls and charts ---------- */
@@ -104,9 +109,9 @@
 [data-style="blend"][data-skin="mix"] .chart-line.gpu { stroke: var(--coral); }
 [data-style="blend"][data-skin="mix"] .hist-legend .lg-gpu { background: var(--coral); }
 [data-style="blend"][data-skin="mix"] :is(.stage-card, .signin-art) { background:
-    radial-gradient(70% 60% at 100% 0%, rgba(192, 184, 232, .42) 0%, rgba(192, 184, 232, 0) 62%),
-    radial-gradient(60% 55% at 0% 100%, rgba(253, 117, 77, .14) 0%, rgba(253, 117, 77, 0) 60%),
-    linear-gradient(180deg, #FFFFFF 0%, #F8F6FC 100%); }
+    radial-gradient(70% 60% at 100% 0%, color-mix(in srgb, var(--x) 42%, transparent) 0%, transparent 62%),
+    radial-gradient(60% 55% at 0% 100%, color-mix(in srgb, var(--w) 14%, transparent) 0%, transparent 60%),
+    linear-gradient(180deg, #FFFFFF 0%, #FAF9F7 100%); }
 [data-style="blend"][data-skin="mix"] .signin-form .brand-mark { background: var(--graphite); }
 [data-style="blend"][data-skin="mix"] .msg.you .bubble { background: var(--graphite); color: #fff; }
 
@@ -207,3 +212,24 @@
 @media (prefers-reduced-motion: reduce) {
   :is(.mh-btn, .mh-prompts button):active { transform: none; }
 }
+
+/* ---------- Color sets for the data tiles. The chrome stays graphite and grey in all of them. ---------- */
+/* Sage: soft green for good, terracotta for a look, warm stone for expected */
+[data-style="blend"][data-skin="mix"][data-colors="sage"] {
+  --g: #A9C4A0; --g-mark: #557A4E; --g-text: #3F6438; --g-bg: #E3EEDF;
+  --w: #E09A6E; --w-text: #A4532A; --w-bg: #F8E6DA;
+  --x: #CFC8BA;
+}
+/* Ocean: calm blue for good, amber for a look, cool grey for expected */
+[data-style="blend"][data-skin="mix"][data-colors="ocean"] {
+  --g: #9EC5E8; --g-mark: #3D6E9C; --g-text: #2F5F8C; --g-bg: #E2EDF7;
+  --w: #EDB45E; --w-text: #94600F; --w-bg: #FBEFD9;
+  --x: #CDD1D6;
+}
+/* Mono: white and greys for good and expected, one muted red for a look */
+[data-style="blend"][data-skin="mix"][data-colors="mono"] {
+  --g: #ECEAE5; --g-mark: #1B1B1F; --g-text: #1B1B1F; --g-bg: #ECEAE5;
+  --w: #E5735A; --w-text: #B4432B; --w-bg: #FBE3DC;
+  --x: #8C8A85;
+}
+[data-style="blend"][data-skin="mix"][data-colors="mono"] .tone-dark { --s-c: #6E6C68; }

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { pcs as pcSeed, chat as chatSeed, changes as changeSeed, type Change, type ChatMessage, type DiffRow, type PC, type Route } from "./data";
-import { finishes, heroes, styles, type Hero, type Mode, type StyleId } from "./themes";
+import { colorSets, finishes, heroes, styles, type ColorSet, type Hero, type Mode, type StyleId } from "./themes";
 import type { Finish } from "./scene";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
@@ -14,6 +14,7 @@ export interface UI {
   mode: Mode;
   finish: Finish;
   hero: Hero;
+  colors: ColorSet;
   pcId: string;
   pcs: Record<string, PC>;
   exploded: boolean;
@@ -46,12 +47,14 @@ function initial(): UI {
   const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
   const finish = storage.get("rig.finish2") as Finish | null;
-  const hero = storage.get("rig.hero") as Hero | null;
+  const hero = storage.get("rig.hero2") as Hero | null;
+  const colors = storage.get("rig.colors") as ColorSet | null;
   return {
     route: routeFromHash(),
     style: styles.some((s) => s.id === style) ? style! : "mix",
     finish: finishes.some((f) => f.id === finish) ? finish! : "ink",
-    hero: heroes.some((h) => h.id === hero) ? hero! : "score",
+    hero: heroes.some((h) => h.id === hero) ? hero! : "band",
+    colors: colorSets.some((c) => c.id === colors) ? colors! : "sage",
     mode: mode === "light" ? "light" : "dark",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
@@ -89,7 +92,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [set]);
   useEffect(() => { storage.set("rig.style4", ui.style); }, [ui.style]);
   useEffect(() => { storage.set("rig.finish2", ui.finish); }, [ui.finish]);
-  useEffect(() => { storage.set("rig.hero", ui.hero); }, [ui.hero]);
+  useEffect(() => { storage.set("rig.hero2", ui.hero); }, [ui.hero]);
+  useEffect(() => { storage.set("rig.colors", ui.colors); }, [ui.colors]);
   useEffect(() => { storage.set("rig.mode", ui.mode); }, [ui.mode]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

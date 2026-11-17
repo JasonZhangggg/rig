@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { user, type Route } from "../data";
 import { useApp } from "../state";
-import { finishes, heroes, styles } from "../themes";
+import { colorSets, finishes, heroes, styles } from "../themes";
 import { DiffTable, Icon } from "./common";
 
 export const navItems: [Route, string, string][] = [
@@ -120,6 +120,11 @@ export function MockPanel() {
         {ui.style === "mix" && (
           <div className="mrow wrap" role="group" aria-label="Hero">
             {heroes.map((h) => <button key={h.id} type="button" aria-pressed={ui.hero === h.id} onClick={() => set({ hero: h.id })}>{h.name}</button>)}
+          </div>
+        )}
+        {ui.style === "mix" && (
+          <div className="mrow wrap" role="group" aria-label="Colors">
+            {colorSets.map((c) => <button key={c.id} type="button" aria-pressed={ui.colors === c.id} onClick={() => set({ colors: c.id })}>{c.name}</button>)}
           </div>
         )}
         <div className="mrow wrap" role="group" aria-label="PC style">

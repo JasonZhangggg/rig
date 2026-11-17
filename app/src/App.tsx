@@ -4,7 +4,7 @@ import { getStage } from "./components/Stage";
 import { MockPanel, Modal, Toast } from "./components/Shell";
 import { Shell } from "./components/Shells";
 import { Palette } from "./components/Palette";
-import { sceneFor, sceneGlow } from "./themes";
+import { colorSets, sceneFor, sceneGlow } from "./themes";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
@@ -32,9 +32,10 @@ function Root() {
     // Mix wears Blend's layout, so it sets Blend's style and adds its own skin on top
     document.documentElement.dataset.style = ui.style === "mix" ? "blend" : ui.style;
     document.documentElement.dataset.skin = ui.style === "mix" ? "mix" : "";
+    document.documentElement.dataset.colors = ui.style === "mix" ? ui.colors : "";
     document.documentElement.dataset.mode = ui.mode;
     document.documentElement.style.setProperty("--pc", pc.accent);
-  }, [ui.style, ui.mode, pc.accent]);
+  }, [ui.style, ui.mode, ui.colors, pc.accent]);
 
   // Keep the 3D scene in step with the app
   useEffect(() => {
@@ -42,11 +43,12 @@ function Root() {
   }, [set]);
   useEffect(() => { scene.setFinish(ui.finish); }, [ui.finish, scene]);
   useEffect(() => {
-    const th = sceneFor(ui.style, ui.mode);
+    const set = ui.style === "mix" ? colorSets.find((c) => c.id === ui.colors) : undefined;
+    const th = { ...sceneFor(ui.style, ui.mode), ...set?.scene };
     // In one-accent looks the 3D glow follows that accent so the page reads as one color
-    const glow = sceneGlow[ui.style] ?? null;
-    scene.setPC(glow ? { ...pc, accent: glow } : pc, glow ? { ...th, highlight: glow } : th);
-  }, [pc.id, pc.accent, ui.style, ui.mode]); // eslint-disable-line react-hooks/exhaustive-deps
+    const glow = set?.accent ?? sceneGlow[ui.style] ?? null;
+    scene.setPC(glow ? { ...pc, accent: glow } : pc, glow ? { ...th, highlight: set?.scene.highlight ?? glow } : th);
+  }, [pc.id, pc.accent, ui.style, ui.mode, ui.colors]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);

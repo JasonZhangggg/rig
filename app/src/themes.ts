@@ -118,12 +118,28 @@ export const finishes: { id: Finish; name: string }[] = [
   { id: "line", name: "Drawing" },
 ];
 
-export type Hero = "score" | "statement" | "ask" | "band";
+export type Hero = "band" | "score" | "statement" | "ask";
 export const heroes: { id: Hero; name: string }[] = [
+  { id: "band", name: "Greeting" },
   { id: "score", name: "Score" },
   { id: "statement", name: "Statement" },
   { id: "ask", name: "Ask" },
-  { id: "band", name: "Greeting" },
+];
+
+/** Mix's data colors. The 3D PC takes its glow, heat and airflow from the same set,
+ *  and every set but Signal dims the glow so the PC reads as hardware, not neon. */
+export type ColorSet = "sage" | "ocean" | "mono" | "signal";
+export const colorSets: { id: ColorSet; name: string; accent: string; scene: Partial<SceneTheme> }[] = [
+  { id: "sage", name: "Sage", accent: "#A9C4A0", scene: {
+    heatCool: "#7FA376", heatWarm: "#E09A6E", heatHot: "#C4643A", highlight: "#A9C4A0",
+    airCool: "#8FB386", airWarm: "#E09A6E", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "ocean", name: "Ocean", accent: "#9EC5E8", scene: {
+    heatCool: "#6E9DC8", heatWarm: "#EDB45E", heatHot: "#D9822B", highlight: "#9EC5E8",
+    airCool: "#86B2DB", airWarm: "#EDB45E", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "mono", name: "Mono", accent: "#F2F0EB", scene: {
+    heatCool: "#B9B6AF", heatWarm: "#E5A08E", heatHot: "#E5735A", highlight: "#1B1B1F",
+    airCool: "#A9A6A0", airWarm: "#E5735A", glow: 0.25, interior: 1, pedestalRim: 0.2 } },
+  { id: "signal", name: "Signal", accent: "#C6F432", scene: {} },
 ];
 
 export function sceneFor(style: StyleId, mode: Mode): SceneTheme {
