@@ -6,6 +6,7 @@
 // zone, so the same history reads the same way in tests and in any zone.
 
 import { cpuLimit, gpuLimit } from "./health";
+import { mostCommon } from "./history";
 import { HISTORY_WINDOW_MS, type HistoryPoint, type PC } from "./model";
 import type { PCKind } from "./telemetry";
 
@@ -170,12 +171,6 @@ function busyRuns(points: readonly HistoryPoint[]): HistoryPoint[][] {
   return runs;
 }
 
-function mostPlayed(points: readonly HistoryPoint[]): string | null {
-  const counts = new Map<string, number>();
-  for (const p of points) if (p.game) counts.set(p.game, (counts.get(p.game) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-}
-
 function sessionKind(points: readonly HistoryPoint[], game: string | null, limits: InsightContext["limits"]): SessionKind {
   const nearLimit = points.some((p) => (p.gpu ?? -Infinity) >= limits.gpu - HOT_MARGIN || (p.cpu ?? -Infinity) >= limits.cpu - HOT_MARGIN);
   return nearLimit ? "hot" : game ? "played" : "background";
@@ -192,7 +187,7 @@ export function weekEvenings(points: readonly HistoryPoint[], ctx: InsightContex
       const a = Math.max(from, open), b = Math.min(to, close);
       if (b <= a) return [];
       const inside = run.filter((p) => p.t + HISTORY_WINDOW_MS > a && p.t < b);
-      const game = mostPlayed(inside);
+      const game = mostCommon(inside.map((p) => p.game));
       return [{ from, to, start: (a - open) / HOUR, hours: (b - a) / HOUR, game, kind: sessionKind(inside, game, ctx.limits) }];
     });
     return { day: fromWall(d * DAY, ctx.offset), sessions };
