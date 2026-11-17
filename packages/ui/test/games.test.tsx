@@ -16,7 +16,7 @@ async function openGames(client = new DemoClient()) {
 }
 
 describe("Games", () => {
-  beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });
+  beforeEach(() => { location.hash = ""; localStorage.clear(); });
   afterEach(() => cleanup());
 
   it("lists the week's games most played first and opens one", async () => {
