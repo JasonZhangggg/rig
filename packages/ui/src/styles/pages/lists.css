@@ -1,4 +1,4 @@
-/* A main column with a rail beside it. Used by Changes, Upgrades, Games and History. */
+/* A main column with a rail beside it, on Changes and Games. */
 .pg-split { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 27%, 440px); align-items: start; gap: var(--gap); }
 .pg-main,
 .pg-rail { min-width: 0; display: flex; flex-direction: column; gap: var(--gap); }
