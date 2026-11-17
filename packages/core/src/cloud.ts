@@ -10,6 +10,7 @@ import {
 } from "./api";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
+import type { PCEvent, Recording, RecordingInfo } from "./recordings";
 import type { SystemFacts } from "./telemetry";
 
 const POLL_MS = 15_000;
@@ -155,6 +156,29 @@ export class CloudClient implements RigClient {
   games(id: string) { return this.req<Game[]>(paths.games(id)); }
   changes(id: string) { return this.req<Change[]>(paths.changes(id)); }
 
+  events(id: string) { return this.req<PCEvent[]>(paths.events(id)); }
+  recording(id: string, rid: string) { return this.req<Recording | null>(paths.recording(id, rid)).catch(() => null); }
+
+  watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try { const list = await this.req<RecordingInfo[]>(paths.recordings(id)); if (!stopped) cb(list); } catch { /* keep showing the last list */ }
+      if (!stopped) timer = setTimeout(tick, POLL_MS);
+    };
+    void tick();
+    return () => { stopped = true; clearTimeout(timer); };
+  }
+
+  startRecording(id: string, req: { reason: string; minutes: number; question?: string }) {
+    return this.req<RecordingInfo>(paths.recordings(id), { method: "POST", body: JSON.stringify(req) });
+  }
+
+  async stopRecording(id: string, rid: string) { await this.req(paths.recordingStop(id, rid), { method: "POST", body: "{}" }); }
+
+  /** Desktop: uploads a recording as it starts, grows and finishes. */
+  async putRecording(id: string, r: Recording) { await this.req(paths.recording(id, r.id), { method: "PUT", body: JSON.stringify(r) }); }
+
   private local(): never { throw new Error("Changes are made from the Rig app on the PC itself."); }
   preview(_id: string, _calls: ActionCall[]): Promise<DiffRow[]> { return this.local(); }
   apply(): Promise<Change> { return this.local(); }
@@ -168,7 +192,7 @@ export class CloudClient implements RigClient {
 
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
   async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts }) {
-    const body: ChatRequest = { machineId, messages: history.map(({ from, text }) => ({ from, text })), ...live };
+    const body: ChatRequest = { machineId, messages: history.map(({ from, text }) => ({ from, text })), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...live };
     const res = await this.send(paths.chat, { method: "POST", headers: { accept: "text/event-stream" }, body: JSON.stringify(body), signal });
     await readChatStream(res, onEvent);
   }

@@ -4,6 +4,7 @@
 
 import type { ActionCall } from "./actions";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
+import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 
 export interface Proposal {
   id: string;
@@ -24,6 +25,8 @@ export interface ChatMessage {
   sources?: Source[];
   steps?: string[];
   proposal?: Proposal;
+  /** A recording Rig started with this answer. Its card follows the recording's live state. */
+  recording?: RecordingRequest;
   pending?: boolean;
   error?: boolean;
 }
@@ -55,6 +58,8 @@ export type ChatEvent =
   | { type: "sources"; sources: Source[] }
   | { type: "steps"; steps: string[] }
   | { type: "proposal"; proposal: Proposal }
+  /** Rig started a recording. `queued` means the PC picks it up the next time its app checks in. */
+  | { type: "recording"; request: RecordingRequest; queued: boolean }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -98,6 +103,19 @@ export interface RigClient {
   undo(machineId: string, changeId: string): Promise<Change>;
   redo(machineId: string, changeId: string): Promise<Change>;
 
+  /** Windows crash, driver, hardware, shutdown and disk events from the last 30 days, newest first. */
+  events(machineId: string): Promise<PCEvent[]>;
+  /** The PC's recordings, newest first. Calls back now and whenever one changes; returns a stop function. */
+  watchRecordings(machineId: string, cb: (list: RecordingInfo[]) => void): () => void;
+  /** One recording with its readings and events. */
+  recording(machineId: string, id: string): Promise<Recording | null>;
+  /** Starts a recording. It only collects readings, so it needs no review. On the web it waits for the PC's app to pick it up. */
+  startRecording(machineId: string, req: { reason: string; minutes: number; question?: string }): Promise<RecordingInfo>;
+  /** Stops a recording early. What it collected so far is kept. */
+  stopRecording(machineId: string, id: string): Promise<void>;
+
+  /** A conversation to open the chat with (the demo's example). */
+  conversation?(machineId: string): ChatMessage[];
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }

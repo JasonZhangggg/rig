@@ -3,6 +3,7 @@
 
 import type { Change, ChatEvent, ChatMessage } from "./client";
 import type { Game, HistoryPoint, PC } from "./model";
+import type { PCEvent, RecordingRequest } from "./recordings";
 import type { Inventory, SystemFacts } from "./telemetry";
 import type { Identity } from "./view";
 
@@ -20,10 +21,17 @@ export interface MachineSync {
   /** Name, color and dust-clean date, with when they last changed here. */
   identity: Identity;
   identityAt?: string;
+  /** Windows events from the last 30 days, newest first. Missing from apps that don't read them yet. */
+  events?: PCEvent[];
 }
 
 /** Reply to a sync: the account's identity for this PC, which wins when it was changed on the web later. */
-export interface SyncReply { identity: Identity; identityAt?: string }
+export interface SyncReply {
+  identity: Identity;
+  identityAt?: string;
+  /** Recordings asked for on the web that this PC should start, and ones it should stop. */
+  recordings?: { start: RecordingRequest[]; stop: string[] };
+}
 
 /** GET /api/config: what this server has turned on. */
 export interface ServerConfig { google: boolean; chat: boolean }
@@ -34,6 +42,8 @@ export interface ChatRequest {
   messages: Pick<ChatMessage, "from" | "text">[];
   view?: PC;
   facts?: SystemFacts;
+  /** The person's time zone, like "Europe/Berlin", so Rig can say when to check back. */
+  tz?: string;
 }
 
 export const paths = {
@@ -45,6 +55,10 @@ export const paths = {
   games: (id: string) => `/machines/${encodeURIComponent(id)}/games`,
   upgrades: (id: string) => `/machines/${encodeURIComponent(id)}/upgrades`,
   sync: (id: string) => `/machines/${encodeURIComponent(id)}/sync`,
+  events: (id: string) => `/machines/${encodeURIComponent(id)}/events`,
+  recordings: (id: string) => `/machines/${encodeURIComponent(id)}/recordings`,
+  recording: (id: string, rid: string) => `/machines/${encodeURIComponent(id)}/recordings/${encodeURIComponent(rid)}`,
+  recordingStop: (id: string, rid: string) => `/machines/${encodeURIComponent(id)}/recordings/${encodeURIComponent(rid)}/stop`,
   chat: "/chat",
   config: "/config",
   // Better Auth
