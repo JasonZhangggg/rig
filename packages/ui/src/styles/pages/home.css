@@ -115,7 +115,7 @@
 .f-todo-check { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 13px; border: 0; border-radius: var(--r-pill); background: var(--graphite); color: #FFFFFF; font: 500 13.5px var(--font); cursor: pointer; transition: transform .12s; }
 .f-todo-check:active { transform: scale(.98); }
 .f-todo-check svg { width: 16px; height: 16px; }
-.f-asks { display: none; flex-direction: column; gap: 10px; margin-top: auto; }
+.f-asks { display: none; flex-direction: column; gap: 10px; margin-top: 10px; }
 .f-asks > span { color: var(--text-3); font-size: 12.5px; font-weight: 600; }
 .f-asks > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .f-asks button { min-height: 36px; padding: 8px 14px; border: 0; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text); font: 500 13px/1.25 var(--font); text-align: left; cursor: pointer; }
@@ -124,7 +124,6 @@
 }
 @container side (min-height: 700px) {
   .f-asks { display: flex; }
-  .f-asks + .f-todo-foot { margin-top: 0; }
 }
 .f-todo-empty { flex: 1; display: grid; place-items: center; align-content: center; gap: 12px; padding: 12px; text-align: center; }
 .f-todo-empty .f-todo-ico { width: 48px; height: 48px; background: var(--good); color: #111111; }

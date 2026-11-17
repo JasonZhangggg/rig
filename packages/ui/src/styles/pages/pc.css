@@ -1,6 +1,5 @@
 .pc-view { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: var(--gap); align-items: start; }
-.stage-card,
-.signin-art {
+.stage-card {
   isolation: isolate;
   background:
     radial-gradient(70% 60% at 100% 0%, color-mix(in srgb, var(--expected) 42%, transparent) 0%, transparent 62%),
