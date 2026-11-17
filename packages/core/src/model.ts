@@ -86,6 +86,10 @@ export interface PCSettings {
   startupOn: number;
 }
 
+/** How long one HistoryPoint covers. The desktop records one per window; insights read them back on this grid. */
+export const HISTORY_WINDOW_MS = 10 * 60_000;
+
+/** One window of a PC's history: the highest readings in it and what it was doing. */
 export interface HistoryPoint {
   /** Milliseconds since epoch. */
   t: number;

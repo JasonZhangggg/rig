@@ -8,7 +8,7 @@ import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
 import type { AppliedCall, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
 import { cpuTemp, gpuTemp } from "./health";
-import type { DiffRow, Game, HistoryPoint, PC } from "./model";
+import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { findSensor, type Inventory, type Snapshot, type SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -75,7 +75,7 @@ export class LocalClient implements RigClient {
   private o: Required<LocalOptions>;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: 10 * 60_000, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, now: Date.now, ...opts };
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, now: Date.now, ...opts };
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
   }
 
