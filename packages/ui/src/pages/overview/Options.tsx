@@ -33,9 +33,9 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 const SERIES = ["idle", "typical", "peak"];
 
 /** Every choice for one widget. Changes show on the tile straight away. */
-export function WidgetOptions({ w, index, count, onChange, onMove, onHide, onReset }: {
-  w: Widget; index: number; count: number;
-  onChange: (patch: Partial<Widget>) => void; onMove: (to: number) => void; onHide: () => void; onReset: () => void;
+export function WidgetOptions({ w, index, count, size, onChange, onSize, onMove, onHide, onReset }: {
+  w: Widget; index: number; count: number; size: SizeName | null;
+  onChange: (patch: Partial<Widget>) => void; onSize: (size: SizeName) => void; onMove: (by: -1 | 1) => void; onHide: () => void; onReset: () => void;
 }) {
   const ctx = useApp();
   const meta = KINDS[w.kind];
@@ -47,7 +47,8 @@ export function WidgetOptions({ w, index, count, onChange, onMove, onHide, onRes
     <>
       <Section title="Look">
         <Seg label="Style" value={w.style} options={meta.styles} onPick={(style) => onChange({ style })} />
-        <Seg label="Size" value={w.size} options={(Object.keys(meta.sizes) as SizeName[]).map((s) => [s, SIZE_LABEL[s]])} onPick={(size) => onChange({ size })} />
+        <Seg<SizeName | "custom"> label="Size" value={size ?? "custom"} options={(Object.keys(meta.sizes) as SizeName[]).map((s) => [s, SIZE_LABEL[s]])} onPick={(s) => { if (s !== "custom") onSize(s); }} />
+        {!size && <p className="dnote">A size of your own. Pick one above, or pull the tile's edge.</p>}
         <Seg<Tone> label="Tone" value={w.tone} options={[["light", "Light"], ["dark", "Dark"]]} onPick={(tone) => onChange({ tone })} />
         <Seg label="Background" value={dark ? "tile" : w.frame} options={[["tile", "Tile"], ["open", "On the page"]]} onPick={(frame) => onChange({ frame })} disabled={dark} />
         {dark && <p className="dnote">Dark widgets always sit on a tile.</p>}
@@ -80,8 +81,8 @@ export function WidgetOptions({ w, index, count, onChange, onMove, onHide, onRes
       )}
       <div className="dfoot">
         <div className="dfoot-row">
-          <button type="button" className="dbtn" disabled={index === 0} onClick={() => onMove(index - 1)}>Move earlier</button>
-          <button type="button" className="dbtn" disabled={index === count - 1} onClick={() => onMove(index + 1)}>Move later</button>
+          <button type="button" className="dbtn" disabled={index === 0} onClick={() => onMove(-1)}>Move earlier</button>
+          <button type="button" className="dbtn" disabled={index === count - 1} onClick={() => onMove(1)}>Move later</button>
         </div>
         <div className="dfoot-row">
           <button type="button" className="dbtn quiet" onClick={onReset}>Reset this widget</button>
