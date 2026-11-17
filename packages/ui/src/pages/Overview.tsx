@@ -1,20 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
-import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, shownSummary, weekEvenings, weekTemps, type HistoryPoint, type Issue, type PC } from "@rig/core";
-import { StageSlot, getStage } from "../components/Stage";
-import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../state";
-import { FansCard } from "./overview/FansCard";
-import { TempsCard } from "./overview/TempsCard";
-import { WeekCard } from "./overview/WeekCard";
-import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { fanTrend, insightContext, seenLabel, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
+import { getStage } from "../components/Stage";
+import { useApp, useHistory } from "../state";
+import { FansCard, type FansStyle } from "./overview/FansCard";
+import { Grid } from "./overview/Grid";
+import { KINDS, SIZE_LABEL, defaultWidget, type Kind, type Tone, type Widget } from "./overview/layout";
+import { AddWidgets, DashOptions, ResetConfirm, WidgetOptions } from "./overview/Options";
+import { Popover } from "./overview/Popover";
+import { TempsCard, type TempsStyle } from "./overview/TempsCard";
+import { dashboardKey, useDashboard } from "./overview/useDashboard";
+import { WeekCard, type EveningsStyle } from "./overview/WeekCard";
+import { Arrow, AsksWidget, HealthWidget, LiveWidget, PCWidget, PartsWidget, StorageWidget, TodoWidget, checkupQuestion, useHomeIssues, useOpenIssue, type TileBox } from "./overview/widgets";
+import { firstName, greeting } from "./shared";
 
-const Go = () => <svg className="f-go" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-
-const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
 const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
 const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
+const Sliders = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2.2" /><circle cx="9" cy="17" r="2.2" /></svg>;
 
-const SPEC_PARTS = ["cpu", "gpu", "ram"];
+const GAPS = { tight: 14, normal: 24, roomy: 36 } as const;
 
 /** Heat and exploded views for the hero. They belong to this page, so leaving it puts the shared scene back. */
 function useHeroViews() {
@@ -23,7 +26,7 @@ function useHeroViews() {
   useEffect(() => { getStage().scene.setHeat(heat); }, [heat]);
   useEffect(() => { getStage().scene.setExploded(exploded); }, [exploded]);
   useEffect(() => () => { const { scene } = getStage(); scene.setHeat(false); scene.setExploded(false); }, []);
-  return { heat, exploded, toggleHeat: () => setHeat((v) => !v), toggleExploded: () => setExploded((v) => !v) };
+  return useMemo(() => ({ heat, exploded, toggleHeat: () => setHeat((v) => !v), toggleExploded: () => setExploded((v) => !v) }), [heat, exploded]);
 }
 
 /** The home charts from the last week of history, in the viewer's local days. Null while history loads. */
@@ -34,38 +37,77 @@ function useWeekInsights(pc: PC, points: HistoryPoint[] | null) {
   return useMemo(() => {
     if (!points) return null;
     const ctx = insightContext({ kind, parts: { cpu: { limit: cpu }, gpu: { limit: gpu } } });
-    return { recorded: points.length > 0, temps: weekTemps(points, ctx), evenings: weekEvenings(points, ctx), fans: fanTrend(points, ctx) };
+    return { recorded: points.length > 0, temps: weekTemps(points, ctx), evenings: weekEvenings(points, ctx), fans: fanTrend(points, ctx, 28) };
   }, [points, kind, cpu, gpu]);
 }
 
+type Panel = { type: "widget"; id: string; at: HTMLElement } | { type: "add" | "dash" | "reset"; at: HTMLElement } | null;
+
 export function Overview() {
-  const ctx = useApp();
-  const { pc, data, client, set, go, ask } = ctx;
-  const dust = dustIssue(pc);
-  const off = useAlertKindsOff();
-  const alerts = shownAlerts(pc.alerts, off);
-  const summary = shownSummary(pc, alerts);
-  const covered = coveredIssues(alerts);
-  const found = (dust ? [...(pc.issues ?? []), dust] : pc.issues ?? []).filter((i) => !covered.has(i.id) && !(alerts.length && i.severity === "ok"));
-  const issues = bySeverity([...alerts.map((a) => alertIssue(a)), ...found]);
-  const open = issues.filter((i) => i.severity === "warn" || i.severity === "bad");
+  const { pc, data, client, set, ask } = useApp();
+  const { issues, open } = useHomeIssues();
+  const openIssue = useOpenIssue();
   const top = open[0] ?? issues[0];
-  const specs = SPEC_PARTS.flatMap((id) => { const p = pc.parts?.[id]; return p ? [{ id, type: shortType(p.type), name: p.name }] : []; });
-  const reads = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp != null).slice(0, 4);
-  const views = useHeroViews();
   const name = client.kind === "demo" ? null : firstName(data.account?.name);
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
-  const ringC = 2 * Math.PI * 52;
+  const views = useHeroViews();
   const week = useWeekInsights(pc, useHistory("7d"));
-  const temp = useTemp();
-  const inUnit = useTempText();
-  const checkup = () => ask(`Give ${pc.name} a checkup. Is anything running hotter or slower than it should?`);
-  const asks = [`Why is ${pc.name} loud?`, "What should I upgrade first?", `How hot is too hot for ${pc.name}?`];
-  const goTo = (i: Issue) => issueGo(i.ask ? { ...i, ask: inUnit(i.ask) } : i, pc, ctx);
+  const board = useDashboard(dashboardKey(data.account?.id ?? pc.id));
+  const { dash } = board;
+  const [editing, setEditing] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [said, setSaid] = useState("");
+  const shown = dash.widgets.filter((w) => !w.hidden);
+  const hidden = dash.widgets.filter((w) => w.hidden);
+  const titleOf = useCallback((w: Widget) => KINDS[w.kind].title, []);
+  const close = useCallback(() => setPanel(null), []);
+  const announce = useCallback((text: string) => setSaid(text), []);
+
+  const render = useCallback((w: Widget, box: TileBox) => {
+    const props = { style: w.style, opts: w.opts, box, editing };
+    const compact = box.size === "s";
+    const o = w.opts;
+    switch (w.kind as Kind) {
+      case "pc": return <PCWidget {...props} views={views} />;
+      case "health": return <HealthWidget {...props} />;
+      case "todo": return <TodoWidget {...props} />;
+      case "asks": return <AsksWidget {...props} />;
+      case "storage": return <StorageWidget {...props} />;
+      case "live": return <LiveWidget {...props} />;
+      case "parts": return <PartsWidget {...props} />;
+      case "temps": return (
+        <TempsCard
+          temps={week?.temps ?? null} name={pc.name} style={w.style as TempsStyle} days={Number(o.days)} compact={compact}
+          show={{ idle: o.idle !== false, typical: o.typical !== false, peak: o.peak !== false }} figure={o.figure !== false} legend={o.legend !== false}
+        />
+      );
+      case "fans": return (
+        <FansCard
+          fans={pc.fans} trend={week?.fans ?? null} style={w.style as FansStyle} days={Number(o.span)} compact={compact}
+          live={o.live !== false} legend={o.legend !== false} off={Array.isArray(o.off) ? o.off : []}
+        />
+      );
+      case "evenings": return (
+        <WeekCard
+          week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} style={w.style as EveningsStyle} days={Number(o.days)} compact={compact}
+          background={o.background !== false} total={o.total !== false} legend={o.legend !== false}
+        />
+      );
+    }
+  }, [editing, views, week, pc.name, pc.fans]);
+
+  const done = () => { setEditing(false); setPanel(null); announce("Done customizing. Your layout is saved."); document.getElementById("f-customize")?.focus(); };
+  const edit = (id?: string) => {
+    setEditing(true);
+    announce("Customizing Home. Drag a tile or use the arrow keys to move it.");
+    if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus());
+  };
+  const setTones = (tone: Tone | "default") => board.change((d) => ({ ...d, widgets: d.widgets.map((w) => ({ ...w, tone: tone === "default" ? defaultWidget(w.kind).tone : tone })) }));
+  const current = panel?.type === "widget" ? shown.find((w) => w.id === panel.id) : undefined;
 
   return (
-    <div className="page f-home">
+    <div className="page f-home" data-density={dash.density} data-corners={dash.corners}>
       <header className="f-head">
         <div className="f-head-text">
           <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
@@ -74,108 +116,78 @@ export function Overview() {
         <div className="f-head-tools">
           <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
-            <button type="button" className="f-cta" onClick={() => goTo(top)}>
+            <button type="button" className="f-cta" onClick={() => openIssue(top)}>
               <span>{open.length ? "Review" : "See what's new"}</span>
               {open.length > 0 && <em>{open.length}</em>}
               <i><Arrow /></i>
             </button>
           )}
-          <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={checkup}><Pulse /></button>
+          <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={() => ask(checkupQuestion(pc.name))}><Pulse /></button>
           <button type="button" className="f-round f-mic" aria-label="Ask Rig" title="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
+          <button type="button" id="f-customize" className="f-round f-custom" aria-label="Customize Home" title="Customize Home" aria-pressed={editing} onClick={() => (editing ? done() : edit())}><Sliders /></button>
         </div>
       </header>
 
-      <div className="f-top">
-        <section className={`f-pc${reads.length ? "" : " no-reads"}`} aria-label={`${pc.name} in 3D`}>
-          <div className="f-pc-in">
-            <div className="f-pc-top">
-              <div><div className="f-kicker">{pc.nickname}</div><div className="f-pc-name">{pc.name}</div></div>
-              <div className="f-pc-tools">
-                <div className="f-views" role="group" aria-label="3D view">
-                  <button type="button" aria-pressed={views.heat} onClick={views.toggleHeat}>Heat</button>
-                  <button type="button" aria-pressed={views.exploded} onClick={views.toggleExploded}>Exploded</button>
-                </div>
-                <a className="f-link" href="#pc">Open 3D view<Go /></a>
-              </div>
-            </div>
-            <div className="f-stage"><StageSlot id="hero-stage" zoom={false} spin /></div>
-            {specs.length > 0 && (
-              <dl className="f-specs">
-                {specs.map((p) => <div key={p.id}><dt>{p.type}</dt><dd>{p.name}</dd></div>)}
-              </dl>
-            )}
-            {reads.length > 0 && (
-              <div className="f-reads" role="group" aria-label="Temperatures">
-                {reads.map(([id, p]) => (
-                  <button key={id} type="button" className={`f-read${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
-                    <span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}</b>
-                  </button>
-                ))}
-              </div>
-            )}
+      {editing && (
+        <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
+          <p><b>Customizing Home.</b> Drag a tile to move it, drag its corner to resize it.</p>
+          <div className="dash-bar-tools">
+            <button type="button" className="dbtn" onClick={(e) => setPanel({ type: "add", at: e.currentTarget })}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
+            <button type="button" className="dbtn" onClick={(e) => setPanel({ type: "dash", at: e.currentTarget })}>Dashboard</button>
+            <button type="button" className="dbtn" onClick={(e) => setPanel({ type: "reset", at: e.currentTarget })}>Reset</button>
+            <button type="button" className="dbtn primary" onClick={done}>Done</button>
           </div>
-        </section>
-
-        <div className="f-side">
-          <section className="f-health">
-            <div className="f-ring">
-              <svg viewBox="0 0 120 120" aria-hidden="true">
-                <circle cx="60" cy="60" r="52" className="tr" />
-                <circle cx="60" cy="60" r="52" className="vl" strokeDasharray={`${(ringC * pc.health) / 100} ${ringC}`} transform="rotate(-90 60 60)" />
-              </svg>
-              <div><b>{pc.health}</b><span>of 100</span></div>
-            </div>
-            <div className="f-health-text">
-              <h2>Health</h2>
-              <p>{summary}</p>
-              <a className="f-link" href="#history">See history<Go /></a>
-            </div>
-          </section>
-
-          <section className="f-todo">
-            <div className="f-todo-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count" aria-label={`${open.length} open`}>{open.length}</span>}</div>
-            {issues.length > 0 ? (
-              <ul className="f-todo-list">
-                {issues.map((i) => (
-                  <li key={i.id}>
-                    <button type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
-                      <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
-                      <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
-                      <i className="f-todo-go"><Arrow /></i>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="f-todo-empty"><i className="f-todo-ico"><Check /></i><p>Nothing to look at. Rig keeps watching while you use {pc.name}.</p></div>
-            )}
-            {issues.length <= 3 && (
-              <div className="f-asks" role="group" aria-label="Ask Rig">
-                <span>Ask Rig</span>
-                {asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}<Go /></button>)}
-              </div>
-            )}
-            <div className="f-todo-foot">
-              <p>Want a fuller look at {pc.name}?</p>
-              <button type="button" className="f-link" onClick={checkup}>Run a checkup<Go /></button>
-            </div>
-          </section>
         </div>
-      </div>
+      )}
 
-      <section className="f-week" aria-labelledby="f-week-title">
-        <div className="f-week-head">
-          <h2 id="f-week-title">This week</h2>
-          <p>The last seven days on {pc.name}</p>
+      {shown.length ? (
+        <Grid
+          widgets={shown} editing={editing} compact={dash.density === "compact"} gap={GAPS[dash.spacing]}
+          titleOf={titleOf} render={render} announce={announce} onEdit={edit} onDone={done}
+          onMove={(id, to, size) => board.move(id, to, size ? { size } : undefined)}
+          onResize={(id, size) => board.setWidget(id, { size })}
+          onOptions={(id, at) => setPanel({ type: "widget", id, at })}
+        />
+      ) : (
+        <div className="dash-empty">
+          <p>Your dashboard is empty. Add a widget to see {pc.name} here again.</p>
+          <button type="button" className="dbtn primary" onClick={(e) => { setEditing(true); setPanel({ type: "add", at: e.currentTarget }); }}>Add widget</button>
         </div>
-        <div className="f-trends">
-          <div className="f-vitals">
-            <TempsCard temps={week?.temps ?? null} name={pc.name} />
-            <FansCard fans={pc.fans} trend={week?.fans ?? null} />
-          </div>
-          <WeekCard week={week?.evenings ?? null} recorded={week?.recorded ?? false} name={pc.name} />
-        </div>
-      </section>
+      )}
+
+      <p id="dash-keys" className="sr-only">Arrow keys move this widget. Shift and arrow keys resize it. Enter or Escape finishes.</p>
+      <div className="sr-only" aria-live="polite">{said}</div>
+
+      {current && panel?.type === "widget" && (
+        <Popover anchor={panel.at} label={`${titleOf(current)} options`} onClose={close}>
+          <WidgetOptions
+            w={current} index={shown.indexOf(current)} count={shown.length}
+            onChange={(patch) => {
+              board.setWidget(current.id, patch);
+              if (patch.size) announce(`${titleOf(current)} is now ${SIZE_LABEL[patch.size]}.`);
+              if (patch.tone) announce(`${titleOf(current)} is now ${patch.tone}.`);
+            }}
+            onMove={(to) => { board.move(current.id, to); announce(`${titleOf(current)} moved to place ${to + 1} of ${shown.length}.`); }}
+            onHide={() => { board.setWidget(current.id, { hidden: true }); close(); announce(`${titleOf(current)} hidden. Add it back from Add widget.`); }}
+            onReset={() => { board.resetWidget(current.id); announce(`${titleOf(current)} is back to how it started.`); }}
+          />
+        </Popover>
+      )}
+      {panel?.type === "add" && (
+        <Popover anchor={panel.at} label="Add widget" onClose={close}>
+          <AddWidgets hidden={hidden} onAdd={(id) => { board.add(id); announce(`${KINDS[id as Kind].title} added at the end.`); if (hidden.length <= 1) close(); }} />
+        </Popover>
+      )}
+      {panel?.type === "dash" && (
+        <Popover anchor={panel.at} label="Dashboard" onClose={close}>
+          <DashOptions dash={dash} onChange={(patch) => board.change((d) => ({ ...d, ...patch }))} onTone={setTones} />
+        </Popover>
+      )}
+      {panel?.type === "reset" && (
+        <Popover anchor={panel.at} label="Reset Home?" onClose={close} width={340}>
+          <ResetConfirm onCancel={close} onReset={() => { board.reset(); close(); announce("Home is back to how it started."); }} />
+        </Popover>
+      )}
     </div>
   );
 }
