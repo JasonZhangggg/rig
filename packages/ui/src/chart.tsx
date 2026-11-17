@@ -1,5 +1,23 @@
 // Small SVG charts drawn with theme colors (CSS variables), no chart library.
+import { useLayoutEffect, useRef, useState } from "react";
 import type { HistoryPoint } from "@rig/core";
+
+/** The element's width in CSS pixels, so a chart draws at its real size and its text isn't stretched. */
+function useWidth<T extends HTMLElement>(fallback: number) {
+  const ref = useRef<T>(null);
+  const [w, setW] = useState(fallback);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => { if (el.clientWidth) setW(el.clientWidth); };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
 
 export function Sparkline({ values, w = 120, h = 32, warn = false }: { values: number[]; w?: number; h?: number; warn?: boolean }) {
   if (values.length < 2) return null;
@@ -24,11 +42,24 @@ interface LineChartProps {
   bands?: boolean;
 }
 
+/** A message in the chart's place, the same size, so the page doesn't jump when the chart arrives. */
+export function ChartNote({ children, busy }: { children: string; busy?: boolean }) {
+  return <div className="chart chart-empty" role="status" aria-busy={busy || undefined}><p className="muted">{children}</p></div>;
+}
+
 /** Temperatures over time with shaded busy periods. Gaps where the PC was off stay empty. */
-export function LineChart({ points, series, w = 860, h = 280, limit, bands }: LineChartProps) {
+export function LineChart(props: LineChartProps) {
+  const [ref, width] = useWidth<HTMLDivElement>(props.w ?? 860);
+  return (
+    <div ref={ref}>
+      {props.points.length < 2 ? <ChartNote>Not enough readings yet. Rig logs temperatures every minute while it runs.</ChartNote> : <LineChartSvg {...props} w={width} />}
+    </div>
+  );
+}
+
+function LineChartSvg({ points, series, w = 860, h = 300, limit, bands }: LineChartProps) {
   const pad = { l: 40, r: 16, t: 14, b: 28 };
   const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
-  if (points.length < 2) return <p className="muted">Not enough readings yet. Rig logs temperatures every minute while it runs.</p>;
   const t0 = points[0].t, t1 = points[points.length - 1].t;
   const vals = points.flatMap((p) => series.map((s) => p[s.key])).filter((v): v is number => v != null);
   const yMin = Math.min(30, Math.floor(Math.min(...vals) / 10) * 10);
@@ -69,7 +100,7 @@ export function LineChart({ points, series, w = 860, h = 280, limit, bands }: Li
   };
 
   return (
-    <svg className="chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Temperature history">
+    <svg className="chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Temperature history">
       {bandRects.map(([a, b]) => <rect key={a} x={x(a)} y={pad.t} width={Math.max(2, x(b) - x(a))} height={ih} className="chart-band" />)}
       {grid.map((v) => (
         <g key={v}>
