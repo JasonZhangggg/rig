@@ -4,7 +4,8 @@ import { SimulatedLink, fixtures } from "@rig/core/demo";
 import { createApp } from "../src/app";
 import type { Streamer } from "../src/chat";
 import type { Env } from "../src/env";
-import { testD1 } from "./d1";
+import type { RigTables } from "../src/sql";
+import { testDb } from "./pglite";
 
 const ORIGIN = "http://localhost:8787";
 
@@ -39,8 +40,9 @@ function fakeClaude(rounds: { text?: string; tool?: { name: string; input: unkno
 }
 
 async function setup(env: Partial<Env> = {}, claude?: Streamer) {
-  const e: Env = { DB: testD1(), WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", ...env };
-  const app = createApp({ claude: () => claude! });
+  const db = await testDb<RigTables>();
+  const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", ...env };
+  const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }) });
   const call = (path: string, init: RequestInit & { json?: unknown; cookie?: string; token?: string } = {}) => {
     const headers = new Headers(init.headers);
     if (init.json !== undefined) headers.set("content-type", "application/json");

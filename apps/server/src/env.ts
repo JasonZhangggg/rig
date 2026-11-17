@@ -1,6 +1,9 @@
 /** Bindings and settings the Worker gets from wrangler.toml and `wrangler secret put`. */
 export interface Env {
-  DB: D1Database;
+  /** Cloudflare Hyperdrive in front of the Postgres database. */
+  HYPERDRIVE?: Hyperdrive;
+  /** A Postgres connection string, used when there's no Hyperdrive binding (tests, scripts). */
+  DATABASE_URL?: string;
   ASSETS?: Fetcher;
   /** Where the website lives, like https://rig.example.com. Also Better Auth's base URL. */
   WEB_ORIGIN: string;

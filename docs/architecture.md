@@ -22,7 +22,7 @@ The PC view the screens draw is built by one function, `buildPC` (`packages/core
 
 ## The server
 
-`apps/server` is one Cloudflare Worker (Hono) with a D1 database. It serves the website's files and, under `/api`:
+`apps/server` is one Cloudflare Worker (Hono) with a Postgres database (Neon in production, reached through Cloudflare Hyperdrive; queries go through Kysely, which Better Auth uses too). It serves the website's files and, under `/api`:
 
 - **Accounts** with [Better Auth](https://better-auth.com): email and password on the website, Google when it's configured, and the desktop sign-in. The desktop asks for a code (`/api/auth/device/code`) and opens `/app/?user_code=…`, where the person checks the code and approves. The app then gets a bearer token, kept in Windows Credential Manager.
 - **PCs**: the desktop uploads its view, settings, change log and new history points (`PUT /api/machines/:id/sync`). The website reads them back. A PC is keyed by account and machine id, and counts as online when it synced in the last 12 minutes. Name and color can be changed on either side; whichever changed last wins.
@@ -54,6 +54,7 @@ CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver.
 
 - **Monorepo with pnpm workspaces.** The website and the app share every screen.
 - **Desktop data in SQLite** in the app's data folder; history keeps 90 days, one point per ten minutes with the highest temperatures in that window.
+- **Server database is Postgres (Neon), not Cloudflare D1.** D1 stops at 10 GB per database and is meant to be split per user; one Postgres database can keep growing. Accounts stay in Rig's own database with Better Auth, so there's no per-user cost for sign-in.
 - **Sign-in token in Windows Credential Manager**, not in a file.
 - **Desktop sign-in through the browser** with a short code (OAuth device flow), so the app never handles a password.
 - **Installer:** NSIS, installed for the current user (no admin prompt to install).
@@ -65,7 +66,7 @@ CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver.
 Tested here (Linux, no Windows):
 
 - Core logic: health checks, the fix catalog, the PC view, LocalClient's apply, undo, redo, rollback on failure, history and upload (`pnpm --filter @rig/core test`).
-- Server: sign-up, the desktop's code sign-in from start to bearer token, CORS for the app, upload and read-back, privacy between accounts, which name wins, offline after 12 minutes, and chat with a stand-in for Claude: streamed text, a proposal checked against the PC, refusing changes that don't exist on the PC, steps, the daily limit (`pnpm --filter @rig/server test`, Better Auth on a D1 stand-in). The Worker was also run locally with `wrangler dev` and a real local D1: sign-up, the device code, upload and listing all worked.
+- Server: sign-up, the desktop's code sign-in from start to bearer token, CORS for the app, upload and read-back, privacy between accounts, which name wins, offline after 12 minutes, and chat with a stand-in for Claude: streamed text, a proposal checked against the PC, refusing changes that don't exist on the PC, steps, the daily limit (`pnpm --filter @rig/server test`, on real Postgres running in memory through PGlite). The Worker was also run with `wrangler dev` against a local Postgres 16 after the migration script: sign-up, the desktop's code sign-in to a bearer token, upload, re-upload, renaming on the web, listing, history and chat's not-set-up message all worked.
 - Screens: every page renders, the account sits at the bottom of the sidebar, a change goes through review before it's made and can be undone (`pnpm --filter @rig/ui test`, jsdom with the 3D scene stubbed).
 - Desktop Rust: the store and the helper protocol over an in-memory pipe (`cargo test`). The Windows-only launch code type-checks for Windows.
 - The helper compiles; the website and the desktop front end build.

@@ -7,6 +7,7 @@ import { bearer } from "better-auth/plugins/bearer";
 import { deviceAuthorization } from "better-auth/plugins/device-authorization";
 import { desktopClientId } from "@rig/core";
 import type { Env } from "./env";
+import type { DB } from "./sql";
 
 /** Where requests from the Tauri desktop app come from (Windows uses the http one). */
 export const desktopOrigins = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420"];
@@ -42,5 +43,5 @@ export function authOptions(env: Env, database: BetterAuthOptions["database"]): 
   };
 }
 
-export const makeAuth = (env: Env, database: BetterAuthOptions["database"]) => betterAuth(authOptions(env, database));
+export const makeAuth = (env: Env, db: DB) => betterAuth(authOptions(env, { db, type: "postgres" }));
 export type Auth = ReturnType<typeof makeAuth>;

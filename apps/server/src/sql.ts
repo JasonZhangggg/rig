@@ -1,0 +1,38 @@
+// The database connection: Postgres, reached through Cloudflare Hyperdrive in
+// production (it pools connections near the database) or a plain connection
+// string for local runs. One connection pool per request, as Workers require.
+
+import { Kysely, PostgresDialect, type ColumnType, type Generated } from "kysely";
+import pg from "pg";
+import type { Env } from "./env";
+
+// Postgres bigint comes back as a string by default. Rig's bigints are
+// millisecond times, which fit in a JS number.
+pg.types.setTypeParser(20, (v) => Number(v));
+
+type Json<T> = ColumnType<T, string, string>;
+type Time = ColumnType<Date, Date | string, Date | string>;
+
+/** Rig's own tables. Better Auth reaches its tables through the same connection. */
+export interface RigTables {
+  machine: {
+    user_id: string; id: string;
+    view: Json<unknown>; inventory: Json<unknown> | null; facts: Json<unknown> | null;
+    changes: Json<unknown[]>; games: Json<unknown[]>; identity: Json<Record<string, unknown>>;
+    identity_at: Time | null; synced_at: Time; created_at: Generated<Date>;
+  };
+  machine_history: { user_id: string; machine_id: string; t: number; cpu: number | null; gpu: number | null; busy: boolean };
+  chat_usage: { user_id: string; day: string; count: number };
+}
+
+export type DB = Kysely<RigTables>;
+
+export interface Connection { db: DB; close(): Promise<void> }
+
+export function connect(env: Env): Connection {
+  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+  if (!connectionString) throw new Error("No database: set the HYPERDRIVE binding or DATABASE_URL.");
+  const pool = new pg.Pool({ connectionString, max: 5 });
+  const db = new Kysely<RigTables>({ dialect: new PostgresDialect({ pool }) });
+  return { db, close: () => db.destroy() };
+}

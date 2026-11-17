@@ -11,14 +11,17 @@ import { desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
 import type { Env } from "./env";
+import { connect, type Connection } from "./sql";
 
 type User = { id: string; name: string; email: string };
-type Vars = { user: User; store: Store };
+type Vars = { user: User; store: Store; conn?: Connection; auth?: Auth };
 type C = Context<{ Bindings: Env; Variables: Vars }>;
 
 export interface AppDeps {
   /** The Claude client. Tests pass a stand-in. */
   claude?: (env: Env) => Streamer;
+  /** Opens the database for one request. Tests pass an in-memory Postgres. */
+  database?: (env: Env) => Connection;
   now?: () => Date;
 }
 
@@ -28,10 +31,17 @@ const validId = (id: string) => /^[\w.-]{1,128}$/.test(id);
 export function createApp(deps: AppDeps = {}) {
   const now = deps.now ?? (() => new Date());
   const claude = deps.claude ?? ((env: Env) => new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }));
-  const auths = new WeakMap<Env, Auth>();
-  const authFor = (env: Env) => {
-    let a = auths.get(env);
-    if (!a) { a = makeAuth(env, env.DB); auths.set(env, a); }
+  const database = deps.database ?? connect;
+  // Workers can't share a database connection between requests, so each
+  // request opens its own (Hyperdrive keeps the real connections warm).
+  const dbFor = (c: C) => {
+    let conn = c.get("conn");
+    if (!conn) { conn = database(c.env); c.set("conn", conn); }
+    return conn.db;
+  };
+  const authFor = (c: C) => {
+    let a = c.get("auth");
+    if (!a) { a = makeAuth(c.env, dbFor(c)); c.set("auth", a); }
     return a;
   };
 
@@ -45,9 +55,17 @@ export function createApp(deps: AppDeps = {}) {
     exposeHeaders: ["set-auth-token"],
     maxAge: 600,
   }));
+  app.use("/api/*", async (c, next) => {
+    await next();
+    const conn = c.get("conn");
+    if (!conn) return;
+    let ctx: { waitUntil(p: Promise<unknown>): void } | undefined;
+    try { ctx = c.executionCtx; } catch { /* no Workers context, as in tests */ }
+    if (ctx) ctx.waitUntil(conn.close()); else await conn.close();
+  });
   app.use("/api/*", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ message: "That upload is too big." }, 413) }));
 
-  app.on(["GET", "POST"], "/api/auth/*", (c) => authFor(c.env).handler(c.req.raw));
+  app.on(["GET", "POST"], "/api/auth/*", (c) => authFor(c).handler(c.req.raw));
 
   app.get("/api/config", (c) => c.json<ServerConfig>({
     google: !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET),
@@ -56,10 +74,10 @@ export function createApp(deps: AppDeps = {}) {
 
   // Everything below needs an account.
   const signedIn = async (c: C, next: () => Promise<void>) => {
-    const s = await authFor(c.env).api.getSession({ headers: c.req.raw.headers });
+    const s = await authFor(c).api.getSession({ headers: c.req.raw.headers });
     if (!s) return c.json({ message: "Sign in first." }, 401);
     c.set("user", { id: s.user.id, name: s.user.name, email: s.user.email });
-    c.set("store", new Store(c.env.DB));
+    c.set("store", new Store(dbFor(c)));
     await next();
   };
   for (const p of ["/api/me", "/api/machines", "/api/machines/*", "/api/chat"]) app.use(p, signedIn);
@@ -117,20 +135,25 @@ export function createApp(deps: AppDeps = {}) {
     const body = await c.req.json().catch(() => null) as ChatRequest | null;
     const user = c.get("user");
     const store = c.get("store");
-    return streamSSE(c, async (stream) => {
-      const send = (e: ChatEvent) => stream.writeSSE({ data: JSON.stringify(e) });
-      const fail = async (message: string) => { await send({ type: "error", message }); await send({ type: "done" }); };
-      if (!body || typeof body.machineId !== "string" || !Array.isArray(body.messages)) return fail("Rig couldn't read that question. Update the app and try again.");
-      if (!c.env.ANTHROPIC_API_KEY) return fail("Rig's chat isn't set up on the server yet.");
+    // The database work happens before the answer streams, so the
+    // connection can close while Claude is still writing.
+    const problem = await (async () => {
+      if (!body || typeof body.machineId !== "string" || !Array.isArray(body.messages)) return { message: "Rig couldn't read that question. Update the app and try again." };
+      if (!c.env.ANTHROPIC_API_KEY) return { message: "Rig's chat isn't set up on the server yet." };
       const row = validId(body.machineId) ? await store.machine(user.id, body.machineId) : null;
       // The desktop sends its live readings. The website asks about the PC's last upload.
       const ctx: ChatContext | null = body.view
         ? { view: { ...body.view, online: true, lastSync: now().toISOString() }, facts: body.facts ?? row?.facts ?? null, inventory: row?.inventory ?? null }
         : row ? { view: present(row, now().getTime()), facts: row.facts, inventory: row.inventory } : null;
-      if (!ctx) return fail("Rig hasn't seen this PC yet. Open the Rig app on it while signed in, then ask again.");
+      if (!ctx) return { message: "Rig hasn't seen this PC yet. Open the Rig app on it while signed in, then ask again." };
       const limit = Number(c.env.CHAT_DAILY_LIMIT ?? 40) || 40;
-      if (!(await store.useChat(user.id, limit, now()))) return fail(`You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.`);
-      await answer(claude(c.env), ctx, body.messages, send, c.req.raw.signal);
+      if (!(await store.useChat(user.id, limit, now()))) return { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.` };
+      return { ctx };
+    })();
+    return streamSSE(c, async (stream) => {
+      const send = (e: ChatEvent) => stream.writeSSE({ data: JSON.stringify(e) });
+      if ("message" in problem) { await send({ type: "error", message: problem.message! }); await send({ type: "done" }); return; }
+      await answer(claude(c.env), problem.ctx, body!.messages, send, c.req.raw.signal);
     });
   });
 

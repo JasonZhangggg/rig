@@ -35,7 +35,7 @@ Building the Windows installer needs Windows with Rust, .NET 8 and Node. CI does
 
 ## Stack
 
-- **Server:** one Cloudflare Worker (Hono) with D1, Better Auth for accounts, and the Claude API for chat. See [docs/deploy.md](docs/deploy.md).
+- **Server:** one Cloudflare Worker (Hono) with Postgres (Neon, through Hyperdrive), Better Auth for accounts, and the Claude API for chat. See [docs/deploy.md](docs/deploy.md).
 - **Desktop:** [Tauri](https://tauri.app) 2 with a thin Rust core. The screens and logic are TypeScript and React, shared with the website.
 - **3D:** three.js.
 - **Hardware on Windows:** a C# helper built on [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor). It's the only part with admin rights.
