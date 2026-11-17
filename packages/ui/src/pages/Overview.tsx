@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, weekEvenings, weekTemps, type HistoryPoint, type Issue, type PC } from "@rig/core";
+import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, shownSummary, weekEvenings, weekTemps, type HistoryPoint, type Issue, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
 import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../state";
 import { FansCard } from "./overview/FansCard";
@@ -30,6 +30,7 @@ export function Overview() {
   const dust = dustIssue(pc);
   const off = useAlertKindsOff();
   const alerts = shownAlerts(pc.alerts, off);
+  const summary = shownSummary(pc, alerts);
   const covered = coveredIssues(alerts);
   const found = (dust ? [...(pc.issues ?? []), dust] : pc.issues ?? []).filter((i) => !covered.has(i.id) && !(alerts.length && i.severity === "ok"));
   const issues = bySeverity([...alerts.map((a) => alertIssue(a)), ...found]);
@@ -91,7 +92,7 @@ export function Overview() {
             </svg>
             <div><b>{pc.health}</b><span>of 100</span></div>
           </div>
-          <p>{pc.summary}</p>
+          <p>{summary}</p>
         </section>
 
         <FansCard fans={pc.fans} trend={week?.fans ?? null} />

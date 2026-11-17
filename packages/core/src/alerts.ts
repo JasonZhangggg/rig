@@ -354,6 +354,21 @@ export function withAlerts<T extends PC>(pc: T, alerts: readonly Alert[]): T {
   return { ...pc, alerts: [...alerts], summary: summaryLine(pc.health, [...rest, ...alerts]) };
 }
 
+/**
+ * The Health summary for a device that hides some kinds: when the PC's
+ * summary is the one withAlerts wrote, it's counted again with only the shown
+ * alerts. Any other summary, such as a sensor error, stays as it is.
+ */
+export function shownSummary(pc: PC, shown: readonly Alert[]): string {
+  const all = pc.alerts ?? [];
+  if (shown.length === all.length) return pc.summary;
+  const counted = (alerts: readonly Alert[]) => {
+    const covered = coveredIssues(alerts);
+    return summaryLine(pc.health, [...(pc.issues ?? []).filter((i) => !covered.has(i.id)), ...alerts]);
+  };
+  return pc.summary === counted(all) ? counted(shown) : pc.summary;
+}
+
 /** An alert's words with its temperatures in the viewer's unit. */
 export function alertInUnit(a: Alert, unit: TempUnit): Alert {
   if (unit === "c") return a;

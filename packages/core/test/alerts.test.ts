@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  alertInUnit, alertRules, alertsToNotify, alertTiming, coveredIssues, emptyAlertState, shownAlerts, sortAlerts, stepAlerts, withAlerts, type PC,
+  alertInUnit, alertRules, alertsToNotify, alertTiming, coveredIssues, emptyAlertState, shownAlerts, shownSummary, sortAlerts, stepAlerts, withAlerts, type PC,
   LocalClient, MemoryStore, type Alert, type AlertState, type HistoryPoint, type Inventory, type Sensor, type Snapshot,
 } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
@@ -276,6 +276,16 @@ describe("the PC view", () => {
     expect(view.alerts).toEqual([full]);
     expect(view.summary).toBe("Running well. One thing needs a look.");
     expect(withAlerts(pc([{ id: "cpu-warm", severity: "warn", title: "", body: "", action: "", go: "chat" }]), [full]).summary).toBe("Running well. 2 things need a look.");
+  });
+
+  it("counts only the shown alerts once some kinds are off, and keeps any other summary", () => {
+    const hot: Alert = { id: "too-hot:gpu", kind: "too-hot", part: "gpu", severity: "bad", title: "", detail: "", since: "2026-11-17T11:00:00Z" };
+    const view = withAlerts(pc([{ id: "cpu-warm", severity: "warn", title: "", body: "", action: "", go: "chat" }]), [full, hot]);
+    expect(view.summary).toBe("Running well. 3 things need a look.");
+    expect(shownSummary(view, view.alerts!)).toBe(view.summary);
+    expect(shownSummary(view, shownAlerts(view.alerts, ["too-hot"]))).toBe("Running well. 2 things need a look.");
+    expect(shownSummary(view, [])).toBe("Running well. One thing needs a look.");
+    expect(shownSummary({ ...view, summary: "Rig can't read the sensors right now." }, [])).toBe("Rig can't read the sensors right now.");
   });
 
   it("is left as it is without alerts", () => {

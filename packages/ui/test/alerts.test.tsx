@@ -1,7 +1,7 @@
 // Alerts in Things to look at, and the switches that turn each kind off on this device.
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Alert, PC } from "@rig/core";
+import { withAlerts, type Alert, type PC } from "@rig/core";
 import { DemoClient } from "@rig/core/demo";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
@@ -9,6 +9,7 @@ vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
 const { NotificationSettings } = await import("../src/components/NotificationSettings");
+const { setAlertKind } = await import("../src/state");
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 
@@ -20,6 +21,14 @@ function demoWith(alerts: Alert[], issues?: (pc: PC) => PC["issues"]) {
   const client = new DemoClient();
   const watch = client.watch.bind(client);
   client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, alerts, issues: issues ? issues(pc) : pc.issues }));
+  return client;
+}
+
+/** The demo with only these alerts, its summary counted the way the PC counts it. */
+function demoCounting(alerts: Alert[]) {
+  const client = new DemoClient();
+  const watch = client.watch.bind(client);
+  client.watch = (id, cb) => watch(id, (pc) => cb(withAlerts({ ...pc, alerts: undefined, issues: (pc.issues ?? []).filter((i) => i.severity === "ok") }, alerts)));
   return client;
 }
 
@@ -69,6 +78,17 @@ describe("alerts in Things to look at", () => {
     expect(list.queryByText(/°C/)).toBeNull();
     fireEvent.click(list.getByText("Graphics card is staying at its 190°F limit"));
     expect(await screen.findByText("My graphics card has been at 192°F for a while. What should I do?")).toBeTruthy();
+  });
+
+  it("counts only the kinds left on in the Health summary", async () => {
+    render(<RigApp client={demoCounting([full, hot])} />);
+    await (await todo()).findByText(hot.title);
+    const health = within(screen.getByText("Health").closest("section")!);
+    expect(health.getByText(/2 things need a look\./)).toBeTruthy();
+    await act(async () => { setAlertKind("too-hot", false); });
+    await waitFor(() => expect(health.getByText(/One thing needs a look\./)).toBeTruthy());
+    await act(async () => { setAlertKind("drive-full", false); });
+    await waitFor(() => expect(health.getByText(/Nothing needs a look\./)).toBeTruthy());
   });
 
   it("hides a kind that was turned off on this device", async () => {
