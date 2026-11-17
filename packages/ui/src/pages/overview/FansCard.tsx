@@ -59,7 +59,10 @@ export function FansCard({ fans, trend }: { fans: readonly FanReading[] | undefi
       <CardHead title="Fans" note="rpm" />
       {stats.length > 0 && <div className="pl-stats">{stats.map((s) => <Stat key={s.fan.label} {...s} />)}</div>}
       {trend && (trend.scale != null
-        ? <DotMatrix trend={trend} />
+        ? <>
+          <DotMatrix trend={trend} />
+          <div className="pl-legend" aria-hidden="true"><span>Fastest fan, every six hours</span><span className="pl-total">Top <b>{whole.format(trend.scale)} rpm</b></span></div>
+        </>
         : <EmptyNote>{stats.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>)}
     </section>
   );
