@@ -1,6 +1,7 @@
 # Publishes a GitHub Release with the Windows installer when a version tag is pushed:
 #   pnpm version:set 0.2.0, merge that, then: git tag v0.2.0 && git push origin v0.2.0
-# Or Actions tab > Release > Run workflow with an existing tag, to build and publish it again.
+# Or Actions tab > Release > Run workflow: with a new tag it tags the branch you run it on
+# (normally main) and publishes; with an existing tag it builds and publishes that tag again.
 # A tag with a hyphen (v0.2.0-beta.1) is published as a pre-release. See docs/releasing.md.
 name: Release
 
@@ -10,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "The tag to build and publish, like v0.1.0. It must already be pushed."
+        description: "The tag to publish, like v0.1.0. If it doesn't exist yet, it's made on the branch you run this on."
         required: true
 
 permissions:
@@ -27,6 +28,8 @@ jobs:
   # The tag must be the version every file says.
   version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
@@ -35,11 +38,28 @@ jobs:
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::\"$TAG\" isn't a version tag like v0.2.0 or v0.2.0-beta.1"; exit 1; }
       - uses: actions/checkout@v4
-        with: { ref: "refs/tags/${{ env.TAG }}" }
+      - name: Use the tag, or make it here when run by hand with a new one
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            git fetch --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+            git checkout --quiet "refs/tags/$TAG"
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "TAG_NEW=1" >> "$GITHUB_ENV"
+          else
+            echo "::error::Tag $TAG isn't on GitHub"; exit 1
+          fi
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: The tag matches the version in every file
         run: node tools/version.mjs check "$TAG"
+      - name: Push the new tag
+        if: env.TAG_NEW == '1'
+        run: |
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+          echo "Tagged $(git rev-parse --short HEAD) on $GITHUB_REF_NAME as $TAG"
       - id: v
         run: |
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
