@@ -13,15 +13,11 @@ const sixPm = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new
 /** A game's initials ("BG" for Baldur's Gate 3), so the badge stays two letters at most. */
 export const initials = (game: string) => game.split(/[\s-]+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
-const Task = () => <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
-
 function Bar({ s, axis }: { s: EveningSession; axis: number }) {
   const what = s.game ?? (s.kind === "background" ? "Background task" : "Busy");
   return (
     <span className={`pl-tl-bar ${s.kind}`} style={{ left: `${(s.start / axis) * 100}%`, width: `${(s.hours / axis) * 100}%` }} title={`${what}, ${hours(s.hours)} h${kindText[s.kind]}`}>
-      <i aria-hidden="true">{s.game ? initials(s.game) || s.game[0] : <Task />}</i>
-      <span className="sr-only">{what}{kindText[s.kind]}, </span>
-      <b>{hours(s.hours)}<span className="sr-only"> hours</span></b>
+      <span className="pl-tl-label"><b>{hours(s.hours)} h</b> {what}<span className="sr-only">{kindText[s.kind]}</span></span>
     </span>
   );
 }

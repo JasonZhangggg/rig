@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { tempMark, type DayTemps, type TempSubject, type WeekTemps } from "@rig/core";
+import { tempMark, toUnit, type DayTemps, type TempSubject, type WeekTemps } from "@rig/core";
 import { useTemp, useTempUnit } from "../../state";
 import { CardHead, EmptyNote, Legend, longWeekday, useGrowOnce, weekday } from "./parts";
 
@@ -8,9 +8,10 @@ const labels: Record<TempSubject, { idle: string; typical: string; peak: string 
   cpu: { idle: "Idle processor", typical: "Busy processor", peak: "Peak processor" },
 };
 
-/** Cooler days sit lower, 9 px per °C, squeezed so the coolest day drops no more than this. */
-const MAX_LIFT = 90;
-const PX_PER_DEG = 9;
+const columns: Record<TempSubject, [string, string, string]> = { gpu: ["Idle", "Gaming", "Peak"], cpu: ["Idle", "Busy", "Peak"] };
+
+/** Gridlines every this many degrees of the viewer's unit. */
+const STEP = 10;
 
 const hasReadings = (d: DayTemps) => d.idle != null || d.typical != null || d.peak != null;
 
@@ -22,28 +23,40 @@ function describe(w: WeekTemps, temp: ReturnType<typeof useTemp>) {
   }).join(". ");
 }
 
-/** One column per day: a thin track holding peak, typical and idle, the cooler days lower. Missing figures leave a gap. */
-function CapsuleChart({ temps, grow }: { temps: WeekTemps; grow: boolean }) {
+/** One row per day: a line from idle to peak on a shared scale, with the three figures in columns beside it. Missing figures leave a gap. */
+function RangeRows({ temps, grow }: { temps: WeekTemps; grow: boolean }) {
   const temp = useTemp();
-  const bare = (v: number) => temp(v, { mark: "none" });
-  const peaks = temps.days.map((d) => d.peak).filter((v): v is number => v != null);
-  const top = temps.peak ?? 0;
-  const low = peaks.length ? Math.min(...peaks) : top;
-  const perDeg = Math.min(PX_PER_DEG, MAX_LIFT / Math.max(1, top - low));
+  const unit = useTempUnit();
+  const bare = (v: number | null) => (v == null ? "" : temp(v, { mark: "none" }));
+  const all = temps.days.flatMap((d) => [d.idle, d.typical, d.peak]).filter((v): v is number => v != null).map((v) => toUnit(v, unit));
+  const lo = Math.floor((Math.min(...all) - 1) / STEP) * STEP;
+  const hi = Math.ceil((Math.max(...all) + 1) / STEP) * STEP;
+  const at = (c: number) => ((toUnit(c, unit) - lo) / (hi - lo)) * 100;
+  const ticks = Array.from({ length: (hi - lo) / STEP + 1 }, (_, k) => lo + k * STEP);
+  const [idle, typical, peak] = columns[temps.subject];
   const last = temps.days.length - 1;
   return (
-    <div className={`pl-caps${grow ? " grow" : ""}`} role="img" aria-label={describe(temps, temp)}>
+    <div className={`pl-rt${grow ? " grow" : ""}`} role="img" aria-label={describe(temps, temp)} style={{ "--ticks": ticks.length - 1 } as CSSProperties}>
+      <div className="pl-rt-row pl-rt-head">
+        <span />
+        <span className="pl-rt-scale">{ticks.map((t) => <span key={t}>{t}°</span>)}</span>
+        <span>{idle}</span><span>{typical}</span><span>{peak}</span>
+      </div>
       {temps.days.map((d, i) => {
-        const caps = [
-          d.peak != null && <span key="b" className={`pl-cap b${d.peak === temps.peak ? " top" : ""}`}>{bare(d.peak)}</span>,
-          d.typical != null && <span key="a" className="pl-cap a">{bare(d.typical)}</span>,
-          d.idle != null && <span key="c" className="pl-cap c">{bare(d.idle)}</span>,
-        ].filter(Boolean);
-        const lift = (top - (d.peak ?? low)) * perDeg;
+        const marks = [d.idle, d.typical, d.peak].filter((v): v is number => v != null);
+        const from = Math.min(...marks), to = Math.max(...marks);
         return (
-          <div key={d.day} className={`pl-cap-col${i === last ? " today" : ""}`} style={{ "--i": i, "--lift": `${lift}px` } as CSSProperties}>
-            {hasReadings(d) && <div className="pl-cap-stack">{caps.flatMap((c, k) => (k ? [<i key={`dot${k}`} />, c] : [c]))}</div>}
-            <small>{weekday(d.day)}</small>
+          <div key={d.day} className={`pl-rt-row${i === last ? " today" : ""}`} style={{ "--i": i } as CSSProperties}>
+            <span className="pl-rt-day">{weekday(d.day)}</span>
+            <span className="pl-rt-plot">
+              {marks.length > 1 && <i className="pl-rt-range" style={{ left: `${at(from)}%`, width: `${at(to) - at(from)}%` }} />}
+              {d.idle != null && <i className="pl-rt-mark c" style={{ left: `${at(d.idle)}%` }} />}
+              {d.typical != null && <i className="pl-rt-mark a" style={{ left: `${at(d.typical)}%` }} />}
+              {d.peak != null && <i className="pl-rt-mark b" style={{ left: `${at(d.peak)}%` }} />}
+            </span>
+            <span className="pl-rt-n">{bare(d.idle)}</span>
+            <span className="pl-rt-n">{bare(d.typical)}</span>
+            <span className={`pl-rt-n b${d.peak != null && d.peak === temps.peak ? " top" : ""}`}>{bare(d.peak)}</span>
           </div>
         );
       })}
@@ -62,7 +75,7 @@ export function TempsCard({ temps, name }: { temps: WeekTemps | null; name: stri
       <CardHead title="Temperatures" note={`Each day, ${tempMark(unit)}`} figure={temps?.peak != null ? { value: temp(temps.peak), label: "Hottest", tone: "look" } : undefined} />
       {temps && (temps.days.some(hasReadings) ? (
         <>
-          <CapsuleChart temps={temps} grow={grow} />
+          <RangeRows temps={temps} grow={grow} />
           <Legend items={[["c", l.idle], ["a", l.typical], ["b", l.peak]]} />
         </>
       ) : (

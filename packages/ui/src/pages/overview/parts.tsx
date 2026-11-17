@@ -20,10 +20,11 @@ export function useGrowOnce(key: string) {
 
 export type LegendMark = "a" | "b" | "c";
 
-export function Legend({ items }: { items: [LegendMark, string][] }) {
+export function Legend({ items, total }: { items: [LegendMark, string][]; total?: ReactNode }) {
   return (
     <div className="pl-legend">
       {items.map(([mark, text]) => <span key={text}><i className={mark} />{text}</span>)}
+      {total && <span className="pl-total">{total}</span>}
     </div>
   );
 }

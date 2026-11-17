@@ -5,14 +5,18 @@ import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../s
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
 import { WeekCard } from "./overview/WeekCard";
-import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
+import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, shortType } from "./shared";
 
-const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
-const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
-const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
+const Go = () => <svg className="f-go" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 
 const SPEC_PARTS = ["cpu", "gpu", "ram"];
+
+/** The parts named beside the PC: the three that define it, then any other part reporting a temperature. */
+function mainParts(pc: PC) {
+  const all = pc.parts ?? {};
+  const ids = [...SPEC_PARTS.filter((id) => all[id]), ...Object.keys(all).filter((id) => !SPEC_PARTS.includes(id) && all[id].temp != null)];
+  return ids.slice(0, 5).map((id) => ({ id, type: shortType(all[id].type), name: all[id].name, temp: all[id].temp, warn: all[id].warn }));
+}
 
 /** Heat and exploded views for the hero. They belong to this page, so leaving it puts the shared scene back. */
 function useHeroViews() {
@@ -48,12 +52,10 @@ export function Overview() {
   const issues = bySeverity([...alerts.map((a) => alertIssue(a)), ...found]);
   const open = issues.filter((i) => i.severity === "warn" || i.severity === "bad");
   const top = open[0] ?? issues[0];
-  const chips = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp != null).slice(0, 4);
-  const specs = SPEC_PARTS.flatMap((id) => { const p = pc.parts?.[id]; return p ? [{ id, type: shortType(p.type), name: p.name }] : []; });
+  const parts = mainParts(pc);
   const views = useHeroViews();
   const name = client.kind === "demo" ? null : firstName(data.account?.name);
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
-  const now = new Date();
   const ringC = 2 * Math.PI * 52;
   const week = useWeekInsights(pc, useHistory("7d"));
   const temp = useTemp();
@@ -70,22 +72,18 @@ export function Overview() {
           <p>{pc.online ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}. ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
         </div>
         <div className="f-head-tools">
-          <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
           {top && (
-            <button type="button" className="f-cta" onClick={() => goTo(top)}>
-              <span>{open.length ? "Review" : "See what's new"}</span>
-              {open.length > 0 && <em>{open.length}</em>}
-              <i><Arrow /></i>
+            <button type="button" className="f-link" onClick={() => goTo(top)}>
+              {open.length ? <>Review <em>{open.length}</em></> : "See what's new"}<Go />
             </button>
           )}
-          <button type="button" className="f-round" aria-label="Run a checkup" title="Run a checkup" onClick={checkup}><Pulse /></button>
-          <button type="button" className="f-round f-mic" aria-label="Ask Rig" onClick={() => set({ palette: true })}><Mic /></button>
+          <button type="button" className="f-link" onClick={() => set({ palette: true })}>Ask Rig<Go /></button>
         </div>
       </header>
 
       <div className="f-top">
         <section className="f-pc" aria-label={`${pc.name} in 3D`}>
-          <StageSlot id="hero-stage" zoom={false} spin />
+          <div className="f-pc-in">
           <div className="f-pc-top">
             <div><div className="f-kicker">{pc.nickname}</div><div className="f-pc-name">{pc.name}</div></div>
             <div className="f-pc-tools">
@@ -93,20 +91,24 @@ export function Overview() {
                 <button type="button" aria-pressed={views.heat} onClick={views.toggleHeat}>Heat</button>
                 <button type="button" aria-pressed={views.exploded} onClick={views.toggleExploded}>Exploded</button>
               </div>
-              <a className="f-arrow" href="#pc" aria-label="Open 3D view"><Arrow /></a>
+              <a className="f-link" href="#pc">Open 3D view<Go /></a>
             </div>
           </div>
-          {specs.length > 0 && (
-            <dl className="f-specs">
-              {specs.map((s) => <div key={s.id}><dt>{s.type}</dt><dd>{s.name}</dd></div>)}
-            </dl>
+          <div className="f-stage"><StageSlot id="hero-stage" zoom={false} spin /></div>
+          {parts.length > 0 && (
+            <ul className="f-parts" aria-label="Main parts">
+              {parts.map((p) => {
+                const t = p.temp != null ? temp(p.temp, { mark: "degree" }) : null;
+                return (
+                  <li key={p.id} className={!t && parts.some((o) => o.temp != null) ? "plain" : undefined}>
+                    <button type="button" className={`f-part${p.warn ? " hot" : ""}`} aria-label={`${p.type}, ${p.name}${t ? `, ${t}` : ""}`} onClick={() => { set({ selected: p.id, tab: "live" }); go("pc"); }}>
+                      <span>{p.type}</span>{t && <b>{t}</b>}<em>{p.name}</em>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-          <div className="f-pc-chips">
-            {chips.map(([id, p]) => (
-              <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
-                <i>{partIcon[id]}</i>{shortType(p.type)}<b>{temp(p.temp, { mark: "degree" })}</b>
-              </button>
-            ))}
           </div>
         </section>
 
@@ -120,37 +122,37 @@ export function Overview() {
               <div><b>{pc.health}</b><span>of 100</span></div>
             </div>
             <div className="f-health-text">
-              <div className="f-health-head"><h2>Health</h2><a className="f-mini" href="#history" aria-label="Temperature history"><Arrow /></a></div>
+              <h2>Health</h2>
               <p>{summary}</p>
+              <a className="f-link" href="#history">See history<Go /></a>
             </div>
           </section>
 
           <section className="f-todo">
-            <div className="f-todo-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count">{open.length}</span>}</div>
+            <div className="f-todo-head"><h2>Things to look at</h2>{open.length > 0 && <span className="f-count">{open.length} open</span>}</div>
             {issues.length > 0 ? (
               <ul className="f-todo-list">
                 {issues.map((i) => (
                   <li key={i.id}>
                     <button type="button" className={`f-todo-row ${i.severity}`} onClick={() => goTo(i)}>
-                      <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
                       <span><b>{inUnit(i.title)}</b><small>{inUnit(i.body)}</small></span>
-                      <i className="f-todo-go"><Arrow /></i>
+                      <Go />
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <div className="f-todo-empty"><i className="f-todo-ico"><Check /></i><p>Nothing to look at. Rig keeps watching while you use {pc.name}.</p></div>
+              <p className="f-todo-empty">Nothing to look at. Rig keeps watching while you use {pc.name}.</p>
             )}
             {issues.length <= 3 && (
               <div className="f-asks" role="group" aria-label="Ask Rig">
                 <span>Ask Rig</span>
-                <div>{asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>
+                {asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}<Go /></button>)}
               </div>
             )}
             <div className="f-todo-foot">
               <p>Want a fuller look at {pc.name}?</p>
-              <button type="button" className="f-todo-check" onClick={checkup}><Pulse />Run a checkup</button>
+              <button type="button" className="f-link" onClick={checkup}>Run a checkup<Go /></button>
             </div>
           </section>
         </div>

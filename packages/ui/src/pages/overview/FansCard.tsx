@@ -3,7 +3,8 @@ import { CardHead, EmptyNote, Legend } from "./parts";
 
 /** A fan past this share of its top speed is working hard enough to mark. */
 const BUSY = 0.75;
-const ROWS = 6;
+/** Bars are banded in sixths of the week's top speed: the top two near it, the bottom two quiet. */
+const STEPS = 6;
 
 interface Headline { fan: FanReading; dir?: "up" | "down"; tone: "warn" | "ok" | "plain" }
 
@@ -32,20 +33,19 @@ function Stat({ fan, dir, tone }: Headline) {
   );
 }
 
-/** One column of dots per six-hour slice, lit up to its fan speed. Slices without a reading stay dark. */
-function DotMatrix({ trend }: { trend: FanTrend }) {
-  const gap = 18, r = 4.6;
-  const w = trend.columns.length * gap, h = ROWS * gap;
+/** One bar per six-hour slice, as tall as its fastest fan. Slices without a reading keep only a tick on the baseline. */
+function SliceBars({ trend }: { trend: FanTrend }) {
+  const gap = 12, h = 96;
+  const w = trend.columns.length * gap;
   const days = Math.round(trend.columns.length / 4);
   const label = `Fastest fan every six hours over the last ${days} days, up to ${whole.format(trend.scale ?? 0)} rpm.`;
   return (
-    <svg className="pl-dots" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMax meet" role="img" aria-label={label}>
+    <svg className="pl-bars" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label={label}>
       {trend.columns.map((col, c) => {
-        const lit = col.level == null || !col.rpm ? 0 : Math.max(1, Math.round(col.level * ROWS));
-        return Array.from({ length: ROWS }, (_, k) => {
-          const band = k >= lit ? "off" : k >= ROWS - 2 ? "b" : k >= 2 ? "a" : "c";
-          return <circle key={`${c}-${k}`} cx={c * gap + gap / 2} cy={h - k * gap - gap / 2} r={r} className={`pl-dot ${band}`} />;
-        });
+        const lit = col.level == null || !col.rpm ? 0 : Math.max(1, Math.round(col.level * STEPS));
+        const band = !lit ? "off" : lit > STEPS - 2 ? "b" : lit > 2 ? "a" : "c";
+        const bh = lit ? Math.max(4, (col.level ?? 0) * h) : 2;
+        return <rect key={c} x={c * gap + 2} y={h - bh} width={gap - 4} height={bh} className={`pl-bar ${band}`} />;
       })}
     </svg>
   );
@@ -56,13 +56,12 @@ export function FansCard({ fans, trend }: { fans: readonly FanReading[] | undefi
   const stats = headlines(fans ?? []);
   return (
     <section className="f-pane bl-fans">
-      <CardHead title="Fans" note="rpm" />
+      <CardHead title="Fans" note={trend?.scale != null ? "Fastest fan every six hours, rpm" : "rpm"} />
       {stats.length > 0 && <div className="pl-stats">{stats.map((s) => <Stat key={s.fan.label} {...s} />)}</div>}
       {trend && (trend.scale != null
         ? <>
-          <DotMatrix trend={trend} />
-          <Legend items={[["c", "Quiet"], ["a", "Busier"], ["b", "Near the week's top"]]} />
-          <div className="pl-legend" aria-hidden="true"><span>Fastest fan, every six hours</span><span className="pl-total">Top <b>{whole.format(trend.scale)} rpm</b></span></div>
+          <SliceBars trend={trend} />
+          <Legend items={[["c", "Quiet"], ["a", "Busier"], ["b", "Near the week's top"]]} total={<>Top <b>{whole.format(trend.scale)} rpm</b></>} />
         </>
         : <EmptyNote>{stats.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>)}
     </section>
