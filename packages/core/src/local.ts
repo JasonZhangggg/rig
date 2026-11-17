@@ -6,6 +6,7 @@
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
 import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
+import { makeExport, type DataExport } from "./export";
 import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
@@ -71,6 +72,7 @@ export class LocalClient implements RigClient {
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
     this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, now: Date.now, ...opts };
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
+    if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
   }
 
   /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
@@ -166,6 +168,28 @@ export class LocalClient implements RigClient {
   // ----- Account -----
   async account() { return this.cloud ? this.cloud.account().catch(() => null) : null; }
   async signOut() { await this.cloud?.signOut(); }
+  /** Deletes the account on the server. What's kept on this PC stays, so Rig keeps working signed out. */
+  async deleteAccount() {
+    await this.cloud!.deleteAccount();
+    this.unsynced = [];
+    await this.store.set("unsynced", []);
+  }
+
+  /** The account's data when signed in; otherwise what this PC keeps on disk. */
+  async exportData(): Promise<DataExport> {
+    if (this.cloud && (await this.signedIn())) return this.cloud.exportData();
+    await this.start();
+    return makeExport({
+      account: null,
+      machines: [{
+        id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt },
+        changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
+      }],
+      notes: ["Exported from the Rig app on this PC while signed out."],
+      now: new Date(this.o.now()),
+    });
+  }
+
   async signInWithBrowser() {
     const r = await this.cloud!.signInWithBrowser!();
     return { ...r, done: r.done.then(async (a) => { await this.sync(); return a; }) };
