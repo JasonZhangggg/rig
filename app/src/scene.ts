@@ -24,6 +24,14 @@ export interface SceneTheme {
   shadow?: number;
   /** Thin outline on glass and panel edges, so the case reads clearly. */
   edge?: string; edgeOpacity?: number;
+  /** Soft light halos around fans and light strips. "add" glows on dark backdrops, "normal" tints on light ones. */
+  glow?: number; glowBlend?: "add" | "normal";
+  /** Colored light inside the case, in the PC's accent color. */
+  interior?: number;
+  /** Turntable the PC stands on. */
+  pedestal?: string; pedestalRim?: number;
+  /** Airflow particles: strength and cool/warm colors. */
+  air?: number; airCool?: string; airWarm?: string; airBlend?: "add" | "normal";
 }
 
 export interface PCScene {
@@ -37,6 +45,8 @@ export interface PCScene {
   setZoomable(v: boolean): void;
   /** Slow side-to-side sway, for previews. */
   setSpin(v: boolean): void;
+  /** Show air moving through the case. */
+  setAirflow(v: boolean): void;
   dispose(): void;
 }
 
@@ -138,6 +148,38 @@ export function createScene(
   contact.position.y = 0.004;
   scene.add(contact);
 
+  // Round soft dot used for halos and airflow particles
+  const dotTex = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    if (g) {
+      const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0, "rgba(255,255,255,1)");
+      grad.addColorStop(0.25, "rgba(255,255,255,.65)");
+      grad.addColorStop(0.6, "rgba(255,255,255,.18)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 128, 128);
+    }
+    return new THREE.CanvasTexture(c);
+  })();
+
+  // Turntable: a glossy disc with a thin lit edge, like a product stand
+  const PED_TOP = -0.05;
+  const pedestal = new THREE.Group();
+  const pedMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.2 });
+  const pedDisc = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.02, 0.16, 96), pedMat);
+  pedDisc.position.y = PED_TOP - 0.08;
+  pedDisc.receiveShadow = true;
+  pedestal.add(pedDisc);
+  const rimMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true });
+  const pedRim = new THREE.Mesh(new THREE.TorusGeometry(1.012, 0.012, 8, 160), rimMat);
+  pedRim.rotation.x = Math.PI / 2;
+  pedRim.position.y = PED_TOP - 0.004;
+  pedestal.add(pedRim);
+  scene.add(pedestal);
+
   let root = new THREE.Group();
   scene.add(root);
 
@@ -151,6 +193,9 @@ export function createScene(
     rotors: [] as { rotor: THREE.Object3D; partId: string }[],
     pickables: [] as THREE.Mesh[],
     labels: {} as Record<string, { el: HTMLButtonElement; obj: CSS2DObject }>,
+    pulses: [] as THREE.Sprite[],
+    air: null as null | { group: THREE.Group; mats: THREE.ShaderMaterial[] },
+    airOn: true,
   };
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
   const theme = (): SceneTheme => state.theme!;
@@ -171,6 +216,21 @@ export function createScene(
     m.userData.baseOpacity = m.opacity;
     return m;
   }
+  // Soft halo that faces the camera
+  function halo(color: string, sx: number, sy: number, opacity: number) {
+    const th = theme();
+    const add = (th.glowBlend ?? "add") === "add";
+    const mat = new THREE.SpriteMaterial({
+      map: dotTex, color, transparent: true, depthWrite: false, toneMapped: false,
+      opacity: opacity * (th.glow ?? 1), blending: add ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(sx, sy, 1);
+    sp.renderOrder = 4;
+    sp.userData.baseOpacity = mat.opacity;
+    return sp;
+  }
+
   // Boxes get slightly rounded edges so light catches them, like real parts.
   function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0) {
     const r = Math.min(0.035, Math.min(w, h, d) * 0.45);
@@ -234,6 +294,11 @@ export function createScene(
     const ring = new THREE.Mesh(new THREE.TorusGeometry(s * 0.44, 0.018, 8, 48), M(accent, { emissive: accent, ei: opts.glow ?? 0.9 }));
     ring.position.z = t / 2 - 0.01;
     g.add(ring);
+    if ((opts.glow ?? 0.9) >= 0.5) {
+      const h = halo(accent, s * 1.25, s * 1.25, 0.32);
+      h.position.z = t / 2 + 0.05;
+      g.add(h);
+    }
     const rotor = new THREE.Group();
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.16, s * 0.16, t * 0.8, 24), M(frameColor, { r: 0.4 }));
     hub.rotation.x = Math.PI / 2;
@@ -332,6 +397,9 @@ export function createScene(
     front.add(box(0.08, H, 0.06, fm, W / 2 - 0.04, H / 2, D / 2));
     // Accent light strip: part of identity
     front.add(box(0.05, H * 0.82, 0.02, M(accent, { emissive: accent, ei: 1.4 }), W / 2 - 0.12, H / 2, D / 2 + 0.03));
+    const stripGlow = halo(accent, 0.55, H * 0.95, 0.5);
+    stripGlow.position.set(W / 2 - 0.12, H / 2, D / 2 + 0.08);
+    front.add(stripGlow);
     add(front, "case", [0, 0, 1.8], { noPick: true });
     // Glass side panel
     const glassMat = M(th.glass, { r: 0.04, m: 0.0, op: th.glassOpacity, env: th.transparent && th.hemi < 0.6 ? 1.2 : 2 });
@@ -387,6 +455,9 @@ export function createScene(
       stick.add(box(0.36, 1.33, 0.06, M(th.ram, { r: 0.4, m: 0.4 }), 0, 0, 0));
       stick.add(box(0.06, 1.25, 0.065, M(accent, { emissive: accent, ei: 1.2 }), 0.2, 0, 0));
       stick.position.z = i * 0.1;
+      const rg = halo(accent, 0.45, 1.5, 0.28);
+      rg.position.set(0.24, 0, 0);
+      stick.add(rg);
       ram.add(stick);
     }
     add(ram, "ram", [1.4, 1.6, 0.9]);
@@ -411,7 +482,31 @@ export function createScene(
       gpu.add(f);
       state.rotors.push({ rotor: f.userData.rotor, partId: "gpu" });
     }
+    if (pc.parts?.gpu?.warn) {
+      const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
+      heat.position.set(0.1, -0.35, 0);
+      heat.userData.pulse = true;
+      gpu.add(heat);
+      state.pulses.push(heat);
+    }
     add(gpu, "gpu", [2.4, -0.6, 1.2]);
+
+    // Accent light inside the case, so the parts are lit like a real build
+    if (th.interior) {
+      const inner = new THREE.PointLight(accent, th.interior, 6, 1.7);
+      inner.position.set(0.55, 3.1, 0.9);
+      root.add(inner);
+      const low = new THREE.PointLight(accent, th.interior * 0.6, 4, 1.7);
+      low.position.set(0.5, 1.2, 1.4);
+      root.add(low);
+    }
+
+    // Air through the case: in at the front fans, over the parts, out the back and top
+    buildAirflow([
+      [[0.1, 3.45, 2.7], [0.1, 3.45, 1.7], [0.15, 3.5, 0.4], [-0.1, 3.4, -0.8], [-0.1, 3.4, -1.7], [-0.1, 3.4, -2.8]],
+      [[0.1, 2.15, 2.7], [0.2, 2.2, 1.5], [0.3, 2.55, 0.2], [0.1, 3.1, -0.9], [-0.05, 3.45, -1.8], [-0.1, 3.4, -2.8]],
+      [[0.1, 2.15, 2.7], [0.35, 1.65, 1.2], [0.35, 1.6, -0.2], [0.3, 2.5, -1.2], [0.0, 3.3, -1.9], [-0.1, 3.35, -2.8]],
+    ], th);
 
     // Power supply inside the shroud
     const psu = box(1.5, 0.82, 1.6, M(th.psu, { r: 0.6, m: 0.2 }), -0.25, 0.48, -1.4);
@@ -453,7 +548,62 @@ export function createScene(
     lp("motherboard", mb, [0, -1.5, 1.2]);
     lp("fans", fans, [0.6, 3.7, D / 2]);
 
-    return { target: new THREE.Vector3(0, 2.05, 0), cam: new THREE.Vector3(8.1, 4.9, 9.0), camExploded: new THREE.Vector3(10.5, 6.4, 10.2) };
+    return { target: new THREE.Vector3(0, 1.85, 0), cam: new THREE.Vector3(8.9, 4.5, 9.9), camExploded: new THREE.Vector3(11, 6.2, 10.8) };
+  }
+
+  // ---------- airflow ----------
+  // Thin flow lines with moving dashes, cool where air comes in and warm where it leaves.
+  function buildAirflow(paths: Vec3[][], th: SceneTheme) {
+    if (!th.air) return;
+    const group = new THREE.Group();
+    const mats: THREE.ShaderMaterial[] = [];
+    const offsets: Vec3[] = [[0.12, 0.1, 0], [-0.12, -0.1, 0]];
+    paths.forEach((path, pi) => offsets.forEach((o, oi) => {
+      const curve = new THREE.CatmullRomCurve3(path.map((v, i) => {
+        const k = Math.sin((i / (path.length - 1)) * Math.PI);
+        return new THREE.Vector3(v[0] + o[0] * (0.5 + k), v[1] + o[1] * (0.5 + k), v[2] + o[2]);
+      }));
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: Math.random() * 10 }, opacity: { value: th.air },
+          cool: { value: new THREE.Color(th.airCool ?? "#7CC4FF") }, warm: { value: new THREE.Color(th.airWarm ?? "#FF9A55") },
+          phase: { value: pi * 0.37 + oi * 0.21 },
+        },
+        vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `uniform float time; uniform float opacity; uniform vec3 cool; uniform vec3 warm; uniform float phase; varying vec2 vUv;
+          void main(){
+            float u = vUv.x;
+            float f = fract(u * 4.0 - time * 0.4 + phase);
+            float dash = smoothstep(0.0, 0.25, f) * (1.0 - smoothstep(0.35, 0.6, f));
+            float ends = smoothstep(0.0, 0.12, u) * (1.0 - smoothstep(0.85, 1.0, u));
+            vec3 c = mix(cool, warm, smoothstep(0.2, 0.85, u));
+            float a = dash * ends * opacity;
+            if (a < 0.01) discard;
+            gl_FragColor = vec4(c, a);
+            #include <colorspace_fragment>
+          }`,
+        transparent: true, depthWrite: false,
+        blending: (th.airBlend ?? "add") === "add" ? THREE.AdditiveBlending : THREE.NormalBlending,
+      });
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 90, 0.016, 6, false), mat);
+      tube.renderOrder = 6;
+      group.add(tube);
+      mats.push(mat);
+    }));
+    root.add(group);
+    state.air = { group, mats };
+  }
+  function stepAir(dt: number) {
+    const a = state.air;
+    if (!a) return;
+    const vis = state.airOn ? 1 - easeInOut(state.explodeT) : 0;
+    a.group.visible = vis > 0.01;
+    if (!a.group.visible) return;
+    const speed = (parts().fans?.fan ?? 1100) / 1100;
+    for (const m of a.mats) {
+      if (!reduceMotion) m.uniforms.time.value += dt * speed;
+      m.uniforms.opacity.value = (theme().air ?? 0) * vis;
+    }
   }
 
   // ---------- laptop ----------
@@ -565,7 +715,7 @@ export function createScene(
     for (const l of Object.values(state.labels)) l.obj.removeFromParent();
     root = new THREE.Group();
     scene.add(root);
-    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {};
+    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = []; state.air = null;
     const th = theme();
     scene.background = th.transparent ? null : new THREE.Color(th.bg);
     scene.fog = th.transparent ? null : new THREE.Fog(th.bg, 18, 38);
@@ -579,12 +729,21 @@ export function createScene(
     framing = state.pc!.kind === "laptop" ? buildLaptop(state.pc!, th) : buildTower(state.pc!, th);
     const bb = new THREE.Box3().setFromObject(root);
     const size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
+    const ped = !!th.pedestal;
+    pedestal.visible = ped;
+    const pr = Math.hypot(size.x, size.z) * 0.5 + 0.3;
+    pedestal.position.set(mid.x, 0, mid.z);
+    pedestal.scale.set(pr, 1, pr);
+    pedMat.color.set(th.pedestal ?? "#ffffff");
+    rimMat.color.set(state.pc!.accent);
+    rimMat.opacity = th.pedestalRim ?? 0.8;
+    const sy = ped ? PED_TOP + 0.002 : 0.003;
     blob.scale.set(size.x * 1.9 + 0.8, size.z * 1.45 + 0.8, 1);
-    blob.position.set(mid.x, 0.003, mid.z);
+    blob.position.set(mid.x, sy, mid.z);
     (blob.material as THREE.MeshBasicMaterial).opacity = th.shadow ?? 0.3;
     blob.visible = !!th.transparent;
     contact.scale.set(size.x * 1.2 + 0.2, size.z * 1.08 + 0.2, 1);
-    contact.position.set(mid.x, 0.004, mid.z);
+    contact.position.set(mid.x, sy + 0.001, mid.z);
     (contact.material as THREE.MeshBasicMaterial).opacity = Math.min(0.9, (th.shadow ?? 0.3) * 1.5);
     contact.visible = !!th.transparent;
     applyHighlights();
@@ -738,6 +897,11 @@ export function createScene(
         rotor.rotation.z -= dt * rpm * 0.012;
       }
     }
+    stepAir(dt);
+    if (state.pulses.length) {
+      const k = reduceMotion ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
+      for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
+    }
     controls.update();
     renderer.render(scene, camera);
     labels.render(scene, camera);
@@ -756,6 +920,7 @@ export function createScene(
     resetView() { frame(state.exploded, false); },
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
+    setAirflow(v) { state.airOn = v; },
     dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); },
   };
 }

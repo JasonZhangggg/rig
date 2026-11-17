@@ -18,6 +18,8 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
     screenBg: "#F7F8FA", screenPanel: "#E6E9EE", screenLine: "#C7CDD5",
     heatCool: "#3A7BD5", heatWarm: "#E0A030", heatHot: "#D8432F", highlight: "#4C7FE8",
     hemi: 0.75, key: 1.8, rim: 0.6, exposure: 1.0, transparent: true, shadow: 0.26, edge: "#8F98A3", edgeOpacity: 0.35,
+    glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#FFFFFF", pedestalRim: 0.55,
+    air: 0.75, airCool: "#3D8BFF", airWarm: "#FF6A2B", airBlend: "normal",
   },
   workbench: {
     bg: "#1C1C1E", floor: "#232326", caseColor: "#2A2E33", trim: "#0E1012", glass: "#9FB4C8", glassOpacity: 0.1,
@@ -27,6 +29,8 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
     screenBg: "#111315", screenPanel: "#1C2024", screenLine: "#30363C",
     heatCool: "#4C8DFF", heatWarm: "#EDB45A", heatHot: "#F06B5F", highlight: "#78A9FF",
     hemi: 0.45, key: 1.6, rim: 1.1, rimColor: "#9DB8E0", exposure: 1.1, transparent: true, shadow: 0.6, edge: "#AFC3D9", edgeOpacity: 0.3,
+    glow: 1, glowBlend: "add", interior: 14, pedestal: "#14161B", pedestalRim: 0.85,
+    air: 0.7, airCool: "#7CC4FF", airWarm: "#FF9A55", airBlend: "add",
   },
   checkup: {
     bg: "#F3F0EE", floor: "#E7E1DD", caseColor: "#FAF8F7", trim: "#2A2524", glass: "#E6D6D2", glassOpacity: 0.16,
@@ -36,6 +40,8 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
     screenBg: "#FAF7F5", screenPanel: "#EEE8E4", screenLine: "#D3CBC6",
     heatCool: "#3A6FD8", heatWarm: "#D99A2B", heatHot: "#D6345B", highlight: "#D6345B",
     hemi: 0.75, key: 1.75, rim: 0.5, exposure: 1.0, transparent: true, shadow: 0.24, edge: "#B3A69F", edgeOpacity: 0.4,
+    glow: 0.9, glowBlend: "normal", interior: 5, pedestal: "#F1E6DA", pedestalRim: 0.55,
+    air: 0.8, airCool: "#4E86D6", airWarm: "#D9572B", airBlend: "normal",
   },
 };
 

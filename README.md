@@ -59,13 +59,15 @@ All data is sample data.
 | --- | --- | --- |
 | **Soft** | Light, calm and rounded. Plenty of air without wasted space. | Sidebar in two sections, with a setup card |
 | **Night** | A dark canvas for people who want every number. No glow, no neon. | Sidebar in two sections, with a setup card |
-| **Warm** | Warm neutrals and bolder nested panels, for people who just want their PC to work. | Tabs along the top, in two groups |
+| **Warm** | Cream and earthy color blocks with a serif display face, for people who just want their PC to work. | Tabs along the top, in two groups |
 
 Every style shares the same dashboard: the 3D PC, a health score, a strip of live readings with how they changed, a week of temperatures, and recent changes.
 
 **Search:** Ctrl K (or /) opens one search box for parts, changes, games and upgrades, with tabs, counts and an "Ask Rig" row. Arrow keys move, Enter opens, Tab asks Rig.
 
-The 3D PC follows the style too: rounded parts, glass and clearcoat materials, a perforated front panel, curved fan blades, real cable runs and a soft shadow under the case. On the dashboard it turns slowly and doesn't grab the scroll wheel.
+The 3D PC follows the style too. It stands on a lit turntable, the case is lit from inside in the PC's own accent color, fans and light strips glow, a hot part pulses gently, and flow lines show air coming in cool at the front and leaving warm at the back (Airflow on the 3D page turns them off). On the dashboard it turns slowly and doesn't grab the scroll wheel.
+
+Each reading (processor, graphics card, storage, memory, battery) keeps one color within a look, shown on a dial with its icon, so the tiles read as one family.
 
 Each PC's accent color is kept separate from the style's colors, so it reads as "this is my PC" in every style.
 

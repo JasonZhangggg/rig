@@ -14,6 +14,7 @@ export interface UI {
   pcs: Record<string, PC>;
   exploded: boolean;
   heat: boolean;
+  airflow: boolean;
   selected: string | null;
   tab: string;
   range: "24h" | "7d" | "30d";
@@ -44,7 +45,7 @@ function initial(): UI {
     style: styles.some((s) => s.id === style) ? style! : "studio",
     pcId: pcId && pcSeed[pcId]?.parts ? pcId : "atlas",
     pcs: structuredClone(pcSeed),
-    exploded: false, heat: false, selected: null, tab: "live", range: "7d",
+    exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
     changes: structuredClone(changeSeed),
     chat: structuredClone(chatSeed),
     proposalApplied: false, modal: null, toast: null, mockMin: false, palette: false,

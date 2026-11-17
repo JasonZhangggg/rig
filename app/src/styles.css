@@ -1086,3 +1086,185 @@ button.command:hover { border-color: var(--line-strong); }
 .pal-empty { padding: 18px 12px 6px; color: var(--text-2); font-size: 13px; }
 .pal-foot { display: flex; gap: 18px; padding: 10px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-3); }
 .pal-foot kbd { margin-right: 3px; }
+
+/* =====================================================================
+   v5: bolder looks after Jason's "boring" note.
+   Each look gets its own atmosphere, display type and a color per reading
+   (processor, graphics card, storage, memory, battery), so tiles stay in
+   one family instead of one tile shouting in a different color.
+   ===================================================================== */
+:root, [data-style="studio"] {
+  --c-cpu: #4B6BFB; --c-gpu: #FF7139; --c-storage: #12A88F; --c-memory: #8B5CF6; --c-battery: #22A55B;
+  --display: "Plus Jakarta Sans", var(--font);
+  --bg: #EDEFF5;
+  --line: #E8EAF0;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 14px 34px -12px rgba(16, 24, 40, .10);
+}
+[data-style="workbench"] {
+  --c-cpu: #7C9BFF; --c-gpu: #FF9B5E; --c-storage: #43D3BE; --c-memory: #B794FF; --c-battery: #5BE08F;
+  --display: "Inter Tight", var(--font);
+  --bg: #08090C;
+  --surface: rgba(22, 24, 30, .72);
+  --surface-2: rgba(255, 255, 255, .055);
+  --line: rgba(255, 255, 255, .075);
+}
+[data-style="checkup"] {
+  --c-cpu: #557F5B; --c-gpu: #C4552B; --c-storage: #3C6894; --c-memory: #85578A; --c-battery: #4C7F45;
+  --display: "Fraunces", Georgia, serif;
+  --bg: #F1EBE3;
+  --surface: #FBF8F4;
+  --surface-2: #FFFFFF;
+  --line: #E8DFD5;
+  --text: #241C17;
+  --text-2: #6A5E55;
+  --text-3: #A39588;
+  --primary: #241C17;
+  --accent: #C4552B; --accent-bg: #F8E3D8;
+  --bad: #B8432F; --bad-bg: #F8E3DE;
+  --warn: #B4621C; --warn-bg: #F8E8D6;
+}
+
+/* Atmosphere behind everything */
+[data-style="studio"] body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(55% 45% at 0% 0%, #DDE5FF 0%, transparent 62%),
+    radial-gradient(45% 40% at 100% 0%, #FFE6D8 0%, transparent 62%),
+    radial-gradient(55% 45% at 70% 100%, #DDF3EC 0%, transparent 62%);
+  background-attachment: fixed;
+}
+[data-style="workbench"] body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(40% 35% at 18% -5%, color-mix(in srgb, var(--pc) 22%, transparent) 0%, transparent 70%),
+    radial-gradient(45% 40% at 85% -5%, rgba(88, 110, 255, .16) 0%, transparent 70%),
+    radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1.2px);
+  background-size: auto, auto, 24px 24px;
+  background-attachment: fixed;
+}
+[data-style="checkup"] body {
+  background-color: var(--bg);
+  background-image: radial-gradient(60% 50% at 100% 0%, #F7DCC8 0%, transparent 65%), radial-gradient(50% 40% at 0% 100%, #E5E9D8 0%, transparent 65%);
+  background-attachment: fixed;
+}
+[data-style="studio"] .nav { background: rgba(255, 255, 255, .55); backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%); border-right-color: rgba(255, 255, 255, .7); }
+[data-style="studio"] .card { border: 1px solid rgba(255, 255, 255, .8); }
+[data-style="workbench"] .card { border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 24px 48px -20px rgba(0, 0, 0, .7); }
+[data-style="checkup"] .card { box-shadow: 0 1px 0 rgba(80, 50, 30, .04), 0 18px 40px -24px rgba(80, 50, 30, .25); border: 1px solid #EFE6DC; }
+
+/* Display type */
+.dash-head h1 { font: 700 2.5rem/1.05 var(--display); letter-spacing: -.035em; }
+[data-style="workbench"] .dash-head h1 { font-weight: 600; letter-spacing: -.03em; }
+[data-style="checkup"] .dash-head h1 { font-weight: 500; letter-spacing: -.02em; font-size: 2.7rem; font-variation-settings: "opsz" 120; }
+[data-style="checkup"] h2 { font-family: var(--display); font-weight: 600; letter-spacing: -.01em; font-size: 1.2em; }
+.dash-sub { font-size: 15px; color: var(--text-2); margin-top: 6px; }
+
+/* Layout: hero with a 2 x 2 of readings beside it, chart and health, then lists */
+.bento { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-flow: row dense; }
+.bento .b-hero { grid-column: span 7; grid-row: span 1; min-height: 560px; }
+.bento .b-tiles { grid-column: span 5; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--gap); }
+.bento .b-temps { grid-column: span 8; }
+.bento .b-health { grid-column: span 4; }
+.bento .b-side { grid-column: span 12; display: grid; grid-template-columns: 7fr 5fr; gap: var(--gap); }
+@media (max-width: 1280px) {
+  .bento .b-hero, .bento .b-tiles, .bento .b-temps, .bento .b-health { grid-column: span 12; }
+  .bento .b-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .bento .b-side { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) { .bento .b-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Hero: the PC on a lit stage */
+.bento .b-hero { padding: 0; isolation: isolate; }
+.b-hero::before, .stage-card::before, .signin-art::before { content: ""; position: absolute; inset: 0; z-index: -1; }
+.stage-card, .signin-art { isolation: isolate; }
+[data-style="studio"] .bento .b-hero, [data-style="studio"] .stage-card, [data-style="studio"] .signin-art { background: #F6F7FB; }
+[data-style="studio"] .b-hero::before, [data-style="studio"] .stage-card::before, [data-style="studio"] .signin-art::before {
+  background:
+    radial-gradient(38% 46% at 52% 62%, color-mix(in srgb, var(--pc) 34%, #fff) 0%, transparent 72%),
+    radial-gradient(60% 70% at 8% 0%, #D7E1FF 0%, transparent 62%),
+    radial-gradient(55% 60% at 100% 100%, #FFE0CE 0%, transparent 62%),
+    linear-gradient(180deg, #FAFBFE 0%, #EEF1F8 100%);
+}
+[data-style="workbench"] .bento .b-hero, [data-style="workbench"] .stage-card, [data-style="workbench"] .signin-art { background: #0B0C10; }
+[data-style="workbench"] .b-hero::before, [data-style="workbench"] .stage-card::before, [data-style="workbench"] .signin-art::before {
+  background:
+    radial-gradient(36% 42% at 52% 64%, color-mix(in srgb, var(--pc) 30%, transparent) 0%, transparent 72%),
+    conic-gradient(from 180deg at 52% -10%, transparent 160deg, rgba(150, 175, 255, .10) 175deg, rgba(150, 175, 255, .16) 180deg, rgba(150, 175, 255, .10) 185deg, transparent 200deg),
+    radial-gradient(70% 60% at 50% 110%, rgba(110, 130, 255, .14) 0%, transparent 70%),
+    linear-gradient(180deg, #111319 0%, #08090C 100%);
+}
+[data-style="checkup"] .bento .b-hero, [data-style="checkup"] .stage-card, [data-style="checkup"] .signin-art { background: #F6E9DD; }
+[data-style="checkup"] .b-hero::before, [data-style="checkup"] .stage-card::before, [data-style="checkup"] .signin-art::before {
+  background:
+    radial-gradient(40% 48% at 52% 62%, #FFF6EE 0%, transparent 72%),
+    radial-gradient(70% 80% at 100% 0%, #F2C7A8 0%, transparent 60%),
+    radial-gradient(60% 70% at 0% 100%, #E9D3C0 0%, transparent 62%),
+    linear-gradient(160deg, #F8EDE2 0%, #EFD9C6 100%);
+}
+.hero-id { display: flex; flex-direction: column; gap: 2px; }
+.hero-kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.hero-name { font: 700 3rem/1 var(--display); letter-spacing: -.045em; color: var(--text); margin-top: 6px; }
+.hero-os { font-size: 13px; color: var(--text-3); margin-top: 4px; }
+[data-style="workbench"] .hero-name { font-weight: 600; letter-spacing: -.04em; }
+[data-style="checkup"] .hero-name { font-weight: 500; letter-spacing: -.03em; font-size: 3.2rem; }
+.bento .b-hero .hero-over.top { padding: 26px 28px 0; }
+.bento .b-hero .hero-over.bottom { padding: 0 22px 22px; }
+.b-hero .pill { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+[data-style="studio"] .b-hero .pill { background: rgba(255, 255, 255, .7); border-color: rgba(255, 255, 255, .9); }
+[data-style="workbench"] .b-hero .pill { background: rgba(16, 18, 24, .72); border-color: rgba(255, 255, 255, .09); }
+[data-style="checkup"] .b-hero .pill { background: rgba(255, 252, 248, .7); border-color: rgba(255, 255, 255, .8); }
+
+/* Reading tiles: one structure, each reading keeps its own color */
+.tile { --c: var(--text-2); position: relative; display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 0; overflow: hidden; min-height: 200px; }
+.tile.k-cpu { --c: var(--c-cpu); } .tile.k-gpu { --c: var(--c-gpu); } .tile.k-storage { --c: var(--c-storage); }
+.tile.k-memory { --c: var(--c-memory); } .tile.k-battery { --c: var(--c-battery); }
+.tile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+.tile-name { font-weight: 600; font-size: 14px; color: var(--text); }
+.tile-head .chip { height: 22px; font-size: 11.5px; padding: 0 9px; }
+.tile-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
+.tile-num { font: 700 2.9rem/1 var(--display); letter-spacing: -.045em; color: var(--text); }
+.tile-num small { font: 600 .42em var(--font); letter-spacing: 0; color: var(--text-3); margin-left: 3px; vertical-align: .9em; }
+[data-style="checkup"] .tile-num { font-weight: 500; letter-spacing: -.03em; font-size: 3.1rem; }
+.dial { position: relative; width: 66px; height: 66px; flex: none; }
+.dial > svg { width: 100%; height: 100%; display: block; }
+.dial > svg circle { fill: none; stroke-width: 6; stroke-linecap: round; }
+.dial-track { stroke: color-mix(in srgb, var(--c) 14%, transparent); }
+.dial-val { stroke: var(--c); }
+.dial-ico { position: absolute; inset: 0; display: grid; place-items: center; color: var(--c); }
+.dial-ico svg { width: 20px; height: 20px; }
+.tile-foot { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.tile-note { font-size: 12.5px; color: var(--text-3); }
+.tile .delta { font-size: 12.5px; }
+.tile .area-spark { display: block; width: calc(100% + 36px); margin: auto -18px 0; height: 46px; }
+.tile .area-spark .s0 { stop-color: var(--c); stop-opacity: .26; }
+.tile .area-spark .s1 { stop-color: var(--c); stop-opacity: 0; }
+.tile .area-spark .line { fill: none; stroke: var(--c); stroke-width: 1.75; }
+/* Soft: white tiles with a faint wash of the reading's color */
+[data-style="studio"] .tile { background: linear-gradient(160deg, color-mix(in srgb, var(--c) 7%, #fff) 0%, #fff 55%); }
+/* Night: dark glass, the dial glows a little */
+[data-style="workbench"] .tile { background: linear-gradient(160deg, color-mix(in srgb, var(--c) 10%, rgba(22, 24, 30, .85)) 0%, rgba(18, 20, 26, .8) 60%); }
+[data-style="workbench"] .dial-val { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--c) 70%, transparent)); }
+[data-style="workbench"] .dial-track { stroke: rgba(255, 255, 255, .07); }
+/* Warm: each reading is a soft color block in one earthy family */
+[data-style="checkup"] .tile { background: color-mix(in srgb, var(--c) 15%, #FBF6F0); border-color: transparent; box-shadow: none; }
+[data-style="checkup"] .dial-track { stroke: color-mix(in srgb, var(--c) 18%, transparent); }
+[data-style="checkup"] .tile-note { color: color-mix(in srgb, var(--c) 45%, #6A5E55); }
+[data-style="checkup"] .tile .chip.warn { background: #FFF6EC; color: var(--warn); }
+.tile.warn .dial-val { stroke: var(--c); }
+
+/* Health: a bigger ring that matches the readings */
+.bento .b-health { gap: 18px; }
+.b-health .ring { width: 92px; height: 92px; }
+.b-health .ring .val { stroke: var(--ok); }
+.b-health .ring text { font: 700 22px var(--display); }
+[data-style="checkup"] .b-health .ring text { font-weight: 500; }
+.b-health .health-sum { font-size: 15px; font-weight: 600; color: var(--text); }
+
+/* Lists side by side */
+.bento .b-side > .card { margin: 0; }
+
+/* Turn off the old strip if it is still around */
+.b-strip { display: none; }
+.tile .delta { align-self: flex-start; }
+[data-style="checkup"] .tile .delta { background: rgba(255, 252, 247, .75); }
+[data-style="checkup"] .tile .delta.flat { color: var(--text-2); }

@@ -54,17 +54,36 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
-function AreaSpark({ values, warn }: { values: number[]; warn?: boolean }) {
+const tileName: Record<string, string> = { CPU: "Processor", GPU: "Graphics card", Storage: "Storage", Memory: "Memory", Battery: "Battery" };
+const tileLimit: Record<string, number> = { CPU: 95, GPU: 90 };
+
+function AreaSpark({ values, id }: { values: number[]; id: string }) {
   const w = 200, h = 44;
   const min = Math.min(...values), max = Math.max(...values);
   const x = (i: number) => (i / (values.length - 1)) * w;
   const y = (v: number) => h - 2 - ((v - min) / (max - min || 1)) * (h - 10);
   const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
   return (
-    <svg className={`area-spark${warn ? " warn" : ""}`} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
-      <path d={`${d} L${w},${h} L0,${h} Z`} className="fill" />
+    <svg className="area-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0" className="s0" /><stop offset="1" className="s1" /></linearGradient></defs>
+      <path d={`${d} L${w},${h} L0,${h} Z`} fill={`url(#${id})`} />
       <path d={d} className="line" vectorEffect="non-scaling-stroke" />
     </svg>
+  );
+}
+
+// Three-quarter dial with the part's icon in the middle
+function Dial({ pct, icon }: { pct: number; icon: JSX.Element }) {
+  const r = 27, c = 2 * Math.PI * r, arc = c * 0.75;
+  const v = Math.max(0.02, Math.min(1, pct)) * arc;
+  return (
+    <div className="dial" aria-hidden="true">
+      <svg viewBox="0 0 70 70">
+        <circle cx="35" cy="35" r={r} className="dial-track" strokeDasharray={`${arc} ${c}`} transform="rotate(135 35 35)" />
+        <circle cx="35" cy="35" r={r} className="dial-val" strokeDasharray={`${v} ${c}`} transform="rotate(135 35 35)" />
+      </svg>
+      <span className="dial-ico">{icon}</span>
+    </div>
   );
 }
 
@@ -106,10 +125,10 @@ export function Overview() {
       </header>
 
       <div className="bento">
-        <section className="card b-hero">
+        <section className="card b-hero" style={{ ["--pc" as string]: pc.accent }}>
           <StageSlot id="hero-stage" zoom={false} spin />
           <div className="hero-over top">
-            <div className="identity"><span className="dot" /><div><h2 className="plain-h">{pc.name}</h2><div className="muted">{pc.nickname} · {pc.os}</div></div></div>
+            <div className="hero-id"><div className="hero-kicker"><span className="dot" />{pc.nickname}</div><div className="hero-name">{pc.name}</div><div className="hero-os">{pc.os}</div></div>
             <span className="chip ok">{pc.lastSync}</span>
           </div>
           <div className="hero-over bottom">
@@ -122,6 +141,42 @@ export function Overview() {
             </div>
             <a className="btn primary" href="#pc">Open 3D view</a>
           </div>
+        </section>
+
+        <section className="b-tiles" aria-label="Right now">
+          {(pc.stats ?? []).map((s, i) => {
+            const dl = deltas[`${pc.id}:${s.label}`];
+            const pct = s.unit === "%" ? s.value / 100 : s.value / (tileLimit[s.label] ?? 100);
+            return (
+              <div key={s.label} className={`card tile k-${s.label.toLowerCase()}${s.warn ? " warn" : ""}`}>
+                <div className="tile-head">
+                  <span className="tile-name">{tileName[s.label] ?? s.label}</span>
+                  {s.warn && <span className="chip warn">Running warm</span>}
+                </div>
+                <div className="tile-body">
+                  <div className="tile-num num">{s.value}<small>{s.unit}</small></div>
+                  <Dial pct={pct} icon={metricIcon[s.label]} />
+                </div>
+                <div className="tile-foot">
+                  {dl && <span className={`delta ${dl.dir}`}><i />{dl.text}</span>}
+                  <span className="tile-note">{s.note}{tileLimit[s.label] && s.unit !== "%" ? ` · limit ${tileLimit[s.label]}°` : ""}</span>
+                </div>
+                <AreaSpark id={`sp-${pc.id}-${i}`} values={sparkData(s.value, 36, 3 + i, s.unit === "%" ? 3 : 8)} />
+              </div>
+            );
+          })}
+        </section>
+
+        <section className="card b-temps">
+          <div className="card-head">
+            <div><h2>Temperatures this week</h2><div className="faint">Evenings are gaming. The graphics card peak is creeping up.</div></div>
+            <div className="legend">
+              <span><i className="lg-cpu" />Processor</span>
+              <span><i className="lg-gpu" />{pc.kind === "laptop" ? "Graphics" : "Graphics card"}</span>
+              <a className="btn ghost sm" href="#history">History</a>
+            </div>
+          </div>
+          <div className="temps-body"><WeekChart points={pts} names={{ cpu: "Processor", gpu: pc.kind === "laptop" ? "Graphics" : "Graphics card" }} /></div>
         </section>
 
         <section className="card b-health">
@@ -138,39 +193,6 @@ export function Overview() {
               </div>
             ))}
           </div>
-        </section>
-
-        <section className="card b-strip" aria-label="Right now">
-          {(pc.stats ?? []).map((s, i) => {
-            const dl = deltas[`${pc.id}:${s.label}`];
-            return (
-              <div key={s.label} className={`metric${s.warn ? " warn" : ""}`}>
-                <div className="metric-top">
-                  <span className="metric-icon">{metricIcon[s.label]}</span>
-                  <span className="label">{s.label}</span>
-                  {s.warn && <span className="chip warn">High</span>}
-                </div>
-                <div className="big num">{s.value}<small>{s.unit}</small></div>
-                <div className="metric-foot">
-                  {dl ? <span className={`delta ${dl.dir}`}><i />{dl.text}</span> : <span />}
-                  <span className="faint metric-note">{s.note}</span>
-                </div>
-                <AreaSpark values={sparkData(s.value, 36, 3 + i, s.unit === "%" ? 3 : 8)} warn={s.warn} />
-              </div>
-            );
-          })}
-        </section>
-
-        <section className="card b-temps">
-          <div className="card-head">
-            <div><h2>Temperatures this week</h2><div className="faint">Evenings are gaming. The graphics card peak is creeping up.</div></div>
-            <div className="legend">
-              <span><i className="lg-cpu" />Processor</span>
-              <span><i className="lg-gpu" />{pc.kind === "laptop" ? "Graphics" : "Graphics card"}</span>
-              <a className="btn ghost sm" href="#history">History</a>
-            </div>
-          </div>
-          <div className="temps-body"><WeekChart points={pts} names={{ cpu: "Processor", gpu: pc.kind === "laptop" ? "Graphics" : "Graphics card" }} /></div>
         </section>
 
         <div className="b-side">

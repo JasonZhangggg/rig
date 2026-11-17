@@ -8,7 +8,7 @@ import { accents } from "../themes";
 export function PCPage() {
   const { ui, pc, set } = useApp();
   const [customize, setCustomize] = useState(false);
-  const toggle = (k: "exploded" | "heat") => set({ [k]: !ui[k] });
+  const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
   return (
     <div className="page">
       <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Click any part for temperatures, specs, its manual and drivers. Drag to turn, scroll to zoom.</p></div></div>
@@ -26,6 +26,7 @@ export function PCPage() {
           <div className="stage-tools" role="toolbar" aria-label="View">
             <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => toggle("exploded")}>Exploded view</button>
             <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => toggle("heat")}>Heat</button>
+            <button className="btn sm" type="button" aria-pressed={ui.airflow} onClick={() => toggle("airflow")}>Airflow</button>
             <button className="btn ghost sm" type="button" onClick={() => getStage().scene.resetView()}>Reset view</button>
           </div>
         </section>
