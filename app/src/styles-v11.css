@@ -214,41 +214,17 @@
 }
 
 /* ---------- Color sets for the data tiles. The chrome stays graphite and grey in all of them. ---------- */
-/* Sage: soft green for good, terracotta for a look, warm stone for expected */
-[data-style="blend"][data-skin="mix"][data-colors="sage"] {
-  --g: #A9C4A0; --g-mark: #557A4E; --g-text: #3F6438; --g-bg: #E3EEDF;
-  --w: #E09A6E; --w-text: #A4532A; --w-bg: #F8E6DA;
-  --x: #CFC8BA;
-}
-/* Ocean: calm blue for good, amber for a look, cool grey for expected */
-[data-style="blend"][data-skin="mix"][data-colors="ocean"] {
-  --g: #9EC5E8; --g-mark: #3D6E9C; --g-text: #2F5F8C; --g-bg: #E2EDF7;
-  --w: #EDB45E; --w-text: #94600F; --w-bg: #FBEFD9;
-  --x: #CDD1D6;
-}
-/* Iris: soft periwinkle for good, apricot for a look, warm stone for expected */
-[data-style="blend"][data-skin="mix"][data-colors="iris"] {
-  --g: #B3B9F2; --g-mark: #4F58B8; --g-text: #3F47A0; --g-bg: #E7E9FB;
-  --w: #F3A683; --w-text: #A9502C; --w-bg: #FCE8DE;
-  --x: #D8D2C7;
-}
-/* Teal: sea glass for good, honey for a look, cool grey for expected */
-[data-style="blend"][data-skin="mix"][data-colors="teal"] {
-  --g: #8CCFC0; --g-mark: #2E7F6E; --g-text: #23695B; --g-bg: #DDF1EC;
-  --w: #F0BC67; --w-text: #8E5E0E; --w-bg: #FBEED6;
-  --x: #C3CBC9;
-}
 /* Brass: pale gold for good, rust for a look, warm grey for expected */
 [data-style="blend"][data-skin="mix"][data-colors="brass"] {
   --g: #E6D3A3; --g-mark: #7C6A3A; --g-text: #6A5A2E; --g-bg: #F3EDDD;
   --w: #D9804F; --w-text: #A4471C; --w-bg: #F8E2D5;
   --x: #A7A39B;
 }
-/* Denim: Brass's spread, all in blue. Near white for good, deep blue for a look, blue grey for expected */
+/* Denim: dull pastel blue in three steps like Olive, lightest at the bottom */
 [data-style="blend"][data-skin="mix"][data-colors="denim"] {
-  --g: #E3EBF4; --g-mark: #4E6680; --g-text: #3E556D; --g-bg: #EAF0F6;
-  --w: #5F89C4; --w-text: #2D5A96; --w-bg: #DCE6F4;
-  --x: #A4AFBB;
+  --g: #B0C0D1; --g-mark: #4E6680; --g-text: #3E556D; --g-bg: #E8EDF3;
+  --w: #71879F; --w-text: #46596E; --w-bg: #DCE3EB;
+  --x: #E2E9F0;
 }
 /* Olive: dull pastel sage in three steps. Deep sage for a look, mid sage for good, near white for expected, so the lightest always sits at the bottom */
 [data-style="blend"][data-skin="mix"][data-colors="olive"] {
@@ -256,41 +232,26 @@
   --w: #7E8E70; --w-text: #4F5E44; --w-bg: #DDE3D5;
   --x: #E3E8DC;
 }
-/* Sea: the same, all in blue-green */
-[data-style="blend"][data-skin="mix"][data-colors="sea"] {
-  --g: #E0EFEB; --g-mark: #48706A; --g-text: #385C56; --g-bg: #E7F2EF;
-  --w: #4F9584; --w-text: #24675A; --w-bg: #D9EEE8;
-  --x: #A0B3AE;
-}
-/* Cobalt: clear blue for good, sunflower for a look, slate for expected */
-[data-style="blend"][data-skin="mix"][data-colors="cobalt"] {
-  --g: #9DB8FF; --g-mark: #2F5BD3; --g-text: #2449B0; --g-bg: #E3EAFE;
-  --w: #F7CD5D; --w-text: #8A6400; --w-bg: #FDF3D3;
-  --x: #C9CDD6;
-}
-/* Mono: white and greys for good and expected, one muted red for a look */
-[data-style="blend"][data-skin="mix"][data-colors="mono"] {
-  --g: #ECEAE5; --g-mark: #1B1B1F; --g-text: #1B1B1F; --g-bg: #ECEAE5;
-  --w: #E5735A; --w-text: #B4432B; --w-bg: #FBE3DC;
-  --x: #8C8A85;
-}
-[data-style="blend"][data-skin="mix"][data-colors="mono"] .tone-dark { --s-c: #6E6C68; }
 
 /* The PC's own accent dot stays ink so no off-set color leaks into the chrome */
 [data-style="blend"][data-skin="mix"] :is(.sh-dot, .dot) { background: var(--text); box-shadow: none; }
 
-/* ---------- Accents only: the data sits in warm greys, lightest at the bottom, and color marks only what needs a look ---------- */
+/* ---------- Colors now: the data sits in warm greys, lightest at the bottom, with a little of the set as accents ---------- */
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .tone-dark {
-  --s-a: #A8A59E; --s-mark-a: #A8A59E; --s-b: #55534F; --s-c: #E6E3DC; --s-c-ink: #1B1B1F;
+  --s-a: #A8A59E; --s-mark-a: #A8A59E; --s-b: color-mix(in srgb, var(--w) 45%, #3F3E3B); --s-c: #E6E3DC; --s-c-ink: #1B1B1F;
 }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .tone-dark .pl-cap.b { color: #F2F0EB; }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .pl-cap.b.top { background: var(--w); color: #111111; }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-temps .pl-total b { color: var(--w); }
-[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-fans .pl-dot.b { fill: #77756F; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-fans .pl-dot.a { fill: var(--g); }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-fans .pl-dot.b { fill: var(--w); }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .pl-stat.warn .pl-tri { color: var(--w); }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .f-ring .vl { stroke: #E6E3DC; }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week {
   --s-a: #E4E1DA; --s-mark-a: #8C8A85; --s-c: #F3F1EC; --s-b: var(--w); --s-c-ink: #55534F;
 }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-tl-bar.hot { background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-tl-bar.hot > i { background: var(--w); color: #111111; }
+[data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-tl-bar.hot b { color: var(--w-text); }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-tl-bar.background { box-shadow: inset 0 0 0 1px #DDD9D1; }
 [data-style="blend"][data-skin="mix"][data-widgets="accents"] .bl-week .pl-legend i.c { --x: #CFCBC3; }

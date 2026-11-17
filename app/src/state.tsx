@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { pcs as pcSeed, chat as chatSeed, changes as changeSeed, type Change, type ChatMessage, type DiffRow, type PC, type Route } from "./data";
-import { colorSets, finishes, heroes, styles, type ColorSet, type Hero, type WidgetColor, widgetColors, type Mode, type StyleId } from "./themes";
+import { colorSets, type ColorSet, type Hero, type WidgetColor, widgetColors, type Mode, type StyleId } from "./themes";
 import type { Finish } from "./scene";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "web", "signin"];
@@ -44,18 +44,15 @@ function routeFromHash(): Route {
 }
 
 function initial(): UI {
-  const style = storage.get("rig.style4") as StyleId | null;
   const mode = storage.get("rig.mode");
   const pcId = storage.get("rig.pc");
-  const finish = storage.get("rig.finish2") as Finish | null;
-  const hero = storage.get("rig.hero2") as Hero | null;
   const colors = storage.get("rig.colors2") as ColorSet | null;
   const widgets = storage.get("rig.widgets") as WidgetColor | null;
   return {
     route: routeFromHash(),
-    style: styles.some((s) => s.id === style) ? style! : "mix",
-    finish: finishes.some((f) => f.id === finish) ? finish! : "ink",
-    hero: heroes.some((h) => h.id === hero) ? hero! : "band",
+    style: "mix",
+    finish: "ink",
+    hero: "band",
     colors: colorSets.some((c) => c.id === colors) ? colors! : "olive",
     widgets: widgetColors.some((w) => w.id === widgets) ? widgets! : "accents",
     mode: mode === "light" ? "light" : "dark",
