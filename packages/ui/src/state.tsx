@@ -75,6 +75,8 @@ export interface Ctx {
   go: (r: Route) => void;
   toast: (msg: string, undo?: string) => void;
   ask: (q: string) => void;
+  /** Starts a fresh conversation. Does nothing while Rig is answering. */
+  clearChat: () => void;
   /** Opens the review sheet with the current values filled in. Nothing changes until the person confirms. */
   review: (calls: ActionCall[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
   confirmReview: () => Promise<void>;
@@ -226,6 +228,8 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
           .finally(() => { edit((m) => ({ ...m, pending: false })); setData((d) => ({ ...d, answering: false })); });
         requestAnimationFrame(() => document.querySelector(".composer")?.scrollIntoView({ block: "end" }));
       },
+
+      clearChat: () => { if (!data.answering) setData((d) => ({ ...d, chat: [] })); },
 
       review: async (calls, meta) => {
         if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pc.name}.`); return; }
