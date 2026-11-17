@@ -49,6 +49,14 @@ describe("Home charts", () => {
     expect(chart.textContent).not.toMatch(/\b0\b|NaN/);
   });
 
+  it("lists every fan with its speed, the one nearest its top speed first", () => {
+    render(<FansCard fans={[{ label: "Fan 1", rpm: 800, max: 2000 }, { label: "Fan 2", rpm: 1500, max: 1600 }]} trend={null} />);
+    const rows = within(screen.getByRole("list")).getAllByRole("listitem").map((r) => r.textContent);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatch(/^Fan 2, working hardest1.?500 rpm$/);
+    expect(rows[1]).toMatch(/^Fan 1800 rpm$/);
+  });
+
   it("hides the fan speeds on a PC that reports none", () => {
     const ctx = insightContext({ kind: "laptop" });
     const { container } = render(<FansCard fans={[]} trend={fanTrend([], ctx)} />);
@@ -85,6 +93,12 @@ describe("Home hero", () => {
     expect(await screen.findByRole("button", { name: "Reset view" })).toBeTruthy();
     expect(last("setHeat")).toBe(false);
     expect(last("setExploded")).toBe(false);
+  });
+
+  it("offers to review what needs a look, counted, from the top of the page", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review 1 thing" }));
+    await waitFor(() => expect(screen.queryByText("Things to look at")).toBeNull());
   });
 
   it("asks Rig a suggested question from Things to look at", async () => {
