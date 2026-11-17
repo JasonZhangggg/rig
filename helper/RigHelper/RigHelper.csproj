@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <AssemblyName>RigHelper</AssemblyName>
     <RootNamespace>Rig.Helper</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
