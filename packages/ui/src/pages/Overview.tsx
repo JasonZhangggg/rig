@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { fanTrend, insightContext, seenLabel, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
+import { coveredIssues, fanTrend, insightContext, seenLabel, shownAlerts, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
 import { StageSlot } from "../components/Stage";
-import { useApp, useHistory, useTemp, useTempText } from "../state";
+import { useAlertKindsOff, useApp, useHistory, useTemp, useTempText } from "../state";
 import { FansCard } from "./overview/FansCard";
 import { TempsCard } from "./overview/TempsCard";
 import { WeekCard } from "./overview/WeekCard";
-import { dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
+import { alertIssue, bySeverity, dustIssue, firstName, greeting, issueGo, partIcon, shortType } from "./shared";
 
 const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
@@ -28,7 +28,11 @@ export function Overview() {
   const ctx = useApp();
   const { pc, data, client, set, go, ask } = ctx;
   const dust = dustIssue(pc);
-  const issues = dust ? [...(pc.issues ?? []), dust] : pc.issues ?? [];
+  const off = useAlertKindsOff();
+  const alerts = shownAlerts(pc.alerts, off);
+  const covered = coveredIssues(alerts);
+  const found = (dust ? [...(pc.issues ?? []), dust] : pc.issues ?? []).filter((i) => !covered.has(i.id) && !(alerts.length && i.severity === "ok"));
+  const issues = bySeverity([...alerts.map((a) => alertIssue(a)), ...found]);
   const open = issues.filter((i) => i.severity === "warn" || i.severity === "bad");
   const top = open[0] ?? issues[0];
   const chips = Object.entries(pc.parts ?? {}).filter(([, p]) => p.temp != null).slice(0, 4);

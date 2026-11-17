@@ -189,3 +189,5 @@
 .legend .lg-cpu { background: var(--text); }
 .legend .lg-gpu { background: var(--look); }
 .legend .lg-limit { height: 0; border-top: 1.5px dashed var(--text-3); border-radius: 0; background: none; }
+
+.notify-note { margin: 0; padding: 0 20px 12px; font-size: 13px; }

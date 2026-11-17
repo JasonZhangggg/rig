@@ -6,6 +6,7 @@ export * from "./health";
 export * from "./history";
 export * from "./insights";
 export * from "./games";
+export * from "./alerts";
 export * from "./view";
 export * from "./upgrades";
 export * from "./api";

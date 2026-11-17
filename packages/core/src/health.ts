@@ -114,7 +114,7 @@ export function score(laptop: boolean, fs: Finding[]): { health: number; breakdo
   return { health, breakdown };
 }
 
-export function summaryLine(health: number, fs: Finding[]): string {
+export function summaryLine(health: number, fs: readonly Pick<Issue, "severity">[]): string {
   const look = fs.filter((f) => f.severity === "warn" || f.severity === "bad").length;
   if (look === 0) return health >= 90 ? "Running well. Nothing needs a look." : "Running fine.";
   return `${health >= 75 ? "Running well." : "Could be better."} ${look === 1 ? "One thing needs a look." : `${look} things need a look.`}`;
