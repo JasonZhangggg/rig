@@ -1,0 +1,20 @@
+{
+  "name": "rig",
+  "private": true,
+  "description": "Rig, a helper app that reads, explains and fixes PCs and laptops.",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @rig/web dev",
+    "dev:server": "pnpm --filter @rig/server dev",
+    "dev:desktop": "pnpm --filter @rig/desktop tauri dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "postcss": "^8.5.33"
+  }
+}

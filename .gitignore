@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-single/
+target/
+*.log
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+helper/**/bin/
+helper/**/obj/
+apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/gen/

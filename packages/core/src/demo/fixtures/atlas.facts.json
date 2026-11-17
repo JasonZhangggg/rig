@@ -1,0 +1,21 @@
+{
+  "powerPlans": [
+    { "guid": "381b4222-f694-41f0-9685-ff5bb260df2e", "name": "Balanced", "active": true },
+    { "guid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", "name": "High performance", "active": false },
+    { "guid": "a1841308-3541-4fab-bc81-f71556f20b4a", "name": "Power saver", "active": false }
+  ],
+  "startupApps": [
+    { "name": "Steam", "command": "steam.exe -silent", "enabled": true, "scope": "user" },
+    { "name": "Discord", "command": "Update.exe --processStart Discord.exe", "enabled": true, "scope": "user" },
+    { "name": "Spotify", "command": "Spotify.exe --autostart", "enabled": true, "scope": "user" },
+    { "name": "Epic Games Launcher", "command": "EpicGamesLauncher.exe -silent", "enabled": true, "scope": "user" },
+    { "name": "Microsoft Teams", "command": "ms-teams.exe", "enabled": true, "scope": "user" },
+    { "name": "OneDrive", "command": "OneDrive.exe /background", "enabled": true, "scope": "user" },
+    { "name": "Logitech G HUB", "command": "lghub.exe --background", "enabled": true, "scope": "machine" },
+    { "name": "Adobe Creative Cloud", "command": "Creative Cloud.exe", "enabled": true, "scope": "machine" },
+    { "name": "NVIDIA Broadcast", "command": "NVIDIA Broadcast.exe", "enabled": false, "scope": "machine" }
+  ],
+  "gameMode": true,
+  "visualEffects": "auto",
+  "maxProcessorState": { "ac": 100, "dc": 100 }
+}
