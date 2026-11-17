@@ -20,6 +20,12 @@ export interface RigTables {
     view: Json<unknown>; inventory: Json<unknown> | null; facts: Json<unknown> | null;
     changes: Json<unknown[]>; games: Json<unknown[]>; identity: Json<Record<string, unknown>>;
     identity_at: Time | null; synced_at: Time; created_at: Generated<Date>;
+    events: ColumnType<unknown[], string | undefined, string>;
+  };
+  recording: {
+    user_id: string; machine_id: string; id: string; state: string;
+    info: Json<unknown>; data: ColumnType<unknown, string | undefined, string>;
+    stop_requested: Generated<boolean>; created_at: Time; updated_at: Time;
   };
   machine_history: {
     user_id: string; machine_id: string; t: number; cpu: number | null; gpu: number | null; busy: boolean;

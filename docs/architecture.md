@@ -45,11 +45,21 @@ Rig never installs drivers, overclocks or touches games.
 
 `helper/RigHelper` is a .NET 8 program. The app starts it once through the Windows admin prompt (`ShellExecuteEx` with `runas`). If the person says No, it starts without admin rights and Rig shows which readings are missing.
 
-Talking to it stays private: the app makes a named pipe with a random name that takes one connection, then checks the connected process is the helper it started. The helper checks the pipe belongs to its parent and quits when the app does. Requests are JSON, one per line: `hello`, `inventory`, `facts`, `snapshot`, `apply`.
+Talking to it stays private: the app makes a named pipe with a random name that takes one connection, then checks the connected process is the helper it started. The helper checks the pipe belongs to its parent and quits when the app does. Requests are JSON, one per line: `hello`, `inventory`, `facts`, `snapshot`, `apply`, and two that only read: `events` (errors, crashes, driver resets and unexpected shutdowns from the Windows event log, at most 300 from the last 30 days) and `processes` (the busiest apps since the last call).
 
 `RigHelper.exe --selftest out.json` reads everything once and writes it to a file. CI runs this on a Windows runner.
 
 CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver. Graphics cards, drives and batteries read without it. The installer doesn't add PawnIO yet (see open questions).
+
+## Logs and recordings
+
+When the chat can't tell what's wrong from the latest readings, it records. A recording keeps temperatures, load, fan speeds, the busiest apps and the Windows events that land while it runs, for 1 to 180 minutes. It only reads.
+
+- **The model and the summary are in `packages/core/src/recordings.ts`.** A capture kind is one entry in the `captures` table and an event kind is one entry in `eventRules`; adding either is a table entry. `summarise` is pure: it finds sustained heat, a part pinned at full load, sudden drops and each Windows event, with the readings around it. The Logs screen and the chat both read that one summary, so the charts and Claude's answer agree.
+- **The desktop runs it** (`recorder.ts`). It saves as it goes, so a recording survives the app closing or the PC crashing, which is often the thing being recorded, and it reads the event log when time is up. The newest 20 stay on the PC.
+- **The chat has two tools**, `start_recording` and `read_recording`. On the desktop the recording starts at once. From the website the server stores the request and the desktop picks it up on its next upload, up to about five minutes later; the chat says so. When it finishes, the desktop uploads it, shows a Windows notification, and the chat offers "See what Rig found".
+- **The server keeps them per account and PC** (`0003_recordings.sql`): the 20 newest for 90 days, one running at a time, and a request nobody picked up in a day is closed.
+- **The Logs screen** (`packages/ui/src/pages/Logs.tsx`) lists Windows events by day with a kind filter, the recordings, and one recording with its charts, what Rig found marked on them, and "Ask about this".
 
 ## Defaults chosen
 
@@ -69,16 +79,17 @@ CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver.
 
 Tested here (Linux, no Windows):
 
-- Core logic: health checks, the fix catalog, the PC view, LocalClient's apply, undo, redo, rollback on failure, history and upload, and the home charts' insights (days, evening sessions, fan slices, time zones and daylight saving, empty and partial history), and the games library (ranking, sessions, notes only when the data supports them) (`pnpm --filter @rig/core test`).
-- Server: sign-up, the desktop's code sign-in from start to bearer token, CORS for the app, upload and read-back, privacy between accounts, which name wins, offline after 12 minutes, and chat with a stand-in for Claude: streamed text, a proposal checked against the PC, refusing changes that don't exist on the PC, steps, the daily limit (`pnpm --filter @rig/server test`, on real Postgres running in memory through PGlite). The Worker was also run with `wrangler dev` against a local Postgres 16 after the migration script: sign-up, the desktop's code sign-in to a bearer token, upload, re-upload, renaming on the web, listing, history and chat's not-set-up message all worked.
-- Settings: temperatures in °C or °F (`formatTemp` in `packages/core/src/units.ts`), the data download from the demo, deleting only after DELETE is typed, starting with Windows (`pnpm --filter @rig/ui test`). On the server, the export holds only the account's own data, and deleting removes every one of the account's rows, leaves another account's untouched and rolls back as a whole if any part fails.
-- Screens: every page renders, the account sits at the bottom of the sidebar, a change goes through review before it's made and can be undone, the Games page lists, opens and asks about a game and says plainly when nothing was played (`pnpm --filter @rig/ui test`, jsdom with the 3D scene stubbed).
+- Core logic: health checks, the fix catalog, the PC view, LocalClient's apply, undo, redo, rollback on failure, history and upload, and the home charts' insights (days, evening sessions, fan slices, time zones and daylight saving, empty and partial history), and the games library (ranking, sessions, notes only when the data supports them), and recordings (cleaning what the helper sends, the recorder from start to finish including a restart mid-recording, and the summary) (`pnpm --filter @rig/core test`).
+- Server: sign-up, the desktop's code sign-in from start to bearer token, CORS for the app, upload and read-back, privacy between accounts, which name wins, offline after 12 minutes, and chat with a stand-in for Claude: streamed text, a proposal checked against the PC, refusing changes that don't exist on the PC, steps, the daily limit, and recordings: asking for one from the chat, the desktop picking it up, upload, reading the summary back, stopping, limits, and other accounts not seeing them (`pnpm --filter @rig/server test`, on real Postgres running in memory through PGlite). The Worker was also run with `wrangler dev` against a local Postgres 16 after the migration script: sign-up, the desktop's code sign-in to a bearer token, upload, re-upload, renaming on the web, listing, history and chat's not-set-up message all worked.
+- Settings: temperatures in °C or °F (`formatTemp` in `packages/core/src/units.ts`), the data download from the demo, deleting only after DELETE is typed, starting with Windows (`pnpm --filter @rig/ui test`). On the server, the export holds only the account's own data (recordings and Windows events included), and deleting removes every one of the account's rows, leaves another account's untouched and rolls back as a whole if any part fails.
+- Screens: every page renders, the account sits at the bottom of the sidebar, a change goes through review before it's made and can be undone, the Games page lists, opens and asks about a game and says plainly when nothing was played, the Logs page filters events and opens a recording, and the chat starts one and reads it back (`pnpm --filter @rig/ui test`, jsdom with the 3D scene stubbed).
 - Desktop Rust: the store and the helper protocol over an in-memory pipe (`cargo test`). The Windows-only launch code type-checks for Windows.
 - The helper compiles; the website and the desktop front end build.
 
 Not tried yet:
 
-- Chat against the real Claude API (needs the API key on the server).
+- Chat against the real Claude API (needs the API key on the server), including whether Claude picks the recording tools at the right moments.
+- The helper's `events` and `processes` on real Windows: the event log queries, per-app graphics card use, and the notification when a recording ends. The parts that don't need Windows were run on Linux.
 - Google sign-in (needs a Google OAuth client).
 
 Needs a Windows PC to try:

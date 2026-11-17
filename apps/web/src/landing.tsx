@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { PC } from "@rig/core";
 import { DemoClient } from "@rig/core/demo";
 import { PCPreview } from "@rig/ui/preview";
+import { rigVersion } from "@rig/ui/version";
 import "./landing.css";
 
 // Set VITE_DOWNLOAD_URL when the Windows installer has a home (for example a
@@ -58,7 +59,7 @@ function Landing() {
         </ul>
       </section>
 
-      <footer className="lp-foot"><span>Rig</span><a href="/app/?demo">Demo</a><a href="/app/">Your PCs</a></footer>
+      <footer className="lp-foot"><span>Rig <small>{rigVersion}</small></span><a href="/app/?demo">Demo</a><a href="/app/">Your PCs</a></footer>
     </div>
   );
 }

@@ -1,0 +1,38 @@
+# The checks every change and every release must pass: one version everywhere,
+# types, tests, the website and desktop builds, the Rust tests and the helper build.
+# Runs on Ubuntu after actions/checkout.
+name: Check
+description: Types, tests and builds that run anywhere.
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with: { node-version: 22, cache: pnpm }
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+    - name: One version everywhere
+      run: pnpm version:check && node --test tools/version.test.mjs
+      shell: bash
+    - run: pnpm -r typecheck
+      shell: bash
+    - run: pnpm -r test
+      shell: bash
+    - run: pnpm --filter @rig/web build
+      shell: bash
+
+    - name: Linux libraries for Tauri
+      run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      shell: bash
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with: { workspaces: apps/desktop/src-tauri }
+    - run: pnpm --filter @rig/desktop build
+      shell: bash
+    - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+      shell: bash
+
+    - uses: actions/setup-dotnet@v4
+      with: { dotnet-version: 8.0.x }
+    - run: dotnet build helper/RigHelper -c Release
+      shell: bash

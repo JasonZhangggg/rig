@@ -1,0 +1,74 @@
+# Builds the helper, runs its self-test, bundles it into the Tauri app and
+# builds the NSIS installer. Runs on windows-latest after actions/checkout.
+# Shared by CI and Release so both make the installer the same way.
+name: Windows installer
+description: The helper self-test and the Rig installer for Windows.
+inputs:
+  api-url:
+    description: The Rig server the installed app signs in to, ending in /api (the RIG_API_URL repository variable).
+    required: true
+outputs:
+  installer:
+    description: Path of the built installer (.exe).
+    value: ${{ steps.find.outputs.installer }}
+runs:
+  using: composite
+  steps:
+    - name: Check the server address is set
+      shell: bash
+      env:
+        RIG_API_URL: ${{ inputs.api-url }}
+      run: |
+        if [ -z "$RIG_API_URL" ]; then
+          echo "::error title=RIG_API_URL is not set::An installer built without the server's address can't sign in. In GitHub: Settings > Secrets and variables > Actions > Variables, add RIG_API_URL = <your Rig address>/api (see docs/deploy.md)."
+          exit 1
+        fi
+        case "$RIG_API_URL" in
+          https://*/api|http://*/api) echo "Installer will sign in to $RIG_API_URL" ;;
+          *) echo "::error title=RIG_API_URL looks wrong::It should start with https:// and end in /api, like https://rig.example.com/api. It is $RIG_API_URL"; exit 1 ;;
+        esac
+
+    - uses: actions/setup-dotnet@v4
+      with: { dotnet-version: 8.0.x }
+    - name: Build the helper
+      shell: pwsh
+      run: dotnet publish helper/RigHelper -c Release -o helper-out
+    - name: Helper self-test (reads parts, settings and sensors once)
+      shell: pwsh
+      run: |
+        $p = Start-Process helper-out/RigHelper.exe -ArgumentList "--selftest", "selftest.json" -Wait -PassThru
+        Get-Content selftest.json
+        if ($p.ExitCode -ne 0) { throw "Helper self-test failed" }
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with: { name: helper-selftest, path: selftest.json, if-no-files-found: ignore, overwrite: true }
+
+    - name: Put the helper where Tauri bundles it
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force apps/desktop/src-tauri/binaries | Out-Null
+        Copy-Item helper-out/RigHelper.exe apps/desktop/src-tauri/binaries/RigHelper-x86_64-pc-windows-msvc.exe
+
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with: { node-version: 22, cache: pnpm }
+    - run: pnpm install --frozen-lockfile
+      shell: pwsh
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with: { workspaces: apps/desktop/src-tauri }
+    - name: Build the installer
+      shell: pwsh
+      run: pnpm --filter @rig/desktop tauri build
+      env:
+        VITE_RIG_API: ${{ inputs.api-url }}
+
+    - name: Find the installer
+      id: find
+      shell: bash
+      run: |
+        shopt -s nullglob
+        files=(apps/desktop/src-tauri/target/release/bundle/nsis/*.exe)
+        [ ${#files[@]} -eq 1 ] || { echo "::error::Expected one installer in bundle/nsis, found ${#files[@]}"; exit 1; }
+        echo "Built ${files[0]}"
+        echo "installer=${files[0]}" >> "$GITHUB_OUTPUT"

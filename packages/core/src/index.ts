@@ -4,6 +4,8 @@ export * from "./actions";
 export * from "./client";
 export * from "./health";
 export * from "./history";
+export * from "./recordings";
+export * from "./recorder";
 export * from "./insights";
 export * from "./games";
 export * from "./alerts";

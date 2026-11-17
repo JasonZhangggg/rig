@@ -8,7 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { DELETE_WORD, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { checkRequest, cleanRecording, DELETE_WORD, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
@@ -152,6 +152,46 @@ export function createApp(deps: AppDeps = {}) {
     return m ? c.json(m.inventory ? suggestUpgrades(m.inventory) : []) : notFound(c);
   });
 
+  app.get("/api/machines/:id/events", async (c) => { const m = await machine(c); return m ? c.json(m.events) : notFound(c); });
+
+  app.get("/api/machines/:id/recordings", async (c) => {
+    const m = await machine(c);
+    return m ? c.json(await c.get("store").recordings(c.get("user").id, m.id)) : notFound(c);
+  });
+
+  // Asked for on the website (or by the app for another PC): it waits for that PC's next sync.
+  app.post("/api/machines/:id/recordings", async (c) => {
+    const m = await machine(c);
+    if (!m) return notFound(c);
+    const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    const req = checkRequest({ reason: body?.reason, minutes: body?.minutes, question: body?.question }, { id: newId(), by: "you", now: now() });
+    if (typeof req === "string") return c.json({ message: req }, 400);
+    const { info, created } = await c.get("store").requestRecording(c.get("user").id, m.id, req, now());
+    return created ? c.json(info) : c.json({ message: `${present(m, now().getTime()).name} is already recording. Stop that one first, or wait for it to finish.` }, 409);
+  });
+
+  app.get("/api/machines/:id/recordings/:rid", async (c) => {
+    const m = await machine(c);
+    const r = m && validId(c.req.param("rid")) ? await c.get("store").recording(c.get("user").id, m.id, c.req.param("rid")) : null;
+    return r ? c.json(r) : c.json({ message: "That recording isn't on this PC." }, 404);
+  });
+
+  // The desktop app's upload of a recording as it runs and when it finishes.
+  app.put("/api/machines/:id/recordings/:rid", async (c) => {
+    const m = await machine(c);
+    if (!m) return notFound(c);
+    const r = cleanRecording(await c.req.json().catch(() => null), m.id);
+    if (!r || r.id !== c.req.param("rid")) return c.json({ message: "That recording isn't in the shape Rig expects. Update the Rig app." }, 400);
+    await c.get("store").putRecording(c.get("user").id, m.id, r, now());
+    return c.body(null, 204);
+  });
+
+  app.post("/api/machines/:id/recordings/:rid/stop", async (c) => {
+    const m = await machine(c);
+    const ok = m && validId(c.req.param("rid")) ? await c.get("store").stopRecording(c.get("user").id, m.id, c.req.param("rid"), now()) : false;
+    return ok ? c.body(null, 204) : c.json({ message: "That recording isn't on this PC." }, 404);
+  });
+
   app.post("/api/chat", async (c) => {
     const body = await c.req.json().catch(() => null) as ChatRequest | null;
     const user = c.get("user");
@@ -163,10 +203,20 @@ export function createApp(deps: AppDeps = {}) {
       if (!c.env.ANTHROPIC_API_KEY) return { message: "Rig's chat isn't set up on the server yet." };
       const row = validId(body.machineId) ? await store.machine(user.id, body.machineId) : null;
       // The desktop sends its live readings. The website asks about the PC's last upload.
-      const ctx: ChatContext | null = body.view
-        ? { view: { ...body.view, online: true, lastSync: now().toISOString() }, facts: body.facts ?? row?.facts ?? null, inventory: row?.inventory ?? null }
+      const base: ChatContext | null = body.view
+        ? { view: { ...body.view, online: true, lastSync: now().toISOString() }, facts: body.facts ?? row?.facts ?? null, inventory: row?.inventory ?? null, live: true }
         : row ? { view: present(row, now().getTime()), facts: row.facts, inventory: row.inventory } : null;
-      if (!ctx) return { message: "Rig hasn't seen this PC yet. Open the Rig app on it while signed in, then ask again." };
+      if (!base) return { message: "Rig hasn't seen this PC yet. Open the Rig app on it while signed in, then ask again." };
+      // Recording tools run while the answer streams, after this request's connection has closed, so each opens its own.
+      const later = async <T>(f: (s: Store) => Promise<T>): Promise<T> => { const conn = database(c.env); try { return await f(new Store(conn.db)); } finally { await conn.close(); } };
+      const ctx: ChatContext = {
+        ...base, now: now(), timeZone: typeof body.tz === "string" && body.tz.length <= 64 ? body.tz : undefined,
+        events: row?.events, recordings: row ? await store.recordings(user.id, row.id) : [],
+        ...(row ? {
+          startRecording: (req) => later((s) => s.requestRecording(user.id, row.id, req, now())),
+          readRecording: (id) => later((s) => s.recording(user.id, row.id, id)),
+        } : {}),
+      };
       const limit = Number(c.env.CHAT_DAILY_LIMIT ?? 40) || 40;
       if (!(await store.useChat(user.id, limit, now()))) return { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.` };
       return { ctx };
@@ -184,6 +234,8 @@ export function createApp(deps: AppDeps = {}) {
 
   return app;
 }
+
+const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 function cleanIdentity(body: Record<string, unknown> | null): Identity | null {
   if (!body || typeof body !== "object") return null;

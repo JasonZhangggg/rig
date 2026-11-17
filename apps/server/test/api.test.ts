@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildPC, desktopClientId, type ChatEvent, type DataExport, type MachineSync } from "@rig/core";
-import { SimulatedLink, fixtures } from "@rig/core/demo";
+import { buildPC, desktopClientId, type ChatEvent, type DataExport, type MachineSync, type Recording, type RecordingInfo, type SyncReply } from "@rig/core";
+import { SimulatedLink, demoEvents, demoRecording, fixtures } from "@rig/core/demo";
 import { createApp } from "../src/app";
 import { Store } from "../src/db";
 import type { Streamer } from "../src/chat";
@@ -13,13 +13,13 @@ const ORIGIN = "http://localhost:8787";
 
 /** A pretend Claude: each round answers with the next scripted message. */
 function fakeClaude(rounds: { text?: string; tool?: { name: string; input: unknown }; stop?: string }[]) {
-  const seen: { messages: unknown[]; tools: unknown[] }[] = [];
+  const seen: { messages: unknown[]; tools: unknown[]; system?: unknown }[] = [];
   let i = 0;
   const client = {
     beta: {
       messages: {
-        stream(params: { messages: unknown[]; tools: unknown[] }) {
-          seen.push({ messages: structuredClone(params.messages), tools: params.tools });
+        stream(params: { messages: unknown[]; tools: unknown[]; system?: unknown }) {
+          seen.push({ messages: structuredClone(params.messages), tools: params.tools, system: params.system });
           const r = rounds[Math.min(i++, rounds.length - 1)];
           const content: unknown[] = [];
           const events: unknown[] = [];
@@ -277,6 +277,153 @@ describe("chat", () => {
   });
 });
 
+describe("recordings and Windows events", () => {
+  const NOW = new Date(2026, 10, 17, 21, 0).getTime();
+  const demo = () => demoRecording(fixtures.atlas.inv, NOW);
+
+  async function pcSetup(rounds: Parameters<typeof fakeClaude>[0] = [{ text: "ok" }]) {
+    const fake = fakeClaude(rounds);
+    const t = await setup({}, fake.client);
+    const cookie = await t.signUp("ada@example.com");
+    const s = await syncPayload();
+    const id = s.inventory.machine.id;
+    const sync = async (extra: Partial<MachineSync> = {}) => (await t.call(`/api/machines/${id}/sync`, { method: "PUT", json: { ...s, history: [], ...extra }, cookie })).json() as Promise<SyncReply>;
+    await sync();
+    const base = `/api/machines/${id}/recordings`;
+    const list = async () => (await t.call(base, { cookie })).json() as Promise<RecordingInfo[]>;
+    return { ...t, ...fake, cookie, s, id, sync, base, list };
+  }
+
+  it("holds a request made on the web until the PC picks it up, then follows it to the end", async () => {
+    const { call, cookie, base, sync, list } = await pcSetup();
+    const made = await call(base, { method: "POST", json: { reason: "Catch the black screen", minutes: 45 }, cookie });
+    expect(made.status).toBe(200);
+    const info = await made.json() as RecordingInfo;
+    expect(info).toMatchObject({ state: "pending", by: "you", minutes: 45, sampleCount: 0 });
+    expect((await call(base, { method: "POST", json: { reason: "Another", minutes: 5 }, cookie })).status).toBe(409);
+    expect((await call(base, { method: "POST", json: { reason: "", minutes: 5 }, cookie })).status).toBe(400);
+
+    const reply = await sync();
+    expect(reply.recordings!.start.map((r) => r.id)).toEqual([info.id]);
+    expect(reply.recordings!.stop).toEqual([]);
+
+    const running: Recording = { ...demo(), ...reply.recordings!.start[0], state: "recording", startedAt: Date.now(), endsAt: Date.now() + 45 * 60_000, finishedAt: undefined, headline: undefined };
+    expect((await call(`${base}/${info.id}`, { method: "PUT", json: running, cookie })).status).toBe(204);
+    expect((await sync()).recordings).toEqual({ start: [], stop: [] });
+    expect((await list())[0]).toMatchObject({ id: info.id, state: "recording", sampleCount: running.samples.length });
+
+    expect((await call(`${base}/${info.id}/stop`, { method: "POST", json: {}, cookie })).status).toBe(204);
+    expect((await sync()).recordings!.stop).toEqual([info.id]);
+
+    await call(`${base}/${info.id}`, { method: "PUT", json: { ...running, state: "cancelled", finishedAt: NOW, headline: "The graphics driver stopped and recovered." }, cookie });
+    expect((await sync()).recordings).toEqual({ start: [], stop: [] });
+    const full = await (await call(`${base}/${info.id}`, { cookie })).json() as Recording;
+    expect(full).toMatchObject({ state: "cancelled", headline: "The graphics driver stopped and recovered.", reason: "Catch the black screen" });
+    expect(full.samples.length).toBe(running.samples.length);
+    expect(full.events[0]).toMatchObject({ kind: "driver", source: "Display", id: 4101 });
+  });
+
+  it("cancels a request that was stopped before the PC saw it", async () => {
+    const { call, cookie, base, sync, list } = await pcSetup();
+    const info = await (await call(base, { method: "POST", json: { reason: "Catch it", minutes: 10 }, cookie })).json() as RecordingInfo;
+    await call(`${base}/${info.id}/stop`, { method: "POST", json: {}, cookie });
+    expect((await list())[0].state).toBe("cancelled");
+    expect((await sync()).recordings!.start).toEqual([]);
+  });
+
+  it("keeps recordings and events private to the account", async () => {
+    const { call, signUp, cookie, base, id, sync } = await pcSetup();
+    await call(`${base}/${demo().id}`, { method: "PUT", json: demo(), cookie });
+    await sync({ events: demoEvents("tower", NOW) as never });
+    const mine = await (await call(`/api/machines/${id}/events`, { cookie })).json() as { kind: string }[];
+    expect(mine.length).toBeGreaterThan(4);
+    expect(mine.every((e) => e.kind)).toBe(true);
+
+    const other = await signUp("eve@example.com");
+    expect((await call(base, { cookie: other })).status).toBe(404);
+    expect((await call(`${base}/${demo().id}`, { cookie: other })).status).toBe(404);
+    expect((await call(`/api/machines/${id}/events`, { cookie: other })).status).toBe(404);
+    expect((await call(`${base}/${demo().id}/stop`, { method: "POST", json: {}, cookie: other })).status).toBe(404);
+    expect((await call(base, { method: "POST", json: { reason: "Snoop", minutes: 5 }, cookie: other })).status).toBe(404);
+    expect((await call(`${base}/${demo().id}`, { method: "PUT", json: demo(), cookie: other })).status).toBe(404);
+    expect((await call(base)).status).toBe(401);
+  });
+
+  it("cuts uploads to size, refuses junk and keeps the newest twenty", async () => {
+    const { call, cookie, base, list } = await pcSetup();
+    const r = demo();
+    const big = { ...r, samples: Array.from({ length: 900 }, (_, i) => ({ ...r.samples[0], t: r.startedAt! + i * 1000 })), events: Array.from({ length: 500 }, (_, i) => ({ ...r.events[0], t: r.startedAt! + i * 61_000 })) };
+    expect((await call(`${base}/${r.id}`, { method: "PUT", json: big, cookie })).status).toBe(204);
+    const got = await (await call(`${base}/${r.id}`, { cookie })).json() as Recording;
+    expect(got.samples.length).toBe(360);
+    expect(got.events.length).toBe(200);
+    expect((await call(`${base}/${r.id}`, { method: "PUT", json: { ...r, state: "weird" }, cookie })).status).toBe(400);
+    expect((await call(`${base}/other-id`, { method: "PUT", json: r, cookie })).status).toBe(400);
+
+    for (let i = 0; i < 24; i++) {
+      const id = `rec-${String(i).padStart(4, "0")}`;
+      await call(`${base}/${id}`, { method: "PUT", json: { ...r, id, samples: r.samples.slice(0, 3), createdAt: new Date(Date.now() - (30 - i) * 60_000).toISOString() }, cookie });
+    }
+    const kept = await list();
+    expect(kept).toHaveLength(20);
+    expect(kept[0].id).toBe("rec-0023");
+    expect(kept.some((x) => x.id === "rec-0000")).toBe(false);
+  });
+
+  it("lets the chat start a recording when it lacks data, queued for the PC on the web", async () => {
+    const { call, cookie, id, seen, list, sync } = await pcSetup([
+      { text: "I can't see that from here.", tool: { name: "start_recording", input: { reason: "Watch temperatures and Windows events to catch the black screen.", duration_minutes: 30 } } },
+      { text: "Check back in half an hour." },
+    ]);
+    const res = await call("/api/chat", { method: "POST", json: { machineId: id, tz: "America/New_York", messages: [{ from: "you", text: "My screen goes black in games. Why?" }] }, cookie });
+    const events = await readEvents(res);
+    const rec = events.find((e) => e.type === "recording") as Extract<ChatEvent, { type: "recording" }>;
+    expect(rec).toMatchObject({ queued: true, request: { by: "rig", minutes: 30, question: "My screen goes black in games. Why?" } });
+    expect(rec.request.capture).toEqual(["temps", "loads", "fans", "processes", "events"]);
+    expect((await list())[0]).toMatchObject({ id: rec.request.id, state: "pending" });
+    expect((await sync()).recordings!.start[0].id).toBe(rec.request.id);
+    const told = JSON.stringify(seen[1].messages);
+    expect(told).toMatch(/Queued for 30 minutes/);
+    expect(told).toMatch(/ends around \w{3}, \w{3} \d+, \d+:\d\d [AP]M/);
+    expect(seen[0].tools.map((t) => (t as { name: string }).name)).toEqual(expect.arrayContaining(["start_recording", "read_recording"]));
+  });
+
+  it("starts right away for the app on the PC, and refuses a second one or a silly length", async () => {
+    const { call, cookie, id, s, seen } = await pcSetup([
+      { tool: { name: "start_recording", input: { reason: "Catch the stutter", duration_minutes: 100000 } } },
+      { tool: { name: "start_recording", input: { reason: "Catch the stutter", duration_minutes: 20 } } },
+      { text: "Recording." },
+      { tool: { name: "start_recording", input: { reason: "Again", duration_minutes: 20 } } },
+      { text: "Already on it." },
+    ]);
+    const ask = () => call("/api/chat", { method: "POST", json: { machineId: id, view: s.view, facts: s.facts, messages: [{ from: "you", text: "Why does it stutter?" }] }, cookie });
+    const first = await readEvents(await ask());
+    expect(first.find((e) => e.type === "recording")).toMatchObject({ queued: false });
+    expect(JSON.stringify(seen[1].messages)).toMatch(/minutes must be from 1 to 180/);
+    expect(JSON.stringify(seen[2].messages)).toMatch(/Recording now for 20 minutes\. It ends at/);
+    const second = await readEvents(await ask());
+    expect(second.some((e) => e.type === "recording")).toBe(false);
+    expect(JSON.stringify(seen[4].messages)).toMatch(/already waiting for the PC/);
+  });
+
+  it("reads a finished recording back to the model as moments, not raw samples", async () => {
+    const { call, cookie, id, base, seen } = await pcSetup([{ tool: { name: "read_recording", input: {} } }, { text: "The graphics driver reset while the card was hot." }]);
+    await call(`${base}/${demo().id}`, { method: "PUT", json: demo(), cookie });
+    const res = await call("/api/chat", { method: "POST", json: { machineId: id, tz: "Europe/Berlin", messages: [{ from: "you", text: "The recording finished. What did it find?" }] }, cookie });
+    const events = await readEvents(res);
+    // The model is told which recordings exist and what time it is for the person.
+    expect(JSON.stringify(seen[0].system)).toContain(`\\"recordings\\":[{\\"id\\":\\"${demo().id}\\",\\"state\\":\\"done\\"`);
+    expect(JSON.stringify(seen[0].system)).toContain('\\"now\\":');
+    const result = JSON.stringify(seen[1].messages.at(-1));
+    expect(result).toContain("The graphics driver stopped and recovered");
+    expect(result).toContain("Graphics card ran hot");
+    expect(result).toContain("Cyberpunk2077.exe");
+    expect(result.length).toBeLessThan(6000);
+    const sources = events.find((e) => e.type === "sources") as Extract<ChatEvent, { type: "sources" }>;
+    expect(sources.sources.map((x) => x.label)).toContain("Recording, 45 minutes");
+  });
+});
+
 describe("your data", () => {
   /** Two accounts, each with the same PC uploaded, history and chat use. */
   async function twoAccounts() {
@@ -285,7 +432,11 @@ describe("your data", () => {
     const max = await t.signUp("max@example.com");
     const s = await syncPayload();
     const id = s.inventory.machine.id;
-    for (const cookie of [jo, max]) expect((await t.call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
+    const rec = demoRecording(fixtures.atlas.inv, Date.now());
+    for (const cookie of [jo, max]) {
+      expect((await t.call(`/api/machines/${id}/sync`, { method: "PUT", json: { ...s, events: demoEvents("tower", Date.now()) }, cookie })).status).toBe(200);
+      expect((await t.call(`/api/machines/${id}/recordings/${rec.id}`, { method: "PUT", json: rec, cookie })).status).toBe(204);
+    }
     const uid = async (cookie: string) => ((await (await t.call("/api/me", { cookie })).json()) as { id: string }).id;
     const ids = { jo: await uid(jo), max: await uid(max) };
     const store = new Store(t.db);
@@ -293,7 +444,7 @@ describe("your data", () => {
     for (const u of [ids.jo, ids.max]) {
       await sql`insert into "deviceCode" ("id", "deviceCode", "userCode", "userId", "expiresAt", "status") values (${`dc-${u}`}, ${`code-${u}`}, ${`U-${u}`}, ${u}, now() + interval '5 minutes', 'approved')`.execute(t.db);
     }
-    return { ...t, jo, max, id, ids };
+    return { ...t, jo, max, id, ids, rec };
   }
 
   /** How many rows each table holds for one account. */
@@ -307,11 +458,12 @@ describe("your data", () => {
       machine: await count(db.selectFrom("machine").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
       history: await count(db.selectFrom("machine_history").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
       chat: await count(db.selectFrom("chat_usage").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+      recording: await count(db.selectFrom("recording").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
     };
   }
 
-  it("downloads the account's PCs and all their history, and nobody else's", async () => {
-    const { call, jo, id, ids } = await twoAccounts();
+  it("downloads the account's PCs with all their history, events and recordings, and nobody else's", async () => {
+    const { call, jo, id, ids, rec } = await twoAccounts();
     expect((await call("/api/me/export")).status).toBe(401);
 
     const res = await call("/api/me/export", { cookie: jo });
@@ -325,14 +477,16 @@ describe("your data", () => {
     expect(out.machines[0]).toMatchObject({ id, name: "Atlas" });
     expect(out.machines[0].inventory?.machine.id).toBe(id);
     expect(out.machines[0].history.map((p) => p.cpu)).toEqual([61, 70]);
+    expect(out.machines[0].events.length).toBeGreaterThan(4);
+    expect(out.machines[0].recordings.map((r) => [r.id, r.samples.length])).toEqual([[rec.id, rec.samples.length]]);
     expect(out.chatUsage).toEqual([{ day: new Date().toISOString().slice(0, 10), count: 2 }]);
     expect(JSON.stringify(out)).not.toContain("max@example.com");
   });
 
-  it("deletes the account with its PCs, history, chat use and sign-ins, and leaves other accounts alone", async () => {
+  it("deletes the account with its PCs, history, recordings, chat use and sign-ins, and leaves other accounts alone", async () => {
     const { call, db, signUp, jo, max, ids } = await twoAccounts();
     const maxBefore = await rows(db, ids.max);
-    expect(await rows(db, ids.jo)).toMatchObject({ user: 1, session: 1, account: 1, deviceCode: 1, machine: 1, history: 2, chat: 1 });
+    expect(await rows(db, ids.jo)).toMatchObject({ user: 1, session: 1, account: 1, deviceCode: 1, machine: 1, history: 2, chat: 1, recording: 1 });
 
     expect((await call("/api/me", { method: "DELETE", json: { confirm: "DELETE" } })).status).toBe(401);
     expect((await call("/api/me", { method: "DELETE", json: {}, cookie: jo })).status).toBe(400);
@@ -344,7 +498,7 @@ describe("your data", () => {
     const cleared = res.headers.getSetCookie();
     expect(cleared.some((c) => c.startsWith("better-auth.session_token=;") && /Max-Age=0/.test(c))).toBe(true);
 
-    expect(await rows(db, ids.jo)).toEqual({ user: 0, session: 0, account: 0, deviceCode: 0, machine: 0, history: 0, chat: 0 });
+    expect(await rows(db, ids.jo)).toEqual({ user: 0, session: 0, account: 0, deviceCode: 0, machine: 0, history: 0, chat: 0, recording: 0 });
     expect(await rows(db, ids.max)).toEqual(maxBefore);
     expect((await call("/api/me", { cookie: jo })).status).toBe(401);
     expect((await call("/api/machines", { cookie: max })).status).toBe(200);

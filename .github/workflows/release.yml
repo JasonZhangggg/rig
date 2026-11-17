@@ -1,0 +1,139 @@
+# Publishes a GitHub Release with the Windows installer when a version tag is pushed:
+#   pnpm version:set 0.2.0, merge that, then: git tag v0.2.0 && git push origin v0.2.0
+# Or Actions tab > Release > Run workflow: with a new tag it tags the branch you run it on
+# (normally main) and publishes; with an existing tag it builds and publishes that tag again.
+# A tag with a hyphen (v0.2.0-beta.1) is published as a pre-release. See docs/releasing.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag to publish, like v0.1.0. If it doesn't exist yet, it's made on the branch you run this on."
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  # The tag must be the version every file says.
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - name: Check the tag looks like v1.2.3
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::\"$TAG\" isn't a version tag like v0.2.0 or v0.2.0-beta.1"; exit 1; }
+      - uses: actions/checkout@v4
+      - name: Use the tag, or make it here when run by hand with a new one
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            git fetch --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+            git checkout --quiet "refs/tags/$TAG"
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "TAG_NEW=1" >> "$GITHUB_ENV"
+          else
+            echo "::error::Tag $TAG isn't on GitHub"; exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: The tag matches the version in every file
+        run: node tools/version.mjs check "$TAG"
+      - name: Push the new tag
+        if: env.TAG_NEW == '1'
+        run: |
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+          echo "Tagged $(git rev-parse --short HEAD) on $GITHUB_REF_NAME as $TAG"
+      - id: v
+        run: |
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  check:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "refs/tags/${{ env.TAG }}" }
+      - uses: ./.github/actions/check
+
+  windows:
+    needs: [version, check]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "refs/tags/${{ env.TAG }}" }
+      - uses: ./.github/actions/windows-installer
+        id: build
+        with:
+          api-url: ${{ vars.RIG_API_URL }}
+      - name: Give the installer a stable name
+        shell: bash
+        env:
+          INSTALLER: ${{ steps.build.outputs.installer }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p release
+          cp "$INSTALLER" "release/Rig-Setup-$VERSION-x64.exe"
+          ls -l release
+      - uses: actions/upload-artifact@v4
+        with: { name: rig-release, path: release/, if-no-files-found: error, overwrite: true }
+
+  publish:
+    needs: [version, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: rig-release, path: release }
+      - name: Checksums
+        working-directory: release
+        run: |
+          sha256sum Rig-Setup-*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Install notes
+        run: |
+          cat > notes.md <<NOTES
+          ## Install
+
+          1. Download **Rig-Setup-$VERSION-x64.exe** below and open it.
+          2. Windows may say "Windows protected your PC", because the installer isn't code-signed yet. Choose **More info**, then **Run anyway**.
+          3. When Rig opens, Windows asks whether it may make changes. Choose **Yes**, so Rig can read your temperatures and fans.
+
+          To check the download, compare the result of \`Get-FileHash .\Rig-Setup-$VERSION-x64.exe\` in PowerShell with SHA256SUMS.txt.
+
+          NOTES
+          cat notes.md
+      - name: Publish the release
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists, so its files are replaced."
+            gh release upload "$TAG" release/* --clobber
+          else
+            flags=()
+            [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+            gh release create "$TAG" release/* --verify-tag --title "Rig $VERSION" --generate-notes --notes-file notes.md "${flags[@]}"
+          fi
+          gh release view "$TAG" --json url,isPrerelease,assets --jq '"\(.url) (pre-release: \(.isPrerelease)) " + ([.assets[].name] | join(", "))'

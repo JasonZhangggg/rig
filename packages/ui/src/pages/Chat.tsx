@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
-import { useApp } from "../state";
+import { useApp, useTempText } from "../state";
+import { RecordingCard } from "./logs/RecordingCard";
 import { ChatBar } from "./chat/ChatBar";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
@@ -36,7 +37,7 @@ export function Chat() {
           {!empty && <FollowUps starters={next} />}
           <Composer ref={box} big={empty} />
           <p className="chat-rules">
-            Rig shows every change first. Nothing changes until you say yes, and you can undo it in <a href="#changes">Changes</a>.
+            Rig shows every change first. Nothing changes until you say yes, and you can undo it in <a href="#changes">Changes</a>. When Rig needs more to go on, it records readings for a while, which you can stop in <a href="#logs">Logs</a>.
             {!client.caps.applyChanges && <> Fixes are made from the Rig app on {pc.name}.</>}
           </p>
         </div>
@@ -67,20 +68,22 @@ function useStickToBottom(chat: ChatMessage[], answering: boolean) {
 }
 
 function Message({ m }: { m: ChatMessage }) {
+  const inUnit = useTempText();
   if (m.from === "you") return <div className="msg you"><div className="bubble">{m.text}</div></div>;
-  const paras = m.text.split(/\n{2,}/).filter(Boolean);
+  const paras = inUnit(m.text).split(/\n{2,}/).filter(Boolean);
   return (
     <div className={`msg claude${m.error ? " error" : ""}`}>
       <span className="who-mark" aria-label="Rig">R</span>
       <div className="body">
         {paras.length ? paras.map((p, i) => <p key={i}>{p}</p>) : m.pending ? <p className="typing" aria-label="Rig is thinking"><i /><i /><i /></p> : null}
-        {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{s}</li>)}</ol>}
+        {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{inUnit(s)}</li>)}</ol>}
         {m.sources && m.sources.length > 0 && (
           <div className="sources">{m.sources.map((s) => s.url
             ? <a key={s.label} className="source" href={s.url} target="_blank" rel="noreferrer"><b>{s.kind}</b>{s.label}</a>
             : <span key={s.label} className="source"><b>{s.kind}</b>{s.label}</span>)}</div>
         )}
         {m.proposal && <ProposalCard p={m.proposal} />}
+        {m.recording && <RecordingCard request={m.recording} />}
       </div>
     </div>
   );

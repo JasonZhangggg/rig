@@ -13,6 +13,7 @@ import { Changes } from "./pages/Changes";
 import { Upgrades } from "./pages/Upgrades";
 import { Games } from "./pages/Games";
 import { History } from "./pages/History";
+import { Logs } from "./pages/Logs";
 import { Web } from "./pages/Web";
 import { SignIn } from "./pages/SignIn";
 import { DeviceApprove } from "./pages/DeviceApprove";
@@ -99,7 +100,7 @@ function Root() {
     else if (ui.route !== "pc") scene.select(null);
   }, [ui.route, pc.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, web: Web, signin: Overview, settings: Settings }[ui.route];
+  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, logs: Logs, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (
     <>
       <Sidebar><Page /></Sidebar>

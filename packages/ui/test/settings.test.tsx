@@ -1,6 +1,7 @@
 // Settings: reached from the account menu and Ctrl K, temperatures in the
 // chosen unit everywhere, the data download, account deletion and starting
 // with Windows.
+import rootPackage from "../../../package.json";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DataExport } from "@rig/core";
@@ -75,10 +76,15 @@ describe("Settings", () => {
     await waitFor(() => expect(location.hash).toBe("#settings"));
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
     const section = within(await screen.findByRole("region", { name: "Notifications" }));
-    expect(section.getAllByRole("switch")).toHaveLength(5);
+    expect(section.getAllByRole("switch")).toHaveLength(6);
     expect(section.getByText(/The Rig app on each PC can also send a Windows notification/)).toBeTruthy();
     fireEvent.click(section.getByRole("switch", { name: /A drive is nearly full/ }));
     expect(JSON.parse(localStorage.getItem("rig.alerts.off")!)).toEqual(["drive-full"]);
+    const recording = section.getByRole("switch", { name: "A recording finished" });
+    expect(recording.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(recording);
+    expect(localStorage.getItem("rig.notify.recordingDone")).toBe("off");
+    expect(recording.getAttribute("aria-checked")).toBe("false");
     expect(screen.getByRole("navigation", { name: /settings/i }).textContent).toContain("Notifications");
   });
 
@@ -97,6 +103,8 @@ describe("Settings", () => {
     expect(out.format).toBe("rig-export/1");
     expect(out.machines.map((m) => m.name)).toEqual(["Atlas", "Pebble"]);
     expect(out.machines[0].history.length).toBeGreaterThan(100);
+    expect(out.machines[0].recordings[0].samples.length).toBeGreaterThan(10);
+    expect(out.machines[0].events.length).toBeGreaterThan(0);
   });
 
   it("deletes an account only after DELETE is typed", async () => {
@@ -143,5 +151,28 @@ describe("Settings", () => {
     fireEvent.click(sw);
     expect(set).toHaveBeenCalledWith(true);
     await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("shows the version from the root package.json, and on desktop the server it signs in to", async () => {
+    const { version } = rootPackage;
+    const { unmount } = render(<RigApp client={new DemoClient()} />);
+    await open("settings");
+    const about = await screen.findByRole("region", { name: "About" });
+    expect(within(about).getByText(`Rig ${version}`)).toBeTruthy();
+    expect(within(about).queryByText("Server")).toBeNull();
+    unmount();
+
+    render(<RigApp client={new DemoClient()} host={{ server: "https://rig.example.com/api" }} />);
+    await open("settings");
+    expect(within(await screen.findByRole("region", { name: "About" })).getByText("Signs in and syncs with https://rig.example.com/api")).toBeTruthy();
+  });
+
+  it("finds the version in Ctrl K search", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Search" }), { target: { value: "version" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^About/ }));
+    await waitFor(() => expect(location.hash).toBe("#settings"));
   });
 });

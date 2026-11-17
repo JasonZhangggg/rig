@@ -24,6 +24,7 @@ afterEach(() => cleanup());
 describe("Ask", () => {
   it("offers questions to start with before anything is asked", async () => {
     await openChat();
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(screen.getByRole("heading", { name: /What's going on with Atlas\?/ })).toBeTruthy();
     const starters = within(screen.getByRole("list", { name: "Questions to start with" })).getAllByRole("button");
     expect(starters).toHaveLength(4);

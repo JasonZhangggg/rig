@@ -39,8 +39,8 @@ export function DataSection() {
     <>
       <SettingRow title="Download my data"
         body={thisPCOnly
-          ? "A file with this PC's parts, settings, change log and every temperature reading it has kept."
-          : "A file with every PC on your account: parts, settings, change log and recorded temperature history."}>
+          ? "A file with this PC's parts, settings, change log, every temperature reading it has kept, its Windows errors and its recordings."
+          : "A file with every PC on your account: parts, settings, change log, temperature history, Windows errors and recordings."}>
         <button className="btn sm" type="button" onClick={download} disabled={busy}>{busy ? "Preparing…" : "Download my data"}</button>
       </SettingRow>
       {error && <div className="callout warn" role="alert">{error}</div>}

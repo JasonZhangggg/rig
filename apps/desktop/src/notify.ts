@@ -1,10 +1,10 @@
-// Windows notifications for new alerts on this PC. They're sent only while
-// Rig's window isn't in front; when it is, Things to look at already shows them.
+// Windows notifications for new alerts and finished recordings on this PC. They are sent only while
+// Rig's window isn't in front; when it is, the screens already show them.
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { alertInUnit, alertsToNotify, shownAlerts, type LocalClient, type NotifyLog } from "@rig/core";
-import { alertKindsOff, storedTempUnit } from "@rig/ui";
+import { alertKindsOff, recordingNoticeOn, storedTempUnit } from "@rig/ui";
 
 const LOG = "rig.alerts.notified";
 
@@ -39,4 +39,13 @@ export function notifyAlerts(client: LocalClient): () => void {
       for (const a of notify.map((x) => alertInUnit(x, unit))) sendNotification({ title: a.title, body: a.detail });
     }).catch(() => {});
   });
+}
+
+/** The notification for a finished recording, when it's left on in Settings and Rig's window isn't in front. */
+export function notifyRecording(n: { title: string; body: string }) {
+  if (!recordingNoticeOn()) return;
+  void (async () => {
+    if (await focused()) return;
+    if (await allowed()) sendNotification(n);
+  })().catch(() => {});
 }

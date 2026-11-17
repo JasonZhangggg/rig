@@ -4,6 +4,7 @@
 
 import type { Account, Change } from "./client";
 import type { Game, HistoryPoint, PC } from "./model";
+import type { PCEvent, Recording } from "./recordings";
 import type { Inventory, SystemFacts } from "./telemetry";
 import type { Identity } from "./view";
 
@@ -23,6 +24,10 @@ export interface ExportMachine {
   games: Game[];
   /** Recorded readings, oldest first. */
   history: HistoryPoint[];
+  /** Crash and error events Rig read from Windows, newest first. */
+  events: PCEvent[];
+  /** Recordings with all their readings, newest first. */
+  recordings: Recording[];
 }
 
 export interface DataExport {
@@ -38,7 +43,7 @@ export interface DataExport {
 
 export interface ExportInput {
   account: DataExport["account"];
-  machines: (Omit<ExportMachine, "name" | "identity" | "syncedAt"> & { identity?: Identity; syncedAt?: string | null })[];
+  machines: (Omit<ExportMachine, "name" | "identity" | "syncedAt" | "events" | "recordings"> & { identity?: Identity; syncedAt?: string | null; events?: PCEvent[]; recordings?: Recording[] })[];
   chatUsage?: DataExport["chatUsage"];
   notes?: string[];
   now?: Date;
@@ -57,6 +62,8 @@ export function makeExport(input: ExportInput): DataExport {
     changes: m.changes,
     games: m.games,
     history: [...m.history].sort((a, b) => a.t - b.t),
+    events: m.events ?? [],
+    recordings: [...(m.recordings ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   })).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return {
     format: EXPORT_FORMAT,
