@@ -8,14 +8,6 @@ export function SignInArt() {
     <div className="signin-art tone-dark">
       <AsciiField />
       <div className="brand"><span className="brand-mark" />Rig</div>
-      <div className="signin-pitch">
-        <p className="signin-line">Know what's inside your PC, what's wrong with it and what to do next.</p>
-        <ul className="signin-facts">
-          <li>Live temperatures and fans</li>
-          <li>Every fix shown before it happens</li>
-          <li>Undo anything</li>
-        </ul>
-      </div>
     </div>
   );
 }

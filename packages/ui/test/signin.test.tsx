@@ -14,7 +14,8 @@ describe("Sign-in screen", () => {
     const onDone = vi.fn();
     render(<SignIn client={{ kind: "web", signInEmail } as unknown as RigClient} onDone={onDone} />);
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
-    expect(screen.getByText("Know what's inside your PC, what's wrong with it and what to do next.")).toBeTruthy();
+    expect(screen.getByText("Rig")).toBeTruthy();
+    expect(screen.queryByText("Know what's inside your PC, what's wrong with it and what to do next.")).toBeNull();
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jo@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
