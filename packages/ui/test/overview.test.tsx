@@ -49,6 +49,24 @@ describe("Home charts", () => {
     expect(chart.textContent).not.toMatch(/\b0\b|NaN/);
   });
 
+  it("sets each day's temperatures as figures beside the chart", () => {
+    const now = Date.now();
+    const points: HistoryPoint[] = [
+      { t: now - 120_000, cpu: 44, gpu: 40, busy: false },
+      { t: now - 60_000, cpu: 61, gpu: 72, busy: true },
+    ];
+    render(<TempsCard temps={weekTemps(points, insightContext({ kind: "tower" }, now))} name="Atlas" />);
+    const chart = screen.getByRole("img");
+    expect(chart.textContent).toMatch(/IdleGamingPeak/);
+    expect(chart.lastElementChild!.textContent).toMatch(/447272$/);
+  });
+
+  it("names the game on each evening it was played", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const week = within((await screen.findByRole("heading", { name: "This week" })).closest("section")!);
+    expect((await week.findAllByText(/Baldur's Gate 3/)).length).toBeGreaterThan(0);
+  });
+
   it("hides the fan speeds on a PC that reports none", () => {
     const ctx = insightContext({ kind: "laptop" });
     const { container } = render(<FansCard fans={[]} trend={fanTrend([], ctx)} />);
@@ -62,12 +80,14 @@ describe("Home hero", () => {
   afterEach(() => cleanup());
   const last = (method: string) => sceneCalls.filter(([k]) => k === method).at(-1)?.[1][0];
 
-  it("names the main parts beside the 3D PC", async () => {
+  it("names the main parts beside the 3D PC with their temperatures, each opening in My PC", async () => {
     render(<RigApp client={new DemoClient()} />);
     const hero = (await screen.findByRole("link", { name: "Open 3D view" })).closest("section")!;
-    const specs = within(hero).getByText("Processor", { selector: "dt" }).closest("dl")!;
-    expect(within(specs).getAllByRole("term").map((t) => t.textContent)).toEqual(["Processor", "Graphics card", "Memory"]);
-    expect(within(specs).getByText(/Ryzen/)).toBeTruthy();
+    const parts = within(within(hero).getByRole("list", { name: "Main parts" })).getAllByRole("button");
+    expect(parts.slice(0, 3).map((b) => b.getAttribute("aria-label")!.split(",")[0])).toEqual(["Processor", "Graphics card", "Memory"]);
+    expect(parts[0].getAttribute("aria-label")).toMatch(/^Processor, .*Ryzen.*, \d+°$/);
+    fireEvent.click(parts[0]);
+    expect(await screen.findByRole("button", { name: "Reset view" })).toBeTruthy();
   });
 
   it("turns heat and the exploded view on in the hero, and puts the scene back on leaving", async () => {
