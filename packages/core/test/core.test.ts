@@ -4,8 +4,8 @@ import { DemoClient, fixtures, simulate } from "../src/demo";
 
 const atlas = () => structuredClone(fixtures.atlas.inv);
 const facts = () => structuredClone(fixtures.atlas.facts);
-const at8pm = new Date(2026, 10, 17, 20, 0).getTime();
-const at3am = new Date(2026, 10, 17, 3, 0).getTime();
+const at8pm = Date.UTC(2026, 10, 17, 20, 0);
+const at3am = Date.UTC(2026, 10, 17, 3, 0);
 
 describe("buildPC", () => {
   it("makes every part the 3D scene can select on a tower", () => {
