@@ -3,12 +3,6 @@
 .pg-main,
 .pg-rail { min-width: 0; display: flex; flex-direction: column; gap: var(--gap); }
 .rail-card { display: flex; flex-direction: column; gap: 14px; }
-.rail-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.rail-list > li { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
-.rail-list > li:first-child { padding-top: 0; border-top: 0; }
-.rail-list > li:last-child { padding-bottom: 0; }
-.rail-list b { font-weight: 600; }
-.rail-list p { margin-top: 2px; font-size: 13.5px; }
 
 /* ---------- Changes ---------- */
 .ch-main { min-width: 0; display: flex; flex-direction: column; gap: 26px; }
