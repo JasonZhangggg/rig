@@ -145,15 +145,15 @@ export const colorSets: { id: ColorSet; name: string; accent: string; scene: Par
   { id: "brass", name: "Brass", accent: "#E6D3A3", scene: {
     heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3",
     airCool: "#D2C08F", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "denim", name: "Denim", accent: "#B9C8D8", scene: {
-    heatCool: "#8DA3BA", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#B9C8D8",
-    airCool: "#A6B8CB", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "olive", name: "Olive", accent: "#CDD0A6", scene: {
-    heatCool: "#A4A874", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#CDD0A6",
-    airCool: "#BABE8C", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
-  { id: "sea", name: "Sea", accent: "#B0CCC4", scene: {
-    heatCool: "#86A9A0", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#B0CCC4",
-    airCool: "#9DBEB5", airWarm: "#D9804F", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "denim", name: "Denim", accent: "#C6D4E3", scene: {
+    heatCool: "#A9BBCE", heatWarm: "#6B93C9", heatHot: "#2D5A96", highlight: "#C6D4E3",
+    airCool: "#B7C7D9", airWarm: "#6B93C9", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "olive", name: "Olive", accent: "#D4D9B4", scene: {
+    heatCool: "#B9C091", heatWarm: "#8FA35A", heatHot: "#4A5E1E", highlight: "#D4D9B4",
+    airCool: "#C7CDA2", airWarm: "#8FA35A", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
+  { id: "sea", name: "Sea", accent: "#C3DCD5", scene: {
+    heatCool: "#A3C4BB", heatWarm: "#5FA394", heatHot: "#24675A", highlight: "#C3DCD5",
+    airCool: "#B3D0C8", airWarm: "#5FA394", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
   { id: "cobalt", name: "Cobalt", accent: "#9DB8FF", scene: {
     heatCool: "#6F8FE0", heatWarm: "#F7CD5D", heatHot: "#E0A21F", highlight: "#9DB8FF",
     airCool: "#89A8F5", airWarm: "#F7CD5D", glow: 0.4, interior: 1.5, pedestalRim: 0.35 } },
