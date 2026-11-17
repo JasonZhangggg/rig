@@ -57,17 +57,19 @@ const week = (ctx: InsightContext) => {
 
 const inRange = (points: readonly HistoryPoint[], from: number, to: number) => points.filter((p) => p.t >= from && p.t < to);
 
-const values = (points: readonly HistoryPoint[], pick: (p: HistoryPoint) => number | null | undefined) =>
+/** The readings `pick` finds, without the gaps. */
+export const values = (points: readonly HistoryPoint[], pick: (p: HistoryPoint) => number | null | undefined) =>
   points.map(pick).filter((v): v is number => v != null);
 
-function median(xs: number[]): number | null {
+/** The middle reading, rounded to a whole °C, so one spike doesn't move it. Null without readings. */
+export function median(xs: number[]): number | null {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
   return Math.round(s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2);
 }
 
-const highest = (xs: number[]) => (xs.length ? Math.round(Math.max(...xs)) : null);
+export const highest = (xs: number[]) => (xs.length ? Math.round(Math.max(...xs)) : null);
 
 // ----- Temperatures -----
 
@@ -98,10 +100,14 @@ export interface WeekTemps {
   peak: number | null;
 }
 
+/** The graphics card on a desktop whose points report one, otherwise the processor. */
+export const tempSubject = (points: readonly HistoryPoint[], kind: PCKind): TempSubject =>
+  kind === "tower" && points.some((p) => p.gpu != null) ? "gpu" : "cpu";
+
 export function weekTemps(points: readonly HistoryPoint[], ctx: InsightContext): WeekTemps {
   const days = week(ctx);
   const span = inRange(points, fromWall(days[0] * DAY, ctx.offset), ctx.now + 1);
-  const subject: TempSubject = ctx.kind === "tower" && span.some((p) => p.gpu != null) ? "gpu" : "cpu";
+  const subject = tempSubject(span, ctx.kind);
   const read = (p: HistoryPoint) => p[subject];
   const out = days.map((d): DayTemps => {
     const day = fromWall(d * DAY, ctx.offset);
@@ -161,11 +167,11 @@ export interface WeekEvenings {
 const EVENING_FROM = 18;
 const EVENING_TO = 24 + 6;
 
-/** Busy windows grouped into stretches, each window joined to the last when at most one quiet window lies between them. */
-function busyRuns(points: readonly HistoryPoint[]): HistoryPoint[][] {
+/** The windows `keep` picks, oldest first, grouped into stretches: each window joins the last when at most one other window lies between them. */
+export function windowRuns(points: readonly HistoryPoint[], keep: (p: HistoryPoint) => boolean): HistoryPoint[][] {
   const runs: HistoryPoint[][] = [];
   let run: HistoryPoint[] = [];
-  for (const p of [...points].filter((x) => x.busy).sort((a, b) => a.t - b.t)) {
+  for (const p of points.filter(keep).sort((a, b) => a.t - b.t)) {
     const last = run[run.length - 1];
     if (last && p.t - (last.t + HISTORY_WINDOW_MS) > HISTORY_WINDOW_MS) { runs.push(run); run = []; }
     run.push(p);
@@ -174,13 +180,16 @@ function busyRuns(points: readonly HistoryPoint[]): HistoryPoint[][] {
   return runs;
 }
 
+/** The processor or graphics card came within HOT_MARGIN °C of its safe limit in any of the windows. */
+export const ranHot = (points: readonly HistoryPoint[], limits: InsightContext["limits"]) =>
+  points.some((p) => (p.gpu ?? -Infinity) >= limits.gpu - HOT_MARGIN || (p.cpu ?? -Infinity) >= limits.cpu - HOT_MARGIN);
+
 function sessionKind(points: readonly HistoryPoint[], game: string | null, limits: InsightContext["limits"]): SessionKind {
-  const nearLimit = points.some((p) => (p.gpu ?? -Infinity) >= limits.gpu - HOT_MARGIN || (p.cpu ?? -Infinity) >= limits.cpu - HOT_MARGIN);
-  return nearLimit ? "hot" : game ? "played" : "background";
+  return ranHot(points, limits) ? "hot" : game ? "played" : "background";
 }
 
 export function weekEvenings(points: readonly HistoryPoint[], ctx: InsightContext): WeekEvenings {
-  const runs = busyRuns(points.filter((p) => p.t <= ctx.now));
+  const runs = windowRuns(points, (p) => p.busy && p.t <= ctx.now);
   const days = week(ctx).map((d): EveningDay => {
     const open = fromWall(d * DAY + EVENING_FROM * HOUR, ctx.offset);
     const close = fromWall(d * DAY + EVENING_TO * HOUR, ctx.offset);

@@ -50,7 +50,11 @@ export function LineChart({ points, series, w = 860, h = 280, limit, bands }: Li
   const span = t1 - t0;
   const day = 864e5;
   const ticks: { t: number; label: string }[] = [];
-  if (span <= 1.5 * day) {
+  if (span <= 8 * 36e5) {
+    const first = new Date(t0); first.setMinutes(0, 0, 0);
+    if (first.getTime() < t0) first.setHours(first.getHours() + 1);
+    for (let t = first.getTime(); t <= t1; t += 36e5) ticks.push({ t, label: new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) });
+  } else if (span <= 1.5 * day) {
     for (let t = Math.ceil(t0 / (6 * 36e5)) * 6 * 36e5; t <= t1; t += 6 * 36e5) ticks.push({ t, label: new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) });
   } else {
     const every = span > 10 * day ? 5 : 1;
