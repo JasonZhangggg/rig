@@ -4,7 +4,7 @@ import { getStage } from "./components/Stage";
 import { MockPanel, Modal, Toast } from "./components/Shell";
 import { Shell } from "./components/Shells";
 import { Palette } from "./components/Palette";
-import { sceneThemes } from "./themes";
+import { colorways, sceneThemes } from "./themes";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
@@ -30,14 +30,19 @@ function Root() {
   // Theme and PC identity
   useEffect(() => {
     document.documentElement.dataset.style = ui.style;
+    document.documentElement.dataset.colors = ui.colors;
     document.documentElement.style.setProperty("--pc", pc.accent);
-  }, [ui.style, pc.accent]);
+  }, [ui.style, ui.colors, pc.accent]);
 
   // Keep the 3D scene in step with the app
   useEffect(() => {
     getStage().onSelect = (id) => set({ selected: id, tab: "live" });
   }, [set]);
-  useEffect(() => { scene.setPC(pc, sceneThemes[ui.style]); }, [pc.id, pc.accent, ui.style]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const th = sceneThemes[ui.style];
+    const cw = colorways.find((c) => c.id === ui.colors);
+    scene.setPC(pc, ui.style === "studio" && cw ? { ...th, highlight: cw.accent } : th);
+  }, [pc.id, pc.accent, ui.style, ui.colors]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);

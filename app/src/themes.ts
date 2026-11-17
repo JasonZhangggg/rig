@@ -45,4 +45,23 @@ export const sceneThemes: Record<StyleId, SceneTheme> = {
   },
 };
 
+// Color options for Friendly. accent fills buttons, ink is the dark tile color.
+export type ColorId = "coral" | "sage" | "cobalt" | "lilac" | "butter";
+export const colorways: { id: ColorId; name: string; accent: string; ink: string }[] = [
+  { id: "coral", name: "Coral", accent: "#EE6A4D", ink: "#1C1A18" },
+  { id: "sage", name: "Sage", accent: "#3E8A62", ink: "#17241D" },
+  { id: "cobalt", name: "Cobalt", accent: "#4361EE", ink: "#141729" },
+  { id: "lilac", name: "Lilac", accent: "#8467E8", ink: "#1D1830" },
+  { id: "butter", name: "Butter", accent: "#F2C230", ink: "#1C1A18" },
+];
+
+// Sidebar options for Friendly
+export type SideId = "panel" | "tree" | "card" | "dock";
+export const sidebars: { id: SideId; name: string }[] = [
+  { id: "panel", name: "Panel" },
+  { id: "tree", name: "Tree" },
+  { id: "card", name: "Card" },
+  { id: "dock", name: "Dock" },
+];
+
 export const accents = ["#E8692E", "#3C7BF0", "#2E9E6B", "#C2477A", "#8A63D2", "#C9A227", "#5B6573"];

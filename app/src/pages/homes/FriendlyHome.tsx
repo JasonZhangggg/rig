@@ -125,7 +125,7 @@ export function FriendlyHome() {
           <div className="f-card-head"><span>Storage</span><span className="f-faint">{(ex.totalGb / 1000).toFixed(0)} TB</span></div>
           <div className="f-bubbles" aria-hidden="true">
             {[...used, free].map((s, i) => {
-              const d = 44 + Math.sqrt(s.gb / ex.totalGb) * 96;
+              const d = 40 + Math.sqrt(s.gb / ex.totalGb) * 78;
               return <span key={s.label} className={`f-bub b${i}`} style={{ width: d, height: d }}><b>{s.gb >= 1000 ? `${(s.gb / 1000).toFixed(1)} TB` : `${s.gb}`}</b><small>{s.label}</small></span>;
             })}
           </div>

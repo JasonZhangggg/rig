@@ -59,9 +59,11 @@ Each one has its own layout and navigation, not just its own colors.
 
 | Mockup | Home screen | Navigation |
 | --- | --- | --- |
-| **Friendly** | A greeting band ("Hey Jason, need help?") with a coral "Fix what needs a look" button, then round tiles: the PC, a dark health ring, a mood check, fan bars, quick switches, days since the last dust clean, storage bubbles and a to-do list. | A round icon bar along the top. No sidebar. |
+| **Friendly** | A greeting band ("Hey Jason, need help?") with a coral "Fix what needs a look" button, then round tiles: the PC, a dark health ring, a mood check, fan bars, quick switches, days since the last dust clean, storage bubbles and a to-do list. | A sidebar, in four options to compare: **Panel** (the app in a rounded frame with a soft grey sidebar, grouped links, a black pill for the current screen, a setup card with Skip and Next, and a button that collapses it to icons), **Tree** (Workspace's icon rail and PC tree), **Card** (a floating white card with the PC, its health and a big "Ask Rig" button) and **Dock** (a slim dark dock with a bubble per PC and tooltips). |
 | **Canvas** | The PC in the middle of a dark dotted canvas, with each part as a card wired to it. A warm part's wire animates, and a "Rig" cursor points at it with a Fix it button. An ask box sits at the bottom. | Floating toolbars: screens on the left, one tab per PC in the middle, search and "Fix 1 issue" on the right. |
 | **Workspace** | A big hottest-temperature number, a power-draw bar split by part, a black "Needs a look" card, the PC in 3D, a hatched bar chart, games and parts lists, and a stats row. | An icon rail plus a tree of your PCs and their parts, with the page on a lighter sheet. |
+
+Friendly also comes in five colorways (Coral, Sage, Cobalt, Lilac and Butter). The mockup panel switches the sidebar and the colors.
 
 The other screens (3D view, Ask, Changes and the rest) are shared and take on each mockup's colors and type inside its navigation.
 
