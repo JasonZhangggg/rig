@@ -100,7 +100,7 @@ function stage(w: number, h: number) {
   const ew = TURN.x1 - TURN.x0, eh = TURN.y1 - TURN.y0;
   let x: number, y: number, bw: number, bh: number;
   if (w / h > 1.6) {
-    bh = h * 0.9; bw = Math.min(w * 0.5, bh * 1.1);
+    bh = h * 0.92; bw = Math.min(w * 0.44, bh * 1.05);
     x = w - bw - Math.max(12, w * 0.04); y = (h - bh) / 2;
   } else {
     const top = 80;
