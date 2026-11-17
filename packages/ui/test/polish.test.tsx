@@ -43,6 +43,28 @@ describe("History figures", () => {
       expect(hottest, range).toMatch(/(under|over) the limit|at the limit/);
     }
   });
+
+  it("converts the differences in °F as differences, not as temperatures", async () => {
+    const read = async () => {
+      location.hash = "";
+      render(<RigApp client={new DemoClient()} />);
+      await screen.findByText(/Things to look at/i);
+      await open("history");
+      fireEvent.click(screen.getByRole("button", { name: "Month" }));
+      const busy = (await screen.findByText(/when busy$/)).parentElement!.textContent!;
+      const hottest = (await screen.findByText("Hottest moment")).parentElement!.textContent!;
+      cleanup();
+      const n = (text: string, re: RegExp) => { const m = text.match(re); return m ? Number(m[1]) : null; };
+      return { change: n(busy, /(\d+)° (?:warmer|cooler)/), headroom: n(hottest, /(\d+)° (?:under|over) the limit/), busy, hottest };
+    };
+    const c = await read();
+    localStorage.setItem("rig.tempUnit", "f");
+    const f = await read();
+    expect(f.busy + f.hottest).not.toMatch(/°C/);
+    expect(c.headroom).not.toBeNull();
+    expect(f.headroom).toBe(Math.round(c.headroom! * 1.8));
+    if (c.change != null) expect(f.change).toBe(Math.round(c.change * 1.8));
+  });
 });
 
 describe("Greeting", () => {
@@ -138,5 +160,10 @@ describe("Part limits", () => {
     expect(limitWords(91, 88)).toBe("3° over its 88°C limit");
     expect(limitWords(88, 88)).toBe("right at its 88°C limit");
     expect(limitWords(80, undefined)).toBe("running warm");
+  });
+
+  it("converts the gap as a difference in °F, not as a temperature", () => {
+    expect(limitWords(80, 88, "f")).toBe("14° under its 190°F limit");
+    expect(limitWords(91, 88, "f")).toBe("5° over its 190°F limit");
   });
 });

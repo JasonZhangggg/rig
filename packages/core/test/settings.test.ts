@@ -16,6 +16,9 @@ describe("formatTemp", () => {
     expect(formatTemp(5, "f", { delta: true, sign: true, mark: "degree" })).toBe("+9°");
     expect(formatTemp(-3, "c", { delta: true, sign: true })).toBe("-3°C");
     expect(formatTemp(-0.2, "c", { delta: true, sign: true })).toBe("0°C");
+    // A 6°C difference is 11°F, not the 43°F that 6°C reads as.
+    expect(formatTemp(6, "f", { delta: true, mark: "degree" })).toBe("11°");
+    expect(formatTemp(6, "f")).toBe("43°F");
   });
 
   it("writes the degree mark, or nothing, when asked", () => {

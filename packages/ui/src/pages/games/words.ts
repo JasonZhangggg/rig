@@ -1,4 +1,4 @@
-import type { GameNote, TempSubject } from "@rig/core";
+import { formatTemp, type GameNote, type TempSubject, type TempUnit } from "@rig/core";
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 const oneDecimal = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
@@ -8,7 +8,10 @@ const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2
 const momentFmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export const hours = (h: number) => `${oneDecimal.format(h)} h`;
-export const temp = (v: number | null) => (v == null ? "–" : `${v}°C`);
+/** A reading in the viewer's unit: "72°C", "162°F". */
+export const temp = (v: number | null, unit: TempUnit = "c") => formatTemp(v, unit);
+/** A difference between two readings, like "13°C hotter": scaled to the unit, not offset (13°C is 23°F). */
+export const gap = (v: number, unit: TempUnit = "c") => formatTemp(v, unit, { delta: true });
 export const partName = (s: TempSubject) => (s === "gpu" ? "graphics card" : "processor");
 export const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 export const day = (t: number) => dayFmt.format(t);
@@ -31,17 +34,17 @@ export function ago(t: number, now = Date.now()) {
 }
 
 /** A note in plain words. */
-export function noteText(n: GameNote, subject: TempSubject) {
+export function noteText(n: GameNote, subject: TempSubject, unit: TempUnit = "c") {
   switch (n.kind) {
-    case "hotter": return `Runs ${n.by}°C hotter than your other games.`;
-    case "cooler": return `Runs ${n.by}°C cooler than your other games.`;
+    case "hotter": return `Runs ${gap(n.by, unit)} hotter than your other games.`;
+    case "cooler": return `Runs ${gap(n.by, unit)} cooler than your other games.`;
     case "near-limit": {
       const part = cap(partName(subject));
       const when = moment(n.at);
-      if (n.under > 0) return `${part} came within ${n.under}°C of its safe limit (${when}). Short spikes are fine; if it happens every time, clean the dust and check the fans.`;
+      if (n.under > 0) return `${part} came within ${gap(n.under, unit)} of its safe limit (${when}). Short spikes are fine; if it happens every time, clean the dust and check the fans.`;
       if (n.under === 0) return `${part} reached its safe limit (${when}). If it happens every time, clean the dust and check the fans.`;
-      return `${part} went ${-n.under}°C over its safe limit (${when}) and probably slowed itself down to cool off. Clean the dust and check the fans.`;
+      return `${part} went ${gap(-n.under, unit)} over its safe limit (${when}) and probably slowed itself down to cool off. Clean the dust and check the fans.`;
     }
-    case "warming": return `Recent sessions run ${n.by}°C warmer than earlier ones. Dust building up is the usual cause.`;
+    case "warming": return `Recent sessions run ${gap(n.by, unit)} warmer than earlier ones. Dust building up is the usual cause.`;
   }
 }
