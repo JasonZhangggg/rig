@@ -3,7 +3,7 @@
 // the same database.
 
 import { sql, type Selectable } from "kysely";
-import type { Change, Game, HistoryPoint, Identity, Inventory, MachineSync, PC, SystemFacts } from "@rig/core";
+import { makeExport, type Change, type DataExport, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type PC, type SystemFacts } from "@rig/core";
 import type { DB, RigTables } from "./sql";
 
 const HISTORY_DAYS = 30;
@@ -110,5 +110,42 @@ export class Store {
       .onConflict((oc) => oc.columns(["user_id", "day"]).doUpdateSet({ count: sql<number>`chat_usage.count + 1` }))
       .returning("count").executeTakeFirst();
     return (r?.count ?? 1) <= limit;
+  }
+
+  /** Everything kept for the account: its PCs, all their history and chat use. */
+  async exportAccount(userId: string, now = new Date()): Promise<DataExport | null> {
+    const user = await this.db.selectFrom("user").select(["id", "name", "email", "createdAt"]).where("id", "=", userId).executeTakeFirst();
+    if (!user) return null;
+    const rows = await this.machines(userId);
+    const machines = await Promise.all(rows.map(async (m) => ({
+      id: m.id, view: present(m, now.getTime()), inventory: m.inventory, facts: m.facts, identity: m.identity,
+      syncedAt: m.syncedAt, changes: m.changes, games: m.games, history: await this.history(userId, m.id, 0),
+    })));
+    const usage = await this.db.selectFrom("chat_usage").select([sql<string>`to_char(day, 'YYYY-MM-DD')`.as("day"), "count"]).where("user_id", "=", userId).execute();
+    return makeExport({
+      account: { id: user.id, name: user.name, email: user.email, createdAt: iso(user.createdAt) ?? undefined },
+      machines,
+      chatUsage: usage,
+      notes: [`The server keeps ${HISTORY_DAYS} days of history. The Rig app on each PC keeps more.`],
+      now,
+    });
+  }
+
+  /**
+   * Deletes the account and everything on it in one transaction: chat use,
+   * history, PCs, desktop sign-in codes, sign-ins and the account itself.
+   * Returns false when there was no such account.
+   */
+  async deleteAccount(userId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom("chat_usage").where("user_id", "=", userId).execute();
+      await trx.deleteFrom("machine_history").where("user_id", "=", userId).execute();
+      await trx.deleteFrom("machine").where("user_id", "=", userId).execute();
+      await trx.deleteFrom("deviceCode").where("userId", "=", userId).execute();
+      await trx.deleteFrom("session").where("userId", "=", userId).execute();
+      await trx.deleteFrom("account").where("userId", "=", userId).execute();
+      const r = await trx.deleteFrom("user").where("id", "=", userId).executeTakeFirst();
+      return Number(r.numDeletedRows) > 0;
+    });
   }
 }

@@ -3,11 +3,13 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { Hono, type Context } from "hono";
+import { getCookies } from "better-auth/cookies";
 import { bodyLimit } from "hono/body-limit";
+import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { rangeMs, suggestUpgrades, type ChatEvent, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
-import { desktopOrigins, makeAuth, type Auth } from "./auth";
+import { DELETE_WORD, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
 import type { Env } from "./env";
@@ -79,9 +81,29 @@ export function createApp(deps: AppDeps = {}) {
     c.set("store", new Store(dbFor(c)));
     await next();
   };
-  for (const p of ["/api/me", "/api/machines", "/api/machines/*", "/api/chat"]) app.use(p, signedIn);
+  for (const p of ["/api/me", "/api/me/*", "/api/machines", "/api/machines/*", "/api/chat"]) app.use(p, signedIn);
 
   app.get("/api/me", (c) => c.json(c.get("user")));
+
+  app.get("/api/me/export", async (c) => {
+    const out = await c.get("store").exportAccount(c.get("user").id, now());
+    if (!out) return c.json({ message: "Sign in first." }, 401);
+    c.header("content-disposition", `attachment; filename="${exportFileName(now())}"`);
+    c.header("cache-control", "no-store");
+    return c.json(out);
+  });
+
+  // Deleting the account takes every PC, all history and chat use with it. The app asks the person to type the word first.
+  app.delete("/api/me", async (c) => {
+    const body = await c.req.json().catch(() => null) as DeleteAccountRequest | null;
+    if (body?.confirm !== DELETE_WORD) return c.json({ message: `Type ${DELETE_WORD} to confirm.` }, 400);
+    await c.get("store").deleteAccount(c.get("user").id);
+    const cookies = getCookies(authOptions(c.env, undefined));
+    for (const { name, attributes: a } of [cookies.sessionToken, cookies.sessionData, cookies.dontRememberToken]) {
+      deleteCookie(c, name, { path: a.path, domain: a.domain, secure: a.secure, httpOnly: a.httpOnly, sameSite: "Lax" });
+    }
+    return c.body(null, 204);
+  });
 
   app.get("/api/machines", async (c) => {
     const rows = await c.get("store").machines(c.get("user").id);
