@@ -49,6 +49,24 @@ describe("Home charts", () => {
     expect(chart.textContent).not.toMatch(/\b0\b|NaN/);
   });
 
+  it("sets each day's temperatures as figures beside the chart", () => {
+    const now = Date.now();
+    const points: HistoryPoint[] = [
+      { t: now - 120_000, cpu: 44, gpu: 40, busy: false },
+      { t: now - 60_000, cpu: 61, gpu: 72, busy: true },
+    ];
+    render(<TempsCard temps={weekTemps(points, insightContext({ kind: "tower" }, now))} name="Atlas" />);
+    const chart = screen.getByRole("img");
+    expect(chart.textContent).toMatch(/IdleGamingPeak/);
+    expect(chart.lastElementChild!.textContent).toMatch(/447272$/);
+  });
+
+  it("names the game on each evening it was played", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const week = within((await screen.findByRole("heading", { name: "This week" })).closest("section")!);
+    expect((await week.findAllByText(/Baldur's Gate 3/)).length).toBeGreaterThan(0);
+  });
+
   it("hides the fan speeds on a PC that reports none", () => {
     const ctx = insightContext({ kind: "laptop" });
     const { container } = render(<FansCard fans={[]} trend={fanTrend([], ctx)} />);
