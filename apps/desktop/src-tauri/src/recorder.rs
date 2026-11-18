@@ -4,6 +4,9 @@
 //! and status.json next to that. This side only reads those files, and turns
 //! the service on or off by running the helper with admin rights.
 //!
+//! Custom logs (ones Rig's chat set up, or the person did) go to custom\<SID>, a folder only that Windows account
+//! can read. The app reads its own folder the same way it reads the main log.
+//!
 //! Reading is by cursor (a file and a byte offset): the files only ever grow,
 //! so after the first read the app asks only for what was added since.
 
@@ -47,9 +50,9 @@ fn is_log(name: &str) -> bool {
         && b[..10].iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
 }
 
-/// The day log files, oldest first, with their sizes.
-fn logs(dir: &Path) -> Vec<(String, u64)> {
-    let Ok(rd) = std::fs::read_dir(dir.join("logs")) else { return vec![] };
+/// The day log files in a logs folder, oldest first, with their sizes.
+fn logs(folder: &Path) -> Vec<(String, u64)> {
+    let Ok(rd) = std::fs::read_dir(folder) else { return vec![] };
     let mut out: Vec<(String, u64)> = rd
         .filter_map(|e| e.ok())
         .filter_map(|e| {
@@ -75,9 +78,9 @@ pub fn day_file(ms: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}.jsonl")
 }
 
-/// Reads lines from `from` (the day it falls in, through today), or from where `cursor` stopped.
-pub fn read(dir: &Path, from: i64, cursor: Option<Cursor>, max_records: usize, max_bytes: u64) -> Page {
-    let files = logs(dir);
+/// Reads lines from a logs folder from `from` (the day it falls in, through today), or from where `cursor` stopped.
+pub fn read(folder: &Path, from: i64, cursor: Option<Cursor>, max_records: usize, max_bytes: u64) -> Page {
+    let files = logs(folder);
     let (start_file, mut offset) = match &cursor {
         Some(c) if files.iter().any(|(n, _)| *n == c.file) => (c.file.clone(), c.offset),
         // The cursor's file was pruned: carry on with the next one there is.
@@ -97,7 +100,7 @@ pub fn read(dir: &Path, from: i64, cursor: Option<Cursor>, max_records: usize, m
         }
         let want = (*size - at).min(budget);
         let mut buf = Vec::with_capacity(want as usize);
-        let ok = File::open(dir.join("logs").join(name))
+        let ok = File::open(folder.join(name))
             .and_then(|mut f| {
                 f.seek(SeekFrom::Start(at))?;
                 f.take(want).read_to_end(&mut buf)
@@ -130,9 +133,10 @@ pub fn read(dir: &Path, from: i64, cursor: Option<Cursor>, max_records: usize, m
 }
 
 /// What Settings shows: whether the service is there and running, when it last wrote, and how much the log takes.
-pub fn status(dir: Option<&Path>, service: Option<&str>) -> Value {
+pub fn status(dir: Option<&Path>, service: Option<&str>, me: Option<&str>) -> Value {
     let Some(dir) = dir else { return json!({ "supported": false }) };
-    let files = logs(dir);
+    let files = logs(&dir.join("logs"));
+    let mine = custom_dir(dir, me).map(|(sid, _)| sid);
     let raw: Value = std::fs::read_to_string(dir.join("status.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null);
     json!({
         "supported": true,
@@ -144,7 +148,82 @@ pub fn status(dir: Option<&Path>, service: Option<&str>) -> Value {
         "bytes": files.iter().map(|(_, s)| s).sum::<u64>(),
         "days": files.len(),
         "oldest": files.first().map(|(n, _)| n.trim_end_matches(".jsonl")),
+        "probes": probes_for(raw.get("probes"), mine.as_deref().or(me)),
+        "mine": mine,
     })
+}
+
+/// The custom logs that belong to this account, from the service's status. Other accounts' logs stay out.
+fn probes_for(probes: Option<&Value>, me: Option<&str>) -> Value {
+    let Some(p) = probes.filter(|p| p.is_object()) else { return Value::Null };
+    let list: Vec<Value> = p["list"]
+        .as_array()
+        .map(|l| l.iter().filter(|x| me.is_some() && x["owner"].as_str() == me).cloned().collect())
+        .unwrap_or_default();
+    let mut out = json!({ "list": list });
+    if let Some(problems) = p.get("problems").filter(|x| x.is_array()) {
+        out["problems"] = problems.clone();
+    }
+    out
+}
+
+fn is_sid(name: &str) -> bool {
+    name.starts_with("S-1-") && name.len() <= 184 && name[4..].bytes().all(|c| c.is_ascii_digit() || c == b'-')
+}
+
+/// This account's custom log folder, and its name (the account's SID). With no SID to go by, the first folder
+/// this account can read: the service lets each account read only its own.
+pub fn custom_dir(dir: &Path, me: Option<&str>) -> Option<(String, PathBuf)> {
+    let root = dir.join("custom");
+    if let Some(me) = me.filter(|m| is_sid(m)) {
+        let p = root.join(me);
+        return p.is_dir().then(|| (me.to_string(), p));
+    }
+    let mut names: Vec<String> = std::fs::read_dir(&root)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| is_sid(n))
+        .collect();
+    names.sort();
+    names.into_iter().map(|n| (n.clone(), root.join(&n))).find(|(_, p)| std::fs::read_dir(p).is_ok())
+}
+
+/// The SID of the Windows account Rig runs as.
+#[cfg(windows)]
+pub fn current_sid() -> Option<String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE};
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return None;
+        }
+        // u64s, so the TOKEN_USER read from it is aligned.
+        let mut buf = vec![0u64; 64];
+        let mut len = 0u32;
+        let ok = GetTokenInformation(token, TokenUser, buf.as_mut_ptr().cast(), (buf.len() * 8) as u32, &mut len);
+        CloseHandle(token);
+        if ok == 0 {
+            return None;
+        }
+        let user = &*(buf.as_ptr() as *const TOKEN_USER);
+        let mut text: *mut u16 = std::ptr::null_mut();
+        if ConvertSidToStringSidW(user.User.Sid, &mut text) == 0 || text.is_null() {
+            return None;
+        }
+        let n = (0..).take_while(|&i| *text.add(i) != 0).count();
+        let sid = String::from_utf16_lossy(std::slice::from_raw_parts(text, n));
+        LocalFree(text.cast());
+        Some(sid)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn current_sid() -> Option<String> {
+    None
 }
 
 /// The service's state from Windows: "running", "stopped", "starting" or "stopping", or None when it isn't installed.
@@ -213,6 +292,41 @@ pub fn set(_on: bool) -> Result<(), String> {
     Err("unsupported: the background recorder is a Windows service.".into())
 }
 
+/// Approves a script behind Windows' own permission prompt: the helper reads the script from a file only this
+/// account can write, checks it against the hash the app showed, and pins it. Returns the helper's answer.
+#[cfg(windows)]
+pub fn approve_script(probe: &Value, hash: &str) -> Result<Value, String> {
+    if hash.len() != 64 || !hash.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Rig couldn't read the script's fingerprint.".into());
+    }
+    let owner = current_sid().ok_or("Rig couldn't tell which Windows account this is.")?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let helper = exe.parent().ok_or("Can't tell where Rig is installed.")?.join("RigHelper.exe");
+    if !helper.exists() {
+        return Err(format!("Rig's helper is missing ({}). Reinstall Rig.", helper.display()));
+    }
+    let file = std::env::temp_dir().join(format!("rig-approve-{}-{}.json", std::process::id(), rand::random::<u32>()));
+    let result = PathBuf::from(format!("{}.result", file.display()));
+    std::fs::write(&file, json!({ "probe": probe, "owner": owner }).to_string()).map_err(|e| e.to_string())?;
+    let args = format!("--approve-script \"{}\" --hash {hash}", file.display());
+    let code = crate::helper::run_elevated_wait(&helper.to_string_lossy(), &args, std::time::Duration::from_secs(120));
+    let answer: Option<Value> = std::fs::read_to_string(&result).ok().and_then(|s| serde_json::from_str(&s).ok());
+    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_file(&result);
+    match (code, answer) {
+        (None, _) => Err("Windows didn't give permission, so the script isn't approved.".into()),
+        (_, Some(a)) if a["ok"] == true => Ok(a["probes"].clone()),
+        (_, Some(a)) => Err(a["error"].as_str().unwrap_or("Rig couldn't approve the script.").to_string()),
+        (Some(6), None) => Err("That needs admin rights. Choose Yes when Windows asks.".into()),
+        (Some(code), None) => Err(format!("Rig couldn't approve the script (code {code}).")),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn approve_script(_probe: &Value, _hash: &str) -> Result<Value, String> {
+    Err("unsupported: scripts run in the background recorder, which is a Windows service.".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,7 +363,7 @@ mod tests {
         append(&d, "notes.txt", "ignored");
 
         // From Nov 17: the day before is left out, junk and half-written lines are skipped.
-        let p = read(&d, NOV17, None, 100, MAX_BYTES);
+        let p = read(&d.join("logs"), NOV17, None, 100, MAX_BYTES);
         let ts: Vec<i64> = p.records.iter().map(|r| r["t"].as_i64().unwrap()).collect();
         assert_eq!(ts, vec![2, 3]);
         assert!(!p.more);
@@ -257,14 +371,14 @@ mod tests {
         assert_eq!(c.file, "2026-11-17.jsonl");
 
         // Nothing new: nothing comes back and the cursor stays.
-        let again = read(&d, NOV17, Some(c.clone()), 100, MAX_BYTES);
+        let again = read(&d.join("logs"), NOV17, Some(c.clone()), 100, MAX_BYTES);
         assert!(again.records.is_empty());
         assert_eq!(again.cursor, Some(c.clone()));
 
         // The half line is finished, and the next day starts.
         append(&d, "2026-11-17.jsonl", "4}\n");
         append(&d, "2026-11-18.jsonl", "{\"k\":\"s\",\"t\":5}\n");
-        let next = read(&d, NOV17, Some(c), 100, MAX_BYTES);
+        let next = read(&d.join("logs"), NOV17, Some(c), 100, MAX_BYTES);
         let ts: Vec<i64> = next.records.iter().map(|r| r["t"].as_i64().unwrap()).collect();
         assert_eq!(ts, vec![4, 5]);
         assert_eq!(next.cursor.unwrap().file, "2026-11-18.jsonl");
@@ -276,13 +390,13 @@ mod tests {
         let d = temp("more");
         let lines: String = (0..10).map(|i| format!("{{\"k\":\"s\",\"t\":{i}}}\n")).collect();
         append(&d, "2026-11-17.jsonl", &lines);
-        let first = read(&d, NOV17, None, 4, MAX_BYTES);
+        let first = read(&d.join("logs"), NOV17, None, 4, MAX_BYTES);
         assert_eq!(first.records.len(), 4);
         assert!(first.more);
         let mut all = first.records.len();
         let mut c = first.cursor;
         loop {
-            let p = read(&d, NOV17, c, 4, MAX_BYTES);
+            let p = read(&d.join("logs"), NOV17, c, 4, MAX_BYTES);
             all += p.records.len();
             c = p.cursor;
             if !p.more {
@@ -292,7 +406,7 @@ mod tests {
         assert_eq!(all, 10);
 
         // A byte budget smaller than the file also stops on a whole line.
-        let small = read(&d, NOV17, None, 100, 40);
+        let small = read(&d.join("logs"), NOV17, None, 100, 40);
         assert!(small.more);
         assert_eq!(small.records.len(), 2);
         assert_eq!(small.cursor.unwrap().offset, 32);
@@ -303,7 +417,7 @@ mod tests {
     fn a_pruned_cursor_file_moves_on_to_the_next_day() {
         let d = temp("pruned");
         append(&d, "2026-11-18.jsonl", "{\"k\":\"s\",\"t\":9}\n");
-        let p = read(&d, NOV17, Some(Cursor { file: "2026-10-01.jsonl".into(), offset: 500 }), 100, MAX_BYTES);
+        let p = read(&d.join("logs"), NOV17, Some(Cursor { file: "2026-10-01.jsonl".into(), offset: 500 }), 100, MAX_BYTES);
         assert_eq!(p.records.len(), 1);
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -313,11 +427,38 @@ mod tests {
         let d = temp("status");
         append(&d, "2026-11-17.jsonl", "{\"k\":\"s\",\"t\":1}\n");
         std::fs::write(d.join("status.json"), r#"{"state":"running","v":"0.1.1","lastT":5}"#).unwrap();
-        let s = status(Some(&d), Some("running"));
+        let s = status(Some(&d), Some("running"), None);
         assert_eq!(s["state"], "running");
         assert_eq!(s["bytes"], 16);
         assert_eq!(s["oldest"], "2026-11-17");
-        assert_eq!(status(None, None)["supported"], false);
+        assert_eq!(status(None, None, None)["supported"], false);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn custom_logs_are_only_this_accounts() {
+        let d = temp("custom");
+        let me = "S-1-5-21-1-2-3-1001";
+        std::fs::create_dir_all(d.join("custom").join(me)).unwrap();
+        std::fs::create_dir_all(d.join("custom").join("not-a-sid")).unwrap();
+        std::fs::write(d.join("custom").join(me).join("2026-11-17.jsonl"), "{\"k\":\"p\",\"t\":1,\"id\":\"a\",\"v\":3}\n").unwrap();
+        std::fs::write(
+            d.join("status.json"),
+            r#"{"state":"running","probes":{"list":[{"id":"a","owner":"S-1-5-21-1-2-3-1001"},{"id":"b","owner":"S-1-5-21-9"}],"problems":["x"]}}"#,
+        )
+        .unwrap();
+        let (name, folder) = custom_dir(&d, None).unwrap();
+        assert_eq!(name, me);
+        assert_eq!(custom_dir(&d, Some(me)).unwrap().0, me);
+        assert!(custom_dir(&d, Some("S-1-5-21-9")).is_none());
+        assert!(custom_dir(&d, Some("..\\x")).is_some_and(|(n, _)| n == me));
+        let p = read(&folder, NOV17, None, 100, MAX_BYTES);
+        assert_eq!(p.records.len(), 1);
+        let s = status(Some(&d), Some("running"), None);
+        assert_eq!(s["mine"], me);
+        let ids: Vec<&str> = s["probes"]["list"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["a"]);
+        assert_eq!(s["probes"]["problems"][0], "x");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

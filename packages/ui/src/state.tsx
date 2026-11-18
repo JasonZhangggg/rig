@@ -11,7 +11,7 @@ export interface AppHost {
   /** The Rig server this app signs in to, shown in Settings. */
   server?: string;
   /** Rig's background recorder, turned on and off in Settings. Windows only. */
-  recorder?: Pick<RecorderLink, "status" | "set">;
+  recorder?: Pick<RecorderLink, "status" | "set" | "probes" | "approveAdmin">;
 }
 
 /** The review sheet shown before any change is made. */
@@ -90,6 +90,9 @@ export interface Ctx {
   review: (calls: ActionCall[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
   confirmReview: () => Promise<void>;
   declineProposal: (proposalId: string) => void;
+  /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
+  approveScript: (messageId: string) => Promise<void>;
+  declineScript: (messageId: string) => void;
   toggleChange: (id: string) => Promise<void>;
   pickPC: (id: string) => void;
   /** Starts recording readings on the PC. Nothing changes there, so there's no review. */
@@ -226,6 +229,9 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
     const patchProposal = (proposalId: string, patch: Partial<NonNullable<ChatMessage["proposal"]>>) =>
       setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...patch } } : m)) }));
 
+    const patchScript = (messageId: string, patch: Partial<NonNullable<ChatMessage["script"]>>) =>
+      setData((d) => ({ ...d, chat: d.chat.map((m) => (m.id === messageId && m.script ? { ...m, script: { ...m.script, ...patch } } : m)) }));
+
     const ctx: Ctx = {
       client, host, ui, data, pc, set, toast,
       go: (r) => { location.hash = r; },
@@ -248,6 +254,8 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
           else if (e.type === "steps") edit((m) => ({ ...m, steps: e.steps }));
           else if (e.type === "proposal") edit((m) => ({ ...m, proposal: e.proposal }));
           else if (e.type === "recording") edit((m) => ({ ...m, recording: e.request }));
+          else if (e.type === "probe") edit((m) => ({ ...m, probe: e.op === "add" ? { op: "add", id: e.probe.id, label: e.probe.label, error: e.error } : { op: "remove", id: e.id, error: e.error } }));
+          else if (e.type === "script") edit((m) => ({ ...m, script: { probe: e.probe, status: "waiting" } }));
           else if (e.type === "error") edit((m) => ({ ...m, error: true, text: m.text || e.message }));
         }, ab.signal)
           .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""}`.trim() })))
@@ -298,6 +306,25 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
       openRecording: (id) => { set({ recordingId: id }); if (id && location.hash !== "#logs") location.hash = "logs"; window.scrollTo(0, 0); },
 
       declineProposal: (proposalId) => { patchProposal(proposalId, { status: "declined" }); toast("Okay, nothing was changed."); },
+
+      approveScript: async (messageId) => {
+        const m = data.chat.find((x) => x.id === messageId);
+        const sc = m?.script;
+        const rec = host.recorder;
+        if (!sc || sc.status !== "waiting") return;
+        if (!rec?.probes || !rec.approveAdmin) { toast(`Scripts run in the background recorder, in the Rig app on ${pc.name}.`); return; }
+        const s = sc.probe.source;
+        try {
+          if (s.kind === "script" && s.admin) await rec.approveAdmin(sc.probe);
+          else await rec.probes({ op: "approve", probe: sc.probe });
+          patchScript(messageId, { status: "approved", error: undefined });
+          void client.refreshBackground?.();
+          toast("Approved. It runs in the background recorder; turn it off any time in Settings.");
+        } catch (e) {
+          patchScript(messageId, { error: e instanceof Error ? e.message : "Rig couldn't approve the script." });
+        }
+      },
+      declineScript: (messageId) => { patchScript(messageId, { status: "declined" }); toast("Okay, the script won't run."); },
 
       toggleChange: async (id) => {
         const c = data.changes.find((x) => x.id === id);

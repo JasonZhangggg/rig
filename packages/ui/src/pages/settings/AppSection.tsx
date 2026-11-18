@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { RecorderStatus } from "@rig/core";
+import { probeWhen, type ProbeStatus, type RecorderStatus } from "@rig/core";
 import { useApp } from "../../state";
 
 const mb = (bytes: number) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
@@ -15,6 +15,53 @@ function recorderLine(s: RecorderStatus | null): string {
   if (s.service !== "running") return "Installed but not running. Turn it off and on again to restart it.";
   const size = s.bytes ? ` Its log takes ${mb(s.bytes)}${s.days ? ` for ${s.days} day${s.days === 1 ? "" : "s"}` : ""}, and days past 30 are deleted.` : "";
   return `On${s.lastT ? `, last wrote ${ago(s.lastT)}` : ""}.${size}`;
+}
+
+const when = (t: number) => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+/** What a custom log is, who asked for it and how it's doing, in one line. */
+function probeLine(p: ProbeStatus): string {
+  const who = `${p.by === "chat" ? "Asked for by Rig's chat" : "Set up by you"} on ${when(p.createdAt)}.`;
+  const script = p.kind === "script" ? ` A ${p.shell === "cmd" ? "cmd" : "PowerShell"} script run ${p.admin ? "as admin" : "as you"}, approved${p.approvedAt ? ` ${when(p.approvedAt)}` : ""}${p.hash ? ` (fingerprint ${p.hash.slice(0, 8)})` : ""}.` : "";
+  const state = p.state === "paused" ? " Paused." : p.state === "error" ? ` Not working: ${p.error ?? "it couldn't read"}.` : p.state === "waiting" ? " Waiting for its condition." : "";
+  return `${who}${script} Reads ${probeWhen(p)} until ${when(p.expiresAt)}.${state}`;
+}
+
+/** The custom logs the recorder keeps for this account, each with a switch, and a way to turn one off for good. */
+function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () => void }) {
+  const { host, client, toast } = useApp();
+  const rec = host.recorder;
+  const [busy, setBusy] = useState<string | null>(null);
+  const list = status.probes?.list ?? [];
+  if (!rec?.probes || !status.service || (!list.length && !status.probes?.problems?.length)) return null;
+  const edit = async (id: string, op: "pause" | "resume" | "remove") => {
+    if (busy) return;
+    setBusy(id);
+    try {
+      await rec.probes!({ op, id });
+      toast(op === "remove" ? "Turned off. What it wrote stays in Logs until the log's usual clean-up." : op === "pause" ? "Paused." : "Back on.");
+      void client.refreshBackground?.();
+    } catch (e) {
+      toast(`Couldn't change that. ${e instanceof Error ? e.message : String(e)}`.trim());
+    } finally {
+      setBusy(null);
+      refresh();
+    }
+  };
+  return (
+    <div className="custom-logs">
+      <h4>Custom logs</h4>
+      {list.map((p) => (
+        <div key={p.id} className="custom-log-row">
+          <button type="button" className="switch" role="switch" aria-checked={p.state !== "paused"} disabled={busy === p.id} onClick={() => void edit(p.id, p.state === "paused" ? "resume" : "pause")}>
+            <span><b>{p.label}</b><small>{probeLine(p)}</small></span><i />
+          </button>
+          <button type="button" className="btn sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Turn off</button>
+        </div>
+      ))}
+      {status.probes?.problems?.map((x) => <p key={x} className="faint">{x}</p>)}
+    </div>
+  );
 }
 
 export function AppSection() {
@@ -71,6 +118,7 @@ export function AppSection() {
           </span><i />
         </button>
       )}
+      {rec && status?.supported && <CustomLogs status={status} refresh={() => void refresh()} />}
     </div>
   );
 }

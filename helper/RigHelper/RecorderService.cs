@@ -82,6 +82,9 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
     readonly List<EventLogWatcher> watchers = [];
     long lastEventT;
     long startedAt;
+    ProbeEngine? probes;
+    string state = "running";
+    readonly object statusGate = new();
     long lastT;
     long wokeAt;
     bool? onAc;
@@ -113,15 +116,18 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
 
         StartEvents();
         PowerNow();
+        probes = new ProbeEngine(dataDir, Note, () => WriteStatus(state));
+        probes.Start();
 
         string header = "";
         int headerId = 0, headerFile = -1;
-        long lastSample = 0, lastApps = 0, lastStatus = Now, lastPrune = Now, lastWatchdog = Now, detailFrom = 0, detailUntil = 0;
+        long lastSample = 0, lastApps = 0, lastStatus = Now, lastPrune = Now, lastWatchdog = Now, detailFrom = 0, detailUntil = 0, lastRound = 0;
         int failures = 0;
 
         while (!stop.IsCancellationRequested)
         {
             long now = Now;
+            (List<SensorDto> Kept, Reading Reading)? lastReading = null;
             try
             {
                 if (hw != null)
@@ -137,8 +143,16 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                         log.Write(LogLine.Sensors(now, kept), essential: true);
                         headerFile = log.FileNumber;
                     }
-                    var values = kept.Select(s => s.Value).ToArray();
                     var reading = Reading.From(now, kept);
+                    probes?.Publish(new ProbeEngine.Snap(now, snap.Sensors, reading));
+                    lastReading = (kept, reading);
+                }
+                // The sensors are read every second while a custom log wants them that often; the recorder's own rounds stay five seconds apart.
+                if (hw != null && lastReading != null && now - lastRound >= TickMs - 500)
+                {
+                    lastRound = now;
+                    var (kept, reading) = lastReading.Value;
+                    var values = kept.Select(s => s.Value).ToArray();
                     bool detail = now < detailUntil;
                     bool wantApps = detail || now - lastApps >= AppsEveryMs;
                     bool due = detail || now - lastSample >= SampleEveryMs;
@@ -182,7 +196,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
             if (now - lastPrune >= PruneEveryMs) { lastPrune = now; Prune(); }
             if (now - lastWatchdog >= WatchdogEveryMs) { lastWatchdog = now; if (Watchdog()) return; }
 
-            stop.WaitHandle.WaitOne(TickMs);
+            stop.WaitHandle.WaitOne(probes?.WantsFastSensors == true ? 1000 : TickMs);
         }
     }
 
@@ -346,14 +360,19 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         {
             long le;
             lock (gate) le = lastEventT;
+            this.state = state;
             var o = new JsonObject
             {
                 ["state"] = state, ["v"] = Version, ["pid"] = Environment.ProcessId, ["startedAt"] = startedAt,
                 ["lastT"] = lastT > 0 ? lastT : Now, ["lastEventT"] = le,
             };
+            if (probes != null) o["probes"] = probes.Status();
             string path = RecorderPaths.Status(dataDir), tmp = path + ".tmp";
-            File.WriteAllText(tmp, o.ToJsonString());
-            File.Move(tmp, path, overwrite: true);
+            lock (statusGate)
+            {
+                File.WriteAllText(tmp, o.ToJsonString());
+                File.Move(tmp, path, overwrite: true);
+            }
         }
         catch { }
     }
@@ -389,6 +408,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
     {
         lock (gate) { if (closed) return; closed = true; }
         foreach (var w in watchers) { try { w.Enabled = false; w.Dispose(); } catch { } }
+        try { probes?.Dispose(); } catch { }
         var o = LogLine.Of("stop", Now);
         o["why"] = why;
         log.Write(o, essential: true, flush: true);

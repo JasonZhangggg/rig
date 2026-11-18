@@ -12,6 +12,7 @@ import type { DataExport } from "./export";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { PCEvent, Recording, RecordingInfo } from "./recordings";
+import type { ProbeStatus } from "./probes";
 import type { SystemFacts } from "./telemetry";
 
 const POLL_MS = 15_000;
@@ -203,7 +204,7 @@ export class CloudClient implements RigClient {
   }
 
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
-  async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts }) {
+  async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts; probes?: ProbeStatus[] }) {
     const body: ChatRequest = { machineId, messages: history.map(({ from, text }) => ({ from, text })), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...live };
     const res = await this.send(paths.chat, { method: "POST", headers: { accept: "text/event-stream" }, body: JSON.stringify(body), signal });
     await readChatStream(res, onEvent);

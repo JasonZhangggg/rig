@@ -46,7 +46,9 @@ fn token_set(token: Option<String>) -> R<()> { secrets::set(token.as_deref()) }
 /// Whether the background recorder is installed and running, and how much its log takes.
 #[tauri::command]
 async fn recorder_status() -> Value {
-    tauri::async_runtime::spawn_blocking(|| recorder::status(recorder::data_dir().as_deref(), recorder::service_state()))
+    tauri::async_runtime::spawn_blocking(|| {
+        recorder::status(recorder::data_dir().as_deref(), recorder::service_state(), recorder::current_sid().as_deref())
+    })
         .await
         .unwrap_or(Value::Null)
 }
@@ -55,9 +57,27 @@ async fn recorder_status() -> Value {
 #[tauri::command]
 async fn recorder_read(from: i64, cursor: Option<recorder::Cursor>) -> R<recorder::Page> {
     let Some(dir) = recorder::data_dir() else { return Err("unsupported: the background recorder is a Windows service.".into()) };
-    tauri::async_runtime::spawn_blocking(move || recorder::read(&dir, from, cursor, recorder::MAX_RECORDS, recorder::MAX_BYTES))
+    tauri::async_runtime::spawn_blocking(move || recorder::read(&dir.join("logs"), from, cursor, recorder::MAX_RECORDS, recorder::MAX_BYTES))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// This account's custom logs, read the same way. Empty when there are none.
+#[tauri::command]
+async fn recorder_read_custom(from: i64, cursor: Option<recorder::Cursor>) -> R<recorder::Page> {
+    let Some(dir) = recorder::data_dir() else { return Err("unsupported: the background recorder is a Windows service.".into()) };
+    tauri::async_runtime::spawn_blocking(move || match recorder::custom_dir(&dir, recorder::current_sid().as_deref()) {
+        Some((_, folder)) => recorder::read(&folder, from, cursor, recorder::MAX_RECORDS, recorder::MAX_BYTES),
+        None => recorder::Page { records: vec![], cursor, more: false },
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Approves a script the person chose Approve on. Windows asks for permission, every time.
+#[tauri::command]
+async fn recorder_approve_script(probe: Value, hash: String) -> R<Value> {
+    tauri::async_runtime::spawn_blocking(move || recorder::approve_script(&probe, &hash)).await.map_err(|e| e.to_string())?
 }
 
 /// Turns the background recorder on or off. Windows asks for permission.
@@ -81,7 +101,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             helper_call, kv_get, kv_set, history_add, history_since, changes_list, change_put, token_get, token_set,
-            recorder_status, recorder_read, recorder_set
+            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script
         ])
         .run(tauri::generate_context!())
         .expect("Rig couldn't start");

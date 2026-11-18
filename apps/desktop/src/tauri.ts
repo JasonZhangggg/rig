@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { ActionCall, Change, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, Snapshot, SystemFacts } from "@rig/core";
+import { scriptHash, type ActionCall, Change, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, SystemFacts } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -40,6 +40,13 @@ export const tauriRecorder: RecorderLink = {
   status: () => invoke<RecorderStatus>("recorder_status"),
   read: (from: number, cursor: RecorderCursor | null) => invoke("recorder_read", { from, cursor }),
   set: (on: boolean) => invoke<void>("recorder_set", { on }),
+  probes: (req: ProbeEdit) => call<ProbeSpec[]>("recorder.probes", req),
+  // The hash is of the script as shown; the helper refuses it if the text it's handed is any different.
+  approveAdmin: async (probe: ProbeSpec) => {
+    if (probe.source.kind !== "script") throw new Error("Only scripts are approved.");
+    return invoke<ProbeSpec[]>("recorder_approve_script", { probe, hash: await scriptHash(probe.source) });
+  },
+  readCustom: (from: number, cursor: RecorderCursor | null) => invoke("recorder_read_custom", { from, cursor }),
 };
 
 /** Starting with Windows, through Tauri's autostart plugin (a Run entry for this user). */

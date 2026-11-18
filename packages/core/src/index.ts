@@ -7,6 +7,7 @@ export * from "./history";
 export * from "./recordings";
 export * from "./recorder";
 export * from "./background";
+export * from "./probes";
 export * from "./insights";
 export * from "./games";
 export * from "./alerts";

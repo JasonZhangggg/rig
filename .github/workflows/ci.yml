@@ -45,8 +45,37 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $dir = Join-Path $env:RUNNER_TEMP "rec"
+          # Custom logs of several kinds, and a script approved for this account, as the app would leave them.
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          $text = "Write-Output ('hello ' + `$env:USERNAME)"
+          $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("powershell`nuser`n$text"))).ToLower()
+          $probe = { param($id, $every, $source, $extra) @{ id = $id; label = "CI $id"; by = "chat"; owner = $sid; createdAt = $now; expiresAt = $now + 3600000; every = $every; source = $source } + $extra }
+          $probes = @(
+            (& $probe "t-sensor" 2 @{ kind = "sensor"; match = "CPU" } @{}),
+            (& $probe "t-counter" 2 @{ kind = "counter"; path = "\Processor(_Total)\% Processor Time" } @{}),
+            (& $probe "t-wmi" 5 @{ kind = "wmi"; namespace = "root\cimv2"; query = "SELECT Caption, Version FROM Win32_OperatingSystem" } @{}),
+            (& $probe "t-registry" 5 @{ kind = "registry"; key = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion"; value = "ProductName" } @{}),
+            (& $probe "t-process" 2 @{ kind = "process"; name = "pwsh.exe" } @{}),
+            (& $probe "t-folder" 60 @{ kind = "folder"; path = $env:RUNNER_TEMP } @{}),
+            (& $probe "t-events" 0 @{ kind = "events"; channel = "System"; query = "*[System[(Level<=3)]]" } @{}),
+            (& $probe "t-script" 30 @{ kind = "script"; shell = "powershell"; text = $text; admin = $false; timeout = 30 } @{ hash = $hash; approvedAt = $now }),
+            (& $probe "t-tampered" 30 @{ kind = "script"; shell = "powershell"; text = "Write-Output changed"; admin = $false; timeout = 30 } @{ hash = $hash; approvedAt = $now })
+          )
+          @{ probes = $probes } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$dir/probes.json"
           $p = Start-Process helper-out/RigHelper.exe -ArgumentList "--record-for", "20", "--data-dir", $dir -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Recording for 20 seconds failed: $($p.ExitCode)" }
+          $custom = Get-ChildItem "$dir/custom/$sid/*.jsonl" | Select-Object -First 1
+          if (-not $custom) { throw "No custom log written" }
+          Get-Content $custom | Select-Object -First 40
+          foreach ($id in "t-sensor", "t-counter", "t-wmi", "t-registry", "t-process", "t-script") {
+            if (-not (Select-String -Path $custom -Pattern "`"k`":`"p`".*`"id`":`"$id`".*`"v`":" -Quiet)) { throw "Custom log $id wrote no reading" }
+          }
+          if (-not (Select-String -Path $custom -SimpleMatch "hello $env:USERNAME" -Quiet)) { throw "The approved script's output isn't in the log" }
+          # A script whose text no longer matches its approval never runs.
+          if (Select-String -Path $custom -Pattern "`"id`":`"t-tampered`".*`"v`":" -Quiet) { throw "A script that changed after approval ran" }
+          if (Select-String -Path $custom -SimpleMatch "Write-Output changed" -Quiet) { throw "A changed script's text reached the log" }
           $log = Get-ChildItem "$dir/logs/*.jsonl" | Select-Object -First 1
           if (-not $log) { throw "No log written" }
           Get-Content $log | Select-Object -First 5

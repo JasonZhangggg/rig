@@ -73,3 +73,7 @@
   .rec-moments li { grid-template-columns: 26px minmax(0, 1fr); }
   .rec-moments li .ev-text { grid-column: 2; }
 }
+
+.custom-scroll { overflow: auto; max-height: 560px; }
+.custom-rows td.pre { white-space: pre-wrap; font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.custom-rows .faint { margin: 0 0 8px; font-size: 13px; }

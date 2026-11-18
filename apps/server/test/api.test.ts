@@ -424,6 +424,76 @@ describe("recordings and Windows events", () => {
   });
 });
 
+describe("custom logs", () => {
+  async function pcSetup(rounds: Parameters<typeof fakeClaude>[0]) {
+    const fake = fakeClaude(rounds);
+    const t = await setup({}, fake.client);
+    const cookie = await t.signUp("ada@example.com");
+    const s = await syncPayload();
+    const id = s.inventory.machine.id;
+    await t.call(`/api/machines/${id}/sync`, { method: "PUT", json: { ...s, history: [] }, cookie });
+    const ask = async (extra: Record<string, unknown>) =>
+      readEvents(await t.call("/api/chat", { method: "POST", json: { machineId: id, messages: [{ from: "you", text: "It shuts off sometimes." }], ...extra }, cookie }));
+    return { ...fake, s, ask };
+  }
+  const existing = { id: "c-old", label: "GPU heat", kind: "sensor", by: "chat", createdAt: 1, expiresAt: Date.now() + 864e5, every: 10, state: "on", owner: "S-1-5-21-1", secret: "x".repeat(9999) };
+
+  it("sets up a checked custom log for the app on the PC and tells the model what it reads", async () => {
+    const { s, ask, seen } = await pcSetup([
+      { tool: { name: "add_custom_log", input: { label: "Disk wait", source: { kind: "counter", path: "cmd.exe /c del" } } } },
+      { tool: { name: "add_custom_log", input: { label: "Hot spot while hot", source: { kind: "sensor", match: "GPU Hot Spot" }, every_seconds: 0, fast_seconds: 2, when: { metric: "gpuTemp", op: ">", value: 85 }, hours: 12 } } },
+      { text: "Logging it." },
+    ]);
+    const events = await ask({ view: s.view, facts: s.facts, probes: [existing] });
+    // The PC block lists what it already keeps, without anything the chat doesn't need.
+    const block = JSON.stringify(seen[0].system);
+    expect(block).toContain("customLogs");
+    expect(block).toContain("GPU heat");
+    expect(block).not.toContain("S-1-5-21-1");
+    expect(block).not.toContain("xxxxxxxx");
+    expect(JSON.stringify(seen[1].messages)).toMatch(/path must be a counter path/);
+    const added = events.filter((e) => e.type === "probe");
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ op: "add", probe: { label: "Hot spot while hot", by: "chat", every: 0, fast: 2, when: { metric: "gpuTemp", op: ">", value: 85 }, source: { kind: "sensor", match: "GPU Hot Spot" } } });
+    const p = (added[0] as Extract<ChatEvent, { type: "probe"; op: "add" }>).probe;
+    expect(p.expiresAt - p.createdAt).toBe(12 * 3_600_000);
+    expect(JSON.stringify(seen[2].messages)).toMatch(/every 2 seconds while the graphics card's temperature > 85/);
+  });
+
+  it("only proposes a script, one per answer, and never approves it", async () => {
+    const { s, ask, seen } = await pcSetup([
+      { tool: { name: "propose_script", input: { label: "Who woke the PC", text: "powercfg /lastwake", admin: true, every_seconds: 600 } } },
+      { tool: { name: "propose_script", input: { label: "Again", text: "Get-Date" } } },
+      { text: "Approve it if you'd like." },
+    ]);
+    const events = await ask({ view: s.view, facts: s.facts, probes: [] });
+    const scripts = events.filter((e) => e.type === "script") as Extract<ChatEvent, { type: "script" }>[];
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].probe).toMatchObject({ by: "chat", every: 600, source: { kind: "script", shell: "powershell", text: "powercfg /lastwake", admin: true, timeout: 30 } });
+    expect(scripts[0].probe.hash).toBeUndefined();
+    expect(events.some((e) => e.type === "probe")).toBe(false);
+    expect(JSON.stringify(seen[1].messages)).toMatch(/Nothing runs until they approve it in Rig, and Windows asks them for permission/);
+    expect(JSON.stringify(seen[2].messages)).toMatch(/One script per answer/);
+  });
+
+  it("turns one off, and refuses custom logs from the website or past the limit", async () => {
+    const { s, ask, seen } = await pcSetup([
+      { tool: { name: "remove_custom_log", input: { log_id: "c-old" } } }, { text: "Off." },
+      { tool: { name: "add_custom_log", input: { label: "x", source: { kind: "process", name: "game.exe" } } } }, { text: "Can't." },
+      { tool: { name: "add_custom_log", input: { label: "x", source: { kind: "process", name: "game.exe" } } } }, { text: "Full." },
+    ]);
+    const off = await ask({ view: s.view, facts: s.facts, probes: [existing] });
+    expect(off.find((e) => e.type === "probe")).toEqual({ type: "probe", op: "remove", id: "c-old" });
+    // From the website there's no recorder to ask.
+    const web = await ask({});
+    expect(web.some((e) => e.type === "probe")).toBe(false);
+    expect(JSON.stringify(seen[3].messages)).toMatch(/set up from the Rig app on the PC/);
+    const full = await ask({ view: s.view, facts: s.facts, probes: Array.from({ length: 30 }, (_, i) => ({ ...existing, id: `c-${i}` })) });
+    expect(full.some((e) => e.type === "probe")).toBe(false);
+    expect(JSON.stringify(seen[5].messages)).toMatch(/already keeps 24 custom logs/);
+  });
+});
+
 describe("your data", () => {
   /** Two accounts, each with the same PC uploaded, history and chat use. */
   async function twoAccounts() {

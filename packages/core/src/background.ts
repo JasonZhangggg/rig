@@ -10,6 +10,7 @@ import {
   type Limits, type PCEvent, type RawEvent, type Recording, type RecordingSample,
 } from "./recordings";
 import type { HardwareKind, Sensor, SensorType, Snapshot } from "./telemetry";
+import type { ProbeSpec, ProbeStatus } from "./probes";
 
 /** Where the next read carries on: a log file and a byte offset in it. */
 export interface RecorderCursor { file: string; offset: number }
@@ -30,7 +31,19 @@ export interface RecorderStatus {
   days?: number;
   /** The oldest day kept, as YYYY-MM-DD. */
   oldest?: string | null;
+  /** The custom logs it's running, for every Windows account on the PC. */
+  probes?: { list: ProbeStatus[]; problems?: string[] } | null;
+  /** The Windows account whose custom logs this app can read, so it shows only its own. */
+  mine?: string | null;
 }
+
+/** Changes to the custom logs, made through Rig's helper for the Windows account the app runs as. */
+export type ProbeEdit =
+  | { op: "list" }
+  | { op: "add"; probe: ProbeSpec }
+  /** A script that runs as the person. The person's own press of Approve in Rig, never the chat. */
+  | { op: "approve"; probe: ProbeSpec }
+  | { op: "remove" | "pause" | "resume"; id: string };
 
 /** The desktop shell's view of the recorder. */
 export interface RecorderLink {
@@ -38,6 +51,12 @@ export interface RecorderLink {
   read(fromMs: number, cursor: RecorderCursor | null): Promise<{ records: unknown[]; cursor: RecorderCursor | null; more: boolean }>;
   /** Turns it on or off. Windows asks for permission. */
   set(on: boolean): Promise<void>;
+  /** Adds, changes or lists custom logs. Returns this account's list. */
+  probes?(req: ProbeEdit): Promise<ProbeSpec[]>;
+  /** Approves a script that runs as admin, behind Windows' own permission prompt. */
+  approveAdmin?(probe: ProbeSpec): Promise<ProbeSpec[]>;
+  /** What the custom logs wrote, read the same way as the main log. */
+  readCustom?(fromMs: number, cursor: RecorderCursor | null): Promise<{ records: unknown[]; cursor: RecorderCursor | null; more: boolean }>;
 }
 
 /** How far back the app keeps the recorder's readings in memory. The log on disk keeps 30 days. */

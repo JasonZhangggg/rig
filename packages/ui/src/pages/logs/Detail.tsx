@@ -3,12 +3,18 @@ import { isActive, limitsOf, summarise, type HistoryPoint, type Recording, type 
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { useApp, useTemp, useTempText } from "../../state";
+import { CustomLogDetail } from "./CustomLog";
 import { EventRow } from "./Events";
 import { Progress, StateChip } from "./RecordingCard";
 import { clock, clockSec, gb, whenRan } from "./words";
 
-/** One recording: what Rig found, the readings with those moments marked, the busiest apps and the Windows events inside it. */
+/** A recording or a log from Logs. Custom logs have a page of their own, since what they write can be anything. */
 export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
+  return info.custom ? <CustomLogDetail info={info} onBack={onBack} /> : <RecordingDetail info={info} onBack={onBack} />;
+}
+
+/** One recording: what Rig found, the readings with those moments marked, the busiest apps and the Windows events inside it. */
+function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
   const { client, pc, ask, stopRecording, data } = useApp();
   const temp = useTemp();
   const inUnit = useTempText();

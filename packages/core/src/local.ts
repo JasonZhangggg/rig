@@ -13,6 +13,7 @@ import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
+import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
@@ -104,6 +105,10 @@ export class LocalClient implements RigClient {
   private bgAt = -Infinity;
   private bgReading: Promise<void> | null = null;
   private bgRecs: Recording[] = [];
+  /** What the custom logs wrote, and what the recorder says about them. Kept on this PC only too. */
+  private custom = new CustomLog();
+  private customCursor: RecorderCursor | null = null;
+  private probeStatus: ProbeStatus[] | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
     this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, ...opts };
@@ -371,9 +376,25 @@ export class LocalClient implements RigClient {
           this.bgCursor = page.cursor ?? this.bgCursor;
           if (!page.more) break;
         }
+        if (rec.readCustom) {
+          for (let i = 0; i < BACKGROUND_PAGES; i++) {
+            const page = await rec.readCustom(from, this.customCursor).catch(() => null);
+            if (!page) break;
+            this.custom.ingest(page.records);
+            added += page.records.length;
+            this.customCursor = page.cursor ?? this.customCursor;
+            if (!page.more) break;
+          }
+          const st = await rec.status().catch(() => null);
+          const list = st?.probes?.list ?? null;
+          const was = JSON.stringify(this.probeStatus);
+          this.probeStatus = list && list.filter((p) => !st?.mine || !p.owner || p.owner === st.mine);
+          if (JSON.stringify(this.probeStatus) !== was) added++;
+        }
         if (added || this.bgAt === -Infinity) {
           this.bg.trim(from);
-          this.bgRecs = this.inv ? backgroundRecordings(this.bg, this.id, limitsOf(this.view()), now) : [];
+          this.custom.trim(from);
+          this.bgRecs = this.inv ? [...backgroundRecordings(this.bg, this.id, limitsOf(this.view()), now), ...customRecordings(this.custom, this.id, now, this.probeStatus ?? undefined)] : [];
           this.emitRecordings();
         }
       } catch { /* no recorder here (not Windows), or its log can't be read right now */ }
@@ -398,6 +419,37 @@ export class LocalClient implements RigClient {
     void this.start().then(() => this.recListeners.has(cb) && cb(this.recordingList()));
     return () => { this.recListeners.delete(cb); };
   }
+
+  /** The custom logs this PC's recorder runs for this Windows account, or null when it can't run any (no recorder, or it's off). */
+  private async customLogs(): Promise<ProbeStatus[] | null> {
+    const rec = this.o.recorder;
+    if (!rec?.probes) return null;
+    const st = await rec.status().catch(() => null);
+    if (!st?.supported || !st.service) return null;
+    const list = st.probes?.list ?? [];
+    return list.filter((p) => !st.mine || !p.owner || p.owner === st.mine);
+  }
+
+  /** Sets up or turns off a custom log the chat asked for. Scripts never come this way: the person approves them. Returns why it failed, if it did. */
+  private async applyProbe(e: Extract<ChatEvent, { type: "probe" }>): Promise<string | undefined> {
+    const rec = this.o.recorder;
+    if (!rec?.probes) return "This PC's background recorder can't keep custom logs.";
+    try {
+      if (e.op === "add") {
+        if (e.probe.source.kind === "script") return "A script runs only once you approve it.";
+        await rec.probes({ op: "add", probe: e.probe });
+      } else await rec.probes({ op: "remove", id: e.id });
+      // Show it in Logs and Settings without waiting for the next read.
+      this.bgAt = -Infinity;
+      void this.readBackground(true);
+      return undefined;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  /** Reads the recorder again now: after the person approves, pauses or turns off a custom log. */
+  refreshBackground() { this.bgAt = -Infinity; return this.readBackground(true); }
 
   async recording(id: string, rid: string): Promise<Recording | null> {
     if (!this.isLocal(id)) return this.cloud?.recording(id, rid) ?? null;
@@ -508,16 +560,23 @@ export class LocalClient implements RigClient {
       onEvent({ type: "done" });
       return;
     }
-    const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts } : undefined;
+    const probes = this.isLocal(id) ? await this.customLogs() : null;
+    const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}) } : undefined;
     // Rig reads recordings on the server, so it needs the latest ones before it answers.
     if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
+    // Custom log changes are made here, on the PC, in the order they came; the answer's events wait for them.
+    let applying: Promise<void> = Promise.resolve();
+    const send = (f: () => void | Promise<void>) => { applying = applying.then(f).catch(() => {}); };
     await this.cloud.chat(id, history, (e) => {
       // A recording for this PC starts right away instead of waiting for the next sync.
       if (e.type === "recording" && live) {
         this.begin(e.request).catch(() => {});
-        onEvent({ ...e, queued: false });
-      } else onEvent(e);
+        send(() => onEvent({ ...e, queued: false }));
+      } else if (e.type === "probe" && live) {
+        send(async () => onEvent({ ...e, error: await this.applyProbe(e) }));
+      } else send(() => onEvent(e));
     }, signal, live);
+    await applying;
   }
 }
 

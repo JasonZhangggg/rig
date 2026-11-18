@@ -32,3 +32,8 @@
 @media (max-width: 640px) {
   .set-row { flex-direction: column; align-items: flex-start; }
 }
+
+.custom-logs { display: grid; gap: 8px; }
+.custom-logs h4 { margin: 8px 0 0; font-size: 14px; }
+.custom-log-row { display: flex; align-items: center; gap: 10px; }
+.custom-log-row .switch { flex: 1; min-width: 0; }

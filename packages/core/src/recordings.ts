@@ -5,6 +5,7 @@
 // the contract for that (helper, desktop, server and chat all share it) and
 // the pure code that turns a recording into the few moments that matter.
 
+import type { CustomInfo } from "./probes";
 import { cpuTemp, gpuTemp } from "./health";
 import { findSensor, type Snapshot } from "./telemetry";
 
@@ -206,6 +207,8 @@ export interface RecordingInfo extends RecordingRequest {
   headline?: string;
   /** Made from Rig's background recorder on this PC, not started by anyone. Kept only on this PC. */
   background?: boolean;
+  /** Made from a custom log: what it is and what it wrote. */
+  custom?: CustomInfo;
 }
 
 export interface Recording extends RecordingInfo {

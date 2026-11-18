@@ -8,7 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { checkRequest, cleanRecording, DELETE_WORD, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
@@ -212,6 +212,7 @@ export function createApp(deps: AppDeps = {}) {
       const ctx: ChatContext = {
         ...base, now: now(), timeZone: typeof body.tz === "string" && body.tz.length <= 64 ? body.tz : undefined,
         events: row?.events, recordings: row ? await store.recordings(user.id, row.id) : [],
+        ...(body.view && Array.isArray(body.probes) ? { probes: cleanProbes(body.probes) } : {}),
         ...(row ? {
           startRecording: (req) => later((s) => s.requestRecording(user.id, row.id, req, now())),
           readRecording: (id) => later((s) => s.recording(user.id, row.id, id)),
@@ -233,6 +234,22 @@ export function createApp(deps: AppDeps = {}) {
   app.all("*", (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text("Not found", 404)));
 
   return app;
+}
+
+/** The custom logs the desktop says its recorder keeps: only what the chat needs, and no more than the recorder can hold. */
+function cleanProbes(list: unknown[]): ProbeStatus[] {
+  const str = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : "");
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return list.slice(0, PROBE_LIMITS.maxProbes).filter((p): p is Record<string, unknown> => !!p && typeof p === "object").map((p) => {
+    const w = p.when as Record<string, unknown> | undefined;
+    return {
+      id: str(p.id, 40), label: str(p.label, 160), kind: (probeKinds as readonly string[]).includes(p.kind as string) ? p.kind as ProbeStatus["kind"] : "sensor",
+      by: p.by === "you" ? "you" : "chat", createdAt: num(p.createdAt), expiresAt: num(p.expiresAt), every: num(p.every), ...(p.fast ? { fast: num(p.fast) } : {}),
+      ...(w && typeof w === "object" ? { when: { ...(typeof w.metric === "string" ? { metric: w.metric as ProbeMetric } : { probe: str(w.probe, 40) }), op: [">", ">=", "<", "<="].includes(w.op as string) ? w.op as ">" : ">", value: num(w.value), ...(w.forSec ? { forSec: num(w.forSec) } : {}) } } : {}),
+      state: ["on", "paused", "error", "waiting"].includes(p.state as string) ? p.state as ProbeStatus["state"] : "on",
+      ...(p.error ? { error: str(p.error, 200) } : {}), ...(p.kind === "script" ? { admin: p.admin === true } : {}),
+    };
+  });
 }
 
 const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);

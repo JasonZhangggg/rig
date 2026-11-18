@@ -43,6 +43,8 @@ public static class Program
         if (args.Contains("--service")) { System.ServiceProcess.ServiceBase.Run(new RecorderService()); return 0; }
         if (args.Contains("--install-recorder")) return RecorderSetup.Install(Arg(args, "--app-dir"));
         if (args.Contains("--uninstall-recorder")) return RecorderSetup.Uninstall(Arg(args, "--app-dir"));
+        // RigHelper.exe --approve-script <file>: started behind Windows' permission prompt when the person approves a script in Rig.
+        if (Arg(args, "--approve-script") is string approveFile) return ProbeStore.ApproveFromFile(approveFile, Arg(args, "--hash"));
         // RigHelper.exe --record-for 60 --data-dir <folder>: records in this process for a while, for the CI smoke test.
         if (Arg(args, "--record-for") is string secs && int.TryParse(secs, out int recordSecs) && Arg(args, "--data-dir") is string recordDir)
             return RecorderCore.RunFor(recordDir, Math.Clamp(recordSecs, 1, 3600));
@@ -121,6 +123,7 @@ public static class Program
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 3) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
+        foreach (var p in ProbeChecks()) yield return p;
     }
 
     /// The background recorder's pure rules: file names, pruning, the line format and when it takes a closer look.
@@ -150,6 +153,68 @@ public static class Program
         var crash = new EventDto(now, "Application", "Application Error", 1000, "error", "x");
         if (w.Check(crash)?.Why != "event") yield return "recorder missed a crash event";
         if (w.Check(crash with { T = now + day, Source = "DistributedCOM", Id = 10016 }) != null) yield return "recorder fired on a harmless error";
+    }
+
+    /// Custom logs: what's accepted, what's refused, and that a script runs only as approved.
+    static IEnumerable<string> ProbeChecks()
+    {
+        long now = DateTimeOffset.Parse("2026-11-18T12:00:00Z").ToUnixTimeMilliseconds();
+        const string me = "S-1-5-21-1000-2000-3000-1001";
+        string Hash(string text, bool admin = false) => ProbeRules.ScriptHash("powershell", admin, text);
+        JsonObject Spec(JsonObject source, double hours = 1, Action<JsonObject>? more = null)
+        {
+            var o = new JsonObject { ["id"] = "t-1", ["label"] = "Test", ["createdAt"] = now, ["expiresAt"] = now + (long)(hours * 3_600_000), ["source"] = source };
+            more?.Invoke(o);
+            return o;
+        }
+        JsonObject Src(string kind, params (string K, JsonNode? V)[] fields)
+        {
+            var o = new JsonObject { ["kind"] = kind };
+            foreach (var (k, v) in fields) o[k] = v;
+            return o;
+        }
+        (ProbeSpec? P, string? E) Try(JsonObject spec) => ProbeRules.Parse(spec, now, me);
+
+        var good = new[]
+        {
+            Spec(Src("sensor", ("match", "GPU Hot Spot"))),
+            Spec(Src("counter", ("path", @"\Processor(_Total)\% Processor Time"))),
+            Spec(Src("events", ("channel", "Microsoft-Windows-Kernel-Power/Thermal-Operational"), ("query", "*[System[EventID=1]]"))),
+            Spec(Src("wmi", ("namespace", @"root\wmi"), ("query", "SELECT * FROM MSAcpi_ThermalZoneTemperature"))),
+            Spec(Src("process", ("name", "game.exe"))),
+            Spec(Src("file", ("path", @"C:\Games\log.txt"), ("read", "tail"))),
+            Spec(Src("folder", ("path", @"C:\Users\Public"))),
+            Spec(Src("registry", ("key", @"HKCU\Software\Rig"), ("value", "x"))),
+            Spec(Src("sensor", ("match", "CPU Package")), more: o =>
+            {
+                o["every"] = 0; o["fast"] = 1;
+                o["when"] = new JsonObject { ["metric"] = "gpuTemp", ["op"] = ">", ["value"] = 85 };
+            }),
+            Spec(Src("script", ("text", "Get-Date")), more: o => { o["every"] = 60; o["hash"] = Hash("Get-Date"); }),
+        };
+        foreach (var j in good) if (Try(j).E is string e) yield return $"probe refused: {e} in {j.ToJsonString()}";
+
+        var bad = new (string Why, JsonObject Spec)[]
+        {
+            ("a command line", Spec(Src("process", ("name", "cmd.exe /c del x")))),
+            ("a WMI method call", Spec(Src("wmi", ("query", "EXEC Win32_Process.Create")))),
+            ("a network path", Spec(Src("file", ("path", @"\\server\share\x")))),
+            ("a relative path", Spec(Src("folder", ("path", @"..\x")))),
+            ("a 1 second log for a week", Spec(Src("sensor", ("match", "x")), hours: 7 * 24, more: o => o["every"] = 1)),
+            ("an unknown kind", Spec(Src("shell", ("text", "x")))),
+            ("a script with no approval", Spec(Src("script", ("text", "Get-Date")))),
+            ("a script approved as something else", Spec(Src("script", ("text", @"Remove-Item C:\x")), more: o => o["hash"] = Hash("Get-Date"))),
+            ("a user script asking for admin", Spec(Src("script", ("text", "Get-Date"), ("admin", true)), more: o => o["hash"] = Hash("Get-Date"))),
+            ("a script run every second", Spec(Src("script", ("text", "Get-Date")), more: o => { o["every"] = 1; o["hash"] = Hash("Get-Date"); })),
+            ("a log that already ended", Spec(Src("process", ("name", "game.exe")), hours: -1)),
+        };
+        foreach (var (why, j) in bad) if (Try(j).P != null) yield return $"probe accepted {why}";
+
+        var admin = Try(Spec(Src("script", ("text", "Get-Date"), ("admin", true)), more: o => o["hash"] = Hash("Get-Date", admin: true)));
+        if (admin.P is not { IsScript: true, Admin: true }) yield return $"approved admin script refused: {admin.E}";
+        var cond = new ProbeCondition("gpuTemp", null, ">=", 85, 0);
+        if (!cond.Holds(85) || cond.Holds(84.9)) yield return "probe conditions compare wrongly";
+        if (ProbeReader.Scalar(new byte[] { 1, 255 })?.ToJsonString() != "\"01FF\"" || ProbeReader.Scalar(42u)?.ToJsonString() != "42") yield return "probe values convert wrongly";
     }
 
     static string? Arg(string[] args, string name)
@@ -187,6 +252,7 @@ public class Handler(Sensors hw)
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
         "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
+        "recorder.probes" => ProbeStore.Edit(p, hw),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

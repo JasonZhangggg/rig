@@ -4,6 +4,7 @@
 import type { Change, ChatEvent, ChatMessage } from "./client";
 import type { Game, HistoryPoint, PC } from "./model";
 import type { PCEvent, RecordingRequest } from "./recordings";
+import type { ProbeStatus } from "./probes";
 import type { Inventory, SystemFacts } from "./telemetry";
 import type { Identity } from "./view";
 
@@ -44,6 +45,8 @@ export interface ChatRequest {
   facts?: SystemFacts;
   /** The person's time zone, like "Europe/Berlin", so Rig can say when to check back. */
   tz?: string;
+  /** The desktop's custom logs, when its background recorder is on. Missing means the chat can't set them up from here. */
+  probes?: ProbeStatus[];
 }
 
 export const paths = {
