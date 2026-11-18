@@ -30,7 +30,7 @@ await step("ctrl-k", async () => {
   await p.keyboard.press("Escape");
 });
 await step("chat", async () => { await go("chat", 1500); await shot("5-ask"); });
-await step("pc", async () => { await go("pc", 4000); await shot("6-mypc-parts-upgrades"); });
+await step("pc", async () => { await go("pc", 4000); await shot("6-mypc-parts-upgrades"); await p.screenshot({ path: `${out}/6b-mypc-full.png`, fullPage: true, timeout: 60000 }).catch(() => {}); });
 await step("part-upgrade", async () => {
   await click(p.locator(".pc-ups-list button", { hasText: /SSD/ }));
   await p.waitForTimeout(1500);
@@ -59,6 +59,10 @@ await step("phone", async () => {
   await p.setViewportSize({ width: 390, height: 844 });
   await go("logs", 2500);
   await shot("10-phone-logs");
+  await go("pc", 3000);
+  await p.evaluate(() => document.getElementById("pc-upgrades")?.scrollIntoView());
+  await p.waitForTimeout(800);
+  await shot("11-phone-upgrades");
 });
 await browser.close();
 writeFileSync(`${out}/log.txt`, [...log, "", ...errors].join("\n"));
