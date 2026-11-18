@@ -1,10 +1,12 @@
 ok logs-events
+ok recording
 ok logs-temps
 ok logs-games
-ok ctrl-k
+ok game-detail
+ok changes
+ok settings
 ok chat
+ok home
 ok pc
-ok part-upgrade
 ok board-manual
-ok case-manual
 ok phone
