@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
-import { KINDS, KIND_ORDER, LAYOUT_VERSION, STEP, addCell, cellsFor, chosenOf, clampCell, compactUp, defaultDashboard, dragFlow, holes, limits, orderOf, parseDashboard, presetCells, resizeFlow, settle, stepTarget, stickyCell, type Cell, type Kind, type SizeName } from "../src/pages/overview/layout";
+import { KINDS, KIND_ORDER, LAYOUT_VERSION, STEP, addCell, arrange, cellsFor, chosenOf, clampCell, compactUp, defaultDashboard, dragFlow, holes, limits, orderOf, parseDashboard, presetCells, resizeFlow, settle, stepTarget, stickyCell, type Cell, type Kind, type SizeName } from "../src/pages/overview/layout";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -88,6 +88,31 @@ describe("the saved layout", () => {
   });
 });
 
+describe("the wide and tablet grids", () => {
+  const d = defaultDashboard();
+
+  it("lets the tablet grid follow a change on the wide grid", () => {
+    const md = dragFlow(cellsFor(d, "md"), "fans", 0, 0, 8);
+    const kept = arrange(d, "md", md);
+    const lg = dragFlow(kept.layouts.lg!, "storage", 0, 0, 12);
+    const next = arrange(kept, "lg", lg);
+    expect(next.layouts.md).toBeUndefined();
+    expect(orderOf(cellsFor(next, "md"))[0]).toBe("storage");
+  });
+
+  it("gives the wide grid the tablet grid's order, and a tile resized there a matching size", () => {
+    const md = dragFlow(cellsFor(d, "md"), "fans", 0, 0, 8);
+    const next = arrange(d, "md", md);
+    expect(next.layouts.md).toEqual(md);
+    expect(orderOf(next.layouts.lg!)).toEqual(orderOf(md));
+    expect(gaps(next.layouts.lg!)).toBe(0);
+    const wider = resizeFlow(cellsFor(next, "md"), "storage", 4, 3, 8);
+    const lg = arrange(next, "md", wider).layouts.lg!;
+    expect(chosenOf(at(lg, "storage")).w).toBe(6);
+    expect(chosenOf(at(lg, "pc"))).toEqual(chosenOf(at(d.layouts.lg!, "pc")));
+  });
+});
+
 describe("the grid while dragging", () => {
   const base = defaultDashboard().layouts.lg!;
 
@@ -120,6 +145,15 @@ describe("the grid while dragging", () => {
       expect(holes(out, 12)).toBe(0);
     }
     expect(at(dragFlow(base, "fans", 6, 2, 12), "fans")).toMatchObject({ x: 8, y: 2 });
+  });
+
+  it("puts a small tile held over the middle of a big one at its foot, not at the end of the page", () => {
+    for (const [x, y] of [[0, 1], [1, 3], [2, 4]]) {
+      const out = dragFlow(base, "health", x, y, 12);
+      expect(at(out, "pc")).toEqual(at(base, "pc"));
+      expect(at(out, "health")).toMatchObject({ x: 0, y: at(base, "pc").h });
+      expect(gaps(out)).toBe(0);
+    }
   });
 
   it("lets the neighbour fill the row when a tile is made narrower, and give the room back when it widens", () => {
@@ -294,11 +328,24 @@ describe("customizing Home", () => {
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Fans" })).toBeNull());
     expect(said()).toBe("Fans hidden. Add it back from Add widget.");
     expect(gaps(stored().layouts.lg)).toBe(0);
+    expect(document.activeElement?.getAttribute("aria-label")).toMatch(/place 5 of 7$/);
     fireEvent.click(screen.getByRole("button", { name: /^Add widget/ }));
     const library = within(screen.getByRole("dialog", { name: "Add widget" }));
     fireEvent.click(library.getByRole("button", { name: /^Fans/ }));
     expect(await screen.findByRole("heading", { name: "Fans" })).toBeTruthy();
     expect(tile("Fans").getAttribute("aria-label")).toBe("Fans, Medium, place 8 of 8");
+  });
+
+  it("hides the focused widget with Delete and moves focus to the one that takes its place, or the last one", async () => {
+    await customize();
+    tile("Fans").focus();
+    fireEvent.keyDown(tile("Fans"), { key: "Delete" });
+    await waitFor(() => expect(screen.queryByRole("group", { name: /^Fans, / })).toBeNull());
+    expect(document.activeElement?.getAttribute("aria-label")).toMatch(/place 5 of 7$/);
+    const last = screen.getAllByRole("group").find((g) => /place 7 of 7$/.test(g.getAttribute("aria-label")!))!;
+    last.focus();
+    fireEvent.keyDown(last, { key: "Backspace" });
+    await waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toMatch(/place 6 of 6$/));
   });
 
   it("undoes the last change from the note, and with Ctrl Z", async () => {

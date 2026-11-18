@@ -1,7 +1,8 @@
 import { cloneElement, isValidElement, memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { GridLayout, type Compactor, type EventCallback, type Layout, type ResizeHandleAxis } from "react-grid-layout";
-import { calcGridItemPosition } from "react-grid-layout/core";
+import { calcGridItemPosition, transformStrategy } from "react-grid-layout/core";
+import { APPEARANCE_EVENT, reducedMotion } from "../../appearance";
 import { COLS, KINDS, clampCell, compactUp, dragFlow, kindOf, limits, nearestSize, orderOf, resizeFlow, sizeLabel, stepTarget, stickyCell, type Bp, type Cell, type Dir, type Widget } from "./layout";
 import type { TileBox } from "./widgets";
 
@@ -11,8 +12,8 @@ const LONG_PRESS = 450;
 const EDGE = 84;
 /** The fastest the window scrolls under a drag, in pixels a millisecond, with the pointer right at the edge. */
 const SPEED = 1.5;
-/** Widths below this get the phone's single column list. */
-const PHONE = 700;
+/** Grid widths below this get the phone's single column list. A 1024 window with the sidebar open still gets the grid. */
+const PHONE = 560;
 /** The resize handles, one per edge that resizes. */
 const HANDLE: Partial<Record<ResizeHandleAxis, string>> = { se: "dw-rh dw-rh-se", e: "dw-rh dw-rh-e", s: "dw-rh dw-rh-s" };
 // The grid library sets cssTransforms, react-draggable-dragging and resizing on tiles itself; dash.css styles them.
@@ -40,10 +41,13 @@ export interface GridProps {
   onMode?: (mode: Mode) => void;
 }
 
-const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const coarse = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 const same = (a: readonly Cell[], b: readonly Cell[]) => a.length === b.length && a.every((c) => { const o = b.find((x) => x.i === c.i); return !!o && o.x === c.x && o.y === c.y && o.w === c.w && o.h === c.h; });
-const strip = (layout: Layout): Cell[] => layout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
+/** Cells from the library's layout, keeping the size each tile was chosen at when the grid shows it at another. */
+const strip = (layout: Layout): Cell[] => layout.map((c) => {
+  const { i, x, y, w, h, cw, ch } = c as Layout[number] & Partial<Cell>;
+  return { i, x, y, w, h, ...(cw !== undefined ? { cw } : {}), ...(ch !== undefined ? { ch } : {}) };
+});
 const withLimits = (cells: readonly Cell[], cols: number): Layout => cells.map((c) => ({ ...c, ...limits(kindOf(c.i), cols) }));
 
 const Grip = () => <svg viewBox="0 0 20 12" aria-hidden="true">{[4, 10, 16].flatMap((x) => [3, 9].map((y) => <circle key={`${x}${y}`} cx={x} cy={y} r="1.6" fill="currentColor" />))}</svg>;
@@ -54,7 +58,6 @@ const Up = ({ down }: { down?: boolean }) => <svg viewBox="0 0 20 20" aria-hidde
 /** Everything a tile asks of the grid, behind one stable ref so tiles never re-render for a new callback. */
 interface Api {
   key: (e: ReactKeyboardEvent, w: Widget) => void;
-  press: (e: ReactPointerEvent) => void;
   edit: (id: string) => void;
   hide: (id: string) => void;
   options: (id: string, from: HTMLElement) => void;
@@ -79,31 +82,37 @@ interface TileProps {
   api: RefObject<Api>;
 }
 
-/** One widget: its content, and in customizing its handle, hide and options buttons. */
+/**
+ * One widget: its content, and in customizing its handle, hide and options buttons. The buttons sit beside the tile
+ * rather than in it, so they hold still while it wobbles and stay easy to hit.
+ */
 const Tile = memo(function Tile({ w, box, title, label, editing, phone, first, last, motion, render, api }: TileProps) {
   const body = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { const el = body.current!; if (editing) el.setAttribute("inert", ""); else el.removeAttribute("inert"); }, [editing]);
   const a = () => api.current!;
   return (
-    <div
-      className={`dw${w.tone === "dark" ? " tone-dark" : ""}`}
-      data-kind={w.kind} data-frame={w.tone === "dark" ? "tile" : w.frame} data-size={box.size} style={motion}
-      tabIndex={editing ? 0 : undefined}
-      role={editing ? "group" : undefined}
-      aria-roledescription={editing ? "widget" : undefined}
-      aria-label={editing ? label : undefined}
-      aria-describedby={editing ? "dash-keys" : undefined}
-      onKeyDown={(e) => a().key(e, w)}
-      onPointerDown={(e) => a().press(e)}
-    >
-      <div className="dw-body" ref={body}>
-        <Content w={w} {...box} render={render} />
+    <>
+      <div
+        className={`dw${w.tone === "dark" ? " tone-dark" : ""}`}
+        data-kind={w.kind} data-frame={w.tone === "dark" ? "tile" : w.frame} data-size={box.size} style={motion}
+        tabIndex={editing ? 0 : undefined}
+        role={editing ? "group" : undefined}
+        aria-roledescription={editing ? "widget" : undefined}
+        aria-label={editing ? label : undefined}
+        aria-describedby={editing ? "dash-keys" : undefined}
+        onKeyDown={(e) => a().key(e, w)}
+      >
+        <div className="dw-body" ref={body}>
+          <Content w={w} {...box} render={render} />
+        </div>
       </div>
-      <button
-        type="button" className="dw-grip" aria-label={editing ? `Drag to move ${title}` : `Move ${title}`} title={editing ? "Drag to move" : "Drag to move, or press to customize"}
-        tabIndex={editing ? -1 : 0}
-        onClick={() => { if (!editing) a().edit(w.id); }}
-      ><Grip /></button>
+      {!(editing && phone) && (
+        <button
+          type="button" className="dw-grip" aria-label={editing ? `Drag to move ${title}` : `Move ${title}`} title={editing ? "Drag to move" : "Drag to move, or press to customize"}
+          tabIndex={editing ? -1 : 0}
+          onClick={() => { if (!editing) a().edit(w.id); }}
+        ><Grip /></button>
+      )}
       {editing && (
         <>
           <button type="button" className="dw-del dw-ctl" aria-label={`Hide ${title}`} title="Hide" onClick={() => a().hide(w.id)}><Minus /></button>
@@ -116,7 +125,7 @@ const Tile = memo(function Tile({ w, box, title, label, editing, phone, first, l
           <button type="button" aria-label={`Move ${title} down`} disabled={last} onClick={() => a().step(w.id, 1)}><Up down /></button>
         </div>
       )}
-    </div>
+    </>
   );
 });
 
@@ -126,24 +135,35 @@ function wobble(index: number, w: number, h: number): CSSProperties {
   return { "--jig": `${deg.toFixed(2)}deg`, "--jig-d": `${-((index * 113) % 320)}ms`, "--jig-t": `${300 + ((index * 41) % 70)}ms` } as CSSProperties;
 }
 
+/**
+ * The grid's width, and how much the page is zoomed by Settings > Text size. The pointer moves in screen pixels and
+ * the grid lays out in page pixels, so drags divide by the zoom.
+ */
 function useWidth(ref: RefObject<HTMLDivElement>) {
   const [width, setWidth] = useState(0);
+  const [zoom, setZoom] = useState(1);
   useLayoutEffect(() => {
     const el = ref.current!;
-    setWidth(el.clientWidth);
-    if (typeof ResizeObserver === "undefined") return;
+    const read = () => {
+      setWidth(el.clientWidth);
+      const z = el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1;
+      setZoom(Number.isFinite(z) && z > 0 ? Math.round(z * 1000) / 1000 : 1);
+    };
+    read();
+    window.addEventListener(APPEARANCE_EVENT, read);
+    if (typeof ResizeObserver === "undefined") return () => window.removeEventListener(APPEARANCE_EVENT, read);
     let t = 0;
     // While the window or sidebar changes size, tiles follow the width at once instead of gliding behind it.
     const ro = new ResizeObserver(() => {
       el.dataset.still = "";
-      setWidth(el.clientWidth);
+      read();
       clearTimeout(t);
       t = window.setTimeout(() => delete el.dataset.still, 180);
     });
     ro.observe(el);
-    return () => { ro.disconnect(); clearTimeout(t); };
+    return () => { ro.disconnect(); clearTimeout(t); window.removeEventListener(APPEARANCE_EVENT, read); };
   }, [ref]);
-  return width;
+  return [width, zoom] as const;
 }
 
 /**
@@ -188,7 +208,7 @@ function edgeScroll() {
 
 /** A small press of the drop spot when the dragged tile snaps into a new slot, the way a phone ticks. */
 function tick(spot: HTMLElement | null) {
-  if (reduced()) return;
+  if (reducedMotion()) return;
   spot?.animate?.([{ scale: "1" }, { scale: "1.025" }, { scale: "1" }], { duration: 220, easing: "cubic-bezier(.2, .9, .3, 1.2)" });
 }
 
@@ -201,7 +221,7 @@ export function Grid(p: GridProps) {
   const { widgets, editing, compact, gap, titleOf, render } = p;
   const wrap = useRef<HTMLDivElement>(null);
   const spot = useRef<HTMLDivElement>(null);
-  const width = useWidth(wrap);
+  const [width, zoom] = useWidth(wrap);
   const measured = width > 0 || typeof ResizeObserver === "undefined";
   const gridWidth = width || 1200;
   const mode: Mode = gridWidth >= 1000 ? "lg" : gridWidth >= PHONE ? "md" : "phone";
@@ -225,8 +245,8 @@ export function Grid(p: GridProps) {
     return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
   }, [mode]);
 
-  const latest = useRef({ p, cells, cols, bp, mode, editing, gridWidth, row, gap });
-  latest.current = { p, cells, cols, bp, mode, editing, gridWidth, row, gap };
+  const latest = useRef({ p, cells, cols, bp, mode, editing, gridWidth, row, gap, zoom });
+  latest.current = { p, cells, cols, bp, mode, editing, gridWidth, row, gap, zoom };
 
   // ----- Where things land: a compactor that works from the layout as it was when the drag began. -----
   // The library's own placeholder (react-grid-placeholder, hidden in dash.css) reads the dragged item after its move has
@@ -240,6 +260,10 @@ export function Grid(p: GridProps) {
     size: Cell;
     /** Set the moment the pointer is let go, so the layout the drop settles on has the tile at the size it landed. */
     dropped: boolean;
+    /** Set by Escape: everything goes back to where it was when the drag began. */
+    cancelled: boolean;
+    /** The layout last worked out, with the sizes each tile was chosen at, which the drop saves. */
+    last: Cell[] | null;
   } | null>(null);
   const spotAt = (c: Cell, instant = false) => {
     const el = spot.current;
@@ -260,6 +284,7 @@ export function Grid(p: GridProps) {
       const a = active.current;
       const now = strip(layout);
       if (!a) return withLimits(compactUp(now, n), n);
+      if (a.cancelled) { a.last = a.base; spotAt(a.base.find((c) => c.i === a.id) ?? a.size); return withLimits(a.base, n); }
       const me = now.find((c) => c.i === a.id);
       if (!me) return withLimits(compactUp(now, n), n);
       const key = a.type === "drag" ? `${a.cell.x},${a.cell.y}` : `${me.w},${me.h}`;
@@ -271,6 +296,7 @@ export function Grid(p: GridProps) {
       const landed = out.find((c) => c.i === a.id)!;
       const slot = `${landed.x},${landed.y},${landed.w},${landed.h}`;
       if (slot !== a.slot) { spotAt(landed); tick(spot.current); a.slot = slot; }
+      a.last = out;
       if (a.type === "resize" || a.dropped) return withLimits(out, n);
       return withLimits(out.map((c) => (c.i === a.id ? { ...c, w: a.size.w, h: a.size.h } : c)), n);
     },
@@ -286,7 +312,8 @@ export function Grid(p: GridProps) {
     const drop = () => { if (active.current === a) a.dropped = true; };
     const scroll = edgeScroll();
     const a = {
-      type, id, base, cache: new Map<string, Cell[]>(), slot: `${c.x},${c.y},${c.w},${c.h}`, cell: { x: c.x, y: c.y }, size: c, dropped: false,
+      type, id, base, cache: new Map<string, Cell[]>(), slot: `${c.x},${c.y},${c.w},${c.h}`, cell: { x: c.x, y: c.y }, size: c,
+      dropped: false, cancelled: false, last: null as Cell[] | null,
       stop: () => {
         scroll();
         for (const t of ["mouseup", "touchend", "touchcancel"]) window.removeEventListener(t, drop, true);
@@ -311,7 +338,7 @@ export function Grid(p: GridProps) {
     setLive(null);
     if (!a) return;
     const { cells: was, bp: at, p: props } = latest.current;
-    const next = strip(layout);
+    const next = a.last ?? strip(layout);
     if (same(next, was)) return;
     const w = props.widgets.find((x) => x.id === a.id);
     if (!w) return;
@@ -333,10 +360,10 @@ export function Grid(p: GridProps) {
     // The page may grow while a tile is held low, but never shrinks back under the pointer until the drop.
     if (el && el.offsetHeight > parseFloat(el.style.minHeight || "0")) el.style.minHeight = `${el.offsetHeight}px`;
     if (a?.type !== "drag" || !node || !grid) return;
-    const { cols: n, gridWidth: cw, row: rh, gap: g } = latest.current;
+    const { cols: n, gridWidth: cw, row: rh, gap: g, zoom: z } = latest.current;
     const box = node.getBoundingClientRect(), at = grid.getBoundingClientRect();
     const col = (cw - g * (n - 1)) / n;
-    a.cell = stickyCell(a.cell, (box.left - at.left) / (col + g), (box.top - at.top) / (rh + g), n - a.size.w);
+    a.cell = stickyCell(a.cell, (box.left - at.left) / z / (col + g), (box.top - at.top) / z / (rh + g), n - a.size.w);
   };
   const onDragStop: EventCallback = (layout) => end(layout);
   const onResizeStart: EventCallback = (_l, _o, item) => { if (item) begin("resize", item.i); };
@@ -399,13 +426,59 @@ export function Grid(p: GridProps) {
   useLayoutEffect(() => {
     const from = flip.current;
     flip.current = null;
-    if (!from || reduced()) return;
+    if (!from || reducedMotion()) return;
     wrap.current?.querySelectorAll<HTMLElement>(".dg").forEach((el) => {
       const a = from.get(el.dataset.id!), b = el.getBoundingClientRect();
       if (!a || typeof el.animate !== "function" || Math.abs(a.top - b.top) < 1) return;
       el.animate([{ transform: `translateY(${a.top - b.top}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2, .9, .3, 1.15)" });
     });
   });
+
+  // ----- A press that ends however it ends -----
+  // A drag belongs to the library from the press until the mouseup. When the browser never sends that mouseup (it began
+  // dragging selected text instead, the window lost focus, the touch was cancelled) the tile would stay stuck to the
+  // pointer. So while a press is held, anything that ends it ends the drag too, and Escape puts everything back.
+  const guard = useRef<(() => void) | null>(null);
+  const watch = (from: { clientX: number; clientY: number }) => {
+    guard.current?.();
+    window.getSelection()?.removeAllRanges();
+    const pt = { x: from.clientX, y: from.clientY, touch: -1 };
+    let t = 0;
+    const finish = () => {
+      off();
+      document.dispatchEvent(new MouseEvent("mouseup", { clientX: pt.x, clientY: pt.y, button: 0, bubbles: true, cancelable: true }));
+      if (pt.touch < 0 || typeof Touch !== "function") return;
+      try {
+        const touch = new Touch({ identifier: pt.touch, target: document.body, clientX: pt.x, clientY: pt.y });
+        document.dispatchEvent(new TouchEvent("touchend", { changedTouches: [touch], bubbles: true, cancelable: true }));
+      } catch { /* no touch events here */ }
+    };
+    const move = (e: PointerEvent) => { pt.x = e.clientX; pt.y = e.clientY; };
+    const touched = (e: TouchEvent) => { if (pt.touch < 0 && e.changedTouches[0]) pt.touch = e.changedTouches[0].identifier; };
+    // The library's own mouseup comes straight after this; if a drag is still held a moment later, it never came.
+    const up = () => { clearTimeout(t); t = window.setTimeout(() => (active.current ? finish() : off()), 80); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !active.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      active.current.cancelled = true;
+      finish();
+    };
+    const native = (e: DragEvent) => e.preventDefault();
+    const on: [string, EventListener, boolean][] = [
+      ["pointermove", move as EventListener, true], ["touchstart", touched as EventListener, true], ["pointerup", up, true],
+      ["lostpointercapture", up, true], ["pointercancel", finish, true], ["dragend", finish, true], ["blur", finish, false],
+      ["keydown", key as EventListener, true], ["dragstart", native as EventListener, true],
+    ];
+    const off = () => {
+      clearTimeout(t);
+      for (const [type, fn, capture] of on) window.removeEventListener(type, fn, capture);
+      if (guard.current === off) guard.current = null;
+    };
+    for (const [type, fn, capture] of on) window.addEventListener(type, fn, capture);
+    guard.current = off;
+  };
+  useEffect(() => () => guard.current?.(), []);
 
   // ----- Pointer: lift on press, long press to customize -----
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean; off: () => void } | null>(null);
@@ -418,11 +491,16 @@ export function Grid(p: GridProps) {
   const onPress = (e: ReactPointerEvent) => {
     if (e.button) return;
     const t = e.target as HTMLElement;
-    if (t.closest(".dw-ctl, .react-resizable-handle")) return;
-    const item = (e.currentTarget as HTMLElement).closest<HTMLElement>(".dg");
-    if (!item) return;
-    if (latest.current.editing) { if (latest.current.mode !== "phone" && (!touch || t.closest(".dw-grip"))) lift(item); return; }
-    if (t.closest(".dw-grip")) { lift(item); return; }
+    const item = t.closest<HTMLElement>(".dg");
+    if (!item || t.closest(".dw-ctl")) return;
+    if (t.closest(".react-resizable-handle")) { watch(e); return; }
+    if (latest.current.editing) {
+      if (latest.current.mode === "phone") return;
+      watch(e);
+      if (!touch || t.closest(".dw-grip")) lift(item);
+      return;
+    }
+    if (t.closest(".dw-grip")) { watch(e); lift(item); return; }
     press.current?.off();
     const start = { x: e.clientX, y: e.clientY, mouse: e.pointerType === "mouse" };
     const s = { timer: 0, x: e.clientX, y: e.clientY, fired: false, off: () => {} };
@@ -455,6 +533,7 @@ export function Grid(p: GridProps) {
         if (press.current !== s) return;
         const target = item.querySelector<HTMLElement>(".dw");
         if (!target) return;
+        watch({ clientX: s.x, clientY: s.y });
         lift(item);
         target.dispatchEvent(new MouseEvent("mousedown", { clientX: s.x, clientY: s.y, button: 0, buttons: 1, bubbles: true, cancelable: true }));
       }));
@@ -466,6 +545,23 @@ export function Grid(p: GridProps) {
     press.current = s;
   };
   useEffect(() => () => press.current?.off(), []);
+
+  // ----- Hiding: focus goes to the tile that takes the hidden one's place, or the last one, so it never drops to the page. -----
+  const refocus = useRef<{ gone: string; at: number } | null>(null);
+  const hide = (id: string) => {
+    const { mode: m, cells: now, p: props } = latest.current;
+    refocus.current = { gone: id, at: (m === "phone" ? props.phone : orderOf(now)).indexOf(id) };
+    props.onHide(id);
+  };
+  useLayoutEffect(() => {
+    const r = refocus.current;
+    if (!r || widgets.some((w) => w.id === r.gone)) return;
+    refocus.current = null;
+    const order = mode === "phone" ? p.phone : orderOf(cells);
+    const to = order[Math.min(r.at, order.length - 1)];
+    const next = to ? wrap.current?.querySelector<HTMLElement>(`.dg[data-id="${to}"] > .dw`) : null;
+    (next ?? document.querySelector<HTMLElement>(".dash-bar button"))?.focus();
+  });
 
   const api = useRef<Api>(null as unknown as Api);
   api.current = {
@@ -483,12 +579,11 @@ export function Grid(p: GridProps) {
         latest.current.p.onDone();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        latest.current.p.onHide(w.id);
+        hide(w.id);
       }
     },
-    press: onPress,
     edit: (id) => latest.current.p.onEdit(id),
-    hide: (id) => latest.current.p.onHide(id),
+    hide,
     options: (id, from) => latest.current.p.onOptions(id, from),
     step,
   };
@@ -522,18 +617,22 @@ export function Grid(p: GridProps) {
     handleComponent: (axis: ResizeHandleAxis, ref: Ref<HTMLElement>) => <span ref={ref as Ref<HTMLSpanElement>} className={`react-resizable-handle ${HANDLE[axis] ?? "dw-rh"}`} aria-hidden="true" />,
   }), []);
   const layout = useMemo(() => withLimits(cells, cols), [cells, cols]);
+  const position = useMemo(() => (zoom === 1 ? transformStrategy : { ...transformStrategy, scale: zoom }), [zoom]);
   // The library redraws a tile only when its props change; a fresh element for the dragged one lets it track the pointer.
   // A resized tile still snaps from cell to cell, so its content always fits the size it shows.
   const held = active.current?.type === "drag" ? active.current.id : null;
 
   return (
-    <div ref={wrap} className={`dash${editing ? " editing" : ""}`} data-cols={cols} style={{ "--dgap": `${gap}px`, "--row": `${row}px` } as CSSProperties}>
+    <div
+      ref={wrap} className={`dash${editing ? " editing" : ""}`} data-cols={cols} style={{ "--dgap": `${gap}px`, "--row": `${row}px` } as CSSProperties}
+      onPointerDown={onPress} onDragStart={editing ? (e) => e.preventDefault() : undefined}
+    >
       <div ref={spot} className="dash-spot" aria-hidden="true" />
       {mode === "phone" ? (
         p.phone.map((id) => children.find((c) => c.key === id)).filter(Boolean)
       ) : measured ? (
         <GridLayout
-          className="dash-grid" width={gridWidth} layout={layout} compactor={compactor}
+          className="dash-grid" width={gridWidth} layout={layout} compactor={compactor} positionStrategy={position}
           gridConfig={gridConfig} dragConfig={dragConfig} resizeConfig={resizeConfig}
           onDragStart={calls.onDragStart} onDrag={calls.onDrag} onDragStop={calls.onDragStop}
           onResizeStart={calls.onResizeStart} onResize={calls.onResize} onResizeStop={calls.onResizeStop}

@@ -10,8 +10,13 @@
 .f-home[data-corners="soft"] .dash { --dr: 12px; }
 .f-home[data-corners="square"] .dash { --dr: 4px; }
 .dash[data-cols="1"] { display: flex; flex-direction: column; gap: var(--dgap); }
+.dash[data-cols="1"] > .dg { position: relative; }
 /* Room below the last tile while customizing, so it can scroll clear of the floating bar. Nothing above it moves. */
 .dash.editing { padding-bottom: 104px; }
+/* Nothing on the grid or the bar selects while customizing, so a press always picks a tile up instead of dragging text. */
+.dash.editing, .dash-bar { -webkit-user-select: none; user-select: none; }
+/* The phone's list opens up while customizing, so each tile's buttons get a strip of their own above it. */
+.dash.editing[data-cols="1"] { gap: calc(var(--dgap) + 40px); padding-top: 16px; }
 
 .dash-grid { position: relative; transition: height var(--glide) var(--ease-out); }
 .dash-grid > .dg { position: absolute; z-index: 1; touch-action: auto; }
@@ -66,32 +71,41 @@
 @media (hover: hover) and (pointer: fine) {
   .dash:not(.editing) .dg:hover .dw-grip { opacity: 1; transform: translateX(-50%); }
 }
-/* With touch the pill stays as the handle while customizing, so a swipe on a tile still scrolls the page. */
+/* With touch the pill stays as the handle while customizing, just above the tile, so a swipe on a tile still scrolls the page. */
 @media (pointer: coarse) {
-  .dash.editing .dw-grip { opacity: 1; transform: translateX(-50%); width: 56px; height: 28px; top: -14px; }
+  .dash.editing .dw-grip { opacity: 1; transform: translateX(-50%); width: 56px; height: 28px; top: -32px; }
 }
 
-/* Round buttons on the dashed edge while customizing, clear of the tile's own title: hide on the top left corner,
-   as on a phone's home screen, and options on the middle of the top edge, so neighbours' buttons never meet in the gap. */
+/* Round buttons beside the tile while customizing, never on it, so they don't cover a title or badge: hide just off the
+   top left corner, as on a phone's home screen, and options above the top edge next to it. Both stay clear of the
+   resize handles of the tiles above, which sit on their bottom edge's middle and right corner. */
 .dw-ctl { position: absolute; z-index: 5; }
 .dw-del, .dw-opt {
-  --b: 28px; top: calc(-7px - var(--b) / 2); width: var(--b); height: var(--b); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  --b: 26px; width: var(--b); height: var(--b); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
   background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .24); cursor: pointer;
   animation: dw-pop .22s var(--spring) both; transition: transform .12s var(--ease-out);
 }
-.dw-del { left: calc(-7px - var(--b) / 2); }
-.dw-opt { left: calc(50% - var(--b) / 2); }
+.dw-del { top: calc(-10px - var(--b) / 2); left: calc(-10px - var(--b) / 2); }
+.dw-opt { top: calc(-1px - var(--b)); left: 11px; }
 .dw-del:active, .dw-opt:active { transform: scale(.9); }
 .dg.react-draggable-dragging .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
 .dw-del svg, .dw-opt svg { width: 15px; height: 15px; }
 @keyframes dw-pop { from { scale: .4; opacity: 0; } }
 @media (pointer: coarse) {
   .dw-del, .dw-opt { --b: 40px; }
-  .dw-opt { left: calc(50% + 34px); }
+  .dw-del { top: -35px; left: -35px; }
+  .dw-opt { top: -42px; left: 12px; }
+  /* A finger resizes from the corner; the edge pills would sit where the next tile's buttons are. */
+  .dw-rh-e, .dw-rh-s { display: none; }
 }
+/* In the phone's list every button sits in the strip above its tile: hide and options on the left, up and down on the right. */
+.dash[data-cols="1"] .dw-del, .dash[data-cols="1"] .dw-opt, .dash[data-cols="1"] .dw-steps { top: calc(-9px - var(--b, 26px)); }
+.dash[data-cols="1"] .dw-del { left: 0; }
+.dash[data-cols="1"] .dw-opt { left: calc(var(--b) + 10px); }
 
-.dw-steps { top: -27px; right: 8px; display: flex; gap: 6px; }
-.dw-steps button { width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .22); cursor: pointer; }
+.dw-steps { --b: 40px; top: -27px; right: 8px; display: flex; gap: 6px; }
+.dash[data-cols="1"] .dw-steps { right: 0; }
+.dw-steps button { width: var(--b); height: var(--b); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .22); cursor: pointer; }
 .dw-steps button:disabled { opacity: .35; cursor: default; }
 .dw-steps svg { width: 18px; height: 18px; }
 
@@ -136,10 +150,16 @@
   .dw, .dw-grip, .dw-del, .dw-opt, .dw-rh, .dw-rh::before { transition: none; animation: none; }
   .dg[data-lift] > .dw, .dg.react-draggable-dragging > .dw { scale: none; transition: none; }
 }
+/* Motion picked in Settings: the stylesheet tokens already stop transitions and animations; a lifted tile stays its size. */
+:root[data-motion="reduce"] .dg[data-lift] > .dw, :root[data-motion="reduce"] .dg.react-draggable-dragging > .dw { scale: none; }
 
 /* The dock: floats at the bottom of the window and takes no room, so customizing never moves the page.
-   It carries the customize bar and, after a change, a note with Undo. */
-.dash-dock { position: sticky; z-index: 40; bottom: 20px; height: 0; margin-top: calc(-1 * var(--home-gap, 40px)); pointer-events: none; }
+   It carries the customize bar and, after a change, a note with Undo. On a short page the page still reaches the bottom
+   of the window and the dock sits at its foot, so the bar never floats halfway up. */
+.page:has(> .dash-dock) { min-height: 100%; }
+.dash-dock {
+  position: sticky; z-index: 40; bottom: 20px; height: 0; margin-top: auto; margin-bottom: calc(-1 * var(--home-gap, 40px)); pointer-events: none;
+}
 .dash-dock-in { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 12px; }
 .dash-dock-in > * { pointer-events: auto; }
 .dash-bar {
