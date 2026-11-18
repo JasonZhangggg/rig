@@ -1,3 +1,4 @@
+import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import type { ActionCall } from "../actions";
 import { describeCall, titleFor } from "../actions";
 import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
@@ -201,6 +202,15 @@ export class DemoClient implements RigClient {
     this.emit(id);
     return { ...c };
   }
+
+  // Manuals: filled in by the manuals work. These stubs keep every client compiling meanwhile.
+  async manuals(_id: string): Promise<Manual[]> { return []; }
+  async addManualFile(_id: string, _t: ManualTarget, _f: { name: string; bytes: number }): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
+  async manualFile(_id: string, _mid: string): Promise<ArrayBuffer> { throw new Error("Manuals aren't ready yet."); }
+  async saveManualPages(_id: string, _mid: string, _p: ManualPage[], _d: ManualDiagram[]): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
+  async searchManuals(_id: string, _q: string, _o?: { manualId?: string; limit?: number }): Promise<ManualHit[]> { return []; }
+  async manualPage(_id: string, _mid: string, _n: number): Promise<ManualPage | null> { return null; }
+  async removeManual(_id: string, _mid: string): Promise<void> {}
 
   async chat(id: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal) {
     const p = this.pcs[id];

@@ -3,6 +3,7 @@
 // Changes are only made from the Rig app on the PC itself, so preview, apply
 // and undo aren't available through here.
 
+import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import type { ActionCall } from "./actions";
 import {
   ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, readJson, unreachableText,
@@ -203,6 +204,15 @@ export class CloudClient implements RigClient {
   }
 
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
+  // Manuals: filled in by the manuals work. These stubs keep every client compiling meanwhile.
+  async manuals(_id: string): Promise<Manual[]> { return []; }
+  async addManualFile(_id: string, _t: ManualTarget, _f: { name: string; bytes: number }): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
+  async manualFile(_id: string, _mid: string): Promise<ArrayBuffer> { throw new Error("Manuals aren't ready yet."); }
+  async saveManualPages(_id: string, _mid: string, _p: ManualPage[], _d: ManualDiagram[]): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
+  async searchManuals(_id: string, _q: string, _o?: { manualId?: string; limit?: number }): Promise<ManualHit[]> { return []; }
+  async manualPage(_id: string, _mid: string, _n: number): Promise<ManualPage | null> { return null; }
+  async removeManual(_id: string, _mid: string): Promise<void> {}
+
   async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts }) {
     const body: ChatRequest = { machineId, messages: history.map(({ from, text }) => ({ from, text })), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...live };
     const res = await this.send(paths.chat, { method: "POST", headers: { accept: "text/event-stream" }, body: JSON.stringify(body), signal });

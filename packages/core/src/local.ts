@@ -3,6 +3,7 @@
 // from the fix catalog (saving the undo first), and, when signed in, uploads
 // the view so the website shows it and reaches the other PCs on the account.
 
+import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { MachineSync } from "./api";
@@ -439,6 +440,15 @@ export class LocalClient implements RigClient {
   }
 
   // ----- Chat -----
+  // Manuals: filled in by the manuals work. These stubs keep every client compiling meanwhile.
+  async manuals(_id: string): Promise<Manual[]> { return []; }
+  async addManualFile(_id: string, _t: ManualTarget, _f: { name: string; bytes: number }): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
+  async manualFile(_id: string, _mid: string): Promise<ArrayBuffer> { throw new Error("Manuals aren't ready yet."); }
+  async saveManualPages(_id: string, _mid: string, _p: ManualPage[], _d: ManualDiagram[]): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
+  async searchManuals(_id: string, _q: string, _o?: { manualId?: string; limit?: number }): Promise<ManualHit[]> { return []; }
+  async manualPage(_id: string, _mid: string, _n: number): Promise<ManualPage | null> { return null; }
+  async removeManual(_id: string, _mid: string): Promise<void> {}
+
   async chat(id: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal) {
     if (!this.cloud || !(await this.signedIn())) {
       onEvent({ type: "error", message: "Sign in to ask Rig. Answers come from Rig's servers, which read your parts' manuals." });

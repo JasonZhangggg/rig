@@ -100,7 +100,7 @@ function Root() {
     else if (ui.route !== "pc") scene.select(null);
   }, [ui.route, pc.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, logs: Logs, web: Web, signin: Overview, settings: Settings }[ui.route];
+  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, logs: Logs, manuals: Overview, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (
     <>
       <Sidebar><Page /></Sidebar>
