@@ -164,7 +164,7 @@ export function TodoWidget({ style, opts, box }: WidgetProps) {
   const openIssue = useOpenIssue();
   const { issues: all, open } = useHomeIssues();
   const issues = on(opts, "worth") ? all : open;
-  const [list, fits] = useFit<HTMLUListElement>(issues.length, { on: fixed(box), reserve: 48, watch: style });
+  const [list, fits] = useFit<HTMLUListElement>(issues.length, { on: fixed(box), reserve: 40, min: 0, watch: style });
   const rest = issues.length - fits;
   return (
     <section className="f-todo" data-style={style}>
@@ -182,7 +182,7 @@ export function TodoWidget({ style, opts, box }: WidgetProps) {
           ))}
           {rest > 0 && (
             <li data-more="" className="f-more">
-              <button type="button" className="f-link" onClick={() => ask(`What needs a look on ${pc.name} right now?`)}>{rest === 1 ? "One more to look at" : `${rest} more to look at`}<Go /></button>
+              <button type="button" className="f-link" onClick={() => ask(`What needs a look on ${pc.name} right now?`)}>{fits ? (rest === 1 ? "One more to look at" : `${rest} more to look at`) : `See all ${rest}`}<Go /></button>
             </li>
           )}
         </ul>

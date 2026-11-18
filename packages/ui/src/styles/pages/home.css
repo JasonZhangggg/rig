@@ -72,12 +72,9 @@
 .f-stage { position: relative; min-height: 0; }
 .f-pc .stage-slot { inset: -60px 0 -30px; -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); }
 .dw.tone-dark .part-label { background: color-mix(in srgb, var(--surface-2) 92%, transparent); }
-/* The temperatures read large under the PC, so its labels stay short; on a small PC they'd crowd it, so only a picked part keeps one. */
-.f-pc:not(.no-reads) .part-label .pl-temp { display: none; }
-.f-pc .part-label { height: 24px; padding: 0 9px; font-size: 11.5px; }
-@container hero (max-width: 760px) {
-  .f-pc .part-label:not(.is-selected) { display: none !important; }
-}
+/* On Home the parts' labels would crowd the PC and its name, and the temperatures already read large under it,
+   so only a part you pick keeps its label. The 3D view shows them all. */
+.f-pc .part-label:not(.is-selected) { display: none !important; }
 
 /* The model names stand once, beside the PC; the temperatures read large under it, by part kind only. */
 .f-specs { display: none; margin: 0; }
@@ -165,9 +162,9 @@
 .f-health.unscored .f-hnum b { color: var(--text-3); font-size: 2.75rem; }
 /* A bigger tile gets a bigger score, and a tall narrow one stacks the score over the words. */
 @container wbox (min-height: 1px) {
-  .f-ring { width: clamp(84px, min(34cqi, 68cqh), 200px); height: auto; aspect-ratio: 1; }
+  .f-ring { width: clamp(84px, min(40cqi, 74cqh), 220px); height: auto; aspect-ratio: 1; }
   .f-ring b { font-size: clamp(28px, min(10cqi, 20cqh), 64px); }
-  .f-hnum b { font-size: clamp(3rem, min(17cqi, 34cqh), 7.5rem); }
+  .f-hnum b { font-size: clamp(3rem, min(21cqi, 42cqh), 8.5rem); }
   .f-health h2 { font-size: clamp(18px, 4.6cqi, 24px); }
   .f-health[data-style="compact"] .f-ring { width: clamp(72px, min(18cqi, 36cqh), 128px); height: auto; }
   .f-health[data-style="compact"] .f-ring b { font-size: clamp(24px, min(5.5cqi, 11cqh), 40px); }
@@ -199,6 +196,20 @@
 /* The row that says how many more there are, when the tile shows only some. */
 .f-more { flex: none; display: flex; align-items: center; padding: 6px 0 0; }
 .f-more .f-link { align-self: flex-start; font-size: 14px; }
+/* A small tile keeps each row to its title, and the checkup link to the link alone. */
+@container wbox (max-height: 320px) {
+  .f-todo-row small { display: none; }
+  .f-todo-list .f-todo-row { padding-block: 10px; }
+  .f-todo[data-style="cards"] .f-todo-row { gap: 8px; padding: 12px; }
+  .f-todo-foot { padding-top: 10px; }
+  .f-todo-foot p { display: none; }
+}
+@container wbox (max-width: 260px) {
+  .f-todo-row { gap: 10px; }
+  .f-todo-list .f-todo-ico { width: 30px; height: 30px; }
+  .f-todo-ico svg { width: 15px; height: 15px; }
+  .f-todo-list .f-todo-go { display: none; }
+}
 .f-todo-list > li { display: flex; flex-direction: column; }
 .f-todo-list > li + li { border-top: 1px solid var(--line); }
 .f-todo-row { flex: none; display: flex; align-items: flex-start; gap: 16px; margin: 0 -8px; padding: 18px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background .15s; }
