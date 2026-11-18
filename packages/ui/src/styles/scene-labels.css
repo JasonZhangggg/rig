@@ -1,0 +1,37 @@
+/* The 3D view's part labels. A pin sits on the part, a hairline leader runs out to the side, and the label
+   hangs at its end, a little smaller and softer the farther its part is. scene.ts places each one with transforms. */
+.scene-labels { --lx: -1px; --ly: 2px; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.scene-pin { --fade: 1; position: absolute; top: 0; left: 0; }
+.pin-dot, .pin-lead { opacity: var(--fade); transition: opacity .25s var(--ease-out); }
+.scene-pin.is-off { display: none; }
+.scene-pin > * { position: absolute; top: 0; left: 0; }
+.pin-dot {
+  width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%;
+  background: var(--good-mark); box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in srgb, var(--good) 45%, transparent);
+}
+.pin-lead { width: 1px; height: 1px; margin-top: -.5px; transform-origin: 0 50%; background: color-mix(in srgb, var(--text) 55%, transparent); }
+.scene-pin .part-label {
+  height: 26px; padding: 0 10px; transform-origin: 0 0; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: -.005em;
+  box-shadow: var(--lx) var(--ly) 6px -1px rgba(0, 0, 0, .14), calc(var(--lx) * 3) calc(var(--ly) * 3) 18px -4px rgba(0, 0, 0, .14);
+  backdrop-filter: blur(8px);
+}
+.scene-pin .part-label .pl-temp { color: var(--text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+.scene-pin .part-label .pl-temp.warn { color: var(--look-text); }
+/* A part hidden behind something solid: its pin goes hollow and its label quiet, still readable. */
+.scene-pin.is-behind { --fade: .55 !important; }
+.scene-pin.is-behind .pin-dot { background: var(--surface); box-shadow: inset 0 0 0 2px var(--good-mark); }
+.scene-pin.is-behind .part-label:not(.is-selected) { color: var(--text-2); box-shadow: none; }
+.scene-pin.is-selected { z-index: 200 !important; }
+.scene-pin.is-selected .pin-dot { background: var(--graphite); box-shadow: 0 0 0 2px var(--surface), 0 0 0 7px var(--good); }
+.scene-pin.is-selected .pin-lead { background: var(--text); }
+.scene-pin .part-label.is-selected { border-color: var(--good); background: var(--good); color: var(--graphite); }
+.scene-pin .part-label.is-selected .pl-temp { color: inherit; opacity: .75; }
+@media (hover: hover) and (pointer: fine) {
+  .scene-pin:hover { --fade: 1 !important; z-index: 201 !important; }
+  .scene-pin:hover .pin-lead { background: var(--text); }
+}
+.scene-pin .part-label:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .pin-dot, .pin-lead { transition: none; }
+}
