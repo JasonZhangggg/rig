@@ -145,7 +145,8 @@ export function Sidebar({ children }: { children: ReactNode }) {
           </div>
           <AccountBlock />
         </aside>
-        <main className="fp-main" id="main">{children}</main>
+        {/* Home is a dashboard of tiles on a warm ground. Every other page reads as one flat sheet. */}
+        <main className={`fp-main${ui.route === "overview" ? "" : " flat"}`} id="main">{children}</main>
       </div>
     </div>
   );

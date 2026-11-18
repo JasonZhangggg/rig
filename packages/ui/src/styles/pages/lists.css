@@ -1,6 +1,6 @@
 /* Focused pages: one lead that answers the page's question, then the list, then quiet notes. Games and Changes. The upgrade meters are used on My PC. */
 .page.pg-focus { max-width: 1240px; gap: 26px; }
-.pg-lead { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px 48px; padding: 28px 32px 30px; }
+.pg-lead { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px 48px; padding: 24px 0 4px; }
 .pg-lead-text { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .pg-lead-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-left: 40px; border-left: 1px solid var(--line); text-align: right; font-size: 13px; }
 .pg-lead-fig b { font: 600 2.5rem/1 var(--font); letter-spacing: -.04em; }
@@ -15,7 +15,7 @@
 .pg-lead-body { max-width: 68ch; color: var(--text-2); }
 .pg-lead .gm-actions { margin-top: 8px; }
 .pg-section-h { font-size: var(--fs); font-weight: 600; letter-spacing: -.01em; }
-.pg-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px 12px; border-top: 1px solid var(--line); }
+.pg-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0 12px; border-top: 1px solid var(--line); }
 .pg-foot > ul { align-self: stretch; }
 .pg-note { max-width: 72ch; font-size: 13px; }
 
@@ -28,10 +28,10 @@
 
 .ch-next-list,
 .ch-timeline { list-style: none; margin: 0; padding: 0; }
-.ch-next-list { padding: 0 20px 10px; }
+.ch-next-list { padding: 0 0 10px; }
 .ch-log { padding-bottom: 10px; }
 .ch-log .card-head { padding-bottom: 4px; }
-.ch-day { display: flex; flex-direction: column; gap: 2px; padding: 12px 20px 0; }
+.ch-day { display: flex; flex-direction: column; gap: 2px; padding: 12px 0 0; }
 .ch-day-label { display: flex; align-items: baseline; gap: 10px; color: var(--text-2); font-size: 13px; font-weight: 600; }
 .ch-day-label span { color: var(--text-3); font-weight: 500; }
 .ch-timeline { position: relative; }
@@ -55,7 +55,7 @@
 
 .ch-how { display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
 
-.ch-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px; }
+.ch-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 0 0; }
 .ch-empty-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text); }
 .ch-empty-icon svg { width: 24px; height: 24px; }
 .ch-empty-text { display: flex; flex-direction: column; gap: 8px; max-width: 60ch; }
@@ -72,7 +72,7 @@
 .bar.up-share i { background: var(--good); }
 .up-price { font-weight: 600; }
 
-.game { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; padding: 18px; }
+.game { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; padding: 18px 0; }
 .bars { display: flex; flex-direction: column; gap: 10px; }
 .bar-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 56px; align-items: center; gap: 10px; font-size: 13px; }
 .bar { height: 10px; overflow: hidden; border-radius: var(--r-pill); background: var(--surface-2); }
@@ -80,12 +80,12 @@
 .bar.tuned i { background: var(--good); }
 
 @media (max-width: 860px) {
-  .pg-lead { grid-template-columns: minmax(0, 1fr); padding: 22px 20px 24px; }
+  .pg-lead { grid-template-columns: minmax(0, 1fr); padding: 22px 0 4px; }
   .pg-lead-fig { display: none; }
   .ch-entry,
   .ch-timeline > .ch-entry { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
   .ch-time { padding: 0; }
   .ch-counts { display: none; }
-  .ch-empty { padding: 22px; }
+  .ch-empty { padding: 22px 0 0; }
   .game { grid-template-columns: 1fr; }
 }

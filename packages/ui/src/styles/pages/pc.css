@@ -9,14 +9,15 @@
     linear-gradient(180deg, #FFFFFF 0%, #FAF9F7 100%);
 }
 /* The 3D PC is the page: it takes the height of the window under the title. */
-.stage-card { position: relative; min-height: 420px; height: var(--stage-h); overflow: hidden; }
+/* The 3D view is a picture, not a section, so it keeps its own soft frame. */
+.stage-card { position: relative; min-height: 420px; height: var(--stage-h); overflow: hidden; border-top: 0; border-radius: var(--r); }
 .stage-top { position: absolute; z-index: 2; top: 16px; left: 20px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; pointer-events: none; }
 .stage-top > * { pointer-events: auto; }
 .stage-src { color: var(--text-3); font-size: 13px; font-weight: 500; }
 .stage-btn { background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(8px); }
 .stage-tools { position: absolute; z-index: 2; bottom: 14px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none; display: flex; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px); }
 
-.customize { position: absolute; z-index: 5; top: 58px; right: 16px; width: 260px; display: flex; flex-direction: column; gap: 12px; padding: 14px; box-shadow: var(--shadow-lg); }
+.customize { position: absolute; z-index: 5; top: 58px; right: 16px; width: 260px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-lg); }
 .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .swatch { width: 26px; height: 26px; border: 2px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); cursor: pointer; }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }
@@ -24,28 +25,28 @@
 .customize-foot { display: flex; justify-content: flex-end; }
 
 /* The side column scrolls the part detail, so the switches stay in reach. */
-.pc-side { position: sticky; top: 20px; max-height: var(--stage-h); display: flex; flex-direction: column; gap: var(--gap); }
+.pc-side { position: sticky; top: 20px; max-height: var(--stage-h); display: flex; flex-direction: column; gap: 8px; }
 .detail { min-height: 0; display: flex; flex-direction: column; }
 .detail h2 { font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
 .detail .pt { color: var(--text-3); font-size: 13px; font-weight: 500; }
 
 /* What's in the PC: a sentence that sums it up, then one quiet line per part. */
-.parts-head { display: grid; gap: 4px; padding: 16px 22px 6px; }
+.parts-head { display: grid; gap: 4px; padding: 14px 0 6px; }
 .parts-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .parts-sum { color: var(--text-2); font-size: 14px; line-height: 1.5; }
-.part-list { display: flex; flex-direction: column; margin: 0; padding: 0 10px 10px; overflow: auto; list-style: none; }
+.part-list { display: flex; flex-direction: column; margin: 0 -12px; padding: 0 0 10px; overflow: auto; list-style: none; }
 .part-list button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 5px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .part-txt { min-width: 0; display: grid; gap: 0; line-height: 1.35; }
 .part-txt .pn { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .part-temp { flex: none; color: var(--text-3); font-size: 14px; }
 .part-temp.look { color: var(--look-text); font-weight: 600; }
 
-.detail-head { display: grid; gap: 2px; padding: 16px 22px 6px; }
+.detail-head { display: grid; gap: 2px; padding: 14px 0 6px; }
 .detail-back { justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin: 0 0 10px -6px; padding: 4px 8px 4px 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: 500 13px var(--font); cursor: pointer; }
 .detail-back svg { width: 16px; height: 16px; }
-.detail .tabs { gap: 18px; margin: 6px 22px 0; padding: 0; }
+.detail .tabs { gap: 18px; margin: 6px 0 0; padding: 0; }
 .detail .tabs button { padding: 10px 0; }
-.detail-body { display: flex; flex-direction: column; gap: 16px; padding: 16px 22px 20px; overflow: auto; }
+.detail-body { display: flex; flex-direction: column; gap: 16px; padding: 16px 0 20px; overflow: auto; }
 .detail-note { font-size: 13px; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; }
@@ -69,17 +70,17 @@
 .dust { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 
 /* Upgrades under the PC: Rig's pick, then one line per idea, each opening its part. */
-.pc-ups { margin-top: var(--gap); }
-.pc-ups .card-head { flex-wrap: wrap; padding: 16px 22px 4px; }
+.pc-ups { margin-top: 28px; }
+.pc-ups .card-head { flex-wrap: wrap; padding: 18px 0 4px; }
 .pc-ups .card-head h2 { font-size: 17px; }
 .pc-ups-ask { font-size: 13px; }
-.pc-ups-pad { padding: 4px 22px 18px; }
-.pc-ups-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px 22px; align-items: start; padding: 8px 14px 14px; }
-.pc-ups-pick { display: grid; gap: 4px; padding: 14px 16px; border: 0; border-radius: var(--r-sm); background: var(--good-bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pc-ups-pad { padding: 4px 0 18px; }
+.pc-ups-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px 40px; align-items: start; padding: 10px 0 14px; }
+.pc-ups-pick { display: grid; gap: 4px; padding: 4px 0 4px 16px; border: 0; border-left: 3px solid var(--good); border-radius: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .pc-ups-pick .label { color: var(--good-text); }
 .pc-ups-pick b { font-size: 16px; font-weight: 600; }
 .pc-ups-pick .muted { font-size: 13.5px; }
-.pc-ups-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.pc-ups-list { display: flex; flex-direction: column; margin: -8px -10px 0; padding: 0; list-style: none; }
 .pc-ups-list button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .pc-ups-list .up-ico { width: 30px; height: 30px; }
 .pc-ups-list .up-ico svg { width: 15px; height: 15px; }
@@ -91,9 +92,9 @@
 .pc-up-idea h3 { font-size: 16px; }
 .pc-up-go { margin-top: 4px; }
 .switches { flex: none; }
-.switches .card-head { padding: 14px 22px 0; }
+.switches .card-head { padding: 14px 0 0; }
 .switches .card-head h2 { font-size: 17px; }
-.switches .switch-list { gap: 0; padding: 0 22px 8px; }
+.switches .switch-list { gap: 0; padding: 0 0 8px; }
 .switches .switch { padding: 7px 0; border-radius: 0; background: transparent; }
 .switches .switch + .switch { border-top: 1px solid var(--line); }
 .switch-list { display: flex; flex-direction: column; gap: 8px; padding: 4px 14px 14px; }
@@ -109,6 +110,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .part-list button:hover, .pc-ups-list button:hover, .detail-back:hover { background: var(--surface-2); color: var(--text); }
+  .pc-ups-pick:hover b { text-decoration: underline; text-underline-offset: 3px; }
 }
 
 @media (max-width: 1100px) {

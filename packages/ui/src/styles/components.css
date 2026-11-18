@@ -38,10 +38,12 @@
 .field { display: flex; flex-direction: column; gap: 6px; }
 .input { height: 42px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); }
 
-/* ---------- Cards ---------- */
-.card { min-width: 0; border: 1px solid transparent; border-radius: var(--r); background: var(--surface); }
-.card-pad { padding: 18px; }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px 8px; }
+/* ---------- Sections ----------
+   Outside Home, a section sits on the page itself: a hairline above it and its heading, no box.
+   Home's tiles are styled in dash.css and don't use these. */
+.card { min-width: 0; border-top: 1px solid var(--line); }
+.card-pad { padding: 20px 0 0; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 0 8px; }
 .card h2:not(.plain-h) { font: 600 1.05rem/1.15 var(--font); letter-spacing: -.02em; color: var(--text); }
 .plain-h,
 .sheet h2 { color: var(--text); font-size: 1.2rem; font-weight: 600; letter-spacing: -.025em; }

@@ -4,6 +4,12 @@ import { useApp } from "../state";
 import { PickPdf } from "./ManualCard";
 import { useManuals } from "./useManuals";
 
+/** A real example of each kind, so the placeholder looks like what to type. */
+const example: Partial<Record<ManualKind, [string, string]>> = {
+  case: ["Fractal", "North"], psu: ["Corsair", "RM850x"], cooler: ["Noctua", "NH-D15"], memory: ["Corsair", "Vengeance DDR5"],
+  storage: ["Samsung", "990 PRO"], monitor: ["Dell", "U2723QE"],
+};
+
 /** Maker and model of a part Windows can't name, then Rig finds its manual (or the person adds a PDF). */
 export function AddManual({ part, kind: fixed, kinds, maker: knownMaker = "", model: knownModel = "", intro, onDone }: {
   /** The part on My PC it belongs to, like "case". Without one, the manual is kept as one of the PC's other manuals. */
@@ -24,6 +30,7 @@ export function AddManual({ part, kind: fixed, kinds, maker: knownMaker = "", mo
   const id = `am-${part ?? "other"}`;
   const target = (m = model.trim()): PartTarget => ({ part: part ?? extraPartKey(kind, maker.trim(), m), kind, maker: maker.trim(), model: m, source: "added" });
   const ok = model.trim().length > 1;
+  const [egMaker, egModel] = example[kind] ?? ["Logitech", "MX Master 3S"];
   const done = () => { setMaker(knownMaker); setModel(knownModel); onDone?.(); };
   return (
     <form className="mn-form" aria-label="Add a manual" onSubmit={(e) => { e.preventDefault(); if (!ok) return; const t = target(); store.addExtra(t); void store.find(t); done(); }}>
@@ -37,8 +44,8 @@ export function AddManual({ part, kind: fixed, kinds, maker: knownMaker = "", mo
             </select>
           </div>
         )}
-        <div className="field"><label className="label" htmlFor={`${id}-maker`}>Maker</label><input className="input" id={`${id}-maker`} value={maker} onChange={(e) => setMaker(e.target.value)} placeholder="Like Corsair" /></div>
-        <div className="field"><label className="label" htmlFor={`${id}-model`}>Model</label><input className="input" id={`${id}-model`} value={model} onChange={(e) => setModel(e.target.value)} placeholder="Like RM850x" /></div>
+        <div className="field"><label className="label" htmlFor={`${id}-maker`}>Maker</label><input className="input" id={`${id}-maker`} value={maker} onChange={(e) => setMaker(e.target.value)} placeholder={`Like ${egMaker}`} /></div>
+        <div className="field"><label className="label" htmlFor={`${id}-model`}>Model</label><input className="input" id={`${id}-model`} value={model} onChange={(e) => setModel(e.target.value)} placeholder={`Like ${egModel}`} /></div>
       </div>
       <p className="faint mn-hint">The model is on the box, a sticker on the part, or your order.</p>
       <div className="mn-actions">
