@@ -67,7 +67,7 @@ describe("the saved layout", () => {
     const [fans, pc] = d.widgets;
     expect(fans).toMatchObject({ tone: "dark", style: "rings", opts: { span: "7", live: true, off: ["Fan 2"] } });
     expect(pc).toMatchObject({ tone: "light", style: "chips" });
-    expect(d.density).toBe("comfortable");
+    expect(d).not.toHaveProperty("density");
     expect(d.spacing).toBe("tight");
     const lg = d.layouts.lg!;
     expect(lg.map((c) => c.i).sort()).toEqual(["asks", "evenings", "fans", "health", "pc", "storage", "temps", "todo"]);

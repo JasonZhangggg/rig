@@ -6,9 +6,7 @@ export type Kind = "pc" | "health" | "todo" | "asks" | "temps" | "fans" | "eveni
 export type SizeName = "s" | "m" | "l" | "wide" | "tall" | "full";
 export type Tone = "light" | "dark";
 export type Frame = "tile" | "open";
-export type Density = "comfortable" | "compact";
 export type Spacing = "tight" | "normal" | "roomy";
-export type Corners = "round" | "soft" | "square";
 export type OptValue = boolean | string | string[];
 /** The two grids: 12 columns on a wide screen, 8 on a narrow one. Phones get one column in a list. */
 export type Bp = "lg" | "md";
@@ -38,11 +36,7 @@ export interface Dashboard {
   layouts: Partial<Record<Bp, Cell[]>>;
   /** The phone's order, once the person changes it there. */
   phone?: string[];
-  /** Not stored any more: Settings > Appearance sets density for every screen. Kept until nothing on Home reads it. */
-  density: Density;
   spacing: Spacing;
-  /** Not stored any more: Settings > Appearance sets corners for every screen. Kept until nothing on Home reads it. */
-  corners: Corners;
 }
 
 /** A list the person picks from on the page, filled from the PC (its fans, its readings). Stored as the labels left out. */
@@ -619,7 +613,7 @@ export function packOrder(items: readonly { i: string; size?: SizeName }[], cols
 
 export function defaultDashboard(): Dashboard {
   const widgets = KIND_ORDER.map(defaultWidget);
-  return { v: LAYOUT_VERSION, widgets, layouts: { lg: packOrder(widgets.filter((w) => !w.hidden).map((w) => ({ i: w.id })), 12) }, density: "comfortable", spacing: "normal", corners: "round" };
+  return { v: LAYOUT_VERSION, widgets, layouts: { lg: packOrder(widgets.filter((w) => !w.hidden).map((w) => ({ i: w.id })), 12) }, spacing: "normal" };
 }
 
 /** A grid's cells for the widgets that show: its own if it has them, or the wide grid's order at this grid's width. */
@@ -768,16 +762,10 @@ export function parseDashboard(text: string | null): Dashboard {
   const widgets: Widget[] = parsed.map(({ size: _size, ...w }) => w);
   return syncLayouts({
     v: LAYOUT_VERSION, widgets, layouts, ...(phone ? { phone } : {}),
-    density: fallback.density,
     spacing: pick(r.spacing, ["tight", "normal", "roomy"] as const, fallback.spacing),
-    corners: fallback.corners,
   });
 }
 
-/**
- * The dashboard as stored. Density and corners now come from Settings > Appearance, so they're left out, and an older
- * copy that has them reads as usual with them ignored.
- */
-export const serialize = ({ density: _density, corners: _corners, ...d }: Dashboard) => JSON.stringify(d);
+export const serialize = (d: Dashboard) => JSON.stringify(d);
 
 export const update = (widgets: readonly Widget[], id: string, patch: Partial<Widget>) => widgets.map((w) => (w.id === id ? { ...w, ...patch } : w));
