@@ -131,8 +131,8 @@ const Tile = memo(function Tile({ w, box, title, label, editing, phone, first, l
 
 /** Each tile wobbles a little out of step with the others, and the bigger it is the less it turns. */
 function wobble(index: number, w: number, h: number): CSSProperties {
-  const deg = Math.max(0.35, Math.min(1.3, 7 / (w + h)));
-  return { "--jig": `${deg.toFixed(2)}deg`, "--jig-d": `${-((index * 113) % 320)}ms`, "--jig-t": `${300 + ((index * 41) % 70)}ms` } as CSSProperties;
+  const deg = Math.max(0.15, Math.min(0.5, 3 / (w + h)));
+  return { "--jig": `${deg.toFixed(2)}deg`, "--jig-d": `${-((index * 113) % 520)}ms`, "--jig-t": `${480 + ((index * 41) % 90)}ms` } as CSSProperties;
 }
 
 /**

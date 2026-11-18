@@ -138,7 +138,7 @@
 .dash.dragging .dg:not(.resizing) > .dw-rh { opacity: 0; }
 
 /* Customizing: tiles wear a dashed edge, wobble gently like a phone's home screen, and move as a whole. */
-.dash.editing .dw { cursor: grab; animation: dw-jiggle var(--jig-t, .32s) ease-in-out var(--jig-d, 0s) infinite; }
+.dash.editing .dw { cursor: grab; animation: dw-jiggle var(--jig-t, .52s) ease-in-out var(--jig-d, 0s) infinite; }
 .dash.editing .dw::after { content: ""; position: absolute; inset: -7px; z-index: 3; border: 1.5px dashed var(--edit-line); border-radius: calc(var(--dr) + 7px); pointer-events: none; }
 .dash.editing .dw:focus-visible { outline: none; animation: none; }
 .dash.editing .dw:focus-visible::after { border: 2px solid var(--focus); }
