@@ -1,10 +1,13 @@
-// Changes, Upgrades, Games and History: what each shows beside its main list,
+// Changes, Upgrades, Games, History and My PC: what each shows beside its main list,
 // and what each says when there's little or nothing to show yet.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
 
-vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
+vi.mock("../src/scene", () => ({
+  createScene: (_el: HTMLElement, { onSelect }: { onSelect: (id: string | null) => void }) =>
+    new Proxy({}, { get: (_t, key) => (key === "select" ? onSelect : () => {}) }),
+}));
 vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
@@ -114,5 +117,26 @@ describe("History", () => {
     await show("history", client);
     expect(await screen.findByText("Your history fills in as Rig runs")).toBeTruthy();
     expect(screen.queryByText("What happened")).toBeNull();
+  });
+});
+
+describe("My PC", () => {
+  it("sums up the parts in a sentence and opens a part's details from the list", async () => {
+    await show("pc");
+    const list = await screen.findByRole("list", { name: "Parts" });
+    expect(screen.getByText("Nothing is running hot right now.")).toBeTruthy();
+    expect(within(list).getAllByRole("button")).toHaveLength(8);
+    fireEvent.click(within(list).getByRole("button", { name: /NVIDIA GeForce RTX 4070 SUPER/ }));
+    expect(await screen.findByRole("heading", { name: "NVIDIA GeForce RTX 4070 SUPER" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Live" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "All parts" }));
+    expect(await screen.findByRole("list", { name: "Parts" })).toBeTruthy();
+  });
+
+  it("says what will appear when Rig hasn't read a PC's parts yet", async () => {
+    const { partsSummary } = await import("../src/pages/PCPage");
+    expect(partsSummary([], "Desk PC", true)).toBe("Rig hasn't read Desk PC's parts yet. They show up here once the Rig app on Desk PC sends its first reading.");
+    const hot = { type: "Graphics card", name: "RTX", warn: true, temp: 90, specs: [], manual: [], modelSource: "generic" as const };
+    expect(partsSummary([hot], "Desk PC", true)).toBe("Your graphics card needs a look.");
   });
 });
