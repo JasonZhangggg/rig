@@ -30,6 +30,8 @@ export function searchPages(docs: SearchDoc[], query: string, opts: { manualId?:
   // Words typed together also match run together: "f panel" finds "F_PANEL" and "FPANEL".
   const phrase = all.length > 1 ? new RegExp(bounded(all.map(wordPattern).join("[\\s_\\-.]*")), "giu") : null;
   const res = terms.map((w) => new RegExp(bounded(wordPattern(w)), "giu"));
+  // One name typed as one word ("F_PANEL", "CHA-FAN1") wants that name, not every stray "panel".
+  const oneName = phrase !== null && !/\s/.test(query.trim());
   if (!res.length && !phrase) return [];
 
   const hits: (ManualHit & { score: number; order: number })[] = [];
@@ -42,11 +44,11 @@ export function searchPages(docs: SearchDoc[], query: string, opts: { manualId?:
       const per = res.map((re) => count(lower, re));
       const matched = per.filter((n) => n > 0).length;
       // Every word on the page, or the whole phrase, or most of a long question.
-      if (!phraseN && matched < Math.max(1, Math.ceil(res.length * 0.6))) continue;
+      if (!phraseN && (oneName || matched < Math.max(1, Math.ceil(res.length * 0.6)))) continue;
       // A match in the page's heading counts for more: that page is about it.
       const head = text.split("\n").slice(0, 3).filter((l) => l.split(/\s+/).length <= 12).join("\n").toLowerCase();
       const inHead = (phrase && count(head, phrase)) || res.some((re) => count(head, re) > 0) ? 20 : 0;
-      const score = phraseN * 12 + matched * 6 + per.reduce((s, n) => s + Math.min(n, 5), 0) + (matched === res.length ? 8 : 0) + inHead;
+      const score = (phraseN ? 40 : 0) + phraseN * 12 + matched * 6 + per.reduce((s, n) => s + Math.min(n, 5), 0) + (matched === res.length ? 8 : 0) + inHead;
       hits.push({ manualId: d.manual.id, title: d.manual.title, part: d.manual.part, page: p.n, snippet: snippet(text, phrase, res), score, order });
     }
   });
