@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
-import { KIND_ORDER, LAYOUT_VERSION, cellsFor, compactUp, defaultDashboard, dragFlow, holes, orderOf, parseDashboard, resizeFlow, type Cell } from "../src/pages/overview/layout";
+import { KIND_ORDER, LAYOUT_VERSION, cellsFor, compactUp, defaultDashboard, dragFlow, holes, orderOf, parseDashboard, resizeFlow, stickyCell, type Cell } from "../src/pages/overview/layout";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -140,6 +140,46 @@ describe("the grid while dragging", () => {
   it("keeps the PC from getting small", () => {
     const out = resizeFlow(base, "pc", 2, 2, 12);
     expect(at(out, "pc")).toMatchObject({ w: 5, h: 5 });
+  });
+
+  // The drag as the grid runs it: where the held tile is, in cells, becomes a cell, and the cell becomes a layout.
+  const drag = (id: string, moves: [number, number][]) => {
+    const me = at(base, id);
+    let cell = { x: me.x, y: me.y };
+    return moves.map(([fx, fy]) => {
+      cell = stickyCell(cell, fx, fy, 12 - me.w);
+      return { cell, landed: at(dragFlow(base, id, cell.x, cell.y, 12), id) };
+    });
+  };
+  const shake = (x: number, y: number) => Array.from({ length: 40 }, (_, k): [number, number] => [x + Math.sin(k * 1.7) * 0.15, y + Math.cos(k * 2.3) * 0.15]);
+
+  it("keeps the drop spot still while the pointer rests or shakes at any edge of the grid", () => {
+    for (const c of base) {
+      const edges: [number, number][] = [[-3, c.y], [-0.4, c.y + 0.5], [12, c.y], [12 - c.w + 0.5, c.y], [c.x, -4], [c.x + 0.5, 0.5], [0, 30], [12, 30]];
+      for (const [x, y] of edges) {
+        const to = drag(c.i, [[x, y], [x, y], [x, y]]).at(-1)!;
+        const still = drag(c.i, [[x, y], [x, y], [x, y], ...shake(x, y)]);
+        expect(new Set(still.slice(2).map((s) => JSON.stringify(s)))).toEqual(new Set([JSON.stringify(to)]));
+      }
+    }
+  });
+
+  it("keeps a dragged tile inside the grid however far past an edge the pointer goes", () => {
+    const fans = at(base, "fans");
+    expect(drag("fans", [[40, 2]]).at(-1)!.cell).toEqual({ x: 12 - fans.w, y: 2 });
+    expect(drag("fans", [[-40, -40]]).at(-1)!.cell).toEqual({ x: 0, y: 0 });
+    for (const [fx, fy] of [[40, 2], [-40, -40], [3, 60]] as [number, number][]) {
+      const { landed } = drag("fans", [[fx, fy]]).at(-1)!;
+      expect(landed.x).toBeGreaterThanOrEqual(0);
+      expect(landed.x + landed.w).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it("moves the drop spot only once the tile is well into the next cell, and not back until it is well out again", () => {
+    const cells = (moves: [number, number][]) => drag("health", moves).map((s) => s.cell.x);
+    expect(cells([[8.4, 0], [8.65, 0], [8.35, 0]])).toEqual([8, 8, 8]);
+    expect(cells([[7.6, 0], [7.25, 0], [7.4, 0], [7.65, 0], [7.75, 0]])).toEqual([8, 7, 7, 7, 8]);
+    expect(drag("health", [[8, 0.6], [8, 0.75], [8, 0.4], [8, 0.25]]).map((s) => s.cell.y)).toEqual([0, 1, 1, 0]);
   });
 });
 

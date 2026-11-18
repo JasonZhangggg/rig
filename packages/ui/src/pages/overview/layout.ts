@@ -317,6 +317,19 @@ export function clampCell(c: Cell, cols: number): Cell {
   return { i: c.i, w, h, x: Math.max(0, Math.min(cols - w, Math.round(c.x))), y: Math.max(0, Math.round(c.y)) };
 }
 
+/**
+ * The cell a dragged tile is over, from where it is in cells (fractions and all), kept inside the grid for a tile `maxX`
+ * cells from the right edge. It only moves on once the tile is `slack` of a cell past the halfway line, so a pointer
+ * resting on a line, or a hand that shakes there, never flips the drop spot back and forth.
+ */
+export function stickyCell(prev: { x: number; y: number }, fx: number, fy: number, maxX: number, slack = 0.2) {
+  const x = Math.max(0, Math.min(maxX, fx)), y = Math.max(0, fy);
+  return {
+    x: Math.abs(x - prev.x) > 0.5 + slack ? Math.round(x) : prev.x,
+    y: Math.abs(y - prev.y) > 0.5 + slack ? Math.round(y) : prev.y,
+  };
+}
+
 const lowest = (c: Cell, placed: readonly Cell[]) => { const t = { ...c, y: 0 }; while (hitsAny(t, placed)) t.y++; return t.y; };
 
 /**
