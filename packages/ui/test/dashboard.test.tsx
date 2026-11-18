@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
-import { KINDS, KIND_ORDER, LAYOUT_VERSION, STEP, addCell, arrange, cellsFor, chosenOf, clampCell, compactUp, defaultDashboard, dragFlow, holes, limits, orderOf, parseDashboard, presetCells, resizeFlow, settle, stepTarget, stickyCell, type Cell, type Kind, type SizeName } from "../src/pages/overview/layout";
+import { KINDS, KIND_ORDER, LAYOUT_VERSION, STEP, addCell, arrange, cellsFor, chosenOf, clampCell, compactUp, defaultDashboard, dragFlow, holes, limits, orderOf, parseDashboard, presetCells, resizeFlow, serialize, settle, stepTarget, stickyCell, type Cell, type Kind, type SizeName } from "../src/pages/overview/layout";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -32,6 +32,17 @@ describe("the saved layout", () => {
     expect(at(lg, "health")).toMatchObject({ x: 8, y: 0 });
     expect(holes(lg, 12)).toBe(0);
     expect(holes(cellsFor(d, "md"), 8)).toBe(0);
+  });
+
+  it("stores no density or corners, which Settings sets now, and still reads an older copy that has them", () => {
+    const d = defaultDashboard();
+    const text = serialize(d);
+    expect(JSON.parse(text)).not.toHaveProperty("density");
+    expect(JSON.parse(text)).not.toHaveProperty("corners");
+    const old = parseDashboard(JSON.stringify({ ...JSON.parse(text), density: "compact", corners: "square", spacing: "roomy" }));
+    expect(old.layouts.lg).toEqual(d.layouts.lg);
+    expect(old.spacing).toBe("roomy");
+    expect(parseDashboard(text)).toEqual(d);
   });
 
   it("drops unknown widgets, appends ones added since, and keeps stored cells inside the grid and their limits", () => {
@@ -328,8 +339,8 @@ describe("customizing Home", () => {
     fireEvent.keyDown(tile("Fans"), { key: "ArrowLeft" });
     expect(said()).toBe("Fans can't move further left.");
     fireEvent.keyDown(tile("Fans"), { key: "ArrowRight", shiftKey: true });
-    expect(tile("Fans").getAttribute("aria-label")).toBe("Fans, 6 by 5, place 4 of 8");
-    expect(said()).toBe("Fans is now 6 by 5.");
+    expect(tile("Fans").getAttribute("aria-label")).toBe("Fans, 6 columns by 5 rows, place 4 of 8");
+    expect(said()).toBe("Fans is now 6 columns by 5 rows.");
     expect(stored().layouts.lg).toContainEqual({ i: "fans", x: 0, y: 8, w: 6, h: 5 });
     fireEvent.keyDown(tile("Fans"), { key: "Escape" });
     expect(screen.queryByRole("toolbar", { name: "Customize Home" })).toBeNull();
@@ -340,7 +351,7 @@ describe("customizing Home", () => {
     await customize();
     expect(await screen.findByText("Idle processor")).toBeTruthy();
     fireEvent.keyDown(tile("Temperatures"), { key: "ArrowUp", shiftKey: true });
-    expect(said()).toBe("Temperatures is now 7 by 4.");
+    expect(said()).toBe("Temperatures is now 7 columns by 4 rows.");
     expect(screen.queryByText("Idle processor")).toBeNull();
   });
 

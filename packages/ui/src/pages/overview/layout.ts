@@ -38,8 +38,10 @@ export interface Dashboard {
   layouts: Partial<Record<Bp, Cell[]>>;
   /** The phone's order, once the person changes it there. */
   phone?: string[];
+  /** Not stored any more: Settings > Appearance sets density for every screen. Kept until nothing on Home reads it. */
   density: Density;
   spacing: Spacing;
+  /** Not stored any more: Settings > Appearance sets corners for every screen. Kept until nothing on Home reads it. */
   corners: Corners;
 }
 
@@ -232,7 +234,7 @@ export function fullRows(kind: Kind) {
 /** How a size reads aloud and in the options: the preset's name, or its cells. */
 export function sizeLabel(kind: Kind, w: number, h: number, cols: number) {
   const p = presetOf(kind, w, h, cols);
-  return p ? SIZE_LABEL[p] : `${w} by ${h}`;
+  return p ? SIZE_LABEL[p] : `${w} ${w === 1 ? "column" : "columns"} by ${h} ${h === 1 ? "row" : "rows"}`;
 }
 
 const overlaps = (a: Cell, b: Cell) => a.i !== b.i && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -766,12 +768,16 @@ export function parseDashboard(text: string | null): Dashboard {
   const widgets: Widget[] = parsed.map(({ size: _size, ...w }) => w);
   return syncLayouts({
     v: LAYOUT_VERSION, widgets, layouts, ...(phone ? { phone } : {}),
-    density: pick(r.density, ["comfortable", "compact"] as const, fallback.density),
+    density: fallback.density,
     spacing: pick(r.spacing, ["tight", "normal", "roomy"] as const, fallback.spacing),
-    corners: pick(r.corners, ["round", "soft", "square"] as const, fallback.corners),
+    corners: fallback.corners,
   });
 }
 
-export const serialize = (d: Dashboard) => JSON.stringify(d);
+/**
+ * The dashboard as stored. Density and corners now come from Settings > Appearance, so they're left out, and an older
+ * copy that has them reads as usual with them ignored.
+ */
+export const serialize = ({ density: _density, corners: _corners, ...d }: Dashboard) => JSON.stringify(d);
 
 export const update = (widgets: readonly Widget[], id: string, patch: Partial<Widget>) => widgets.map((w) => (w.id === id ? { ...w, ...patch } : w));

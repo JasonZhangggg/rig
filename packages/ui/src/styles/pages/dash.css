@@ -190,6 +190,8 @@
   .dash-bar-tools { width: 100%; }
   .dash-bar-tools .dbtn { flex: 1 1 auto; height: 38px; padding: 0 12px; }
 }
+/* In the phone's list the hint says how to move a tile at all, so it stays even on a narrow screen. */
+.page:has(> .dash[data-cols="1"]) .dash-bar p span { display: revert; }
 
 .dbtn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-pill);
