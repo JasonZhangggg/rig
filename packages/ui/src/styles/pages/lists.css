@@ -66,33 +66,29 @@
 .ch-empty-text { display: flex; flex-direction: column; gap: 8px; max-width: 60ch; }
 
 /* ---------- Upgrades ---------- */
-.up-room,
-.up-ideas { display: flex; flex-direction: column; gap: 12px; }
-.up-section-h { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-.up-room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--gap); }
-.up-tile { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; }
-.up-tile-head,
-.up-card-head { display: flex; align-items: center; gap: 10px; }
-.up-ico { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text); }
+.up-fit { font-size: 13px; }
+.up-pick-room { min-width: 220px; }
+.up-pick-room .up-slots,
+.up-pick-room .bar { width: 100%; margin-top: 6px; }
+.up-list { list-style: none; margin: 0; padding: 0 20px 8px; }
+.up-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: start; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
+.up-list li:first-child { border-top: 0; padding-top: 8px; }
+.up-row-text { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.up-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.up-row-room { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
+.up-row-room .up-slots { width: 140px; }
+.up-row-room .bar { width: 140px; }
+.up-row-go { padding-top: 2px; }
+.up-ico { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text); }
 .up-ico svg { width: 18px; height: 18px; }
-.up-figure { color: var(--text-2); font-size: 14px; }
-.up-figure b { margin-right: 2px; color: var(--text); font-size: 2rem; font-weight: 600; letter-spacing: -.04em; }
 .up-slots { display: flex; gap: 6px; }
 .up-slots i { flex: 1; max-width: 56px; height: 10px; border-radius: var(--r-pill); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .up-slots i.on { background: var(--good); box-shadow: inset 0 0 0 1px var(--s-edge); }
+.up-pick-room .up-slots { justify-content: flex-end; }
 .bar.up-share i { background: var(--good); }
-.up-tile-note { font-size: 13.5px; }
-.up-part { color: var(--text); font-weight: 500; }
-
-.up-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--gap); }
-.up-card { display: flex; flex-direction: column; gap: 10px; padding: 20px; }
-.up-card-head .chip { margin-left: auto; }
-.up-card h3 { margin-top: 4px; font-size: 1.12rem; letter-spacing: -.02em; }
-.up-gain { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); font-size: 13.5px; }
-.up-card-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: auto; padding-top: 6px; }
 .up-price { font-weight: 600; }
-.up-ask { border: 1.5px dashed var(--line-strong); background: transparent; }
-.up-none { display: flex; flex-direction: column; gap: 8px; }
+.up-none { display: flex; flex-direction: column; gap: 8px; padding: 4px 20px 20px; }
+.up-ask { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 18px 20px 20px; }
 
 .game { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; padding: 18px; }
 .bars { display: flex; flex-direction: column; gap: 10px; }
@@ -114,6 +110,10 @@
   .ch-entry::before { left: 2px; top: 4px; }
   .ch-time { padding: 0 0 6px; text-align: left; }
   .ch-empty { padding: 22px; }
-  .up-grid { grid-template-columns: minmax(0, 1fr); }
+  .pg-lead-fig.up-pick-room { display: flex; align-items: flex-start; padding: 18px 0 0; border: 0; border-top: 1px solid var(--line); text-align: left; }
+  .pg-lead-fig.up-pick-room b { font-size: 2rem; }
+  .up-pick-room .up-slots { justify-content: flex-start; }
+  .up-row { grid-template-columns: 36px minmax(0, 1fr); }
+  .up-row-go { grid-column: 2; }
   .game { grid-template-columns: 1fr; }
 }
