@@ -18,3 +18,4 @@ export * from "./summary";
 export * from "./seen";
 export * from "./units";
 export * from "./export";
+export * from "./manuals";
