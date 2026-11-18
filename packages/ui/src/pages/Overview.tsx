@@ -4,7 +4,7 @@ import { getStage } from "../components/Stage";
 import { useApp, useHistory } from "../state";
 import { FansCard, type FansStyle } from "./overview/FansCard";
 import { Grid, type Mode } from "./overview/Grid";
-import { COLS, KINDS, SIZE_LABEL, cellsFor, defaultWidget, dragFlow, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, type Bp, type Cell, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
+import { COLS, KINDS, SIZE_LABEL, cellsFor, defaultWidget, dragFlow, fullRows, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, type Bp, type Cell, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
 import { AddWidgets, DashOptions, ResetConfirm, WidgetOptions } from "./overview/Options";
 import { Popover } from "./overview/Popover";
 import { TempsCard, type TempsStyle } from "./overview/TempsCard";
@@ -83,7 +83,7 @@ export function Overview() {
 
   const render = useCallback((w: Widget, box: TileBox) => {
     const props = { style: w.style, opts: w.opts, box, editing };
-    const compact = box.size === "s";
+    const compact = box.size === "s" || box.rows < fullRows(w.kind);
     const o = w.opts;
     switch (w.kind as Kind) {
       case "pc": return <PCWidget {...props} views={views} />;

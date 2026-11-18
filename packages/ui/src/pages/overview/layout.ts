@@ -223,6 +223,11 @@ export function nearestSize(kind: Kind, w: number, h: number, cols: number): Siz
   return best;
 }
 
+/** Rows a widget needs for its full content: its shortest preset above Small. Fewer rows get the compact content. */
+export function fullRows(kind: Kind) {
+  return Math.min(...Object.entries(KINDS[kind].sizes).filter(([name]) => name !== "s").map(([, wh]) => wh[1]));
+}
+
 /** How a size reads aloud and in the options: the preset's name, or its cells. */
 export function sizeLabel(kind: Kind, w: number, h: number, cols: number) {
   const p = presetOf(kind, w, h, cols);
@@ -396,6 +401,16 @@ export function resizeFlow(base: readonly Cell[], id: string, w: number, h: numb
     return r.h >= lim.minH && r.h <= lim.maxH ? [{ ...(list.find((c) => c.i === o.i) ?? o), h: r.h }] : [];
   });
   const variants = [[], follow, mates([]), [...follow.filter((f) => !mates(follow).some((m) => m.i === f.i)), ...mates(follow)]];
+  // Room a narrower tile gives up, with no neighbour beside it to take it, goes to any tile that fits there, so no gap is left.
+  const from = r.x + r.w;
+  const free = base.reduce((end, o) => (o.i !== id && o.x >= from && o.y < r.y + r.h && r.y < o.y + o.h ? Math.min(end, o.x) : end), cols) - from;
+  if (free > 0 && r.w < me.w) {
+    for (const o of base) {
+      const lim = limits(kindOf(o.i), cols);
+      if (o.i === id || KINDS[kindOf(o.i)].heavy || free < lim.minW) continue;
+      variants.push([{ i: o.i, x: from, y: r.y, w: Math.min(free, lim.maxW), h: Math.max(lim.minH, Math.min(lim.maxH, r.h)) }]);
+    }
+  }
   let best: Cell[] = clone(base), cost = Infinity;
   for (const v of variants) {
     const pinned = [r, ...v];

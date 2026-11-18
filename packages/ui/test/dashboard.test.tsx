@@ -129,6 +129,14 @@ describe("the grid while dragging", () => {
     expect(resizeFlow(base, "temps", 7, 5, 12)).toEqual(base);
   });
 
+  it("moves a tile that fits into the room a narrower tile leaves, when no neighbour can take it", () => {
+    const after = dragFlow(base, "fans", 7, 0, 12);
+    const smaller = resizeFlow(after, "temps", 5, 4, 12);
+    expect(at(smaller, "temps")).toMatchObject({ w: 5, h: 4 });
+    expect(overlapping(smaller)).toBe(false);
+    expect(gaps(smaller)).toBe(0);
+  });
+
   it("keeps the PC from getting small", () => {
     const out = resizeFlow(base, "pc", 2, 2, 12);
     expect(at(out, "pc")).toMatchObject({ w: 5, h: 5 });
@@ -164,6 +172,14 @@ describe("customizing Home", () => {
     fireEvent.keyDown(tile("Fans"), { key: "Escape" });
     expect(screen.queryByRole("toolbar", { name: "Customize Home" })).toBeNull();
     expect(screen.queryByRole("group", { name: /^Fans, / })).toBeNull();
+  });
+
+  it("gives a chart its compact content once its tile is too short for the full one", async () => {
+    await customize();
+    expect(await screen.findByText("Idle processor")).toBeTruthy();
+    fireEvent.keyDown(tile("Temperatures"), { key: "ArrowUp", shiftKey: true });
+    expect(said()).toBe("Temperatures is now 7 by 4.");
+    expect(screen.queryByText("Idle processor")).toBeNull();
   });
 
   it("hides a widget from its corner, closes the gap, and adds it back from the library", async () => {

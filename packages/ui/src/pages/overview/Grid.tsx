@@ -274,7 +274,7 @@ export function Grid(p: GridProps) {
   const onDrag: EventCallback = () => follow();
   const onDragStop: EventCallback = (layout) => end(layout);
   const onResizeStart: EventCallback = (_l, _o, item) => { if (item) begin("resize", item.i); };
-  const onResize: EventCallback = (_l, _o, item) => { follow(); if (item) setLive((v) => (v && v.i === item.i && v.w === item.w && v.h === item.h ? v : { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h })); };
+  const onResize: EventCallback = (_l, _o, item) => { if (item) setLive((v) => (v && v.i === item.i && v.w === item.w && v.h === item.h ? v : { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h })); };
   const onResizeStop: EventCallback = (layout) => end(layout);
   const handlers = useRef({ onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop });
   handlers.current = { onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop };
@@ -456,10 +456,9 @@ export function Grid(p: GridProps) {
     handleComponent: (axis: ResizeHandleAxis, ref: Ref<HTMLElement>) => <span ref={ref as Ref<HTMLSpanElement>} className={`react-resizable-handle ${HANDLE[axis] ?? "dw-rh"}`} aria-hidden="true" />,
   }), []);
   const layout = useMemo(() => withLimits(cells, cols), [cells, cols]);
-  // The library redraws a tile only when its props change; a fresh element for the held one lets it track the pointer.
-  // The 3D PC is the exception while resized: it snaps from cell to cell rather than redraw its scene at every move.
-  const act = active.current;
-  const held = act && (act.type === "drag" || !KINDS[kindOf(act.id)].heavy) ? act.id : null;
+  // The library redraws a tile only when its props change; a fresh element for the dragged one lets it track the pointer.
+  // A resized tile still snaps from cell to cell, so its content always fits the size it shows.
+  const held = active.current?.type === "drag" ? active.current.id : null;
 
   return (
     <div ref={wrap} className={`dash${editing ? " editing" : ""}`} data-cols={cols} style={{ "--dgap": `${gap}px`, "--row": `${row}px` } as CSSProperties}>
