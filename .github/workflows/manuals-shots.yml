@@ -1,0 +1,21 @@
+# Throwaway: screenshots of the manuals demo for review. Lives only on claude/manuals-shots.
+name: Manuals screenshots
+on:
+  push:
+    branches: [claude/manuals-shots]
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @rig/web build
+      - run: npm install --no-save --prefix /tmp/pw playwright@1.63.0 && npx --prefix /tmp/pw playwright install --with-deps chromium
+      - run: (cd apps/web && npx vite preview --port 4173 --strictPort &) && sleep 5
+      - run: cp tools/shoot-manuals.mjs /tmp/pw/ && node /tmp/pw/shoot-manuals.mjs http://localhost:4173 shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: manuals-shots, path: shots }
