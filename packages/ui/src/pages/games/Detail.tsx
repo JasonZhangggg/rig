@@ -1,7 +1,8 @@
 import { useRef, useState, type ReactNode } from "react";
-import { HOT_MARGIN, type Game, type GameLibrary, type GameNote, type GameSession, type GameStats, type TempSubject } from "@rig/core";
+import { type Game, type GameLibrary, type GameNote, type GameSession, type GameStats, type TempSubject } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
+import { Figure } from "../../components/Figure";
 import { useApp, useTempUnit } from "../../state";
 import { headroomWords, sessionCount } from "./Library";
 import { Tuning } from "./Tuning";
@@ -18,7 +19,7 @@ interface Props {
   onBack: () => void;
 }
 
-/** One game over the range: its temperatures, what stands out, and each session on a chart. */
+/** One game over the range: its temperatures and each session on a chart. */
 export function Detail({ game, library, tuning, when, range, onBack }: Props) {
   const { pc, ask } = useApp();
   const unit = useTempUnit();
@@ -36,8 +37,6 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
     chartRef.current?.scrollIntoView({ block: "nearest" });
   };
   const question = `How can I make ${game.name} run better and cooler on ${pc.name}? While I play, the ${part} is usually ${temp(game.typical, unit)} and peaks at ${temp(game.peak, unit)}, and its safe limit is ${temp(library.limit, unit)}.`;
-  const near = game.headroom != null && game.headroom <= HOT_MARGIN;
-  const verdict = game.headroom == null ? `How warm ${game.name} ran` : game.headroom < 0 ? "It ran over the safe limit" : game.headroom === 0 ? "It reached the safe limit" : near ? "It came close to the safe limit" : "It ran cool";
 
   return (
     <div className="page pg-focus">
@@ -53,23 +52,12 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
         </div>
       </div>
 
-      <section className={`card pg-lead ${near ? "look" : "good"}`} aria-labelledby="gm-detail-h">
-        <div className="pg-lead-text">
-          <span className="pg-lead-tag">{near ? "Worth a look" : "All good"}</span>
-          <h2 id="gm-detail-h" className="pg-lead-h">{verdict}</h2>
-          <p className="pg-lead-body">
-            {`The ${part} usually sits at ${temp(game.typical, unit)} while you play`}
-            {game.peakAt != null ? ` and peaked at ${temp(game.peak, unit)} ${moment(game.peakAt)}, against its ${temp(library.limit, unit)} limit.` : "."}
-          </p>
-          {game.notes.length > 0 && (
-            <div className="gm-notes">
-              <span className="label">What Rig noticed</span>
-              <ul>{game.notes.map((n) => <li key={n.kind}><Note n={n} subject={library.subject} onShow={showMoment} /></li>)}</ul>
-            </div>
-          )}
-        </div>
-        <p className="pg-lead-fig"><b className="num">{temp(game.peak, unit)}</b><span className="muted">{game.headroom == null ? "Hottest moment" : headroomWords(game.headroom, unit)}</span></p>
-      </section>
+      <div className="figs" role="group" aria-label="Key figures">
+        <Figure label="Hottest moment" figure={temp(game.peak, unit)} warn={game.headroom != null && game.headroom <= 0}
+          note={[game.peakAt != null && moment(game.peakAt), game.headroom != null && cap(headroomWords(game.headroom, unit))].filter(Boolean).map((t) => `${t}.`).join(" ") || "While you played."} />
+        <Figure label="Typical while playing" figure={temp(game.typical, unit)} note={`The ${part} most of the time.`} />
+        <Figure label="Safe limit" figure={temp(library.limit, unit)} note={`Above it, the ${part} slows itself down.`} />
+      </div>
 
       <section ref={chartRef} className="card card-pad gm-sessions" aria-label="Sessions chart">
         <div className="gm-sess-head">
@@ -94,6 +82,12 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
             </li>
           ))}
         </ul>
+        {game.notes.length > 0 && (
+          <div className="gm-notes">
+            <span className="label">What Rig noticed</span>
+            <ul>{game.notes.map((n) => <li key={n.kind}><Note n={n} subject={library.subject} onShow={showMoment} /></li>)}</ul>
+          </div>
+        )}
       </section>
 
       {tuning && <Tuning game={tuning} />}

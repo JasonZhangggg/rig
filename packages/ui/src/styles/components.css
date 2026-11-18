@@ -219,3 +219,17 @@
 @media (prefers-reduced-motion: reduce) { .chart-tip { animation: none; } }
 
 .notify-note { max-width: 58ch; margin: 0; padding: 6px 0 4px; font-size: 13px; }
+
+/* A row of figures that leads a page: a number, what it is, and a line of context. A button figure shows its moment on the chart. */
+.figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 20px; margin: 0 -12px 4px; }
+@media (max-width: 760px) { .figs { grid-template-columns: 1fr; } }
+.fig { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; }
+button.fig { cursor: pointer; transition: background-color .12s ease, transform .16s cubic-bezier(.23, 1, .32, 1); }
+button.fig:hover { background: var(--surface-2); }
+button.fig:active { transform: scale(.98); }
+button.fig[aria-pressed="true"] { background: var(--good-bg); }
+.figs button.fig .label::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; translate: 0 -1px; opacity: .7; }
+.fig .label { order: 1; }
+.fig-n { order: 0; font: 600 1.9rem/1.05 var(--font); letter-spacing: -.035em; }
+.fig-n.warn { color: var(--look-text); }
+.fig .muted { order: 2; font-size: 12.5px; text-wrap: pretty; }

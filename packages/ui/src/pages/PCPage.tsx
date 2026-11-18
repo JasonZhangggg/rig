@@ -105,11 +105,14 @@ function QuickSwitches() {
 }
 
 /** One line that says what the parts list means: what needs a look, or that nothing does. */
-export function partsSummary(parts: Part[], name: string, online: boolean) {
+export function partsSummary(parts: Part[], name: string, online: boolean, unit: TempUnit = "c") {
   if (!parts.length) return `Rig hasn't read ${name}'s parts yet. They show up here once the Rig app on ${name} sends its first reading.`;
   const hot = parts.filter((p) => p.warn);
-  if (hot.length === 1) return `Your ${hot[0].type.toLowerCase()} needs a look.`;
-  if (hot.length > 1) return `${hot.length} parts need a look.`;
+  if (hot.length === 1) {
+    const p = hot[0];
+    return p.temp != null && p.limit ? `${p.type} is at ${formatTemp(p.temp, unit)}, ${limitWords(p.temp, p.limit, unit)}.` : `${p.type} has a warning. Open it for details.`;
+  }
+  if (hot.length > 1) return `${hot.length} parts have warnings: ${hot.map((p) => p.type.toLowerCase()).join(", ")}.`;
   if (parts.some((p) => p.temp != null)) return online ? "Nothing is running hot right now." : "Nothing was running hot at the last reading.";
   return "Pick one for its specs, manual and drivers.";
 }
@@ -133,6 +136,7 @@ function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
 function Detail({ ups }: { ups: PCUpgrades }) {
   const { ui, pc, set } = useApp();
   const parts = pc.parts ?? {};
+  const unit = useTempUnit();
   const lit = useStageHover();
   // Leaving the page or opening a part takes the light off whatever row was pointed at.
   useEffect(() => () => hoverPart(null), [ui.selected]);
@@ -143,7 +147,7 @@ function Detail({ ups }: { ups: PCUpgrades }) {
       <>
         <div className="parts-head">
           <div className="parts-title"><h2>Parts</h2>{list.length > 0 && <span className="faint num">{list.length}</span>}</div>
-          <p className="parts-sum">{partsSummary(list.map(([, v]) => v), pc.name, pc.online)}</p>
+          <p className="parts-sum">{partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit)}</p>
         </div>
         {list.length > 0 && (
           <ul className="part-list" aria-label="Parts">
@@ -288,8 +292,8 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
         : <table className="kv"><tbody>{part.specs.slice(0, 3).map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table>}
       {part.warn && (
         <>
-          <div className="callout warn">{temp(part.temp)} is {limitWords(part.temp, part.limit, unit)}. {inUnit(pc.issues?.find((i) => i.part === id)?.body ?? "")}</div>
-          <a className="btn" href="#chat">Ask what to do</a>
+          <div className="callout warn">{inUnit(pc.issues?.find((i) => i.part === id)?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</div>
+          <a className="btn sm" href="#chat">Ask what to do</a>
         </>
       )}
       {part.soldered && <div className="callout">Soldered to the board, so it can't be upgraded.</div>}

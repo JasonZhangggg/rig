@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { historySummary, HOT_MARGIN, STEADY_MARGIN, type BusySummary, type HistoryPoint, type HistorySummary, type Range, type TempFormat } from "@rig/core";
+import { historySummary, STEADY_MARGIN, type BusySummary, type HistoryPoint, type HistorySummary, type Range, type TempFormat } from "@rig/core";
 import { ChartNote, LineChart } from "../chart";
-import { PageLead } from "../components/PageLead";
+import { Figure } from "../components/Figure";
 import { useApp, useHistory, useTemp } from "../state";
 import { Events } from "./history/Events";
 import { Ranges } from "./history/Ranges";
@@ -10,27 +10,11 @@ import { LogsHead } from "./logs/Head";
 type Temp = (celsius: number | null | undefined, opts?: TempFormat) => string;
 /** A difference between two temperatures, like "6° warmer": scaled to the unit, not offset. */
 const diff = (temp: Temp, celsius: number) => temp(celsius, { delta: true, mark: "degree" });
-const rangeIn: Record<Range, string> = { "24h": "in the last day", "7d": "this week", "30d": "this month" };
-
-/** The answer as a heading: are temperatures OK in this range. */
-function answer(peak: NonNullable<HistorySummary["peak"]>, part: string, range: Range, temp: Temp) {
-  return peak.headroom < 0 ? `Your ${part} went ${diff(temp, -peak.headroom)} over its safe limit ${rangeIn[range]}`
-    : peak.headroom === 0 ? `Your ${part} reached its safe limit ${rangeIn[range]}`
-    : peak.headroom < HOT_MARGIN ? `Your ${part} came within ${diff(temp, peak.headroom)} of its safe limit ${rangeIn[range]}`
-    : `Temperatures look good ${rangeIn[range]}`;
-}
-
-/** What the answer means, in a line under it. */
-function meaning(peak: NonNullable<HistorySummary["peak"]>) {
-  return peak.headroom < 0 ? "It probably slowed itself down to cool off. Cleaning the dust and checking the fans usually helps."
-    : peak.headroom < HOT_MARGIN ? "Short spikes are fine. If it happens every time, clean the dust and check the fans."
-    : "Every part stayed well under its safe limit, even at the hottest moment.";
-}
 
 function busyNote(b: BusySummary | null, laptop: boolean, temp: Temp) {
   if (!b) return "Nothing heavy ran in this range.";
   if (b.change == null) return `Typical during ${laptop ? "busy periods" : "games and heavy work"}.`;
-  if (b.change >= STEADY_MARGIN) return `${diff(temp, b.change)} warmer than earlier in this range. Dust is the usual cause.`;
+  if (b.change >= STEADY_MARGIN) return `${diff(temp, b.change)} warmer than earlier in this range.`;
   if (b.change <= -STEADY_MARGIN) return `${diff(temp, -b.change)} cooler than earlier in this range.`;
   return "About the same as earlier in this range.";
 }
@@ -66,7 +50,6 @@ export function History() {
   const chartRef = useRef<HTMLElement>(null);
   const has = !!pts && pts.length > 1;
 
-  const said = peak && has ? answer(peak, partName.toLowerCase(), ui.range, temp) : null;
   /** Shows a moment, or the busy periods, on the chart; the same one again lets go. */
   const toggle = (key: string, pin?: number) => {
     if (focus?.key === key) return setFocus(null);
@@ -83,15 +66,17 @@ export function History() {
           {(["24h", "7d", "30d"] as const).map((r) => <button key={r} type="button" aria-pressed={ui.range === r} onClick={() => pick(r)}>{r === "24h" ? "Day" : r === "7d" ? "Week" : "Month"}</button>)}
         </div>
       } />
-      {said && peak && pts && (
-        <PageLead id="hi-lead-h" tone={peak.headroom < HOT_MARGIN ? "look" : "good"} tag={peak.headroom < HOT_MARGIN ? "Worth a look" : "All good"} title={said} body={meaning(peak)}
-          aside={<Stat className="pg-lead-fig hi-hot" label="Hottest moment" figure={temp(peak.temp)} warn={peak.headroom <= 0} note={peakNote(peak, pts, ui.range, laptop, temp)}
-            pressed={focus?.key === "peak"} onClick={() => toggle("peak", peak.t)} />}>
-          {peak.headroom < HOT_MARGIN && <button type="button" className="btn" onClick={() => ask(`On ${pc.name}, ${said[0].toLowerCase()}${said.slice(1)}. What should I do?`)}>Ask what to do</button>}
-        </PageLead>
-      )}
       {(pts == null || has) && (
         <section ref={chartRef} className={`hi-chart${focus?.key === "busy" ? " busy" : ""}`} aria-label="Temperatures">
+          {pts && has && (
+            <div className="figs" role="group" aria-label="Key figures">
+              {peak && <Figure label="Hottest moment" figure={temp(peak.temp)} warn={peak.headroom <= 0} note={peakNote(peak, pts, ui.range, laptop, temp)}
+                pressed={focus?.key === "peak"} onClick={() => toggle("peak", peak.t)} />}
+              <Figure label={`${partName} when busy`} figure={temp(busy?.typical)} warn={warmer} note={busyNote(busy, laptop, temp)}
+                pressed={busy ? focus?.key === "busy" : undefined} onClick={() => toggle("busy")} />
+              <Figure label="Processor at rest" figure={temp(idleCpu)} note={idleCpu != null ? "Typical when nothing heavy runs." : "Nothing quiet was logged in this range."} />
+            </div>
+          )}
           <div className="legend">
             {pc.parts?.gpu && <span><i className="lg-gpu" />Graphics card</span>}
             <span><i className={pc.parts?.gpu ? "lg-cpu" : "lg-gpu"} />Processor</span>
@@ -101,13 +86,6 @@ export function History() {
           {pts == null ? <ChartNote busy>Loading…</ChartNote> : (
             <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]}
               limit={{ v: limit, label: `${temp(limit)} limit` }} bands pin={focus?.pin ?? null} onUnpin={() => setFocus(null)} />
-          )}
-          {pts && has && (
-            <div className="hi-stats">
-              <Stat label={`${partName} when busy`} figure={temp(busy?.typical)} warn={warmer} note={busyNote(busy, laptop, temp)}
-                pressed={busy ? focus?.key === "busy" : undefined} onClick={() => toggle("busy")} />
-              <Stat label="Processor at rest" figure={temp(idleCpu)} note={idleCpu != null ? "Typical when nothing heavy is running." : "Nothing quiet was recorded in this range."} />
-            </div>
           )}
         </section>
       )}
@@ -138,17 +116,4 @@ export function History() {
       )}
     </div>
   );
-}
-
-/** One figure under the chart. With onClick it's a button that shows what it refers to on the chart. */
-function Stat({ label, figure, note, warn, pressed, onClick, className = "" }: { label: string; figure: string; note: string; warn?: boolean; pressed?: boolean; onClick?: () => void; className?: string }) {
-  const inner = (
-    <>
-      <span className="label">{label}</span>
-      <span className={`num hi-figure${warn ? " warn" : ""}`}>{figure}</span>
-      <span className="muted">{note}</span>
-    </>
-  );
-  return pressed == null || !onClick ? <div className={`hi-stat ${className}`}>{inner}</div>
-    : <button type="button" className={`hi-stat ${className}`} aria-pressed={pressed} onClick={onClick}>{inner}</button>;
 }

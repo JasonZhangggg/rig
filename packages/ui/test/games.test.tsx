@@ -97,28 +97,31 @@ describe("Games", () => {
     expect(screen.queryByText(/settings to try/i)).toBeNull();
   });
 
-  it("says every game ran cool when none came near the limit, and points to settings to try", async () => {
+  it("marks a cool game with no limit chip, and its settings to try", async () => {
     const client = new DemoClient();
     const start = Date.now() - 2 * 864e5;
     client.history = async () => Array.from({ length: 12 }, (_, i) => ({ t: start + i * 5 * 6e4, cpu: 55, gpu: 60, busy: true, game: "Cyberpunk 2077" }));
     await openGames(client);
-    const lead = await screen.findByRole("region", { name: "Every game ran cool this week" });
-    expect(within(lead).getByText(/peaked at 60°C in Cyberpunk 2077/)).toBeTruthy();
-    expect(within(lead).getByText(/from 78 to 96 fps/)).toBeTruthy();
-    fireEvent.click(within(lead).getByRole("button", { name: "See settings for Cyberpunk 2077" }));
+    const first = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button")[0];
+    expect(first.textContent).toMatch(/Cyberpunk 2077/);
+    expect(within(first).queryByText(/^(Near|Over) the limit$/)).toBeNull();
+    expect(within(first).getByText("settings to try")).toBeTruthy();
+    fireEvent.click(first);
     expect(await screen.findByRole("heading", { level: 1, name: "Cyberpunk 2077" })).toBeTruthy();
   });
 
-  it("leads with the game that came closest to the limit", async () => {
+  it("flags the game that went over the limit in the list, with its figures when opened", async () => {
     const client = new DemoClient();
     const start = Date.now() - 2 * 864e5;
     const at = (i: number, gpu: number, game: string) => ({ t: start + i * 5 * 6e4, cpu: 55, gpu, busy: true, game });
     client.history = async () => [...Array.from({ length: 12 }, (_, i) => at(i, 60, "Quiet Game")), ...Array.from({ length: 12 }, (_, i) => at(100 + i, i === 6 ? 200 : 70, "Loud Game"))];
     await openGames(client);
-    const lead = await screen.findByRole("region", { name: "Loud Game ran over the safe limit" });
-    expect(within(lead).getByText(/slowed itself down/)).toBeTruthy();
-    fireEvent.click(within(lead).getByRole("button", { name: "See Loud Game" }));
+    const loud = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Loud Game"))!;
+    expect(within(loud).getByText("Over the limit")).toBeTruthy();
+    fireEvent.click(loud);
     expect(await screen.findByRole("heading", { level: 1, name: "Loud Game" })).toBeTruthy();
+    const figures = screen.getByRole("group", { name: "Key figures" });
+    expect(within(figures).getByText("Hottest moment").parentElement!.textContent).toMatch(/over the limit\./);
   });
 
   it("says no games are recorded yet on a PC without history", async () => {
