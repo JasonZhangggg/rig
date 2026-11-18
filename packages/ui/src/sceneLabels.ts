@@ -38,9 +38,11 @@ export const depthOpacity = (depth: number) => 1 - 0.3 * clamp01(depth);
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 export function placeLabels(pins: readonly Pin[], b: Bounds, prevSide: Record<string, -1 | 1> = {}): Placed[] {
-  const reach = b.reach ?? 40, pad = b.pad ?? 8, gap = b.gap ?? 6;
+  // On a small stage, such as a phone's, labels and leaders come in a little so they crowd the PC less.
+  const fit = Math.min(1, Math.max(0.86, b.width / 640));
+  const reach = (b.reach ?? 40) * fit, pad = b.pad ?? 8, gap = b.gap ?? 6;
   const out = pins.map((p) => {
-    const scale = depthScale(p.depth);
+    const scale = depthScale(p.depth) * fit;
     const w = p.w * scale, h = p.h * scale;
     // A pin near the middle keeps its side, so its label doesn't flip back and forth as the PC sways.
     const lean = p.x - b.cx;
