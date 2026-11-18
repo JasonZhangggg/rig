@@ -21,13 +21,13 @@ async function step(name, fn) {
 const p = await page(1440);
 await step("manuals-page", () => p.screenshot({ path: `${out}/1-manuals-page.png`, fullPage: true }));
 await step("search", async () => {
-  await p.getByLabel("Search all manuals").fill("F_PANEL");
+  await p.locator('input[aria-label="Search all manuals"]').fill("F_PANEL");
   await p.locator(".mn-hit").first().waitFor({ timeout: 10000 });
   await p.waitForTimeout(400);
   await p.screenshot({ path: `${out}/2-search.png`, fullPage: true });
 });
 await step("viewer", async () => {
-  await p.getByLabel("Search all manuals").fill("");
+  await p.locator('input[aria-label="Search all manuals"]').fill("");
   await p.getByRole("button", { name: "Open", exact: true }).first().click();
   await p.locator(".mv-canvas").waitFor({ timeout: 20000 });
   const layout = p.locator(".mv-rail button", { hasText: /layout/i }).first();
@@ -40,14 +40,15 @@ await step("viewer", async () => {
 });
 await step("laptop-find", async () => {
   // The demo's other PC: switch, then find its manual.
-  const q = await page(1440);
+  const q = p;
+  await q.evaluate(() => { location.hash = "manuals"; });
+  await q.waitForTimeout(1000);
   const menu = q.locator(".sh-pc, [aria-haspopup='menu']").first();
   if (await menu.count()) { await menu.click(); const other = q.getByRole("menuitem").nth(1); if (await other.count()) await other.click(); }
   await q.waitForTimeout(1500);
   await q.screenshot({ path: `${out}/5-other-pc-before.png`, fullPage: true });
   const find = q.getByRole("button", { name: "Find manual" }).first();
   if (await find.count()) { await find.click(); await q.waitForTimeout(500); await q.screenshot({ path: `${out}/6-finding.png`, fullPage: true }); await q.waitForTimeout(8000); await q.screenshot({ path: `${out}/7-found.png`, fullPage: true }); }
-  await q.close();
 });
 await step("part-tab", async () => {
   await p.evaluate(() => { location.hash = "pc"; });
@@ -76,21 +77,23 @@ await step("upgrades", async () => {
   await p.screenshot({ path: `${out}/11-upgrades-link.png`, fullPage: true });
 });
 await step("phone", async () => {
-  const q = await page(390, 844);
+  const q = p;
+  await q.setViewportSize({ width: 390, height: 844 });
+  await q.evaluate(() => { location.hash = "manuals"; });
+  await q.waitForTimeout(1500);
   await q.screenshot({ path: `${out}/12-phone-manuals.png`, fullPage: true });
   await q.getByRole("button", { name: "Open", exact: true }).first().click();
   await q.locator(".mv-canvas").waitFor({ timeout: 20000 });
   await q.waitForTimeout(3000);
   await q.screenshot({ path: `${out}/13-phone-viewer.png` });
-  await q.close();
+  await q.keyboard.press("Escape");
+  await q.setViewportSize({ width: 1440, height: 1000 });
 });
 await step("dark", async () => {
-  const q = await browser.newPage({ viewport: { width: 1440, height: 1000 }, colorScheme: "dark" });
-  await q.goto(`${base}/app/?demo#manuals`);
-  await q.getByRole("heading", { name: /Manuals for/ }).waitFor({ timeout: 30000 });
-  await q.waitForTimeout(1500);
-  await q.screenshot({ path: `${out}/14-dark.png`, fullPage: true });
-  await q.close();
+  await p.emulateMedia({ colorScheme: "dark" });
+  await p.evaluate(() => { location.hash = "manuals"; });
+  await p.waitForTimeout(1500);
+  await p.screenshot({ path: `${out}/14-dark.png`, fullPage: true });
 });
 await browser.close();
 writeFileSync(`${out}/log.txt`, [...log, "", ...errors].join("\n"));

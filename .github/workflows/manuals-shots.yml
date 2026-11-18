@@ -3,6 +3,8 @@ name: Manuals screenshots
 on:
   push:
     branches: [claude/manuals-shots]
+permissions:
+  contents: write
 jobs:
   shots:
     runs-on: ubuntu-latest
@@ -19,3 +21,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: manuals-shots, path: shots }
+      - name: Put the shots on this branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          rm -rf screens-out && mkdir screens-out && cp -r shots/* screens-out/
+          git add screens-out && git commit -m "Manuals screenshots" && git push
