@@ -112,6 +112,15 @@ describe("the grid while dragging", () => {
     expect(dragFlow(base, "fans", home.x, home.y, 12)).toEqual(base);
   });
 
+  it("keeps a big tile in place when a small one is dragged across its edge, and goes beside it instead", () => {
+    for (const [x, y] of [[7, 3], [6, 2], [5, 2], [7, 6]]) {
+      const out = dragFlow(base, "fans", x, y, 12);
+      expect(at(out, "pc")).toEqual(at(base, "pc"));
+      expect(holes(out, 12)).toBe(0);
+    }
+    expect(at(dragFlow(base, "fans", 6, 2, 12), "fans")).toMatchObject({ x: 8, y: 2 });
+  });
+
   it("lets the neighbour fill the row when a tile is made narrower, and give the room back when it widens", () => {
     const smaller = resizeFlow(base, "temps", 5, 5, 12);
     expect(at(smaller, "temps").w).toBe(5);

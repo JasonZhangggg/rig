@@ -64,6 +64,8 @@ export interface KindMeta {
   tone: Tone;
   frame: Frame;
   hidden?: boolean;
+  /** Draws a 3D scene, which is costly to resize: it keeps its size while dragged and snaps to a new size rather than animating. */
+  heavy?: boolean;
   options: OptionDef[];
 }
 
@@ -75,7 +77,7 @@ export const KINDS: Record<Kind, KindMeta> = {
   pc: {
     title: "Your PC", blurb: "The PC in 3D with its parts and live temperatures.",
     sizes: { m: [6, 6], l: [8, 8], wide: [12, 6], full: [12, 9] }, size: "l", min: [5, 5], max: [12, 10],
-    styles: [["showcase", "Big figures"], ["chips", "Chips"]], tone: "light", frame: "open",
+    styles: [["showcase", "Big figures"], ["chips", "Chips"]], tone: "light", frame: "open", heavy: true,
     options: [
       { key: "reads", label: "Show temperatures", type: "toggle", value: true },
       { key: "specs", label: "Show part names", type: "toggle", value: true },
@@ -339,9 +341,10 @@ const reshape = (a: readonly Cell[], b: readonly Cell[], skip: string) => {
     const o = a.find((x) => x.i === c.i);
     if (!o || c.i === skip) continue;
     n += Math.abs(o.w - c.w) + Math.abs(o.h - c.h);
-    moved += Math.abs(o.x - c.x) + Math.abs(o.y - c.y);
+    // A big tile jumping away is far more jarring than a small one, so how far each moves counts by its area.
+    moved += (Math.abs(o.x - c.x) + Math.abs(o.y - c.y)) * o.w * o.h;
   }
-  return n * 0.6 + moved * 0.04;
+  return n * 0.6 + moved * 0.006;
 };
 
 /**
@@ -349,19 +352,25 @@ const reshape = (a: readonly Cell[], b: readonly Cell[], skip: string) => {
  * Worked out from `base` every time, so dragging back undoes what dragging over did. The dragged tile may take
  * a narrower or wider size when that closes a gap; neighbours may grow into gaps beside them.
  */
-export function dragFlow(base: readonly Cell[], id: string, x: number, y: number, cols: number, adapt = true): Cell[] {
+export function dragFlow(base: readonly Cell[], id: string, x: number, y: number, cols: number, adapt = !KINDS[kindOf(id)].heavy): Cell[] {
   const me = base.find((c) => c.i === id);
   if (!me) return clone(base);
   const lim = limits(kindOf(id), cols);
   const keep = new Set([id]);
   let best: Cell[] = clone(base), cost = Infinity;
   const widths = adapt ? Array.from({ length: lim.maxW - lim.minW + 1 }, (_, k) => lim.minW + k) : [me.w];
+  // A tile twice the size or more under the pointer, below its top row, is a wall: besides shoving it, try sitting beside it or just below it.
+  const wallsAt = (cx: number, w: number) => base.filter((o) => o.i !== id && o.w * o.h >= 2 * w * me.h && y > o.y && overlaps(o, { i: id, x: cx, y, w, h: me.h }));
   for (const w of widths) {
-    const xs = new Set([x, x + me.w - w, x + Math.round((me.w - w) / 2)].map((v) => Math.max(0, Math.min(cols - w, v))));
+    const near = [x, x + me.w - w, x + Math.round((me.w - w) / 2)];
+    const xs = new Set([...near, ...wallsAt(x, w).flatMap((o) => [o.x + o.w, o.x - w])].map((v) => Math.max(0, Math.min(cols - w, v))));
     for (const cx of xs) {
-      const trial = settle(packAround(base, [{ i: id, x: cx, y, w, h: me.h }], cols), cols, keep);
-      const c = holes(trial, cols) + Math.abs(w - me.w) * 1.1 + Math.abs(cx - x) * 0.3 + reshape(base, trial, id);
-      if (c < cost - 1e-6) { cost = c; best = trial; }
+      const ys = new Set([y, ...wallsAt(cx, w).map((o) => o.y + o.h)]);
+      for (const cy of ys) {
+        const trial = settle(packAround(base, [{ i: id, x: cx, y: cy, w, h: me.h }], cols), cols, keep);
+        const c = holes(trial, cols) + Math.abs(w - me.w) * 1.1 + (cx - x) ** 2 * 0.15 + Math.abs(cy - y) * 0.6 + reshape(base, trial, id);
+        if (c < cost - 1e-6) { cost = c; best = trial; }
+      }
     }
   }
   return best;

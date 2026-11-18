@@ -14,6 +14,8 @@
 .dash-grid { position: relative; transition: height var(--glide) var(--ease-out); }
 .dash-grid > .dg { position: absolute; z-index: 1; touch-action: auto; }
 .dash-grid > .dg.cssTransforms { transition: transform var(--glide) var(--spring), width var(--glide) var(--spring), height var(--glide) var(--spring); }
+/* The 3D PC snaps to a new size in one step instead of redrawing its scene at every frame of a glide. */
+.dash-grid > .dg[data-heavy].cssTransforms { transition: transform var(--glide) var(--spring); }
 .dash-grid > .dg.react-draggable-dragging { z-index: 30; transition: none; will-change: transform; }
 .dash-grid > .dg.resizing { z-index: 20; transition: none; will-change: width, height; }
 .dash[data-still] .dash-grid, .dash[data-still] .dash-grid > .dg { transition: none; }

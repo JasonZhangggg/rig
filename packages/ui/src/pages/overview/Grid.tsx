@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import { GridLayout, type Compactor, type EventCallback, type Layout, type ResizeHandleAxis } from "react-grid-layout";
-import { COLS, clampCell, compactUp, dragFlow, kindOf, limits, nearestSize, orderOf, resizeFlow, sizeLabel, stepTarget, type Bp, type Cell, type Dir, type Widget } from "./layout";
+import { COLS, KINDS, clampCell, compactUp, dragFlow, kindOf, limits, nearestSize, orderOf, resizeFlow, sizeLabel, stepTarget, type Bp, type Cell, type Dir, type Widget } from "./layout";
 import type { TileBox } from "./widgets";
 
 /** How long a press has to rest before it picks the dashboard up for customizing. */
@@ -429,7 +429,7 @@ export function Grid(p: GridProps) {
     const box: TileBox = { size: nearestSize(w.kind, src.w, src.h, n), span: mode === "phone" ? 1 : c.w, rows: src.h, cols };
     const title = titleOf(w);
     return (
-      <div key={w.id} className="dg" data-id={w.id}>
+      <div key={w.id} className="dg" data-id={w.id} data-heavy={KINDS[w.kind].heavy ? "" : undefined}>
         <Tile
           w={w} box={box} title={title} editing={editing} phone={mode === "phone"} render={render} api={api}
           label={`${title}, ${sizeLabel(w.kind, src.w, src.h, n)}, place ${index + 1} of ${order.length}`}
