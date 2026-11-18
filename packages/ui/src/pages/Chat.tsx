@@ -6,7 +6,7 @@ import { RecordingCard } from "./logs/RecordingCard";
 import { ChatBar } from "./chat/ChatBar";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
-import { openManualLink } from "../manuals/viewer";
+import { openManualLink } from "../manuals/viewerState";
 
 export function Chat() {
   const { data, pc, client, clearChat } = useApp();
