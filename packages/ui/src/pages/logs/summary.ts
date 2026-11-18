@@ -1,5 +1,4 @@
 import { eventTitle, type EventKind, type PCEvent } from "@rig/core";
-import { clock, shortDay } from "./words";
 
 /** Events worth a person's attention: anything but routine Windows noise and the warnings Windows handled on its own. Driver resets are warnings but still show on screen. */
 export const serious = (e: PCEvent) => e.kind !== "other" && (e.level !== "warning" || e.kind === "driver");
