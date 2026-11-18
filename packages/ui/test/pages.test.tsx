@@ -76,15 +76,14 @@ describe("Changes", () => {
 describe("Upgrades", () => {
   it("leads with Rig's pick and why, with the room each part has beside its idea", async () => {
     await show("upgrades");
-    const pick = await screen.findByRole("region", { name: "Add another NVMe SSD" });
+    const pick = await screen.findByRole("region", { name: "Another case fan" });
     expect(within(pick).getByText("Rig's pick for Atlas")).toBeTruthy();
-    expect(within(pick).getByText(/Nothing on Atlas needs upgrading right now/)).toBeTruthy();
-    expect(within(pick).getByText("726 GB")).toBeTruthy();
-    expect(within(pick).getByText(/Samsung SSD 990 PRO 2TB/)).toBeTruthy();
+    expect(within(pick).getByText(/Graphics card runs hotter than it used to/)).toBeTruthy();
 
     const others = screen.getByRole("region", { name: "Other ideas" });
     expect(within(others).getByRole("img", { name: "2 of 4 slots used" })).toBeTruthy();
-    expect(within(others).getByText("Another case fan")).toBeTruthy();
+    expect(within(others).getByText("Add another NVMe SSD")).toBeTruthy();
+    expect(within(others).getByText(/726 GB free/)).toBeTruthy();
     expect(screen.queryByText("Where there's room")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Ask what to buy" }).length).toBe(3);
     expect(screen.getByText("Have a part in mind?")).toBeTruthy();
@@ -99,6 +98,8 @@ describe("Upgrades", () => {
     expect(bestPick(list, pc, [])).toMatchObject({ idea: { part: "Cooling" }, why: "Graphics card runs warm at 80°C.", pressing: true });
     expect(bestPick(list, { ...pc, issues: [] }, [])).toMatchObject({ idea: { part: "Storage" }, pressing: false });
     expect(bestPick([{ ...list[0], fit: "later" }], pc, [])).toBeNull();
+    const alert = { ...pc.issues![0], id: "gpu-hotter", title: "Graphics card runs hotter than it used to" };
+    expect(bestPick(list, { ...pc, issues: [], alerts: [alert] } as unknown as PC, [])).toMatchObject({ idea: { part: "Cooling" }, why: "Graphics card runs hotter than it used to.", pressing: true });
   });
 
   it("says what will show up when there's nothing to suggest", async () => {

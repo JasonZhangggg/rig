@@ -12,7 +12,8 @@ const gbOf = (s?: string) => {
 
 /** Why an idea matters on this PC now, from what Rig already read. Empty when nothing presses. */
 function need(u: Upgrade, pc: PC, room: Room[]): string {
-  const issue = (pc.issues ?? []).find((i) => i.severity !== "ok" && (issuePart[i.part ?? ""] === u.part || (u.part === "Storage" && i.id.startsWith("vol-"))));
+  const flagged = [...(pc.alerts ?? []), ...(pc.issues ?? [])];
+  const issue = flagged.find((i) => i.severity !== "ok" && (issuePart[i.part ?? ""] === u.part || (u.part === "Storage" && i.id.startsWith("vol-"))));
   if (issue) return `${issue.title}.`;
   const r = room.find((x) => roomPart[x.key] === u.part);
   // Wanting more room only makes a pick when the part fits as it is.
