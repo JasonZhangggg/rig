@@ -260,6 +260,8 @@ export function Grid(p: GridProps) {
     size: Cell;
     /** Set the moment the pointer is let go, so the layout the drop settles on has the tile at the size it landed. */
     dropped: boolean;
+    /** Where the held tile lands, waiting for the commit that draws the tiles around it there. */
+    pending?: Cell;
     /** Set by Escape: everything goes back to where it was when the drag began. */
     cancelled: boolean;
     /** The layout last worked out, with the sizes each tile was chosen at, which the drop saves. */
@@ -317,13 +319,28 @@ export function Grid(p: GridProps) {
       }
       const landed = out.find((c) => c.i === a.id)!;
       const slot = `${landed.x},${landed.y},${landed.w},${landed.h}`;
-      if (slot !== a.slot) { spotAt(landed); tick(spot.current); a.slot = slot; }
-      if (a.type === "resize") holdAt(a.id, landed);
+      // The spot and a resized tile's box move in the same commit as the tiles around them (see the layout effect below),
+      // not now: this runs a frame before the library draws the new layout, so moving them here put the held tile over a
+      // neighbour that hadn't moved yet. A resize's very first hold is set at once so the tile never shows the pointer's size.
+      if (slot !== a.slot) { a.slot = slot; a.pending = landed; }
+      if (a.type === "resize" && !wrap.current?.querySelector(`.dg[data-id="${a.id}"][data-hold]`)) holdAt(a.id, landed);
       a.last = out;
       if (a.type === "resize" || a.dropped) return withLimits(out, n);
       return withLimits(out.map((c) => (c.i === a.id ? { ...c, w: a.size.w, h: a.size.h } : c)), n);
     },
   }), []);
+
+  const settlePending = () => {
+    const a = active.current;
+    if (!a?.pending) return;
+    spotAt(a.pending);
+    tick(spot.current);
+    if (a.type === "resize") holdAt(a.id, a.pending);
+    a.pending = undefined;
+  };
+  // The library draws the other tiles' new places in a commit of its own, sometimes a frame after this grid renders, so the
+  // spot and the held box follow the moment any other tile's place is written; a render with no tile moved settles them too.
+  useLayoutEffect(settlePending);
 
   const begin = (type: "drag" | "resize", id: string) => {
     const { cells: base, editing: on, p: props } = latest.current;
@@ -334,11 +351,14 @@ export function Grid(p: GridProps) {
     if (el) el.style.minHeight = `${el.offsetHeight}px`;
     const drop = () => { if (active.current === a) a.dropped = true; };
     const scroll = edgeScroll();
+    const watch = new MutationObserver(settlePending);
+    el?.querySelectorAll<HTMLElement>(".dash-grid > .dg").forEach((d) => { if (d.dataset.id !== id) watch.observe(d, { attributes: true, attributeFilter: ["style"] }); });
     const a = {
       type, id, base, cache: new Map<string, Cell[]>(), slot: `${c.x},${c.y},${c.w},${c.h}`, cell: { x: c.x, y: c.y }, size: c,
       dropped: false, cancelled: false, last: null as Cell[] | null,
       stop: () => {
         scroll();
+        watch.disconnect();
         for (const t of ["mouseup", "touchend", "touchcancel"]) window.removeEventListener(t, drop, true);
       },
     };
@@ -394,7 +414,7 @@ export function Grid(p: GridProps) {
   // The content takes the size the tile lands at, which can differ from the pointer's when that size can't close every gap.
   const onResize: EventCallback = (_l, _o, item) => {
     const got = item && (active.current?.last?.find((c) => c.i === item.i) ?? item);
-    if (got) setLive((v) => (v && v.i === got.i && v.w === got.w && v.h === got.h ? v : { i: got.i, x: got.x, y: got.y, w: got.w, h: got.h }));
+    if (got) setLive((v) => (v && v.i === got.i && v.x === got.x && v.y === got.y && v.w === got.w && v.h === got.h ? v : { i: got.i, x: got.x, y: got.y, w: got.w, h: got.h }));
   };
   const onResizeStop: EventCallback = (layout) => end(layout);
   const handlers = useRef({ onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop });

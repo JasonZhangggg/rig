@@ -38,7 +38,12 @@
   transition: transform .16s var(--ease-out), width .16s var(--ease-out), height .16s var(--ease-out), opacity .12s;
 }
 .dash-spot[data-on] { opacity: 1; }
-.dash.dragging:has(.dg.resizing) .dash-spot { transition-duration: .1s; }
+/* While a tile is resized it, its drop spot and the tiles it pushes all move together on one short curve, so at the moment
+   a size snaps nothing covers a neighbour that hasn't moved yet. */
+.dash.dragging:has(.dg.resizing) { --rz: .14s; }
+.dash.dragging:has(.dg.resizing) .dash-spot,
+.dash.dragging:has(.dg.resizing) .dash-grid > .dg.cssTransforms:not(.resizing) { transition-duration: var(--rz); transition-timing-function: var(--ease-out); }
+.dash-grid > .dg.resizing[data-hold] { transition: transform var(--rz, .14s) var(--ease-out), width var(--rz, .14s) var(--ease-out), height var(--rz, .14s) var(--ease-out); }
 
 .dw {
   --chip: var(--surface);
@@ -91,6 +96,8 @@
 .dw-opt { top: calc(-4px - var(--b)); left: 10px; }
 .dw-del:active, .dw-opt:active { transform: scale(.9); }
 .dg.react-draggable-dragging .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
+/* While one tile is moved or resized, the others' buttons step back so none sits on the held tile's edge. */
+.dash.dragging .dg:not(.resizing) .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
 .dw-del svg, .dw-opt svg { width: 15px; height: 15px; }
 @keyframes dw-pop { from { scale: .4; opacity: 0; } }
 @media (pointer: coarse) {
@@ -265,3 +272,7 @@
 @media (hover: hover) and (pointer: fine) {
   .dlib button:hover { background: color-mix(in srgb, var(--text) 8%, var(--surface-2)); }
 }
+
+/* A resized tile follows the pointer cell by cell with no glide when motion is reduced. */
+@media (prefers-reduced-motion: reduce) { .dash-grid > .dg.resizing[data-hold] { transition: none; } }
+:root[data-motion="reduce"] .dash-grid > .dg.resizing[data-hold], .dash[data-still] .dash-grid > .dg.resizing[data-hold] { transition: none; }
