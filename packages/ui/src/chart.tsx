@@ -20,21 +20,6 @@ function useWidth<T extends HTMLElement>(fallback: number) {
   return [ref, w] as const;
 }
 
-export function Sparkline({ values, w = 120, h = 32, warn = false }: { values: number[]; w?: number; h?: number; warn?: boolean }) {
-  if (values.length < 2) return null;
-  const min = Math.min(...values), max = Math.max(...values);
-  const x = (i: number) => (i / (values.length - 1)) * w;
-  const y = (v: number) => h - 3 - ((v - min) / (max - min || 1)) * (h - 6);
-  const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
-  return (
-    <svg className={`spark${warn ? " warn" : ""}`} viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-hidden="true">
-      <path d={`${d} L${w},${h} L0,${h} Z`} className="spark-fill" />
-      <path d={d} className="spark-line" />
-      <circle cx={x(values.length - 1)} cy={y(values[values.length - 1])} r={2.5} className="spark-dot" />
-    </svg>
-  );
-}
-
 const clock = (t: number, seconds = false) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) });
 
 interface LineChartProps {
@@ -67,6 +52,35 @@ function nearest(points: readonly HistoryPoint[], t: number) {
   return Math.abs(points[hi].t - t) < Math.abs(points[lo].t - t) ? hi : lo;
 }
 
+/**
+ * Fewer, calmer points: readings grouped into about one per few pixels, each keeping the highest value of each line,
+ * so minute-by-minute jitter doesn't draw as noise but every peak and every crossing of the limit stays.
+ */
+export function calm(points: readonly HistoryPoint[], keys: readonly ("cpu" | "gpu")[], slots: number): HistoryPoint[] {
+  if (points.length <= slots * 1.5) return points as HistoryPoint[];
+  const t0 = points[0].t, size = (points[points.length - 1].t - t0) / slots || 1;
+  const out: HistoryPoint[] = [];
+  let slot = -1, group: HistoryPoint[] = [];
+  const flush = () => {
+    if (!group.length) return;
+    const lead = keys[keys.length - 1];
+    const top = group.reduce((a, p) => ((p[lead] ?? -Infinity) > (a[lead] ?? -Infinity) ? p : a), group[0]);
+    const merged: HistoryPoint = { ...top, busy: group.some((p) => p.busy), game: group.find((p) => p.game)?.game ?? top.game };
+    for (const k of keys) {
+      const xs = group.map((p) => p[k]).filter((v): v is number => v != null);
+      merged[k] = xs.length ? Math.max(...xs) : null;
+    }
+    out.push(merged);
+  };
+  for (const p of points) {
+    const s = Math.min(slots - 1, Math.floor((p.t - t0) / size));
+    if (s !== slot) { flush(); slot = s; group = []; }
+    group.push(p);
+  }
+  flush();
+  return out;
+}
+
 /** A message in the chart's place, the same size, so the page doesn't jump when the chart arrives. */
 export function ChartNote({ children, busy }: { children: string; busy?: boolean }) {
   return <div className="chart chart-empty" role="status" aria-busy={busy || undefined}><p className="muted">{children}</p></div>;
@@ -82,7 +96,7 @@ export function LineChart(props: LineChartProps) {
   );
 }
 
-function LineChartSvg({ points, series, w = 860, h = 300, limit, bands, percent = false, label = "Temperature history", marks = [], pin = null, onUnpin }: LineChartProps) {
+function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, percent = false, label = "Temperature history", marks = [], pin = null, onUnpin }: LineChartProps) {
   const unit = useTempUnit();
   // The moment the readout shows: where the pointer or keys put it, else the pinned moment, else none.
   const [at, setAt] = useState<number | null>(pin);
@@ -91,6 +105,7 @@ function LineChartSvg({ points, series, w = 860, h = 300, limit, bands, percent 
   const step = percent ? 25 : unit === "f" ? 20 : 10;
   const pad = { l: 40, r: 16, t: 14, b: 28 };
   const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
+  const points = calm(raw, series.map((s) => s.key), Math.max(40, Math.round(iw / 4)));
   const t0 = points[0].t, t1 = points[points.length - 1].t;
   const vals = points.flatMap((p) => series.map((s) => p[s.key])).filter((v): v is number => v != null).map(cv);
   const yMin = percent ? 0 : Math.min(Math.floor(cv(30) / step) * step, Math.floor(Math.min(...vals) / step) * step);

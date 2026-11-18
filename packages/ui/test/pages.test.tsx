@@ -26,47 +26,50 @@ beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = (
 afterEach(() => cleanup());
 
 describe("Changes", () => {
-  it("leads with what's in place, then the fix waiting for review, then the timeline", async () => {
+  it("leads with the fix waiting for review, then the timeline with its counts", async () => {
     await show("changes");
-    const lead = await screen.findByRole("region", { name: "1 change in place on Atlas" });
-    expect(within(lead).getByText("In place").nextElementSibling!.textContent).toBe("1");
-    expect(within(lead).getByText(/Latest, 5 days ago:/).textContent).toMatch(/Turned off NVIDIA Broadcast at startup/);
-    expect(within(lead).getByText("Waiting for you").nextElementSibling!.textContent).toBe("1");
+    const lead = await screen.findByRole("region", { name: /runs at 60 Hz but can do 165 Hz/ });
+    expect(within(lead).getByText("Waiting for you")).toBeTruthy();
+    expect(within(lead).getByText(/Nothing changes until you review it\./)).toBeTruthy();
+    expect(within(lead).queryByText("60 Hz")).toBeNull();
+    fireEvent.click(await within(lead).findByRole("button", { name: "What changes" }));
+    await within(lead).findByText("60 Hz");
+    expect(screen.queryByRole("region", { name: "Also waiting for you" })).toBeNull();
 
-    const waiting = screen.getByRole("region", { name: "Waiting for you" });
-    expect(within(waiting).getByText(/runs at 60 Hz but can do 165 Hz/)).toBeTruthy();
-    expect(within(waiting).queryByText("60 Hz")).toBeNull();
-    fireEvent.click(within(waiting).getByRole("button", { name: /^Details: / }));
-    await within(waiting).findByText("60 Hz");
+    const counts = screen.getByRole("group", { name: "Show only" });
+    expect(within(counts).getByRole("button", { name: /In place/ }).textContent).toBe("1In place");
+    expect(within(counts).queryByRole("button", { name: /Undone/ })).toBeNull();
 
     const day = screen.getByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
     expect(within(day).getByText("Turned off NVIDIA Broadcast at startup")).toBeTruthy();
     expect(within(day).queryByText("Starts with Windows")).toBeNull();
     fireEvent.click(within(day).getByRole("button", { name: "Details: Turned off NVIDIA Broadcast at startup" }));
     expect(within(day).getByText("Starts with Windows")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
 
-    fireEvent.click(within(waiting).getByRole("button", { name: /^Review:/ }));
+    fireEvent.click(within(lead).getByRole("button", { name: /^Review:/ }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  it("leads with the latest change when nothing waits for review", async () => {
+    const client = new DemoClient();
+    const watch = client.watch.bind(client);
+    client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, issues: (pc.issues ?? []).filter((i) => !i.fix?.length) }));
+    await show("changes", client);
+    const lead = await screen.findByRole("region", { name: "Turned off NVIDIA Broadcast at startup" });
+    expect(within(lead).getByText("Latest change")).toBeTruthy();
+    expect(lead.textContent).toMatch(/5 days ago, by Rig after you said yes\./);
   });
 
   it("filters the list from the counts", async () => {
     await show("changes");
     const day = await screen.findByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
     fireEvent.click(within(day).getByRole("button", { name: "Undo" }));
-    const lead = await screen.findByRole("region", { name: "Every change on Atlas is undone" });
-    fireEvent.click(within(lead).getByRole("button", { name: /Undone/ }));
+    expect(await screen.findByRole("button", { name: "Redo" })).toBeTruthy();
+    const counts = screen.getByRole("group", { name: "Show only" });
+    fireEvent.click(within(counts).getByRole("button", { name: /Undone/ }));
     expect(screen.getByRole("heading", { name: "Undone" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Show every change" }));
+    fireEvent.click(within(counts).getByRole("button", { name: /All/ }));
     expect(screen.getByRole("heading", { name: "Recent changes" })).toBeTruthy();
-  });
-
-  it("says when every change is undone", async () => {
-    await show("changes");
-    const day = await screen.findByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
-    fireEvent.click(within(day).getByRole("button", { name: "Undo" }));
-    expect(await screen.findByRole("region", { name: "Every change on Atlas is undone" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Redo" })).toBeTruthy();
   });
 
   it("says what will show up when nothing has changed yet", async () => {
@@ -151,14 +154,12 @@ describe("Games", () => {
 describe("History", () => {
   const readout = () => screen.getByRole("img", { name: "Temperature history" }).parentElement!.querySelector("[aria-live]")!.textContent!;
 
-  it("leads with a one line answer, then shows what happened and each part's range inline, each pinning the chart", async () => {
+  it("leads with the answer and the hottest moment, then shows what happened and each part's range, each pinning the chart", async () => {
     await show("history");
-    const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(summary.textContent).toMatch(/^(Temperatures look good|Temperatures are fine|Your .+ (went|reached)).*this week/);
-    expect(summary.textContent).not.toMatch(/hottest moment/i);
+    const lead = await screen.findByRole("region", { name: /^(Temperatures look good|Your .+ (went|reached|came within) .+) this week$/ });
     expect(readout()).toBe("");
 
-    const hottest = screen.getByRole("button", { name: /^Hottest moment/ });
+    const hottest = within(lead).getByRole("button", { name: /^Hottest moment/ });
     expect(hottest.textContent).toMatch(/(under|over|at) the limit/);
     fireEvent.click(hottest);
     expect(hottest.getAttribute("aria-pressed")).toBe("true");
@@ -197,9 +198,10 @@ describe("History", () => {
     const t = Date.now();
     client.history = async () => Array.from({ length: 60 }, (_, i) => ({ t: t - (60 - i) * 6e4, cpu: 40 + (i === 30 ? 12 : 0), gpu: 38, busy: false, game: null }));
     await show("history", client);
-    const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(summary.textContent).toBe("Temperatures look good this week, well under the safe limit.");
-    expect(screen.getByRole("button", { name: /^Hottest moment/ }).textContent).toMatch(/while nothing heavy was running\./);
+    const lead = await screen.findByRole("region", { name: "Temperatures look good this week" });
+    expect(within(lead).getByText("Every part stayed well under its safe limit, even at the hottest moment.")).toBeTruthy();
+    expect(within(lead).queryByRole("button", { name: "Ask what to do" })).toBeNull();
+    expect(within(lead).getByRole("button", { name: /^Hottest moment/ }).textContent).toMatch(/while nothing heavy was running\./);
     expect(screen.queryByRole("button", { name: /when busy/ })).toBeNull();
   });
 

@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import { PageLead } from "../../components/PageLead";
 import { HOT_MARGIN, type Game, type GameLibrary, type GameStats } from "@rig/core";
 import { useApp, useTempUnit } from "../../state";
 import { headroomWords } from "./Library";
@@ -25,10 +26,10 @@ export function Lead({ library, when, tuning, onOpen }: { library: GameLibrary; 
       tuning(g.name) ? "Rig also has settings to try for it." : "",
     ].filter(Boolean).join(" ");
     return (
-      <LeadCard tone="look" tag="Worth a look" title={title} body={body} figure={temp(g.peak, unit)} figureNote={`Hottest in ${g.name}, limit ${limit}`}>
+      <PageLead id="gm-lead-h" tone="look" tag="Worth a look" title={title} body={body} figure={temp(g.peak, unit)} figureNote={`Hottest in ${g.name}, limit ${limit}`}>
         <button type="button" className="btn primary" onClick={() => onOpen(g.name)}>See {g.name}</button>
         <button type="button" className="btn" onClick={() => ask(`While I play ${g.name}, my ${part} peaks at ${temp(g.peak, unit)} and its safe limit is ${limit}. What should I do?`)}>Ask what to do</button>
-      </LeadCard>
+      </PageLead>
     );
   }
 
@@ -40,23 +41,9 @@ export function Lead({ library, when, tuning, onOpen }: { library: GameLibrary; 
     tuned ? `${tuned.name} has settings to try that took it from ${tuned.now!.avg} to ${tuned.tuned!.avg} fps.` : "",
   ].filter(Boolean).join(" ");
   return (
-    <LeadCard tone="good" tag="All good" title={hottest ? `Every game ran cool ${when}` : `${hours(library.hours)} of games ${when}`} body={body} figure={hottest ? temp(hottest.peak, unit) : hours(library.hours)} figureNote={hottest ? `Hottest in ${hottest.name}, limit ${limit}` : `Played ${when}`}>
+    <PageLead id="gm-lead-h" tone="good" tag="All good" title={hottest ? `Every game ran cool ${when}` : `${hours(library.hours)} of games ${when}`} body={body} figure={hottest ? temp(hottest.peak, unit) : hours(library.hours)} figureNote={hottest ? `Hottest in ${hottest.name}, limit ${limit}` : `Played ${when}`}>
       {tuned && <button type="button" className="btn" onClick={() => onOpen(tuned.name)}>See settings for {tuned.name}</button>}
-    </LeadCard>
-  );
-}
-
-function LeadCard({ tone, tag, title, body, figure, figureNote, children }: { tone: "good" | "look"; tag: string; title: string; body: string; figure: string; figureNote: string; children?: ReactNode }) {
-  return (
-    <section className={`card pg-lead ${tone}`} aria-labelledby="gm-lead-h">
-      <div className="pg-lead-text">
-        <span className="pg-lead-tag">{tag}</span>
-        <h2 id="gm-lead-h" className="pg-lead-h">{title}</h2>
-        <p className="pg-lead-body">{body}</p>
-        {children && <div className="gm-actions">{children}</div>}
-      </div>
-      <p className="pg-lead-fig"><b className="num">{figure}</b><span className="muted">{figureNote}</span></p>
-    </section>
+    </PageLead>
   );
 }
 

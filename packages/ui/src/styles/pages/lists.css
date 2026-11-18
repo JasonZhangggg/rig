@@ -13,24 +13,22 @@
 .pg-lead.look .pg-lead-tag::before { background: var(--look); }
 .card.pg-lead .pg-lead-h { max-width: 34ch; font: 600 1.5rem/1.2 var(--font); letter-spacing: -.025em; }
 .pg-lead-body { max-width: 68ch; color: var(--text-2); }
+.pg-lead.solo { grid-template-columns: minmax(0, 1fr); }
+.pg-lead.plain .pg-lead-tag::before { background: var(--text-3); }
 .pg-lead .gm-actions { margin-top: 8px; }
-.pg-section-h { font-size: var(--fs); font-weight: 600; letter-spacing: -.01em; }
 .pg-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0 12px; border-top: 1px solid var(--line); }
 .pg-foot > ul { align-self: stretch; }
 .pg-note { max-width: 72ch; font-size: 13px; }
 
 
 /* ---------- Changes ---------- */
-.ch-lead { display: flex; flex-direction: column; gap: 14px; }
-.ch-latest { max-width: 80ch; }
-.ch-latest b { color: var(--text); font-weight: 600; }
-.ch-next { scroll-margin-top: 20px; }
 
 .ch-next-list,
 .ch-timeline { list-style: none; margin: 0; padding: 0; }
 .ch-next-list { padding: 0 0 10px; }
 .ch-log { padding-bottom: 10px; }
-.ch-log .card-head { padding-bottom: 4px; }
+.ch-log .card-head { flex-wrap: wrap; padding-bottom: 4px; }
+.ch-lead-diff { flex-basis: 100%; margin-top: 4px; }
 .ch-day { display: flex; flex-direction: column; gap: 2px; padding: 12px 0 0; }
 .ch-day-label { display: flex; align-items: baseline; gap: 10px; color: var(--text-2); font-size: 13px; font-weight: 600; }
 .ch-day-label span { color: var(--text-3); font-weight: 500; }
@@ -53,7 +51,8 @@
 .change { display: flex; flex-direction: column; gap: 12px; padding-top: 10px; }
 .change-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 
-.ch-how { display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+.ch-how { display: flex; flex-direction: column; gap: 4px; max-width: 72ch; padding-top: 8px; font-size: 13px; }
+.ch-how-h { color: var(--text-2); font-size: 13px; font-weight: 600; }
 
 .ch-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 0 0; }
 .ch-empty-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text); }
