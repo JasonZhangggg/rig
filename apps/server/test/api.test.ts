@@ -1,81 +1,10 @@
 import { sql } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildPC, desktopClientId, type ChatEvent, type DataExport, type MachineSync, type Recording, type RecordingInfo, type SyncReply } from "@rig/core";
-import { SimulatedLink, demoEvents, demoRecording, fixtures } from "@rig/core/demo";
-import { createApp } from "../src/app";
+import { desktopClientId, type ChatEvent, type DataExport, type MachineSync, type Recording, type RecordingInfo, type SyncReply } from "@rig/core";
+import { demoEvents, demoRecording, fixtures } from "@rig/core/demo";
 import { Store } from "../src/db";
-import type { Streamer } from "../src/chat";
 import type { Env } from "../src/env";
-import type { AuthTables, RigTables } from "../src/sql";
-import { testDb } from "./pglite";
-
-const ORIGIN = "http://localhost:8787";
-
-/** A pretend Claude: each round answers with the next scripted message. */
-function fakeClaude(rounds: { text?: string; tool?: { name: string; input: unknown }; stop?: string }[]) {
-  const seen: { messages: unknown[]; tools: unknown[]; system?: unknown }[] = [];
-  let i = 0;
-  const client = {
-    beta: {
-      messages: {
-        stream(params: { messages: unknown[]; tools: unknown[]; system?: unknown }) {
-          seen.push({ messages: structuredClone(params.messages), tools: params.tools, system: params.system });
-          const r = rounds[Math.min(i++, rounds.length - 1)];
-          const content: unknown[] = [];
-          const events: unknown[] = [];
-          if (r.text) {
-            content.push({ type: "text", text: r.text, citations: null });
-            events.push({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
-            events.push({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: r.text } });
-          }
-          if (r.tool) content.push({ type: "tool_use", id: `tu_${i}`, name: r.tool.name, input: r.tool.input });
-          const message = { content, stop_reason: r.stop ?? (r.tool ? "tool_use" : "end_turn") };
-          return {
-            async *[Symbol.asyncIterator]() { yield* events; },
-            finalMessage: async () => message,
-          };
-        },
-      },
-    },
-  };
-  return { client: client as unknown as Streamer, seen };
-}
-
-async function setup(env: Partial<Env> = {}, claude?: Streamer) {
-  const db = await testDb<RigTables & AuthTables>();
-  const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", ...env };
-  const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }) });
-  const call = (path: string, init: RequestInit & { json?: unknown; cookie?: string; token?: string } = {}) => {
-    const headers = new Headers(init.headers);
-    if (init.json !== undefined) headers.set("content-type", "application/json");
-    if (init.cookie) { headers.set("cookie", init.cookie); headers.set("origin", ORIGIN); }
-    if (init.token) headers.set("authorization", `Bearer ${init.token}`);
-    return app.request(path, { ...init, headers, body: init.json !== undefined ? JSON.stringify(init.json) : init.body }, e);
-  };
-  const signUp = async (email: string) => {
-    const res = await call("/api/auth/sign-up/email", { method: "POST", json: { email, password: "correct horse battery", name: email.split("@")[0] }, headers: { origin: ORIGIN } });
-    expect(res.status).toBe(200);
-    const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
-    return cookie;
-  };
-  return { call, signUp, env: e, db };
-}
-
-async function syncPayload(over: Partial<MachineSync> = {}): Promise<MachineSync> {
-  const link = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => Date.now() });
-  const [inventory, facts, snap] = await Promise.all([link.inventory(), link.facts(), link.snapshot()]);
-  const { findings: _f, ...view } = buildPC(inventory, snap, facts);
-  return {
-    at: new Date().toISOString(), view, inventory, facts, changes: [], games: [], identity: {},
-    history: [{ t: Date.now() - 600_000, cpu: 61, gpu: 55, busy: false }, { t: Date.now(), cpu: 70, gpu: 64, busy: true }],
-    ...over,
-  };
-}
-
-async function readEvents(res: Response): Promise<ChatEvent[]> {
-  const text = await res.text();
-  return text.split("\n\n").map((f) => f.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("")).filter(Boolean).map((d) => JSON.parse(d));
-}
+import { ORIGIN, fakeClaude, readEvents, setup, syncPayload } from "./helpers";
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -433,9 +362,15 @@ describe("your data", () => {
     const s = await syncPayload();
     const id = s.inventory.machine.id;
     const rec = demoRecording(fixtures.atlas.inv, Date.now());
-    for (const cookie of [jo, max]) {
+    const manualIds: Record<string, string> = {};
+    for (const [who, cookie] of [["jo", jo], ["max", max]] as const) {
       expect((await t.call(`/api/machines/${id}/sync`, { method: "PUT", json: { ...s, events: demoEvents("tower", Date.now()) }, cookie })).status).toBe(200);
       expect((await t.call(`/api/machines/${id}/recordings/${rec.id}`, { method: "PUT", json: rec, cookie })).status).toBe(204);
+      const target = { part: "extra:case", kind: "case", maker: "Fractal Design", model: "North", source: "added" };
+      const manual = await (await t.call(`/api/machines/${id}/manuals`, { method: "POST", json: { target, name: "north.pdf", bytes: 2_000_000 }, cookie })).json() as { id: string };
+      manualIds[who] = manual.id;
+      const pages = [{ n: 1, text: "Fractal Design North. Secret page text." }, { n: 2, text: "Front I/O: connect the USB-C header." }];
+      expect((await t.call(`/api/machines/${id}/manuals/${manual.id}/pages`, { method: "PUT", json: { pages, diagrams: [{ page: 2, kind: "usb-headers" }] }, cookie })).status).toBe(200);
     }
     const uid = async (cookie: string) => ((await (await t.call("/api/me", { cookie })).json()) as { id: string }).id;
     const ids = { jo: await uid(jo), max: await uid(max) };
@@ -444,7 +379,7 @@ describe("your data", () => {
     for (const u of [ids.jo, ids.max]) {
       await sql`insert into "deviceCode" ("id", "deviceCode", "userCode", "userId", "expiresAt", "status") values (${`dc-${u}`}, ${`code-${u}`}, ${`U-${u}`}, ${u}, now() + interval '5 minutes', 'approved')`.execute(t.db);
     }
-    return { ...t, jo, max, id, ids, rec };
+    return { ...t, jo, max, id, ids, rec, manualIds };
   }
 
   /** How many rows each table holds for one account. */
@@ -459,11 +394,13 @@ describe("your data", () => {
       history: await count(db.selectFrom("machine_history").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
       chat: await count(db.selectFrom("chat_usage").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
       recording: await count(db.selectFrom("recording").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+      manual: await count(db.selectFrom("manuals").select((e) => e.fn.countAll().as("n")).where("user_id", "=", userId)),
+      manualPage: await count(db.selectFrom("manual_pages").innerJoin("manuals", "manuals.id", "manual_pages.manual_id").select((e) => e.fn.countAll().as("n")).where("manuals.user_id", "=", userId)),
     };
   }
 
-  it("downloads the account's PCs with all their history, events and recordings, and nobody else's", async () => {
-    const { call, jo, id, ids, rec } = await twoAccounts();
+  it("downloads the account's PCs with all their history, events, recordings and manuals, and nobody else's", async () => {
+    const { call, jo, id, ids, rec, manualIds } = await twoAccounts();
     expect((await call("/api/me/export")).status).toBe(401);
 
     const res = await call("/api/me/export", { cookie: jo });
@@ -480,13 +417,17 @@ describe("your data", () => {
     expect(out.machines[0].events.length).toBeGreaterThan(4);
     expect(out.machines[0].recordings.map((r) => [r.id, r.samples.length])).toEqual([[rec.id, rec.samples.length]]);
     expect(out.chatUsage).toEqual([{ day: new Date().toISOString().slice(0, 10), count: 2 }]);
+    // Manuals: what each one is, not its page text.
+    expect(out.machines[0].manuals).toEqual([expect.objectContaining({ id: manualIds.jo, title: "Fractal Design North manual", source: "added", pageCount: 2, indexed: true, diagrams: [{ page: 2, kind: "usb-headers", label: "USB headers" }] })]);
+    expect(JSON.stringify(out)).not.toContain("Secret page text");
+    expect(JSON.stringify(out)).not.toContain(manualIds.max);
     expect(JSON.stringify(out)).not.toContain("max@example.com");
   });
 
-  it("deletes the account with its PCs, history, recordings, chat use and sign-ins, and leaves other accounts alone", async () => {
+  it("deletes the account with its PCs, history, recordings, manuals, chat use and sign-ins, and leaves other accounts alone", async () => {
     const { call, db, signUp, jo, max, ids } = await twoAccounts();
     const maxBefore = await rows(db, ids.max);
-    expect(await rows(db, ids.jo)).toMatchObject({ user: 1, session: 1, account: 1, deviceCode: 1, machine: 1, history: 2, chat: 1, recording: 1 });
+    expect(await rows(db, ids.jo)).toMatchObject({ user: 1, session: 1, account: 1, deviceCode: 1, machine: 1, history: 2, chat: 1, recording: 1, manual: 1, manualPage: 2 });
 
     expect((await call("/api/me", { method: "DELETE", json: { confirm: "DELETE" } })).status).toBe(401);
     expect((await call("/api/me", { method: "DELETE", json: {}, cookie: jo })).status).toBe(400);
@@ -498,7 +439,7 @@ describe("your data", () => {
     const cleared = res.headers.getSetCookie();
     expect(cleared.some((c) => c.startsWith("better-auth.session_token=;") && /Max-Age=0/.test(c))).toBe(true);
 
-    expect(await rows(db, ids.jo)).toEqual({ user: 0, session: 0, account: 0, deviceCode: 0, machine: 0, history: 0, chat: 0, recording: 0 });
+    expect(await rows(db, ids.jo)).toEqual({ user: 0, session: 0, account: 0, deviceCode: 0, machine: 0, history: 0, chat: 0, recording: 0, manual: 0, manualPage: 0 });
     expect(await rows(db, ids.max)).toEqual(maxBefore);
     expect((await call("/api/me", { cookie: jo })).status).toBe(401);
     expect((await call("/api/machines", { cookie: max })).status).toBe(200);

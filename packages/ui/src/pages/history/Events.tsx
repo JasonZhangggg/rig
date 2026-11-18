@@ -5,19 +5,19 @@ import { useApp, useTemp } from "../../state";
 import { day, hours, timeRange } from "../games/words";
 
 type Event =
-  | { kind: "busy"; t: number; to: number; name: string; peak: { part: "cpu" | "gpu"; temp: number } | null; hot: boolean }
+  | { kind: "busy"; t: number; to: number; name: string; peak: { part: "cpu" | "gpu"; temp: number; at: number } | null; hot: boolean }
   | { kind: "change"; t: number; change: Change };
 
 const SHOWN = 6;
 
-/** The part that came closest to its safe limit in the run, and its highest reading. */
+/** The part that came closest to its safe limit in the run, its highest reading, and when that was. */
 function closest(run: HistoryPoint[], limits: Record<"cpu" | "gpu", number>) {
-  let best: { part: "cpu" | "gpu"; temp: number } | null = null;
+  let best: { part: "cpu" | "gpu"; temp: number; at: number } | null = null;
   for (const part of ["gpu", "cpu"] as const) {
-    const xs = run.map((p) => p[part]).filter((v): v is number => v != null);
-    if (!xs.length) continue;
-    const temp = Math.round(Math.max(...xs));
-    if (!best || limits[part] - temp < limits[best.part] - best.temp) best = { part, temp };
+    const top = run.reduce<HistoryPoint | null>((a, p) => (p[part] != null && (!a || p[part]! > a[part]!) ? p : a), null);
+    if (!top) continue;
+    const temp = Math.round(top[part]!);
+    if (!best || limits[part] - temp < limits[best.part] - best.temp) best = { part, temp, at: top.t };
   }
   return best;
 }
@@ -34,29 +34,37 @@ export function events(points: readonly HistoryPoint[], changes: Change[], pc: P
   return [...busy, ...made].sort((a, b) => b.t - a.t);
 }
 
-export function Events({ points, range }: { points: HistoryPoint[]; range: Range }) {
+/** The list under the chart. A row with a moment shows it on the chart; picking it again lets go. */
+export function Events({ points, range, pinned, onPin }: { points: HistoryPoint[]; range: Range; pinned: string | null; onPin: (key: string, t: number) => void }) {
   const { pc, data, go } = useApp();
   const temp = useTemp();
   const [all, setAll] = useState(false);
   const list = events(points, data.changes, pc, range);
   const shown = all ? list : list.slice(0, SHOWN);
   return (
-    <section className="card card-pad hi-card">
-      {list.length === 0 ? <p className="muted">Nothing heavy ran and nothing was changed in this range. Games, heavy work and changes show up here as they happen.</p> : (
+    <section className="hi-panel" aria-label="What happened">
+      {list.length === 0 ? <p className="muted">Nothing heavy ran and nothing was changed in this range.</p> : (
         <ul className="hi-events" aria-label="What happened">
-          {shown.map((e) => e.kind === "busy" ? (
-            <li key={`b${e.t}`}>
-              <span className={`hi-ev-ico${e.hot ? " look" : ""}`} aria-hidden="true"><Icon d="M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01" /></span>
-              <span className="hi-ev-main"><b>{e.name}</b><span className="faint">{day(e.t)}, {timeRange(e.t, e.to)}, {hours((e.to - e.t) / 36e5)}</span></span>
-              {e.peak && <span className={`hi-ev-fig${e.hot ? " look" : ""}`}><b className="num">{temp(e.peak.temp)}</b><span>{e.hot ? "Ran hot, " : ""}{e.peak.part === "gpu" ? "graphics card" : "processor"}</span></span>}
-            </li>
-          ) : (
-            <li key={`c${e.change.id}`}>
-              <span className="hi-ev-ico" aria-hidden="true"><Icon d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2" /></span>
-              <span className="hi-ev-main"><b>{e.change.title}</b><span className="faint">{day(e.t)}, {new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}, {e.change.status === "applied" ? "in place" : "undone"}</span></span>
-              <button type="button" className="btn ghost sm" onClick={() => go("changes")}>See change</button>
-            </li>
-          ))}
+          {shown.map((e) => {
+            const key = e.kind === "busy" ? `b${e.t}` : `c${e.change.id}`;
+            return e.kind === "busy" ? (
+              <li key={key}>
+                <button type="button" className="hi-ev" aria-pressed={pinned === key} onClick={() => onPin(key, e.peak?.at ?? e.t)}>
+                  <span className={`hi-ev-ico${e.hot ? " look" : ""}`} aria-hidden="true"><Icon d="M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01" /></span>
+                  <span className="hi-ev-main"><b>{e.name}</b><span className="faint">{day(e.t)}, {timeRange(e.t, e.to)}, {hours((e.to - e.t) / 36e5)}</span></span>
+                  {e.peak && <span className={`hi-ev-fig${e.hot ? " look" : ""}`}><b className="num">{temp(e.peak.temp)}</b><span>{e.hot ? "Ran hot, " : ""}{e.peak.part === "gpu" ? "graphics card" : "processor"}</span></span>}
+                </button>
+              </li>
+            ) : (
+              <li key={key}>
+                <button type="button" className="hi-ev" aria-pressed={pinned === key} onClick={() => onPin(key, e.t)}>
+                  <span className="hi-ev-ico" aria-hidden="true"><Icon d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2" /></span>
+                  <span className="hi-ev-main"><b>{e.change.title}</b><span className="faint">{day(e.t)}, {new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}, {e.change.status === "applied" ? "in place" : "undone"}</span></span>
+                </button>
+                <button type="button" className="btn ghost sm" onClick={() => go("changes")}>See change</button>
+              </li>
+            );
+          })}
         </ul>
       )}
       {list.length > SHOWN && (

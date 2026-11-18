@@ -1,21 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { formatTemp, type ActionCall, type Part, type TempUnit } from "@rig/core";
-import { Sparkline } from "../chart";
-import { StageSlot, getStage } from "../components/Stage";
+import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
+import { OtherManuals } from "../manuals/OtherManuals";
+import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince } from "./shared";
-
-/** The last few readings of a value, kept while the page is open. */
-function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40) {
-  const [trail, setTrail] = useState<{ key: string; v: number[] }>({ key, v: [] });
-  useEffect(() => {
-    if (value == null) return;
-    setTrail((t) => ({ key, v: [...(t.key === key ? t.v : []), value].slice(-size) }));
-  }, [key, value, tick, size]);
-  const v = trail.key === key ? trail.v : [];
-  return v.length > 1 ? v : value != null ? [value, value] : [];
-}
+import { PartUpgrade, UpgradesCard, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
 
 const driverPages: Record<string, string> = {
   NVIDIA: "https://www.nvidia.com/en-us/drivers/",
@@ -39,9 +30,10 @@ export function PCPage() {
     return () => document.removeEventListener("keydown", esc);
   });
   const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
+  const ups = useUpgrades();
   return (
     <div className="page">
-      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Pick a part to see its details. Drag to turn, scroll to zoom.</p></div></div>
+      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Point at a part to find it, pick it for details. Drag to turn, scroll to zoom.</p></div></div>
       <div className="pc-view">
         <section className="card stage-card">
           <StageSlot id="pc-stage" />
@@ -58,10 +50,11 @@ export function PCPage() {
           </div>
         </section>
         <div className="pc-side">
-          <aside className="card detail"><Detail /></aside>
+          <aside className="card detail"><Detail ups={ups} /></aside>
           <QuickSwitches />
         </div>
       </div>
+      <UpgradesCard ups={ups} />
     </div>
   );
 }
@@ -112,19 +105,41 @@ function QuickSwitches() {
 }
 
 /** One line that says what the parts list means: what needs a look, or that nothing does. */
-export function partsSummary(parts: Part[], name: string, online: boolean) {
+export function partsSummary(parts: Part[], name: string, online: boolean, unit: TempUnit = "c") {
   if (!parts.length) return `Rig hasn't read ${name}'s parts yet. They show up here once the Rig app on ${name} sends its first reading.`;
   const hot = parts.filter((p) => p.warn);
-  if (hot.length === 1) return `Your ${hot[0].type.toLowerCase()} needs a look.`;
-  if (hot.length > 1) return `${hot.length} parts need a look.`;
+  if (hot.length === 1) {
+    const p = hot[0];
+    return p.temp != null && p.limit ? `${p.type} is at ${formatTemp(p.temp, unit)}, ${limitWords(p.temp, p.limit, unit)}.` : `${p.type} has a warning. Open it for details.`;
+  }
+  if (hot.length > 1) return `${hot.length} parts have warnings: ${hot.map((p) => p.type.toLowerCase()).join(", ")}.`;
   if (parts.some((p) => p.temp != null)) return online ? "Nothing is running hot right now." : "Nothing was running hot at the last reading.";
   return "Pick one for its specs, manual and drivers.";
 }
 
-function Detail() {
-  const { ui, pc, set } = useApp();
+/** One part in the list: what it is, its temperature as it moves, and a light on it in the 3D view while pointed at. */
+function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
   const temp = useTemp();
+  return (
+    <li>
+      <button type="button" className={lit ? "is-lit" : undefined} onClick={() => getStage().scene.select(id)}
+        onPointerEnter={() => hoverPart(id)} onPointerLeave={() => hoverPart(null)} onFocus={() => hoverPart(id)} onBlur={() => hoverPart(null)}>
+        <span className="part-txt"><span className="pt">{part.type}</span><span className="pn">{part.name}</span></span>
+        {part.temp !== undefined && (
+          <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}</span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+function Detail({ ups }: { ups: PCUpgrades }) {
+  const { ui, pc, set } = useApp();
   const parts = pc.parts ?? {};
+  const unit = useTempUnit();
+  const lit = useStageHover();
+  // Leaving the page or opening a part takes the light off whatever row was pointed at.
+  useEffect(() => () => hoverPart(null), [ui.selected]);
   const select = (id: string | null) => getStage().scene.select(id);
   if (!ui.selected || !parts[ui.selected]) {
     const list = Object.entries(parts);
@@ -132,26 +147,22 @@ function Detail() {
       <>
         <div className="parts-head">
           <div className="parts-title"><h2>Parts</h2>{list.length > 0 && <span className="faint num">{list.length}</span>}</div>
-          <p className="parts-sum">{partsSummary(list.map(([, v]) => v), pc.name, pc.online)}</p>
+          <p className="parts-sum">{partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit)}</p>
         </div>
         {list.length > 0 && (
           <ul className="part-list" aria-label="Parts">
-            {list.map(([k, v]) => (
-              <li key={k}>
-                <button type="button" onClick={() => select(k)}>
-                  <span className="part-txt"><span className="pt">{v.type}</span><span className="pn">{v.name}</span></span>
-                  {v.temp !== undefined && <span className={`num part-temp${v.warn ? " look" : ""}`}>{temp(v.temp)}</span>}
-                </button>
-              </li>
-            ))}
+            {list.map(([k, v]) => <PartRow key={k} id={k} part={v} lit={lit === k} />)}
           </ul>
         )}
+        <OtherManuals />
       </>
     );
   }
   const id = ui.selected;
   const part = parts[id];
+  const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
   const tabs: [string, string][] = [["live", "Live"], ["specs", "Specs"], ["manual", "Manual"]];
+  if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : "live";
   return (
@@ -168,7 +179,7 @@ function Detail() {
       <div className="tabs" role="tablist">
         {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set({ tab: t })}>{l}</button>)}
       </div>
-      <div className="detail-body"><DetailTab part={part} id={id} tab={tab} /></div>
+      <div className="detail-body">{tab === "upgrade" ? <PartUpgrade ideas={ideas} ups={ups} /> : <DetailTab part={part} id={id} tab={tab} />}</div>
     </>
   );
 }
@@ -226,16 +237,13 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const unit = useTempUnit();
   const inUnit = useTempText();
   const [q, setQ] = useState("");
-  const trail = useTrail(`${pc.id}:${id}`, part.temp, pc.seenAt);
   if (tab === "specs") {
     return <><table className="kv"><tbody>{part.specs.map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table><SourceBadge part={part} /></>;
   }
   if (tab === "manual") {
     return (
       <>
-        {part.manual.length
-          ? <table className="kv manual-kv"><tbody>{part.manual.map(([k, v]) => <tr key={k}><th>{k}</th><td><span className="faint">{v}</span></td></tr>)}</tbody></table>
-          : <p className="muted">Ask a question and Rig looks it up in the {part.name} manual from the maker's support site.</p>}
+        <PartManual id={id} />
         <form className="ask-inline" onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(`About my ${part.name}: ${q.trim()}`); }}>
           <input id="ask-manual" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask this manual a question" aria-label="Ask this manual a question" />
           <button className="btn sm">Ask</button>
@@ -260,9 +268,21 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
     );
   }
   const tiles: JSX.Element[] = [];
-  if (part.temp !== undefined) tiles.push(<div key="t" className={`live${part.warn ? " warn" : ""}`}><span className="label">Temperature</span><span className="big">{temp(part.temp)}</span><Sparkline values={trail} w={130} h={26} warn={part.warn} /></div>);
+  if (part.temp !== undefined) {
+    tiles.push(
+      <div key="t" className={`live live-wide${part.warn ? " warn" : ""}`}>
+        <span className="label">Temperature</span>
+        <span key={Math.round(part.temp)} className="big live-tick">{temp(part.temp)}</span>
+        {part.limit ? (
+          <span className="live-meter" role="img" aria-label={limitWords(part.temp, part.limit, unit)}>
+            <i style={{ width: `${Math.min(100, (part.temp / part.limit) * 100)}%` }} /><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
+          </span>
+        ) : null}
+      </div>,
+    );
+  }
   if (part.tempMax !== undefined) tiles.push(<div key="m" className="live"><span className="label">Highest today</span><span className="big">{temp(part.tempMax)}</span></div>);
-  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span className="big">{part.load}%</span></div>);
+  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span key={part.load} className="big live-tick">{part.load}%</span><span className="bar live-load" aria-hidden="true"><i style={{ width: `${part.load}%` }} /></span></div>);
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
   return (
@@ -272,8 +292,8 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
         : <table className="kv"><tbody>{part.specs.slice(0, 3).map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table>}
       {part.warn && (
         <>
-          <div className="callout warn">{temp(part.temp)} is {limitWords(part.temp, part.limit, unit)}. {inUnit(pc.issues?.find((i) => i.part === id)?.body ?? "")}</div>
-          <a className="btn" href="#chat">Ask what to do</a>
+          <div className="callout warn">{inUnit(pc.issues?.find((i) => i.part === id)?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</div>
+          <a className="btn sm" href="#chat">Ask what to do</a>
         </>
       )}
       {part.soldered && <div className="callout">Soldered to the board, so it can't be upgraded.</div>}

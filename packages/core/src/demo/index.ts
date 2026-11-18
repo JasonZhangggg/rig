@@ -1,3 +1,4 @@
+import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import type { ActionCall } from "../actions";
 import { describeCall, titleFor } from "../actions";
 import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
@@ -14,6 +15,8 @@ import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
+import { DemoManuals } from "./manualShelf";
+import { makerName } from "../manualParts";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
 import atlasFacts from "./fixtures/atlas.facts.json";
@@ -24,6 +27,9 @@ export { activityAt, type Activity } from "./schedule";
 export { applyToFacts } from "./apply";
 export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
+export { DemoManuals } from "./manualShelf";
+export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
+export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
 interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
@@ -43,6 +49,8 @@ export class DemoClient implements RigClient {
   private pcs: Record<string, DemoPC>;
   private listeners = new Map<string, Set<(pc: PC) => void>>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Manuals per PC, in memory. Atlas starts with its board manual found and read. */
+  readonly shelf = new DemoManuals();
 
   constructor() {
     const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => {
@@ -63,6 +71,8 @@ export class DemoClient implements RigClient {
       "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E" }, 1),
       "demo-pebble": mk(fixtures.pebble.inv, fixtures.pebble.facts, { name: "Pebble", accent: "#3C7BF0" }, 0),
     };
+    const board = this.pcs["demo-atlas"].inv.board;
+    this.shelf.seed("demo-atlas", { part: "motherboard", kind: "motherboard", maker: makerName(board.manufacturer), model: board.product, source: "detected" });
     const day = 864e5;
     this.pcs["demo-atlas"].changes.push({
       id: "seed1", machineId: "demo-atlas", at: new Date(Date.now() - 5 * day).toISOString(), title: "Turned off NVIDIA Broadcast at startup", by: "rig", status: "applied",
@@ -202,6 +212,17 @@ export class DemoClient implements RigClient {
     return { ...c };
   }
 
+  // ----- Manuals -----
+  async manuals(id: string): Promise<Manual[]> { return this.shelf.list(id); }
+  async findManual(id: string, target: ManualTarget): Promise<Manual | null> { return this.shelf.find(id, target); }
+  /** The file itself stays with the screens (their copy on this device); the demo only records that it was added. */
+  async addManualFile(id: string, target: ManualTarget, file: { name: string; bytes: number }): Promise<Manual> { return this.shelf.add(id, target, file); }
+  async manualFile(id: string, mid: string): Promise<ArrayBuffer> { await sleep(300); return this.shelf.file(id, mid); }
+  async saveManualPages(id: string, mid: string, pages: ManualPage[], diagrams: ManualDiagram[]): Promise<Manual> { return this.shelf.save(id, mid, pages, diagrams); }
+  async searchManuals(id: string, q: string, opts?: { manualId?: string; limit?: number }): Promise<ManualHit[]> { return this.shelf.search(id, q, opts); }
+  async manualPage(id: string, mid: string, n: number): Promise<ManualPage | null> { return this.shelf.page(id, mid, n); }
+  async removeManual(id: string, mid: string): Promise<void> { return this.shelf.remove(id, mid); }
+
   async chat(id: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal) {
     const p = this.pcs[id];
     const q = history[history.length - 1]?.text.toLowerCase() ?? "";
@@ -226,6 +247,8 @@ export class DemoClient implements RigClient {
       } else {
         await say("There's no finished recording yet. When one finishes, I'll go through it here.");
       }
+    } else if (DemoManuals.asksManual(q)) {
+      await this.shelf.answer(id, p.id.name ?? "your PC", q, say, onEvent);
     } else if (/crash|black|freez|restart|blue ?screen|reboot|shut ?down|flicker/.test(q)) {
       await p.recorder.load();
       if (p.recorder.active()) {

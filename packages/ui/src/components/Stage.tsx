@@ -1,8 +1,25 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { createScene, type PCScene } from "../scene";
 
 // One WebGL scene for the whole app. Screens borrow it through <StageSlot>.
 let host: { el: HTMLDivElement; park: HTMLDivElement; scene: PCScene; onSelect: (id: string | null) => void } | null = null;
+
+// The part under the pointer in the 3D view, so a list can light up its row.
+let hovered: string | null = null;
+const hoverSubs = new Set<() => void>();
+function setHovered(id: string | null) {
+  if (id === hovered) return;
+  hovered = id;
+  hoverSubs.forEach((f) => f());
+}
+/** The part the pointer is over in the 3D view, or null. */
+export function useStageHover() {
+  return useSyncExternalStore((f) => { hoverSubs.add(f); return () => { hoverSubs.delete(f); }; }, () => hovered, () => null);
+}
+/** Lights a part up in the 3D view while a row about it is pointed at or focused. */
+export function hoverPart(id: string | null) {
+  getStage().scene.hover(id);
+}
 
 export function getStage() {
   if (!host) {
@@ -14,7 +31,7 @@ export function getStage() {
     el.setAttribute("aria-label", "3D view of your PC");
     park.appendChild(el);
     const h = { el, park, scene: null as unknown as PCScene, onSelect: (_id: string | null) => {} };
-    h.scene = createScene(el, { onSelect: (id) => h.onSelect(id) });
+    h.scene = createScene(el, { onSelect: (id) => h.onSelect(id), onHover: setHovered });
     host = h;
   }
   return host;

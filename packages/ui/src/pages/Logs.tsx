@@ -1,84 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
 import { isActive, type PCEvent } from "@rig/core";
-import { Icon } from "../components/common";
 import { useApp } from "../state";
 import { Detail } from "./logs/Detail";
-import { Events } from "./logs/Events";
+import { Counters, Events, MINOR, onDay, type EventPick } from "./logs/Events";
 import { NowRecording, Recordings } from "./logs/Recordings";
-import { caughtBy, highlights, summaryLine, whenWords } from "./logs/summary";
+import { highlights, serious } from "./logs/summary";
+import { shortDay } from "./logs/words";
+import { LogsHead } from "./logs/Head";
 
-/** What the Windows logs say about this PC lately, the few events that matter, and the recordings Rig made to find out why. */
+/** What the Windows logs say about this PC lately: a count per thing that went wrong, the events behind each, and the recordings Rig made to find out why. */
 export function Logs() {
-  const { client, pc, data, ui, ask, openRecording } = useApp();
+  const { client, pc, data, ui, openRecording } = useApp();
   const [events, setEvents] = useState<PCEvent[] | null>(null);
-  const [all, setAll] = useState(false);
+  const [pick, setPick] = useState<EventPick>(null);
+  const [day, setDay] = useState<number | null>(null);
   useEffect(() => {
     let live = true;
-    setEvents(null);
+    setEvents(null); setPick(null); setDay(null);
     client.events(pc.id).then((e) => live && setEvents(e)).catch(() => live && setEvents([]));
     return () => { live = false; };
   }, [client, pc.id]);
-  const groups = useMemo(() => highlights(events ?? [], pc.name), [events, pc.name]);
-  const line = useMemo(() => summaryLine(events ?? [], pc.name), [events, pc.name]);
+  const all = useMemo(() => events ?? [], [events]);
+  const groups = useMemo(() => highlights(all, pc.name), [all, pc.name]);
 
   const open = data.recordings.find((r) => r.id === ui.recordingId);
   if (open) return <Detail info={open} onBack={() => openRecording(null)} />;
 
+  const picked = groups.find((g) => g.key === pick);
+  const minor = pick === MINOR;
+  const byPick = picked ? picked.events : minor ? all.filter((e) => !serious(e)) : all;
+  const shown = day == null ? byPick : byPick.filter((e) => onDay(e, day));
+  const pickLabel = picked ? picked.short : minor ? "Minor" : null;
   const active = data.recordings.find(isActive);
+  const hasEvents = all.length > 0;
+
   return (
     <div className="page lg-page">
-      <div className="page-head">
-        <div><h1>Logs</h1><p className="sub">Read from the Windows event log on {pc.name}, in plain words. Rig only reads it.</p></div>
-      </div>
+      <LogsHead sub={`What Windows logged on ${pc.name}. Rig only reads it.`} />
 
       {active && <NowRecording r={active} pcName={pc.name} />}
 
-      <section className="lg-lede" aria-label="Summary">
-        {events == null ? <p className="lg-lede-text muted">Reading the event log…</p> : (
-          <>
-            <p className="lg-lede-text">{line.main}</p>
-            {line.rest && <p className="muted lg-lede-rest">{line.rest}</p>}
-            {groups.length > 0 && <button type="button" className="btn sm" disabled={data.answering} onClick={() => ask(`What do the recent Windows logs say about ${pc.name}, and should I do anything?`)}>Ask Rig what to do</button>}
-          </>
-        )}
-      </section>
+      {events == null && <p className="muted">Reading the event log…</p>}
+      {events != null && !hasEvents && <p className="lg-none">Windows logged no problems on {pc.name} in the last 30 days.</p>}
 
-      <div className={`lg-grid${groups.length ? "" : " solo"}`}>
-        {groups.length > 0 && (
-          <section className="lg-section" aria-labelledby="lg-worth-h">
-            <h2 id="lg-worth-h" className="lg-h">Worth knowing</h2>
-            <ul className="lg-highlights">
-              {groups.map((g) => {
-                const rec = caughtBy(g, data.recordings);
-                return (
-                  <li key={g.key}>
-                    <span className={`lg-hl-dot${g.key.startsWith("app:") ? "" : " look"}`} aria-hidden="true" />
-                    <div className="lg-hl-text">
-                      <div className="lg-hl-head"><b>{g.title}</b><span className="faint num">{whenWords(g)}</span></div>
-                      <p className="muted">{g.meaning}</p>
-                      {rec && <button type="button" className="linkish lg-hl-rec" onClick={() => openRecording(rec.id)}>A recording caught this. See what it found</button>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+      <div className={`lg-grid${hasEvents ? "" : " solo"}`}>
+        {hasEvents && (
+          <section className="lg-section lg-events" aria-labelledby="lg-ev-h">
+            <div className="lg-ev-head">
+              <h2 id="lg-ev-h" className="lg-h">Events <span className="faint num">{shown.length}</span></h2>
+              {pickLabel && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${pickLabel}`} onClick={() => setPick(null)}>{pickLabel}<span aria-hidden="true">×</span></button>}
+              {day != null && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${shortDay(day)}`} onClick={() => setDay(null)}>{shortDay(day)}<span aria-hidden="true">×</span></button>}
+            </div>
+            <Counters groups={groups} events={all} pick={picked || minor ? pick : null} onPick={setPick} />
+
+            <Events strip={byPick} events={shown} day={day} onDay={setDay} emptyText={day == null ? "Nothing here." : `${pickLabel ? "None of these" : "Nothing logged"} on ${shortDay(day)}.`} />
           </section>
         )}
         <Recordings />
       </div>
-
-      {events != null && events.length > 0 && (
-        <section className="lg-all" aria-labelledby="lg-all-h">
-          <h2 id="lg-all-h" className="lg-h">
-            <button type="button" className="lg-all-toggle" aria-expanded={all} aria-controls="lg-all-body" onClick={() => setAll(!all)}>
-              <Icon d="M8 4l6 6-6 6" />All events<span className="faint num">{events.length}</span>
-            </button>
-          </h2>
-          <div id="lg-all-body">
-            {all ? <Events events={events} /> : <p className="faint">Every entry with what Windows wrote, its source and event number, day by day.</p>}
-          </div>
-        </section>
-      )}
     </div>
   );
 }
