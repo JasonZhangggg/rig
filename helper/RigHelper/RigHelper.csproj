@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Rig's elevated helper: sensors (LibreHardwareMonitor), inventory (WMI)
-       and the fix catalog. Run with --service it is also Rig's background recorder.
+       and the fix catalog. In service mode it is also Rig's background recorder.
        Windows only; builds anywhere with EnableWindowsTargeting. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
