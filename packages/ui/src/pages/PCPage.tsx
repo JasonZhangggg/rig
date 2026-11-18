@@ -63,10 +63,10 @@ export function PCPage() {
         </section>
         <div className="pc-side">
           <aside className="card detail"><Detail ups={ups} /></aside>
-          <UpgradesCard ups={ups} />
           <QuickSwitches />
         </div>
       </div>
+      <UpgradesCard ups={ups} />
     </div>
   );
 }
