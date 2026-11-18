@@ -1,8 +1,2 @@
 ok manuals-page
 ok search
-ok upgrades
-ok viewer
-ok phone
-ok laptop-find
-FAIL part-tab: locator.click: Timeout 30000ms exceeded.
-ok chat
