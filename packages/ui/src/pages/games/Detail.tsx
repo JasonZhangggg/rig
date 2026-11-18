@@ -3,9 +3,9 @@ import { HOT_MARGIN, type Game, type GameLibrary, type GameSession, type GameSta
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { useApp, useTempUnit } from "../../state";
-import { sessionCount } from "./Library";
+import { headroomWords, sessionCount } from "./Library";
 import { Tuning } from "./Tuning";
-import { ago, cap, day, gap, hours, longDay, moment, noteText, partName, temp, timeRange } from "./words";
+import { ago, cap, day, hours, longDay, moment, noteText, partName, temp, timeRange } from "./words";
 
 interface Props {
   game: GameStats;
@@ -29,9 +29,10 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
   const longest = sessions.reduce((a, b) => (b.hours > a.hours ? b : a));
   const question = `How can I make ${game.name} run better and cooler on ${pc.name}? While I play, the ${part} is usually ${temp(game.typical, unit)} and peaks at ${temp(game.peak, unit)}, and its safe limit is ${temp(library.limit, unit)}.`;
   const near = game.headroom != null && game.headroom <= HOT_MARGIN;
+  const verdict = game.headroom == null ? `How warm ${game.name} ran` : game.headroom < 0 ? "It ran over the safe limit" : game.headroom === 0 ? "It reached the safe limit" : near ? "It came close to the safe limit" : "It ran cool";
 
   return (
-    <div className="page">
+    <div className="page pg-focus">
       <div className="page-head">
         <div>
           <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />All games</button>
@@ -44,30 +45,24 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
         </div>
       </div>
 
-      <section className="trend">
-        <div className="card card-pad">
-          <div className="label">{cap(part)} while playing</div>
-          <p className="num big-figure">{temp(game.typical, unit)}</p>
-          <p className="muted">Typical. {game.peakAt != null ? `The hottest moment was ${temp(game.peak, unit)}, ${moment(game.peakAt)}.` : ""}</p>
+      <section className={`card pg-lead ${near ? "look" : "good"}`} aria-labelledby="gm-detail-h">
+        <div className="pg-lead-text">
+          <span className="pg-lead-tag">{near ? "Worth a look" : "All good"}</span>
+          <h2 id="gm-detail-h" className="pg-lead-h">{verdict}</h2>
+          <p className="pg-lead-body">
+            {`The ${part} usually sits at ${temp(game.typical, unit)} while you play`}
+            {game.peakAt != null ? ` and peaked at ${temp(game.peak, unit)} ${moment(game.peakAt)}, against its ${temp(library.limit, unit)} limit.` : "."}
+            {` The longest session was ${hours(longest.hours)}, ${day(longest.from)}.`}
+          </p>
+          {game.notes.length > 0 && (
+            <div className="gm-notes">
+              <span className="label">What Rig noticed</span>
+              <ul>{game.notes.map((n) => <li key={n.kind}>{noteText(n, library.subject, unit)}</li>)}</ul>
+            </div>
+          )}
         </div>
-        <div className="card card-pad">
-          <div className="label">{game.headroom == null || game.headroom > 0 ? "Below the safe limit" : game.headroom === 0 ? "At the safe limit" : "Over the safe limit"}</div>
-          <p className="num big-figure" style={near ? { color: "var(--warn)" } : undefined}>{game.headroom == null ? "–" : gap(Math.abs(game.headroom), unit)}</p>
-          <p className="muted">Peak {temp(game.peak, unit)} against the {part}'s {temp(library.limit, unit)} limit. {near ? "Worth a look." : "Plenty of room."}</p>
-        </div>
-        <div className="card card-pad">
-          <div className="label">Longest session</div>
-          <p className="num big-figure">{hours(longest.hours)}</p>
-          <p className="muted">{day(longest.from)}. {sessions.length > 1 ? `Sessions average ${hours(game.hours / sessions.length)}.` : ""}</p>
-        </div>
+        <p className="pg-lead-fig"><b className="num">{temp(game.peak, unit)}</b><span className="muted">{game.headroom == null ? "Hottest moment" : headroomWords(game.headroom, unit)}</span></p>
       </section>
-
-      {game.notes.length > 0 && (
-        <section className="card card-pad gm-notes">
-          <h2>What Rig noticed</h2>
-          <ul>{game.notes.map((n) => <li key={n.kind}>{noteText(n, library.subject, unit)}</li>)}</ul>
-        </section>
-      )}
 
       <section className="card card-pad gm-sessions">
         <div className="gm-sess-head">
