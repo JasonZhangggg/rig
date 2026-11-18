@@ -17,11 +17,10 @@ export function spreads(points: readonly HistoryPoint[], pc: PC): Spread[] {
   });
 }
 
-export function Ranges({ points, pc, when }: { points: HistoryPoint[]; pc: PC; when: string }) {
+export function Ranges({ points, pc }: { points: HistoryPoint[]; pc: PC }) {
   const list = spreads(points, pc);
   return (
     <section className="card card-pad hi-card">
-      <div className="hi-card-head"><h2>Lowest, typical and highest</h2><span className="faint">{when}</span></div>
       {list.length ? <div className="hi-ranges">{list.map((s) => <Row key={s.key} s={s} />)}</div> : <p className="muted">No readings in this range.</p>}
     </section>
   );

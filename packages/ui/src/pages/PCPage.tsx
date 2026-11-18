@@ -3,9 +3,9 @@ import { formatTemp, type ActionCall, type Part, type TempUnit } from "@rig/core
 import { Sparkline } from "../chart";
 import { StageSlot, getStage } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
+import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince } from "./shared";
-import { PartManual } from "../manuals/PartManual";
 
 /** The last few readings of a value, kept while the page is open. */
 function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40) {
@@ -42,16 +42,13 @@ export function PCPage() {
   const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
   return (
     <div className="page">
-      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Click any part for temperatures, specs, its manual and drivers. Drag to turn, scroll to zoom.</p></div></div>
+      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Pick a part to see its details. Drag to turn, scroll to zoom.</p></div></div>
       <div className="pc-view">
         <section className="card stage-card">
           <StageSlot id="pc-stage" />
           <div className="stage-top">
-            <div className="id-chip">
-              <span className="dot" />
-              <div><strong>{pc.name}</strong><div className="src">{pc.model?.label}</div></div>
-              <button ref={customizeBtn} className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
-            </div>
+            {pc.model?.label ? <span className="stage-src">{pc.model.label}</span> : <span />}
+            <button ref={customizeBtn} className="btn sm stage-btn" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
           </div>
           {customize && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
@@ -83,8 +80,8 @@ function Customize({ onDone }: { onDone: () => void }) {
           {pcAccents.map((a) => <button key={a} type="button" className="swatch" style={{ background: a }} aria-label={`Accent ${a}`} aria-pressed={a.toLowerCase() === pc.accent.toLowerCase()} onClick={() => update({ accent: a })} />)}
         </div>
       </div>
-      <p className="faint" style={{ fontSize: 12 }}>The accent marks this PC in your list of PCs.</p>
-      <div style={{ display: "flex", justifyContent: "flex-end" }}><button className="btn primary sm" type="button" onClick={() => { if (name.trim() && name !== pc.name) update({ name: name.trim() }); onDone(); }}>Done</button></div>
+      <p className="faint customize-note">The accent marks this PC in your list of PCs.</p>
+      <div className="customize-foot"><button className="btn primary sm" type="button" onClick={() => { if (name.trim() && name !== pc.name) update({ name: name.trim() }); onDone(); }}>Done</button></div>
     </div>
   );
 }
@@ -115,23 +112,41 @@ function QuickSwitches() {
   );
 }
 
+/** One line that says what the parts list means: what needs a look, or that nothing does. */
+export function partsSummary(parts: Part[], name: string, online: boolean) {
+  if (!parts.length) return `Rig hasn't read ${name}'s parts yet. They show up here once the Rig app on ${name} sends its first reading.`;
+  const hot = parts.filter((p) => p.warn);
+  if (hot.length === 1) return `Your ${hot[0].type.toLowerCase()} needs a look.`;
+  if (hot.length > 1) return `${hot.length} parts need a look.`;
+  if (parts.some((p) => p.temp != null)) return online ? "Nothing is running hot right now." : "Nothing was running hot at the last reading.";
+  return "Pick one for its specs, manual and drivers.";
+}
+
 function Detail() {
   const { ui, pc, set } = useApp();
   const temp = useTemp();
   const parts = pc.parts ?? {};
   const select = (id: string | null) => getStage().scene.select(id);
   if (!ui.selected || !parts[ui.selected]) {
+    const list = Object.entries(parts);
     return (
       <>
-        <div className="card-head"><h2>Parts</h2><span className="faint">{Object.keys(parts).length}</span></div>
-        <div className="part-list">
-          {Object.entries(parts).map(([k, v]) => (
-            <button key={k} type="button" onClick={() => select(k)}>
-              <span><div className="pt">{v.type}</div>{v.name}</span>
-              {v.temp !== undefined && <span className={`num${v.warn ? "" : " faint"}`} style={v.warn ? { color: "var(--warn)" } : undefined}>{temp(v.temp)}</span>}
-            </button>
-          ))}
+        <div className="parts-head">
+          <div className="parts-title"><h2>Parts</h2>{list.length > 0 && <span className="faint num">{list.length}</span>}</div>
+          <p className="parts-sum">{partsSummary(list.map(([, v]) => v), pc.name, pc.online)}</p>
         </div>
+        {list.length > 0 && (
+          <ul className="part-list" aria-label="Parts">
+            {list.map(([k, v]) => (
+              <li key={k}>
+                <button type="button" onClick={() => select(k)}>
+                  <span className="part-txt"><span className="pt">{v.type}</span><span className="pn">{v.name}</span></span>
+                  {v.temp !== undefined && <span className={`num part-temp${v.warn ? " look" : ""}`}>{temp(v.temp)}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </>
     );
   }
@@ -142,9 +157,14 @@ function Detail() {
   const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : "live";
   return (
     <>
-      <div className="card-head">
-        <div><div className="label">{part.type}</div><h2 className="plain-h">{part.name}</h2>{part.sub && <div className="faint">{part.sub}</div>}</div>
-        <button className="btn ghost sm" type="button" onClick={() => select(null)} aria-label="Close">✕</button>
+      <div className="detail-head">
+        <button className="detail-back" type="button" onClick={() => select(null)}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          All parts
+        </button>
+        <div className="pt">{part.type}</div>
+        <h2>{part.name}</h2>
+        {part.sub && <div className="faint">{part.sub}</div>}
       </div>
       <div className="tabs" role="tablist">
         {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set({ tab: t })}>{l}</button>)}
@@ -215,11 +235,11 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
     return (
       <>
         <PartManual id={id} />
-        <form className="ask-inline card" style={{ padding: "6px 6px 6px 12px" }} onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(`About my ${part.name}: ${q.trim()}`); }}>
+        <form className="ask-inline" onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(`About my ${part.name}: ${q.trim()}`); }}>
           <input id="ask-manual" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask this manual a question" aria-label="Ask this manual a question" />
           <button className="btn sm">Ask</button>
         </form>
-        <p className="faint" style={{ fontSize: 12 }}>Answers name the manual and page they came from.</p>
+        <p className="faint detail-note">Answers name the manual and page they came from.</p>
       </>
     );
   }
@@ -230,11 +250,11 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
       <>
         <table className="kv"><tbody><tr><th>Installed</th><td className="num">{d.installed}</td></tr>{d.latest && <tr><th>Latest</th><td className="num">{d.latest}</td></tr>}</tbody></table>
         {d.note && <p className="muted">{d.note}</p>}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="detail-actions">
           <button className="btn" type="button" onClick={() => ask(`Is there a newer ${part.type.toLowerCase()} ${d.installed.startsWith("BIOS") ? "BIOS" : "driver"} for my ${part.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>
           {maker && <a className="btn ghost" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>}
         </div>
-        <p className="faint" style={{ fontSize: 12 }}>Rig never installs drivers or BIOS updates by itself.</p>
+        <p className="faint detail-note">Rig never installs drivers or BIOS updates by itself.</p>
       </>
     );
   }

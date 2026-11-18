@@ -7,9 +7,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, type PC, type Part, type TempUnit } from "@rig/core";
+import { reducedMotion } from "./appearance";
+import { placeLabels } from "./sceneLabels";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -60,6 +61,7 @@ export interface PCScene {
 type Vec3 = [number, number, number];
 interface MatOpts { op?: number; emissive?: string; ei?: number }
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
+interface Label { pin: HTMLDivElement; dot: HTMLElement; lead: HTMLElement; el: HTMLButtonElement; anchor: THREE.Object3D; w: number; h: number; hidden: boolean }
 /** The camera's vertical field of view on a landscape stage, in degrees. */
 const BASE_FOV = 32;
 
@@ -72,7 +74,6 @@ export function fovFor(aspect: number) {
 
 interface Framing { target: THREE.Vector3; cam: THREE.Vector3; camExploded: THREE.Vector3 }
 
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function createScene(
   container: HTMLElement,
@@ -89,9 +90,10 @@ export function createScene(
   container.appendChild(renderer.domElement);
   const outlined = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultKeepAlive: true });
 
-  const labels = new CSS2DRenderer();
-  labels.domElement.className = "scene-labels";
-  container.appendChild(labels.domElement);
+  // Part labels: a pin on the part, a leader out to the side, and the label, laid out in px each frame.
+  const layer = document.createElement("div");
+  layer.className = "scene-labels";
+  container.appendChild(layer);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -210,7 +212,7 @@ export function createScene(
     entries: [] as Entry[],
     rotors: [] as { rotor: THREE.Object3D; partId: string }[],
     pickables: [] as THREE.Mesh[],
-    labels: {} as Record<string, { el: HTMLButtonElement; obj: CSS2DObject }>,
+    labels: {} as Record<string, Label>,
     pulses: [] as THREE.Sprite[],
     air: null as null | { group: THREE.Group; mats: THREE.ShaderMaterial[] },
     airOn: true,
@@ -371,7 +373,7 @@ export function createScene(
     for (const [id, l] of Object.entries(state.labels)) {
       const part = parts()[id];
       const html = part ? labelHTML(part) : "";
-      if (part && l.el.innerHTML !== html) l.el.innerHTML = html;
+      if (part && l.el.innerHTML !== html) { l.el.innerHTML = html; labelsDirty = true; }
     }
   }
 
@@ -384,10 +386,20 @@ export function createScene(
     el.dataset.part = partId;
     el.innerHTML = labelHTML(part);
     el.addEventListener("click", (e) => { e.stopPropagation(); select(partId); });
-    const obj = new CSS2DObject(el);
-    obj.position.set(...pos);
-    anchor.add(obj);
-    state.labels[partId] = { el, obj };
+    const pin = document.createElement("div");
+    pin.className = "scene-pin";
+    pin.dataset.part = partId;
+    const dot = document.createElement("i");
+    dot.className = "pin-dot";
+    const lead = document.createElement("i");
+    lead.className = "pin-lead";
+    pin.append(lead, dot, el);
+    layer.appendChild(pin);
+    const at = new THREE.Object3D();
+    at.position.set(...pos);
+    anchor.add(at);
+    state.labels[partId] = { pin, dot, lead, el, anchor: at, w: 0, h: 0, hidden: false };
+    labelsDirty = true;
   }
 
   // ---------- tower ----------
@@ -633,7 +645,7 @@ export function createScene(
     if (!a.group.visible) return;
     const speed = (parts().fans?.fan ?? 1100) / 1100;
     for (const m of a.mats) {
-      if (!reduceMotion) m.uniforms.time.value += dt * speed;
+      if (!reducedMotion()) m.uniforms.time.value += dt * speed;
       m.uniforms.opacity.value = (theme().air ?? 0) * vis;
     }
   }
@@ -744,7 +756,7 @@ export function createScene(
   function rebuild() {
     scene.remove(root);
     root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
-    for (const l of Object.values(state.labels)) l.obj.removeFromParent();
+    for (const l of Object.values(state.labels)) l.pin.remove();
     root = new THREE.Group();
     scene.add(root);
     state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = []; state.air = null;
@@ -784,14 +796,108 @@ export function createScene(
     });
     applyHighlights();
     applyExplode(true);
+    // What the camera fits to the stage: the PC's box and the turntable. The turntable's sides may run a little
+    // past the box, under a page's text, so the PC itself can be bigger; its front edge always shows.
+    fitPts.length = 0;
+    // Only the parts' solid shapes count, not the air paths or the glow around fans.
+    const box3 = new THREE.Box3(), part = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    for (const e of state.entries) e.obj.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      box3.union(part.copy(o.geometry.boundingBox!).applyMatrix4(o.matrixWorld));
+    });
+    if (box3.isEmpty()) box3.copy(bb);
+    for (let i = 0; i < 8; i++) fitPts.push({ v: new THREE.Vector3(i & 1 ? box3.max.x : box3.min.x, i & 2 ? box3.max.y : box3.min.y, i & 4 ? box3.max.z : box3.min.z), x: true, y: true });
+    if (ped) for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      for (const [k, x, y] of [[1.02, false, true], [0.62, true, false]] as const) {
+        for (const h of [PED_TOP, PED_TOP - 0.16]) fitPts.push({ v: new THREE.Vector3(mid.x + Math.cos(a) * pr * k, h, mid.z + Math.sin(a) * pr * k), x, y });
+      }
+    }
+    box3.getBoundingSphere(model);
+  }
+
+  // ---------- framing ----------
+  // A page can ask for the PC to fill a box inside the stage, through CSS on the stage:
+  // --fit-inset (top right bottom left, in px) and --fit-x (0 hugs the box's left, 0.5 centres it).
+  // Without it the camera keeps its designed distance.
+  const fitPts: { v: THREE.Vector3; x: boolean; y: boolean }[] = [];
+  const model = new THREE.Sphere();
+  const fitCam = new THREE.PerspectiveCamera();
+  let fit: { t: number; r: number; b: number; l: number; x: number } | null = null;
+  let fitD = 0;
+  let stageW = 0, stageH = 0;
+  const SWAY = 0.32;
+
+  function readFit() {
+    const cs = getComputedStyle(container);
+    const raw = cs.getPropertyValue("--fit-inset").trim();
+    if (!raw) { fit = null; return; }
+    const [t, r = t, b = t, l = r] = raw.split(/\s+/).map(parseFloat);
+    const x = parseFloat(cs.getPropertyValue("--fit-x"));
+    fit = { t, r, b, l, x: Number.isFinite(x) ? x : 0.5 };
+  }
+
+  // The PC's outline on screen from a camera dist away along dir, over the whole of the slow sway.
+  const _p = new THREE.Vector3(), _d = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+  function footprint(dir: THREE.Vector3, dist: number, w: number, h: number) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const a of [-SWAY, 0, SWAY]) {
+      fitCam.position.copy(framing!.target).addScaledVector(_d.copy(dir).applyAxisAngle(UP, a), dist);
+      fitCam.lookAt(framing!.target);
+      fitCam.updateMatrixWorld();
+      for (const f of fitPts) {
+        _p.copy(f.v).project(fitCam);
+        const x = (_p.x + 1) / 2 * w, y = (1 - _p.y) / 2 * h;
+        if (f.x) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+        if (f.y) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      }
+    }
+    return { x0, y0, x1, y1 };
+  }
+
+  function applyFit() {
+    const wasFit = fitD > 0;
+    if (!fit || !framing || !fitPts.length || !stageW) {
+      fitD = 0;
+      camera.clearViewOffset();
+      if (wasFit && framing) { camAnim = null; camera.position.copy(wantPos(state.exploded)); }
+      return;
+    }
+    const w = stageW, h = stageH;
+    fitCam.fov = camera.fov; fitCam.aspect = w / h; fitCam.near = camera.near; fitCam.far = camera.far;
+    fitCam.updateProjectionMatrix();
+    const dir = framing.cam.clone().sub(framing.target).normalize();
+    const bw = Math.max(40, w - fit.l - fit.r), bh = Math.max(40, h - fit.t - fit.b);
+    let dist = framing.cam.distanceTo(framing.target), o = footprint(dir, dist, w, h);
+    for (let i = 0; i < 3; i++) {
+      dist /= Math.min(bw / (o.x1 - o.x0), bh / (o.y1 - o.y0));
+      o = footprint(dir, dist, w, h);
+    }
+    fitD = dist;
+    const ox = fit.l + (bw - (o.x1 - o.x0)) * fit.x - o.x0, oy = fit.t + (bh - (o.y1 - o.y0)) / 2 - o.y0;
+    camera.setViewOffset(w, h, -ox, -oy, w, h);
+    if (camAnim) camAnim.to = wantPos(state.exploded);
+    else {
+      const k = state.exploded ? explodedRatio() : 1;
+      camera.position.sub(framing.target).setLength(fitD * k).add(framing.target);
+    }
+  }
+
+  const explodedRatio = () => framing!.camExploded.distanceTo(framing!.target) / framing!.cam.distanceTo(framing!.target);
+  function wantPos(exploded: boolean) {
+    const base = exploded ? framing!.camExploded : framing!.cam;
+    if (!fitD) return base.clone();
+    return base.clone().sub(framing!.target).setLength(fitD * (exploded ? explodedRatio() : 1)).add(framing!.target);
   }
 
   function frame(exploded: boolean, instant: boolean) {
     if (!framing) return;
-    const want = exploded ? framing.camExploded : framing.cam;
+    const want = wantPos(exploded);
     controls.target.copy(framing.target);
     if (instant) camera.position.copy(want);
-    else camAnim = { from: camera.position.clone(), to: want.clone(), t: 0 };
+    else camAnim = { from: camera.position.clone(), to: want, t: 0 };
   }
   let camAnim: { from: THREE.Vector3; to: THREE.Vector3; t: number } | null = null;
 
@@ -834,8 +940,9 @@ export function createScene(
     }
     for (const [id, l] of Object.entries(state.labels)) {
       l.el.classList.toggle("is-selected", state.selected === id);
-      l.el.hidden = !(state.exploded || state.heat || state.selected === id);
+      l.pin.classList.toggle("is-selected", state.selected === id);
     }
+    labelsDirty = true;
   }
 
   function applyExplode(instant: boolean) {
@@ -887,15 +994,86 @@ export function createScene(
     onSelect?.(state.selected);
   }
 
+  // ---------- labels ----------
+  // Sizes are read only when something changed (labelsDirty), before anything is written in that frame;
+  // every frame after that only writes transforms.
+  let labelsDirty = true, labelFrame = 0;
+  const sides: Record<string, -1 | 1> = {};
+  const _a = new THREE.Vector3(), _l = new THREE.Vector3();
+  const occluder = new THREE.Raycaster();
+  const put = (el: HTMLElement, tf: string) => { if (el.style.transform !== tf) el.style.transform = tf; };
+  const px = (v: number) => Math.round(v * 10) / 10;
+
+  function layoutLabels() {
+    const all = Object.entries(state.labels);
+    if (!all.length || !stageW) return;
+    if (labelsDirty) {
+      for (const [, l] of all) { l.w = l.el.offsetWidth; l.h = l.el.offsetHeight; }
+      labelsDirty = false;
+    }
+    const shown = all.filter(([, l]) => l.w > 0);
+    if (!shown.length) return;
+    const w = stageW, h = stageH;
+    const near = camera.position.distanceTo(model.center) - model.radius;
+    // Every few frames, labels whose part is behind something solid fade back.
+    const look = labelFrame++ % 6 === 0;
+    const pins = [];
+    for (const [id, l] of shown) {
+      l.anchor.getWorldPosition(_a);
+      const dist = _a.distanceTo(camera.position);
+      if (look) {
+        occluder.set(camera.position, _l.copy(_a).sub(camera.position).normalize());
+        occluder.far = dist - 0.05;
+        const hit = occluder.intersectObjects(state.pickables, false).find((x) => {
+          const m = (x.object as THREE.Mesh).material as THREE.Material;
+          return x.object.userData.part !== id && x.object.visible && m.opacity >= 0.5;
+        });
+        l.hidden = !!hit;
+      }
+      _a.project(camera);
+      const off = _a.z > 1 || Math.abs(_a.x) > 1.1 || Math.abs(_a.y) > 1.1;
+      l.pin.classList.toggle("is-off", off);
+      l.pin.classList.toggle("is-behind", l.hidden);
+      if (off) continue;
+      pins.push({ id, x: (_a.x + 1) / 2 * w, y: (1 - _a.y) / 2 * h, depth: (dist - near) / (2 * model.radius), w: l.w, h: l.h });
+    }
+    _a.copy(model.center).project(camera);
+    const placed = placeLabels(pins, { width: w, height: h, cx: (_a.x + 1) / 2 * w }, sides);
+    pins.forEach((p, i) => {
+      const q = placed[i], l = state.labels[p.id];
+      sides[p.id] = q.side;
+      const dx = q.ex - p.x, dy = q.ey - p.y;
+      put(l.dot, `translate(${px(p.x)}px, ${px(p.y)}px) scale(${px(q.scale)})`);
+      put(l.lead, `translate(${px(p.x)}px, ${px(p.y)}px) rotate(${Math.atan2(dy, dx).toFixed(3)}rad) scaleX(${px(Math.hypot(dx, dy))})`);
+      put(l.el, `translate(${px(q.x)}px, ${px(q.y)}px) scale(${q.scale.toFixed(3)})`);
+      // Only the pin and leader fade with distance; the label itself stays solid so its text stays crisp.
+      const op = q.opacity.toFixed(2);
+      if (l.pin.style.getPropertyValue("--fade") !== op) l.pin.style.setProperty("--fade", op);
+      const z = String(Math.round((1 - p.depth) * 100));
+      if (l.pin.style.zIndex !== z) l.pin.style.zIndex = z;
+    });
+    // Labels cast their soft shadow away from the scene's key light.
+    _a.copy(model.center).project(camera);
+    _l.copy(model.center).add(key.position.clone().normalize()).project(camera);
+    const sx = _l.x - _a.x, sy = _a.y - _l.y, n = Math.hypot(sx, sy) || 1;
+    const lx = `${(-sx / n * 3).toFixed(1)}px`, ly = `${(-sy / n * 3 + 1).toFixed(1)}px`;
+    if (layer.style.getPropertyValue("--lx") !== lx) layer.style.setProperty("--lx", lx);
+    if (layer.style.getPropertyValue("--ly") !== ly) layer.style.setProperty("--ly", ly);
+  }
+  document.fonts?.ready.then(() => { labelsDirty = true; });
+
   // ---------- loop ----------
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
     if (!w || !h) return;
+    stageW = w; stageH = h;
     renderer.setSize(w, h, false);
-    labels.setSize(w, h);
     camera.aspect = w / h;
     camera.fov = fovFor(camera.aspect);
     camera.updateProjectionMatrix();
+    readFit();
+    applyFit();
+    labelsDirty = true;
   }
   const ro = new ResizeObserver(resize);
   ro.observe(container);
@@ -904,19 +1082,35 @@ export function createScene(
   controls.addEventListener("start", () => { dragging = true; spin = false; });
   controls.addEventListener("end", () => { dragging = false; });
   const clock = new THREE.Clock();
-  let raf = 0;
+  // Draws only while the stage is on screen and the tab is showing, and picks up again on the next change.
+  let raf = 0, onScreen = true, tabShown = !document.hidden, built = false, gone = false;
+  const live = () => built && onScreen && tabShown && !gone;
+  function wake() {
+    if (raf || !live()) return;
+    clock.getDelta();
+    tick();
+  }
+  const io = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
+    onScreen = entries[entries.length - 1].isIntersecting;
+    wake();
+  });
+  io?.observe(container);
+  const onVisibility = () => { tabShown = !document.hidden; wake(); };
+  document.addEventListener("visibilitychange", onVisibility);
   function tick() {
+    raf = 0;
+    if (!live()) return;
     raf = requestAnimationFrame(tick);
     const dt = Math.min(clock.getDelta(), 0.05);
     const target = state.exploded ? 1 : 0;
     if (state.explodeT !== target) {
-      const step = reduceMotion ? 1 : dt * 1.6;
+      const step = reducedMotion() ? 1 : dt * 1.6;
       state.explodeT = target > state.explodeT ? Math.min(1, state.explodeT + step) : Math.max(0, state.explodeT - step);
       applyExplode(false);
     }
-    if (spin && !camAnim && !dragging && !reduceMotion) {
+    if (spin && !camAnim && !dragging && !reducedMotion()) {
       spinT += dt;
-      const off = Math.sin(spinT * 0.35) * 0.32;
+      const off = Math.sin(spinT * 0.35) * SWAY;
       const d = off - spinOff;
       spinOff = off;
       const v = camera.position.clone().sub(controls.target);
@@ -924,11 +1118,11 @@ export function createScene(
       camera.position.copy(controls.target).add(v);
     }
     if (camAnim) {
-      camAnim.t = Math.min(1, camAnim.t + (reduceMotion ? 1 : dt * 1.4));
+      camAnim.t = Math.min(1, camAnim.t + (reducedMotion() ? 1 : dt * 1.4));
       camera.position.lerpVectors(camAnim.from, camAnim.to, easeInOut(camAnim.t));
       if (camAnim.t >= 1) camAnim = null;
     }
-    if (!reduceMotion) {
+    if (!reducedMotion()) {
       for (const { rotor, partId } of state.rotors) {
         const rpm = parts()[partId]?.fan ?? 1200;
         rotor.rotation.z -= dt * rpm * 0.012;
@@ -936,19 +1130,20 @@ export function createScene(
     }
     stepAir(dt);
     if (state.pulses.length) {
-      const k = reduceMotion ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
+      const k = reducedMotion() ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
     controls.update();
     outlined.render(scene, camera);
-    labels.render(scene, camera);
+    layoutLabels();
   }
 
   return {
     setPC(pc, t) {
       state.pc = pc; state.theme = t; state.selected = null;
       rebuild(); resize(); frame(state.exploded, true);
-      if (!raf) tick();
+      built = true;
+      wake();
     },
     update(pc) { state.pc = pc; refreshLabels(); applyHighlights(); },
     setTheme(t) { state.theme = t; if (state.pc) rebuild(); },
@@ -960,6 +1155,14 @@ export function createScene(
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
     setAirflow(v) { state.airOn = v; },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); },
-    dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); },
+    dispose() {
+      gone = true;
+      cancelAnimationFrame(raf);
+      raf = 0;
+      ro.disconnect();
+      io?.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+      renderer.dispose();
+    },
   };
 }

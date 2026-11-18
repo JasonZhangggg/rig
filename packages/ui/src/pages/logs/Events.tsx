@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { eventKinds, eventTitle, type EventKind, type PCEvent } from "@rig/core";
+import { serious } from "./summary";
 import { clock, dayName, kindWord, shortDay } from "./words";
 
 const DAYS = 30;
 const DAY = 864e5;
-const serious = (e: PCEvent) => e.kind !== "other" && (e.level !== "warning" || e.kind === "driver");
 
 /** One Windows event: when, what it means, and what Windows wrote. */
 export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {
@@ -36,42 +36,32 @@ function Strip({ events }: { events: PCEvent[] }) {
   );
 }
 
-/** The Windows event timeline with its filter. Null while loading. */
-export function Events({ events, pcName }: { events: PCEvent[] | null; pcName: string }) {
+/** Every Windows event with its filter, day by day, with what Windows wrote. */
+export function Events({ events }: { events: PCEvent[] }) {
   const [kind, setKind] = useState<EventKind | "all">("all");
-  const shown = useMemo(() => (events ?? []).filter((e) => kind === "all" || e.kind === kind), [events, kind]);
+  const shown = useMemo(() => events.filter((e) => kind === "all" || e.kind === kind), [events, kind]);
   const groups = useMemo(() => {
     const out: { day: string; list: PCEvent[] }[] = [];
     for (const e of shown) { const day = dayName(e.t); if (out[out.length - 1]?.day === day) out[out.length - 1].list.push(e); else out.push({ day, list: [e] }); }
     return out;
   }, [shown]);
-  const count = (k: EventKind) => (events ?? []).filter((e) => e.kind === k).length;
+  const count = (k: EventKind) => events.filter((e) => e.kind === k).length;
 
   return (
-    <section className="card lg-events">
-      <div className="card-head">
-        <h2>Windows events</h2>
-        <div className="seg lg-filter" role="group" aria-label="Kind of event">
-          <button type="button" aria-pressed={kind === "all"} onClick={() => setKind("all")}>All</button>
-          {eventKinds.filter((k) => count(k.kind) > 0 || k.kind !== "other").map((k) => (
-            <button key={k.kind} type="button" aria-pressed={kind === k.kind} onClick={() => setKind(k.kind)}>{k.label}{count(k.kind) > 0 && <em className="num">{count(k.kind)}</em>}</button>
-          ))}
-        </div>
+    <div className="lg-all-body">
+      <div className="seg lg-filter" role="group" aria-label="Kind of event">
+        <button type="button" aria-pressed={kind === "all"} onClick={() => setKind("all")}>All<em className="num">{events.length}</em></button>
+        {eventKinds.filter((k) => count(k.kind) > 0).map((k) => (
+          <button key={k.kind} type="button" aria-pressed={kind === k.kind} onClick={() => setKind(k.kind)}>{k.label}<em className="num">{count(k.kind)}</em></button>
+        ))}
       </div>
-      {events == null ? <p className="card-pad muted">Reading the event log…</p> : events.length === 0 ? (
-        <p className="card-pad muted">Nothing went wrong on {pcName} in the last {DAYS} days: no crashes, driver resets, hardware errors, unexpected shutdowns or disk problems in the Windows event log.</p>
-      ) : (
-        <>
-          <Strip events={shown} />
-          {shown.length === 0 && <p className="card-pad muted">None of these in the last {DAYS} days.</p>}
-          {groups.map((g) => (
-            <div key={g.day} className="ev-group">
-              <div className="label">{g.day}</div>
-              <ul className="ev-list">{g.list.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} />)}</ul>
-            </div>
-          ))}
-        </>
-      )}
-    </section>
+      <Strip events={shown} />
+      {groups.map((g) => (
+        <div key={g.day} className="ev-group">
+          <div className="label">{g.day}</div>
+          <ul className="ev-list">{g.list.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} />)}</ul>
+        </div>
+      ))}
+    </div>
   );
 }

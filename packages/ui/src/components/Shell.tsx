@@ -4,15 +4,16 @@ import { useApp } from "../state";
 import { DiffTable } from "./common";
 
 export const navItems: [Route, string, string][] = [
-  ["overview", "Overview", "M3 10.5 10 4l7 6.5V17H3z"],
+  ["overview", "Home", "M3 10.5 10 4l7 6.5V17H3z"],
   ["pc", "My PC", "M6 3h8v14H6zM9 6h2M9 14h2"],
   ["manuals", "Manuals", "M4 15.5V4.5A1.5 1.5 0 0 1 5.5 3H16v12H5.5A1.5 1.5 0 0 0 4 16.5 1.5 1.5 0 0 0 5.5 18H16M8 7h5"],
   ["chat", "Ask", "M4 5h12v8H9l-4 3v-3H4z"],
   ["changes", "Changes", "M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2"],
   ["upgrades", "Upgrades", "M10 16V5M5.5 9.5 10 5l4.5 4.5"],
   ["games", "Games", "M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01"],
-  ["history", "History", "M3 15l4-5 3 3 5-7M3 17h14"],
+  ["history", "Temperatures", "M3 15l4-5 3 3 5-7M3 17h14"],
   ["logs", "Logs", "M5 3h7l3 3v11H5zM12 3v3h3M8 10h4M8 13h4"],
+  ["settings", "Settings", "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4"],
 ];
 
 /** Shows exactly what will change, before anything does. */

@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Account, RigClient } from "@rig/core";
-import { AppProvider, useApp, type AppHost } from "./state";
+import { AppProvider, useApp, useAppearance, type AppHost } from "./state";
+import { applyAppearance } from "./appearance";
 import { getStage } from "./components/Stage";
 import { ReviewSheet, Toast } from "./components/Shell";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
-import { sceneTheme } from "./themes";
+import { sceneThemeFor } from "./themes";
+import type { SceneTheme } from "./scene";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
@@ -31,6 +33,8 @@ export interface RigAppProps {
 
 /** The whole Rig app. The desktop app and the website mount this with their own client. */
 export function RigApp({ client, requireAccount, host }: RigAppProps) {
+  const look = useAppearance();
+  useLayoutEffect(() => applyAppearance(look), [look]);
   const [account, setAccount] = useState<Account | null | undefined>(requireAccount ? undefined : null);
   const [down, setDown] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -86,9 +90,14 @@ function Root() {
 
   useEffect(() => { getStage().onSelect = (id) => set({ selected: id, tab: "live" }); }, [set]);
 
-  // Rebuild the 3D model only when its shape changes; otherwise just feed it new readings.
+  // Rebuild the 3D model only when its shape or colors change; otherwise just feed it new readings.
+  const look = useAppearance();
+  const themeKey = JSON.stringify(sceneThemeFor(look));
+  const theme = useMemo(() => JSON.parse(themeKey) as SceneTheme, [themeKey]);
+  const built = useRef(theme);
   const shape = `${pc.id}|${pc.kind}|${pc.parts?.gpu?.warn ?? ""}|${Object.keys(pc.parts ?? {}).join()}`;
-  useEffect(() => { scene.setPC(pc, sceneTheme); }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { built.current = theme; scene.setPC(pc, theme); }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (built.current !== theme) { built.current = theme; scene.setTheme(theme); } }, [theme, scene]);
   useEffect(() => { scene.update(pc); }, [pc, scene]);
   useEffect(() => { scene.setTempUnit(ui.tempUnit); }, [ui.tempUnit, scene]);
   useEffect(() => {

@@ -33,6 +33,7 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
   const question = `Look at the recording "${info.reason}" on ${pc.name}. What did it find, and what should I do?`;
   const stat = (k: "cpu" | "gpu") => sum?.stats[k];
   const top = sum?.offenders[0];
+  const [more, setMore] = useState(false);
 
   return (
     <div className="page">
@@ -40,13 +41,12 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
         <div>
           <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />All logs</button>
           <h1>{info.minutes}-minute recording</h1>
-          <p className="rec-reason">{info.reason}</p>
-          <p className="sub">{whenRan(info)}. Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</p>
+          <p className="sub">{info.reason}</p>
+          <p className="rec-meta-line">{whenRan(info)}. Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</p>
         </div>
         <div className="gm-actions">
           <StateChip state={info.state} />
           {active && <button type="button" className="btn" onClick={() => stopRecording(info.id)}>Stop recording</button>}
-          <button type="button" className="btn primary" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>
         </div>
       </div>
 
@@ -56,29 +56,14 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
 
       {rec === undefined ? <p className="muted">Loading the recording…</p> : !rec || !sum ? <p className="muted">Rig couldn't load this recording.</p> : (
         <>
-          {sum.samples > 0 && (
-            <section className="trend">
-              {(["gpu", "cpu"] as const).filter((k) => stat(k)).map((k) => {
-                const s = stat(k)!, limit = limits[k], near = limit != null && s.max >= limit - 6;
-                return (
-                  <div key={k} className="card card-pad">
-                    <div className="label">{k === "gpu" ? "Graphics card" : "Processor"} at its hottest</div>
-                    <p className="num big-figure" style={near ? { color: "var(--warn)" } : undefined}>{temp(s.max)}</p>
-                    <p className="muted">At {clock(s.maxAt)}, {temp(s.avg)} on average.{limit != null ? ` Its safe limit is ${temp(limit)}.` : ""}</p>
-                  </div>
-                );
-              })}
-              <div className="card card-pad">
-                <div className="label">Busiest app</div>
-                <p className="big-figure rec-app">{top ? top.name : "–"}</p>
-                <p className="muted">{top ? `About ${top.cpuAvg}% of the processor, up to ${gb(top.memMaxMb)} of memory.` : "Rig didn't record apps this time."}{sum.games.length ? ` In front: ${sum.games.join(", ")}.` : ""}</p>
-              </div>
-            </section>
-          )}
+          <section className="lg-lede" aria-label="What it found">
+            <p className="lg-lede-text">{active && sum.moments.length === 0 ? "Nothing unusual so far." : inUnit(sum.headline)}</p>
+            <button type="button" className="btn primary sm" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>
+          </section>
 
           <section className="card card-pad rec-found-card">
             <h2>What Rig found</h2>
-            {sum.moments.length === 0 ? <p className="muted">{active ? "Nothing unusual so far." : inUnit(sum.headline)}</p> : (
+            {sum.moments.length === 0 ? <p className="muted">{active ? "Rig adds anything unusual here as it happens." : "Every reading stayed in its usual range."}</p> : (
               <ol className="rec-moments">
                 {sum.moments.map((m, i) => (
                   <li key={`${m.t}${m.title}`} className={m.severity}>
@@ -112,24 +97,57 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
             </section>
           )}
 
-          {sum.offenders.length > 0 && (
-            <section className="card card-pad rec-apps">
-              <h2>Busiest apps</h2>
-              <table className="kv rec-table">
-                <thead><tr><th>App</th><th>Processor, typical</th><th>Processor, highest</th><th>Memory, most</th>{sum.offenders.some((o) => o.gpuMax != null) && <th>Graphics card, highest</th>}</tr></thead>
-                <tbody>
-                  {sum.offenders.map((o) => (
-                    <tr key={o.name}><td>{o.name}</td><td className="num">{o.cpuAvg}%</td><td className="num">{o.cpuMax}%</td><td className="num">{gb(o.memMaxMb)}</td>{sum.offenders.some((x) => x.gpuMax != null) && <td className="num">{o.gpuMax != null ? `${o.gpuMax}%` : "–"}</td>}</tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
+          <section className="lg-all" aria-labelledby="rec-more-h">
+            <h2 id="rec-more-h" className="lg-h">
+              <button type="button" className="lg-all-toggle" aria-expanded={more} aria-controls="rec-more-body" onClick={() => setMore(!more)}>
+                <Icon d="M8 4l6 6-6 6" />Readings, apps and Windows events
+              </button>
+            </h2>
+            <div id="rec-more-body">
+              {more ? (
+                <div className="card card-pad rec-more">
+                  {sum.samples > 0 && (
+                    <div className="rec-figs">
+                      {(["gpu", "cpu"] as const).filter((k) => stat(k)).map((k) => {
+                        const s = stat(k)!, limit = limits[k], near = limit != null && s.max >= limit - 6;
+                        return (
+                          <div key={k}>
+                            <div className="label">{k === "gpu" ? "Graphics card" : "Processor"} at its hottest</div>
+                            <p className="num rec-fig" style={near ? { color: "var(--warn)" } : undefined}>{temp(s.max)}</p>
+                            <p className="muted">At {clock(s.maxAt)}, {temp(s.avg)} on average.{limit != null ? ` Its safe limit is ${temp(limit)}.` : ""}</p>
+                          </div>
+                        );
+                      })}
+                      <div>
+                        <div className="label">Busiest app</div>
+                        <p className="rec-fig rec-app">{top ? top.name : "None"}</p>
+                        <p className="muted">{top ? `About ${top.cpuAvg}% of the processor, up to ${gb(top.memMaxMb)} of memory.` : "Rig didn't record apps this time."}{sum.games.length ? ` In front: ${sum.games.join(", ")}.` : ""}</p>
+                      </div>
+                    </div>
+                  )}
 
-          <section className="card lg-events">
-            <div className="card-head"><h2>Windows events during the recording</h2></div>
-            {rec.events.length === 0 ? <p className="card-pad muted">{active ? "Rig reads the event log when the recording ends." : "Windows logged no errors while Rig recorded."}</p>
-              : <div className="ev-group"><ul className="ev-list">{rec.events.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} seconds />)}</ul></div>}
+                  {sum.offenders.length > 0 && (
+                    <section className="rec-apps">
+                      <h2>Busiest apps</h2>
+                      <table className="kv rec-table">
+                        <thead><tr><th>App</th><th>Processor, typical</th><th>Processor, highest</th><th>Memory, most</th>{sum.offenders.some((o) => o.gpuMax != null) && <th>Graphics card, highest</th>}</tr></thead>
+                        <tbody>
+                          {sum.offenders.map((o) => (
+                            <tr key={o.name}><td>{o.name}</td><td className="num">{o.cpuAvg}%</td><td className="num">{o.cpuMax}%</td><td className="num">{gb(o.memMaxMb)}</td>{sum.offenders.some((x) => x.gpuMax != null) && <td className="num">{o.gpuMax != null ? `${o.gpuMax}%` : "–"}</td>}</tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </section>
+                  )}
+
+                  <section className="rec-events">
+                    <h2>Windows events during the recording</h2>
+                    {rec.events.length === 0 ? <p className="muted">{active ? "Rig reads the event log when the recording ends." : "Windows logged no errors while Rig recorded."}</p>
+                      : <div><ul className="ev-list">{rec.events.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} seconds />)}</ul></div>}
+                  </section>
+                </div>
+              ) : <p className="faint">The hottest readings, the busiest apps and what Windows logged while Rig recorded.</p>}
+            </div>
           </section>
         </>
       )}

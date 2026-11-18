@@ -95,7 +95,10 @@ describe("Settings", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     render(<RigApp client={new DemoClient()} />);
     await open("settings");
-    fireEvent.click(await screen.findByRole("button", { name: "Download my data" }));
+    const data = await screen.findByRole("region", { name: "Your data" });
+    expect(within(data).queryByRole("button", { name: "Download my data" })).toBeNull();
+    fireEvent.click(within(data).getByRole("button", { name: /^Your data/ }));
+    fireEvent.click(within(data).getByRole("button", { name: "Download my data" }));
     await screen.findByText(/^Saved rig-data-\d{4}-\d{2}-\d{2}\.json\.$/);
     expect(click).toHaveBeenCalledTimes(1);
     const text = await new Promise<string>((done) => { const r = new FileReader(); r.onload = () => done(r.result as string); r.readAsText(saved!); });
@@ -158,13 +161,16 @@ describe("Settings", () => {
     const { unmount } = render(<RigApp client={new DemoClient()} />);
     await open("settings");
     const about = await screen.findByRole("region", { name: "About" });
+    fireEvent.click(within(about).getByRole("button", { name: /^About/ }));
     expect(within(about).getByText(`Rig ${version}`)).toBeTruthy();
     expect(within(about).queryByText("Server")).toBeNull();
     unmount();
 
     render(<RigApp client={new DemoClient()} host={{ server: "https://rig.example.com/api" }} />);
     await open("settings");
-    expect(within(await screen.findByRole("region", { name: "About" })).getByText("Signs in and syncs with https://rig.example.com/api")).toBeTruthy();
+    const folded = await screen.findByRole("region", { name: "About" });
+    fireEvent.click(within(folded).getByRole("button", { name: /^About/ }));
+    expect(within(folded).getByText("Signs in and syncs with https://rig.example.com/api")).toBeTruthy();
   });
 
   it("finds the version in Ctrl K search", async () => {
@@ -174,5 +180,23 @@ describe("Settings", () => {
     fireEvent.change(await screen.findByRole("textbox", { name: "Search" }), { target: { value: "version" } });
     fireEvent.click(await screen.findByRole("button", { name: /^About/ }));
     await waitFor(() => expect(location.hash).toBe("#settings"));
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    const about = await screen.findByRole("region", { name: "About" });
+    expect(within(about).getByRole("button", { name: /^About/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(within(about).getByText(/^Rig \d/)).toBeTruthy();
+  });
+
+  it("puts the settings people change most first and folds the rarely needed ones", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await open("settings");
+    await screen.findByRole("region", { name: "Appearance" });
+    const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(titles.slice(0, 4)).toEqual(["Appearance", "Units", "Notifications", "Account"]);
+    for (const name of ["Your data", "About"]) {
+      const fold = within(screen.getByRole("region", { name }));
+      expect(fold.getByRole("button", { name: new RegExp(`^${name}`) }).getAttribute("aria-expanded")).toBe("false");
+    }
+    fireEvent.click(within(screen.getByRole("navigation", { name: /settings/i })).getByRole("button", { name: "About" }));
+    expect(within(screen.getByRole("region", { name: "About" })).getByText(/^Rig \d/)).toBeTruthy();
   });
 });

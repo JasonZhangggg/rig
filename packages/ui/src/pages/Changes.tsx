@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
 import { DiffTable, Icon, StatusChip } from "../components/common";
 import { useApp } from "../state";
-import { Glance, HowChangesWork } from "./changes/Rail";
+import { HowChangesWork, Lead } from "./changes/Lead";
 import { bySeverity, issueGo } from "./shared";
 
 type Filter = "all" | "applied" | "undone";
@@ -32,33 +32,31 @@ export function Changes() {
   const { data, pc } = useApp();
   const [filter, setFilter] = useState<Filter>("all");
   const any = data.changes.length > 0;
+  const mixed = new Set(data.changes.map((c) => c.status)).size > 1;
   const list = data.changes.filter((c) => filter === "all" || c.status === filter);
   const fixes = bySeverity((pc.issues ?? []).filter((i) => i.fix?.length));
+  useEffect(() => { if (!mixed) setFilter("all"); }, [mixed]);
   return (
-    <div className="page">
+    <div className="page pg-focus">
       <div className="page-head">
-        <div><h1>Changes</h1><p className="sub">Everything Rig or you changed on {pc.name}, with what it was before. Undo puts the old values back.</p></div>
-        {any && (
-          <div className="seg" role="group" aria-label="Filter">
-            {(["all", "applied", "undone"] as const).map((f) => <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}
+        <div><h1>Changes</h1><p className="sub">Everything Rig or you changed on {pc.name}, with what it was before.</p></div>
+      </div>
+      {any ? <Lead changes={data.changes} pc={pc.name} /> : <NoChanges quiet={fixes.length > 0} />}
+      {fixes.length > 0 && <UpNext fixes={fixes} />}
+      {any && (
+        <section className="card ch-log" aria-labelledby="ch-log-h">
+          <div className="card-head">
+            <h2 id="ch-log-h">Recent changes</h2>
+            {mixed && (
+              <div className="seg" role="group" aria-label="Filter">
+                {(["all", "applied", "undone"] as const).map((f) => <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div className="pg-split">
-        <div className="ch-main">
-          {fixes.length > 0 && filter !== "undone" && <UpNext fixes={fixes} />}
-          {!any ? <NoChanges quiet={fixes.length > 0} /> : list.length === 0 ? (
-            <section className="card card-pad empty">
-              <p className="muted">No {filter} changes on {pc.name}.</p>
-              <button className="btn sm" type="button" onClick={() => setFilter("all")}>Show all changes</button>
-            </section>
-          ) : byDay(list).map((day) => <Day key={day[0].at} changes={day} />)}
-        </div>
-        <aside className="pg-rail" aria-label="About your changes">
-          {any && <Glance changes={data.changes} />}
-          <HowChangesWork />
-        </aside>
-      </div>
+          {byDay(list).map((day) => <Day key={day[0].at} changes={day} />)}
+        </section>
+      )}
+      <HowChangesWork />
     </div>
   );
 }
@@ -67,13 +65,13 @@ function Day({ changes }: { changes: Change[] }) {
   const label = dayLabel(changes[0].at);
   return (
     <section className="ch-day" aria-label={label}>
-      <h2 className="ch-day-label">{label}<span>{changes.length === 1 ? "1 change" : `${changes.length} changes`}</span></h2>
-      <ol className="ch-timeline">{changes.map((c) => <Entry key={c.id} c={c} />)}</ol>
+      <p className="ch-day-label">{label}<span>{changes.length === 1 ? "1 change" : `${changes.length} changes`}</span></p>
+      <ol className={`ch-timeline${changes.length > 1 ? " ch-line" : ""}`}>{changes.map((c) => <Entry key={c.id} c={c} />)}</ol>
     </section>
   );
 }
 
-/** Fixes Rig found but hasn't made, at the top of the timeline. Each opens the review sheet. */
+/** Fixes Rig found but hasn't made. Each opens the review sheet; the before and after wait behind Details. */
 function UpNext({ fixes }: { fixes: Issue[] }) {
   const { pc, set, go, ask, review, client } = useApp();
   const [rows, setRows] = useState<Record<string, DiffRow[]>>({});
@@ -85,43 +83,49 @@ function UpNext({ fixes }: { fixes: Issue[] }) {
     return () => { live = false; };
   }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <section className="ch-day" aria-label="Waiting for you">
-      <h2 className="ch-day-label">Waiting for you<span>{fixes.length === 1 ? "1 change to review" : `${fixes.length} changes to review`}</span></h2>
-      <ol className="ch-timeline">
+    <section className="card ch-next" aria-labelledby="ch-next-h">
+      <div className="card-head"><h2 id="ch-next-h">Waiting for you</h2><span className="faint">{fixes.length === 1 ? "1 change to review" : `${fixes.length} changes to review`}</span></div>
+      <ul className="ch-next-list">
         {fixes.map((i) => (
-          <li key={i.id} className="ch-entry next">
-            <span className="ch-time">Next</span>
-            <article className="card change ch-next">
-              <div className="change-title">
-                <h3>{i.title}</h3>
-                <button className="btn sm primary" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>
-              </div>
-              <p className="muted">{i.body}</p>
-              {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
-              <div className="change-meta"><span>Found by Rig</span><span>Nothing changes until you review it</span></div>
-            </article>
-          </li>
+          <Row key={i.id} title={i.title} meta="Found by Rig. Nothing changes until you review it."
+            action={<button className="btn sm primary" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>}>
+            <p className="muted">{i.body}</p>
+            {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
+          </Row>
         ))}
-      </ol>
+      </ul>
     </section>
+  );
+}
+
+/** One line with its button, and the rest behind Details. */
+function Row({ title, meta, time, status, action, children }: { title: string; meta: string; time?: string; status?: Change["status"]; action?: JSX.Element | false; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className={`ch-entry${status ? ` ${status}` : ""}`}>
+      {time && <time className="ch-time num" dateTime={time}>{clock(time)}</time>}
+      <div className="ch-body">
+        <div className="change-name"><h3>{title}</h3>{status === "undone" && <StatusChip status="undone" />}</div>
+        <p className="faint ch-meta">{meta}</p>
+        {open && <div className="change">{children}</div>}
+      </div>
+      <div className="ch-acts">
+        <button type="button" className="btn ghost sm" aria-expanded={open} aria-label={`Details: ${title}`} onClick={() => setOpen(!open)}>{open ? "Hide" : "Details"}</button>
+        {action}
+      </div>
+    </li>
   );
 }
 
 function Entry({ c }: { c: Change }) {
   const { toggleChange, client } = useApp();
+  const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${c.status === "applied" ? "Old values saved." : "Old values put back."}`;
   return (
-    <li className={`ch-entry ${c.status}`}>
-      <time className="ch-time num" dateTime={c.at}>{clock(c.at)}</time>
-      <article className={`card change ${c.status}`}>
-        <div className="change-title">
-          <div className="change-name"><h3>{c.title}</h3><StatusChip status={c.status} /></div>
-          {client.caps.applyChanges && <button className="btn sm" type="button" onClick={() => toggleChange(c.id)}>{c.status === "applied" ? "Undo" : "Redo"}</button>}
-        </div>
-        {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
-        {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
-        <div className="change-meta"><span>By {c.by === "you" ? "you" : "Rig, after you said yes"}</span><span>{c.status === "applied" ? "Old values saved" : "Old values put back"}</span></div>
-      </article>
-    </li>
+    <Row title={c.title} meta={meta} time={c.at} status={c.status}
+      action={client.caps.applyChanges && <button className="btn sm" type="button" onClick={() => toggleChange(c.id)}>{c.status === "applied" ? "Undo" : "Redo"}</button>}>
+      {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
+      {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
+    </Row>
   );
 }
 

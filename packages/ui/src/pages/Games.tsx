@@ -3,7 +3,7 @@ import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } fr
 import { useApp, useHistory } from "../state";
 import { Detail } from "./games/Detail";
 import { Library } from "./games/Library";
-import { Measured, RecentSessions, Strip } from "./games/Summary";
+import { Lead, RecentSessions } from "./games/Summary";
 import { partName } from "./games/words";
 
 type GameRange = "7d" | "30d";
@@ -53,21 +53,17 @@ export function Games() {
   const part = library?.games.length ? partName(library.subject) : pc.kind === "tower" && pc.parts?.gpu ? "graphics card" : "processor";
   const recorded = !!points?.length;
   return (
-    <div className="page">
+    <div className="page pg-focus">
       <div className="page-head">
-        <div><h1>Games</h1><p className="sub">What you played on {pc.name} and how warm the {part} ran while you did. Rig only watches temperatures and never touches the game itself, so anti-cheat stays happy.</p></div>
+        <div><h1>Games</h1><p className="sub">What you played on {pc.name} and how warm the {part} ran while you did.</p></div>
         {seg}
       </div>
       {library == null ? <p className="muted" role="status">Loading…</p> : library.games.length ? (
         <>
-          <Strip library={library} when={when} />
-          <div className="pg-split">
-            <div className="pg-main">
-              <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show} />
-              <Measured library={library} tuning={tuning} onOpen={show} />
-            </div>
-            <aside className="pg-rail" aria-label="Latest play"><RecentSessions library={library} onOpen={show} /></aside>
-          </div>
+          <Lead library={library} when={when} tuning={tuning} onOpen={show} />
+          <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show}>
+            <RecentSessions library={library} onOpen={show} />
+          </Library>
         </>
       ) : (
         <section className="card gm-empty">
@@ -92,6 +88,7 @@ export function Games() {
           </div>
         </section>
       )}
+      {library != null && <p className="faint pg-note">Rig only watches temperatures and never touches the game itself, so anti-cheat stays happy.</p>}
     </div>
   );
 }
