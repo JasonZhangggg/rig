@@ -110,6 +110,15 @@ public static class RecorderSetup
         catch { }
     }
 
+    /// Rig installs other than appDir that are still on this PC.
+    public static IEnumerable<string> OtherInstalls(string? appDir)
+    {
+        string? me = appDir == null ? null : Path.GetFullPath(appDir);
+        return InstallDirs(RecorderPaths.Data).Where(d => !string.Equals(d, me, StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(d, "Rig.exe")));
+    }
+
+    public static void SetupLog(string line) => Log(RecorderPaths.Data, line);
+
     public static bool IsInstalled()
     {
         try { using var sc = new ServiceController(RecorderPaths.ServiceName); _ = sc.Status; return true; }

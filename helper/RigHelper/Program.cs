@@ -41,8 +41,18 @@ public static class Program
 
         // The background recorder: run by Windows as a service, installed and removed by Rig's installer and Settings.
         if (args.Contains("--service")) { System.ServiceProcess.ServiceBase.Run(new RecorderService()); return 0; }
-        if (args.Contains("--install-recorder")) return RecorderSetup.Install(Arg(args, "--app-dir"));
-        if (args.Contains("--uninstall-recorder")) return RecorderSetup.Uninstall(Arg(args, "--app-dir"));
+        // The installer also passes --pawnio <PawnIO's setup>, so the same prompt adds or removes PawnIO.
+        if (args.Contains("--install-recorder"))
+        {
+            if (Native.IsAdmin() && Arg(args, "--pawnio") is string pawnSetup) PawnIOSetup.Install(pawnSetup, RecorderSetup.SetupLog);
+            return RecorderSetup.Install(Arg(args, "--app-dir"));
+        }
+        if (args.Contains("--uninstall-recorder"))
+        {
+            if (Native.IsAdmin() && Arg(args, "--pawnio") is string pawnSetup && !RecorderSetup.OtherInstalls(Arg(args, "--app-dir")).Any())
+                PawnIOSetup.Uninstall(pawnSetup, RecorderSetup.SetupLog);
+            return RecorderSetup.Uninstall(Arg(args, "--app-dir"));
+        }
         // RigHelper.exe --approve-script <file>: started behind Windows' permission prompt when the person approves a script in Rig.
         if (Arg(args, "--approve-script") is string approveFile) return ProbeStore.ApproveFromFile(approveFile, Arg(args, "--hash"));
         // RigHelper.exe --record-for 60 --data-dir <folder>: records in this process for a while, for the CI smoke test.
@@ -245,7 +255,7 @@ public class Handler(Sensors hw)
 {
     public JsonNode? Handle(string method, JsonNode? p) => method switch
     {
-        "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin() }),
+        "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin(), driver = Sensors.Driver() }),
         "inventory" => Json.From(Inventory.Read(hw)),
         "facts" => Json.From(Facts.Read()),
         "snapshot" => Json.From(hw.Snapshot()),
