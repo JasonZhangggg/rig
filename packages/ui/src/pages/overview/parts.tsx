@@ -38,7 +38,14 @@ export const CardHead = ({ title, note, figure }: { title: string; note?: string
   </div>
 );
 
-export const EmptyNote = ({ children }: { children: ReactNode }) => <p className="bl-empty">{children}</p>;
+/** Faint bars where a chart will be, so a tile still waiting for readings looks finished, not broken. */
+const GHOST = [42, 66, 50, 82, 58, 72, 46];
+export const EmptyNote = ({ children, ghost = true }: { children: ReactNode; ghost?: boolean }) => (
+  <div className="bl-empty">
+    {ghost && <span className="bl-ghost" aria-hidden="true">{GHOST.map((h, k) => <i key={k} style={{ height: `${h}%` }} />)}</span>}
+    <p>{children}</p>
+  </div>
+);
 
 const MEASURING = Infinity;
 

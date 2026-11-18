@@ -305,7 +305,10 @@
   .pl-figure b { font-size: 1.6rem; }
   .pl-figure span { font-size: 12px; }
 }
-.bl-empty { margin: auto 0; max-width: 38ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
+.bl-empty { margin: auto; display: grid; justify-items: center; gap: 16px; padding: 12px 0; max-width: 36ch; text-align: center; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
+.bl-ghost { display: flex; align-items: flex-end; gap: 7px; height: 56px; }
+.bl-ghost i { width: 12px; border-radius: var(--r-pill); background: var(--s-track); }
+@container wbox (max-height: 220px) { .bl-ghost { display: none; } }
 
 .pl-stats { display: flex; gap: 12px 32px; flex-wrap: wrap; }
 .pl-stat { display: grid; grid-template-rows: 8px auto auto; gap: 5px; justify-items: start; }

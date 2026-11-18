@@ -122,7 +122,7 @@ export function FansCard({ fans, trend: full, style = "dots", days = 4, live = t
   const trend = full && recent(full, days * 4);
   const rings = style === "rings" && !compact;
   const note = rings ? "Each fan against its top speed" : trend?.scale != null && !compact ? "Fastest fan every six hours, rpm" : "rpm";
-  const empty = <EmptyNote>{fans?.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>;
+  const empty = <EmptyNote ghost={!!fans?.length}>{fans?.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>;
   return (
     <section className={`f-pane bl-fans${compact ? " compact" : ""}`}>
       <CardHead title="Fans" note={note} />

@@ -4,7 +4,7 @@ import { StageSlot } from "../../components/Stage";
 import { useAlertKindsOff, useApp, useTemp, useTempText, type Ctx } from "../../state";
 import { alertIssue, bySeverity, dustIssue, issueGo, partIcon, shortType } from "../shared";
 import type { OptValue, SizeName } from "./layout";
-import { useFit } from "./parts";
+import { EmptyNote, useFit } from "./parts";
 
 export const Go = () => <svg className="f-go" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 export const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -117,7 +117,7 @@ export function HealthWidget({ style, opts, box }: WidgetProps) {
   const text = (
     <div className="f-health-text">
       <h2>Health</h2>
-      {on(opts, "summary") && <p>{known ? summary : `Rig gives ${pc.name} a score once it has had a good look. Keep using it as usual.`}</p>}
+      {on(opts, "summary") && <p>{known ? summary : `Rig scores ${pc.name} once it has had a good look.`}</p>}
       {on(opts, "link") && <a className="f-link" href="#history">See history<Go /></a>}
     </div>
   );
@@ -239,7 +239,7 @@ export function StorageWidget({ style, opts, box }: WidgetProps) {
     return (
       <section className="f-store" data-style={style}>
         <div className="pl-head"><div><h3>Storage</h3></div></div>
-        <p className="bl-empty">Rig hasn't read the drives yet. How full they are shows up here soon.</p>
+        <EmptyNote ghost={false}>Rig hasn't read the drives yet. How full they are shows up here soon.</EmptyNote>
       </section>
     );
   }
@@ -317,7 +317,7 @@ export function LiveWidget({ style, opts, box }: WidgetProps) {
           })}
         </ul>
       ) : (
-        <p className="bl-empty">{pc.stats?.length ? "Every reading is switched off. Turn some back on in this widget's options." : `Live readings show up here once ${pc.name} reports them.`}</p>
+        <EmptyNote ghost={false}>{pc.stats?.length ? "Every reading is switched off. Turn some back on in this widget's options." : `Live readings show up here once ${pc.name} reports them.`}</EmptyNote>
       )}
     </section>
   );
@@ -354,7 +354,7 @@ export function PartsWidget({ style, opts, box }: WidgetProps) {
           )}
         </ul>
       ) : (
-        <p className="bl-empty">{found.length ? "Every part is switched off. Turn some back on in this widget's options." : `Rig lists each part here once it has had a look inside ${pc.name}.`}</p>
+        <EmptyNote ghost={false}>{found.length ? "Every part is switched off. Turn some back on in this widget's options." : `Rig lists each part here once it has had a look inside ${pc.name}.`}</EmptyNote>
       )}
     </section>
   );
