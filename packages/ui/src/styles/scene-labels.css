@@ -23,6 +23,10 @@
 .scene-pin.is-behind .pin-dot { background: var(--surface); box-shadow: inset 0 0 0 2px var(--good-mark); }
 .scene-pin.is-behind .part-label:not(.is-selected) { color: var(--text-2); box-shadow: none; }
 .scene-pin.is-selected { z-index: 200 !important; }
+/* Pointed at from a list beside the 3D view. */
+.scene-pin.is-hovered { z-index: 150 !important; }
+.scene-pin.is-hovered .part-label { border-color: var(--good); }
+.scene-pin.is-hovered .pin-dot { box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px var(--good-bg); }
 .scene-pin.is-selected .pin-dot { background: var(--graphite); box-shadow: 0 0 0 2px var(--surface), 0 0 0 7px var(--good); }
 .scene-pin.is-selected .pin-lead { background: var(--text); }
 .scene-pin .part-label.is-selected { border-color: var(--good); background: var(--good); color: var(--graphite); }

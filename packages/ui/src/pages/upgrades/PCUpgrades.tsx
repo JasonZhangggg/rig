@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import type { PC, Upgrade } from "@rig/core";
-import { getStage } from "../../components/Stage";
+import { getStage, hoverPart } from "../../components/Stage";
 import { ManualRef } from "../../manuals/ManualRef";
 import { useApp } from "../../state";
 import { partIcon } from "../shared";
@@ -78,6 +78,8 @@ export function UpgradesCard({ ups }: { ups: PCUpgrades }) {
   const { pc, ask } = useApp();
   const open = useOpenUpgrade();
   const { list, failed, pick } = ups;
+  // Pointing at an idea lights up the part it's for in the 3D view above.
+  const lights = (u: Upgrade) => ({ onPointerEnter: () => hoverPart(partOf(u, pc)), onPointerLeave: () => hoverPart(null), onFocus: () => hoverPart(partOf(u, pc)), onBlur: () => hoverPart(null) });
   const rest = list?.filter((u) => u !== pick?.idea && u.fit !== "no") ?? [];
   return (
     <section className="card pc-ups" aria-labelledby="pc-ups-h" id="pc-upgrades">
@@ -90,7 +92,7 @@ export function UpgradesCard({ ups }: { ups: PCUpgrades }) {
         : (
           <div className="pc-ups-body">
             {pick && (
-              <button type="button" className="pc-ups-pick" onClick={() => open(pick.idea)}>
+              <button type="button" className="pc-ups-pick" onClick={() => open(pick.idea)} {...lights(pick.idea)}>
                 <span className="label">Rig's pick</span>
                 <b>{pick.idea.title}</b>
                 <span className="muted">{pick.why}</span>
@@ -100,7 +102,7 @@ export function UpgradesCard({ ups }: { ups: PCUpgrades }) {
               <ul className="pc-ups-list" aria-label="Other ideas">
                 {rest.map((u) => (
                   <li key={u.title}>
-                    <button type="button" onClick={() => open(u)}>
+                    <button type="button" onClick={() => open(u)} {...lights(u)}>
                       <span className="up-ico" aria-hidden="true">{iconOf(u, pc)}</span>
                       <span className="pc-ups-title">{u.title}</span>
                       {fitChip[u.fit]}

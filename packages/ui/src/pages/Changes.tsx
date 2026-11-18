@@ -2,10 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
 import { DiffTable, Icon, StatusChip } from "../components/common";
 import { useApp } from "../state";
-import { HowChangesWork, Lead } from "./changes/Lead";
+import { HowChangesWork, Lead, type Filter } from "./changes/Lead";
 import { bySeverity, issueGo } from "./shared";
-
-type Filter = "all" | "applied" | "undone";
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -32,26 +30,22 @@ export function Changes() {
   const { data, pc } = useApp();
   const [filter, setFilter] = useState<Filter>("all");
   const any = data.changes.length > 0;
-  const mixed = new Set(data.changes.map((c) => c.status)).size > 1;
   const list = data.changes.filter((c) => filter === "all" || c.status === filter);
   const fixes = bySeverity((pc.issues ?? []).filter((i) => i.fix?.length));
-  useEffect(() => { if (!mixed) setFilter("all"); }, [mixed]);
+  // A filter that would leave the list empty, like Undone after the last undo is redone, falls back to everything.
+  useEffect(() => { if (filter !== "all" && !list.length) setFilter("all"); }, [filter, list.length]);
   return (
     <div className="page pg-focus">
       <div className="page-head">
-        <div><h1>Changes</h1><p className="sub">Everything Rig or you changed on {pc.name}, with what it was before.</p></div>
+        <div><h1>Changes</h1><p className="sub">Everything changed on {pc.name}, with the old values saved.</p></div>
       </div>
-      {any ? <Lead changes={data.changes} pc={pc.name} /> : <NoChanges quiet={fixes.length > 0} />}
+      {any ? <Lead changes={data.changes} pc={pc.name} waiting={fixes.length} filter={filter} onFilter={setFilter} /> : <NoChanges quiet={fixes.length > 0} />}
       {fixes.length > 0 && <UpNext fixes={fixes} />}
       {any && (
         <section className="card ch-log" aria-labelledby="ch-log-h">
           <div className="card-head">
-            <h2 id="ch-log-h">Recent changes</h2>
-            {mixed && (
-              <div className="seg" role="group" aria-label="Filter">
-                {(["all", "applied", "undone"] as const).map((f) => <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}
-              </div>
-            )}
+            <h2 id="ch-log-h">{filter === "applied" ? "In place" : filter === "undone" ? "Undone" : "Recent changes"}</h2>
+            {filter !== "all" && <button type="button" className="chip no-dot chip-x" onClick={() => setFilter("all")} aria-label="Show every change">Show all</button>}
           </div>
           {byDay(list).map((day) => <Day key={day[0].at} changes={day} />)}
         </section>
@@ -83,7 +77,7 @@ function UpNext({ fixes }: { fixes: Issue[] }) {
     return () => { live = false; };
   }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <section className="card ch-next" aria-labelledby="ch-next-h">
+    <section className="card ch-next" id="ch-next" aria-labelledby="ch-next-h">
       <div className="card-head"><h2 id="ch-next-h">Waiting for you</h2><span className="faint">{fixes.length === 1 ? "1 change to review" : `${fixes.length} changes to review`}</span></div>
       <ul className="ch-next-list">
         {fixes.map((i) => (

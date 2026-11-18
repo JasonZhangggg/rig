@@ -38,8 +38,14 @@
 .part-list button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 5px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .part-txt { min-width: 0; display: grid; gap: 0; line-height: 1.35; }
 .part-txt .pn { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.part-temp { flex: none; color: var(--text-3); font-size: 14px; }
+.part-live { flex: none; display: flex; align-items: center; gap: 10px; }
+.part-live .spark { opacity: .8; }
+.part-temp { min-width: 3.2em; color: var(--text-3); font-size: 14px; text-align: right; border-radius: 6px; animation: part-tick .9s var(--ease-out); }
 .part-temp.look { color: var(--look-text); font-weight: 600; }
+/* A new reading gives its number a brief warm wash, so the list reads as live. */
+@keyframes part-tick { from { background: var(--good-bg); color: var(--text); } }
+.part-list button.is-lit { background: var(--surface-2); }
+.part-list button.is-lit .pn { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
 
 .detail-head { display: grid; gap: 2px; padding: 14px 0 6px; }
 .detail-back { justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin: 0 0 10px -6px; padding: 4px 8px 4px 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: 500 13px var(--font); cursor: pointer; }
@@ -107,6 +113,8 @@
 .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform .22s cubic-bezier(.3, .7, .4, 1); }
 .switch[aria-checked="true"] i { background: var(--graphite); }
 .switch[aria-checked="true"] i::after { transform: translateX(18px); }
+
+@media (prefers-reduced-motion: reduce) { .part-temp { animation: none; } }
 
 @media (hover: hover) and (pointer: fine) {
   .part-list button:hover, .pc-ups-list button:hover, .detail-back:hover { background: var(--surface-2); color: var(--text); }

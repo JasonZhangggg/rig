@@ -30,7 +30,8 @@ describe("Changes", () => {
     await show("changes");
     const lead = await screen.findByRole("region", { name: "1 change in place on Atlas" });
     expect(within(lead).getByText("In place").nextElementSibling!.textContent).toBe("1");
-    expect(within(lead).getByText(/The latest, 5 days ago: Turned off NVIDIA Broadcast at startup/)).toBeTruthy();
+    expect(within(lead).getByText(/Latest, 5 days ago:/).textContent).toMatch(/Turned off NVIDIA Broadcast at startup/);
+    expect(within(lead).getByText("Waiting for you").nextElementSibling!.textContent).toBe("1");
 
     const waiting = screen.getByRole("region", { name: "Waiting for you" });
     expect(within(waiting).getByText(/runs at 60 Hz but can do 165 Hz/)).toBeTruthy();
@@ -47,6 +48,17 @@ describe("Changes", () => {
 
     fireEvent.click(within(waiting).getByRole("button", { name: /^Review:/ }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  it("filters the list from the counts", async () => {
+    await show("changes");
+    const day = await screen.findByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
+    fireEvent.click(within(day).getByRole("button", { name: "Undo" }));
+    const lead = await screen.findByRole("region", { name: "Every change on Atlas is undone" });
+    fireEvent.click(within(lead).getByRole("button", { name: /Undone/ }));
+    expect(screen.getByRole("heading", { name: "Undone" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show every change" }));
+    expect(screen.getByRole("heading", { name: "Recent changes" })).toBeTruthy();
   });
 
   it("says when every change is undone", async () => {
