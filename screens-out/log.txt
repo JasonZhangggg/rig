@@ -1,9 +1,8 @@
 ok manuals-page
-FAIL search: page.screenshot: Timeout 30000ms exceeded.
-ok viewer
-FAIL laptop-find: page.screenshot: Timeout 30000ms exceeded.
+ok search
+ok upgrades
+FAIL viewer: locator.fill: Timeout 30000ms exceeded.
+FAIL phone: page.reload: Timeout 30000ms exceeded.
+ok laptop-find
 ok part-tab
 ok chat
-FAIL upgrades: page.screenshot: Timeout 30000ms exceeded.
-ok phone
-ok dark
