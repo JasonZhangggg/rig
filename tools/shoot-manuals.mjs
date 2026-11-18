@@ -32,6 +32,8 @@ await step("upgrades", async () => {
   await p.screenshot({ path: `${out}/11-upgrades-link.png` });
 });
 await step("viewer", async () => {
+  await p.evaluate(() => { location.hash = "manuals"; });
+  await p.getByRole("heading", { name: /Manuals for/ }).waitFor({ timeout: 15000 });
   await p.locator('input[aria-label="Search all manuals"]').fill("");
   await p.getByRole("button", { name: "Open", exact: true }).first().click();
   await p.locator(".mv-canvas").waitFor({ timeout: 20000 });
@@ -46,7 +48,7 @@ await step("viewer", async () => {
 await step("phone", async () => {
   const q = p;
   await q.setViewportSize({ width: 390, height: 844 });
-  await q.reload(); await q.getByRole("heading", { name: /Manuals for/ }).waitFor({ timeout: 30000 });
+  await q.evaluate(() => { location.hash = "manuals"; }); await q.getByRole("heading", { name: /Manuals for/ }).waitFor({ timeout: 15000 });
   await q.waitForTimeout(1500);
   await q.screenshot({ path: `${out}/12-phone-manuals.png` });
   await q.getByRole("button", { name: "Open", exact: true }).first().click();
