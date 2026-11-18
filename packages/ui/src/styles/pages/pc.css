@@ -58,6 +58,15 @@
 .live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; }
 .live { display: flex; flex-direction: column; gap: 4px; }
 .live .big { font: 500 1.5em/1.1 var(--font); }
+.live-wide { grid-column: 1 / -1; }
+.live-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.live-tick { border-radius: 6px; animation: part-tick .9s var(--ease-out); }
+.live-meter { display: grid; gap: 6px; margin-top: 6px; font-size: 12.5px; }
+.live-meter::before { content: ""; grid-area: 1 / 1; height: 6px; border-radius: var(--r-pill); background: var(--surface-2); }
+.live-meter > i { grid-area: 1 / 1; height: 6px; border-radius: var(--r-pill); background: var(--good); transition: width .6s var(--ease-out); }
+.live.warn .live-meter > i { background: var(--look); }
+.live-load { height: 6px; margin-top: 4px; }
+.live-load i { background: var(--good); transition: width .6s var(--ease-out); }
 .live.warn .big { color: var(--warn); }
 .source-badge { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; color: var(--text-3); font-size: 13px; }
 .source-badge .chip.chip { height: auto; padding: 0; background: none; color: var(--text-2); font-size: 13px; font-weight: 600; }
@@ -114,7 +123,7 @@
 .switch[aria-checked="true"] i { background: var(--graphite); }
 .switch[aria-checked="true"] i::after { transform: translateX(18px); }
 
-@media (prefers-reduced-motion: reduce) { .part-temp { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .part-temp, .live-tick { animation: none; } .live-meter > i, .live-load i { transition: none; } }
 
 @media (hover: hover) and (pointer: fine) {
   .part-list button:hover, .pc-ups-list button:hover, .detail-back:hover { background: var(--surface-2); color: var(--text); }

@@ -305,9 +305,21 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
     );
   }
   const tiles: JSX.Element[] = [];
-  if (part.temp !== undefined) tiles.push(<div key="t" className={`live${part.warn ? " warn" : ""}`}><span className="label">Temperature</span><span className="big">{temp(part.temp)}</span><Sparkline values={trail} w={130} h={26} warn={part.warn} /></div>);
+  if (part.temp !== undefined) {
+    tiles.push(
+      <div key="t" className={`live live-wide${part.warn ? " warn" : ""}`}>
+        <span className="label">Temperature</span>
+        <span className="live-row"><span key={Math.round(part.temp)} className="big live-tick">{temp(part.temp)}</span><Sparkline values={trail} w={150} h={30} warn={part.warn} /></span>
+        {part.limit ? (
+          <span className="live-meter" role="img" aria-label={limitWords(part.temp, part.limit, unit)}>
+            <i style={{ width: `${Math.min(100, (part.temp / part.limit) * 100)}%` }} /><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
+          </span>
+        ) : null}
+      </div>,
+    );
+  }
   if (part.tempMax !== undefined) tiles.push(<div key="m" className="live"><span className="label">Highest today</span><span className="big">{temp(part.tempMax)}</span></div>);
-  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span className="big">{part.load}%</span></div>);
+  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span key={part.load} className="big live-tick">{part.load}%</span><span className="bar live-load" aria-hidden="true"><i style={{ width: `${part.load}%` }} /></span></div>);
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
   return (
