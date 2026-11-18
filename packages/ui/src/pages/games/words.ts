@@ -41,10 +41,10 @@ export function noteText(n: GameNote, subject: TempSubject, unit: TempUnit = "c"
     case "near-limit": {
       const part = cap(partName(subject));
       const when = moment(n.at);
-      if (n.under > 0) return `${part} came within ${gap(n.under, unit)} of its safe limit (${when}). Short spikes are fine; if it happens every time, clean the dust and check the fans.`;
-      if (n.under === 0) return `${part} reached its safe limit (${when}). If it happens every time, clean the dust and check the fans.`;
-      return `${part} went ${gap(-n.under, unit)} over its safe limit (${when}) and probably slowed itself down to cool off. Clean the dust and check the fans.`;
+      if (n.under > 0) return `${part} came within ${gap(n.under, unit)} of its safe limit (${when}).`;
+      if (n.under === 0) return `${part} reached its safe limit (${when}).`;
+      return `${part} went ${gap(-n.under, unit)} over its safe limit (${when})`;
     }
-    case "warming": return `Recent sessions run ${gap(n.by, unit)} warmer than earlier ones. Dust building up is the usual cause.`;
+    case "warming": return `Recent sessions run ${gap(n.by, unit)} warmer than earlier ones.`;
   }
 }

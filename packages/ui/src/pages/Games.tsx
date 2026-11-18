@@ -3,7 +3,7 @@ import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } fr
 import { useApp, useHistory } from "../state";
 import { Detail } from "./games/Detail";
 import { Library, type GameSort } from "./games/Library";
-import { Lead, RecentSessions } from "./games/Summary";
+import { RecentSessions } from "./games/Summary";
 import { partName } from "./games/words";
 import { LogsHead } from "./logs/Head";
 
@@ -59,7 +59,6 @@ export function Games() {
       <LogsHead sub={`What you played on ${pc.name} and how warm the ${part} ran while you did.`} right={seg} />
       {library == null ? <p className="muted" role="status">Loading…</p> : library.games.length ? (
         <>
-          <Lead library={library} when={when} tuning={tuning} onOpen={show} />
           <Library library={library} when={when} sort={sort} onSort={setSort} tuned={(name) => !!tuning(name)} onOpen={show}>
             <RecentSessions library={library} onOpen={show} />
           </Library>
@@ -87,7 +86,7 @@ export function Games() {
           </div>
         </section>
       )}
-      {library != null && <p className="faint pg-note">Rig only watches temperatures and never touches the game itself, so anti-cheat stays happy.</p>}
+      {library != null && <p className="faint pg-note">Rig reads temperatures only. It never touches the game, so anti-cheat has nothing to flag.</p>}
     </div>
   );
 }

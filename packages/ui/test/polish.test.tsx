@@ -36,7 +36,7 @@ describe("History figures", () => {
     for (const range of ["Day", "Week", "Month"]) {
       fireEvent.click(screen.getByRole("button", { name: range }));
       const card = (await screen.findByText("Graphics card when busy")).parentElement!;
-      const figure = card.querySelector(".hi-figure")!.textContent!;
+      const figure = card.querySelector(".fig-n")!.textContent!;
       expect(figure, range).toMatch(/^\d+°C$/);
       expect(card.textContent, range).not.toMatch(/Steady/);
       const hottest = (await screen.findByText("Hottest moment")).parentElement!.textContent!;

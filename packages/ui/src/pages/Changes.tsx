@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
 import { DiffTable, Icon, StatusChip } from "../components/common";
 import { useApp } from "../state";
-import { Counts, HowChangesWork, Lead, type Filter } from "./changes/Lead";
+import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { bySeverity, issueGo } from "./shared";
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
@@ -27,13 +27,12 @@ function byDay(list: Change[]) {
 }
 
 export function Changes() {
-  const { data, pc, set, go, ask, review } = useApp();
+  const { data, pc } = useApp();
   const [filter, setFilter] = useState<Filter>("all");
   const any = data.changes.length > 0;
   const list = data.changes.filter((c) => filter === "all" || c.status === filter);
   const fixes = bySeverity((pc.issues ?? []).filter((i) => i.fix?.length));
   const rows = usePreviews(fixes);
-  const latest = any ? data.changes.reduce((a, b) => (b.at > a.at ? b : a)) : undefined;
   // A filter that would leave the list empty, like Undone after the last undo is redone, falls back to everything.
   useEffect(() => { if (filter !== "all" && !list.length) setFilter("all"); }, [filter, list.length]);
   return (
@@ -41,11 +40,8 @@ export function Changes() {
       <div className="page-head">
         <div><h1>Changes</h1><p className="sub">Everything changed on {pc.name}, with the old values saved.</p></div>
       </div>
-      {fixes.length || any
-        ? <Lead fix={fixes[0]} more={fixes.length - 1} rows={fixes[0] && rows[fixes[0].id]} latest={latest} onReview={() => issueGo(fixes[0], pc, { set, go, ask, review })} />
-        : <NoChanges quiet={false} />}
-      {!any && fixes.length > 0 && <NoChanges quiet />}
-      {fixes.length > 1 && <UpNext fixes={fixes.slice(1)} rows={rows} />}
+      {fixes.length > 0 && <Waiting fixes={fixes} rows={rows} />}
+      {!any && <NoChanges quiet={fixes.length > 0} />}
       {any && (
         <section className="card ch-log" aria-labelledby="ch-log-h">
           <div className="card-head">
@@ -84,15 +80,15 @@ function Day({ changes }: { changes: Change[] }) {
   );
 }
 
-/** More fixes Rig found but hasn't made, after the one at the top. Each opens the review sheet; the before and after wait behind Details. */
-function UpNext({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow[]> }) {
+/** Fixes Rig found but hasn't made. Each opens the review sheet; the before and after wait behind Details. */
+function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow[]> }) {
   const { pc, set, go, ask, review } = useApp();
   return (
     <section className="card ch-next" aria-labelledby="ch-next-h">
-      <div className="card-head"><h2 id="ch-next-h">Also waiting for you</h2></div>
+      <div className="card-head"><h2 id="ch-next-h">Waiting for review <span className="faint num">{fixes.length}</span></h2></div>
       <ul className="ch-next-list">
         {fixes.map((i) => (
-          <Row key={i.id} title={i.title} meta="Found by Rig. Nothing changes until you review it."
+          <Row key={i.id} title={i.title} meta="Nothing changes until you say yes."
             action={<button className="btn sm" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>}>
             <p className="muted">{i.body}</p>
             {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}

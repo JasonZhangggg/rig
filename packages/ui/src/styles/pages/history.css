@@ -8,24 +8,6 @@
 .hi-chart.busy .chart-band { fill: color-mix(in srgb, var(--good-mark) 18%, transparent); }
 .hi-chart.busy .hi-lg-band { background: color-mix(in srgb, var(--good-mark) 34%, transparent); }
 
-/* The hottest moment is the lead's figure, and a button that shows that moment on the chart. */
-.hi-hot.pg-lead-fig { align-items: flex-end; max-width: 30ch; margin: 0; padding: 10px 12px 10px 40px; border-radius: 0 var(--r-sm) var(--r-sm) 0; }
-.hi-hot .label { order: 1; }
-.hi-hot .hi-figure { order: 0; font: 600 2.5rem/1 var(--font); letter-spacing: -.04em; }
-.hi-hot .hi-figure.warn { color: var(--look-text); }
-.hi-hot .muted { order: 2; font-size: 12.5px; text-wrap: balance; }
-
-/* The figures under the chart: quieter than the lead, a label and a number with a line of context. */
-.hi-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; margin: 0 -12px; max-width: 760px; }
-.hi-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; }
-button.hi-stat { cursor: pointer; transition: background-color .12s ease; }
-button.hi-stat:hover { background: var(--surface-2); }
-button.hi-stat[aria-pressed="true"] { background: var(--good-bg); }
-.hi-stats button.hi-stat .label::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; translate: 0 -1px; opacity: .7; }
-.hi-figure { font-size: 1.1rem; font-weight: 600; letter-spacing: -.015em; line-height: 1.25; }
-.hi-figure.warn { color: var(--warn); }
-.hi-stat .muted { font-size: 12.5px; }
-
 /* Details under it all: what happened, or each part's range, picked like tabs. */
 .hi-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
 .hi-tabs { display: flex; gap: 18px; }
@@ -82,7 +64,7 @@ button.hi-stat[aria-pressed="true"] { background: var(--good-bg); }
 .hi-empty-list b { font-weight: 600; }
 
 @media (max-width: 860px) {
-  .hi-stats { grid-template-columns: minmax(0, 1fr); }
+  .figs { grid-template-columns: minmax(0, 1fr); }
   .hi-empty { grid-template-columns: minmax(0, 1fr); padding: 22px 0 0; }
   .hi-empty-list { padding: 22px 0 0; border-left: 0; border-top: 1px solid var(--line); }
   .hi-events li { flex-wrap: wrap; }

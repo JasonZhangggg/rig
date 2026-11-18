@@ -43,7 +43,7 @@
 .gm-back svg { width: 16px; height: 16px; }
 .gm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 
-.gm-notes { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.gm-notes { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
 .gm-notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); }
 .gm-note-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: underline dotted 1.5px; text-decoration-color: var(--text-3); text-underline-offset: 4px; cursor: pointer; }
 .gm-note-btn:hover { color: var(--text); text-decoration-color: currentColor; }

@@ -1,21 +1,5 @@
-/* Focused pages: one lead that answers the page's question, then the list, then quiet notes. Games and Changes. The upgrade meters are used on My PC. */
+/* Focused pages: the list first, then quiet notes. Games and Changes. The upgrade meters are used on My PC. */
 .page.pg-focus { max-width: 1240px; gap: 26px; }
-.pg-lead { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px 48px; padding: 24px 0 4px; }
-.pg-lead-text { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
-.pg-lead-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-left: 40px; border-left: 1px solid var(--line); text-align: right; font-size: 13px; }
-.pg-lead-fig b { font: 600 2.5rem/1 var(--font); letter-spacing: -.04em; }
-.pg-lead.look .pg-lead-fig b { color: var(--look-text); }
-.pg-lead-tag { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; font-weight: 600; }
-.pg-lead-tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--expected); }
-.pg-lead.good .pg-lead-tag { color: var(--good-text); }
-.pg-lead.good .pg-lead-tag::before { background: var(--good); }
-.pg-lead.look .pg-lead-tag { color: var(--look-text); }
-.pg-lead.look .pg-lead-tag::before { background: var(--look); }
-.card.pg-lead .pg-lead-h { max-width: 34ch; font: 600 1.5rem/1.2 var(--font); letter-spacing: -.025em; }
-.pg-lead-body { max-width: 68ch; color: var(--text-2); }
-.pg-lead.solo { grid-template-columns: minmax(0, 1fr); }
-.pg-lead.plain .pg-lead-tag::before { background: var(--text-3); }
-.pg-lead .gm-actions { margin-top: 8px; }
 .pg-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0 12px; border-top: 1px solid var(--line); }
 .pg-foot > ul { align-self: stretch; }
 .pg-note { max-width: 72ch; font-size: 13px; }
@@ -28,7 +12,6 @@
 .ch-next-list { padding: 0 0 10px; }
 .ch-log { padding-bottom: 10px; }
 .ch-log .card-head { flex-wrap: wrap; padding-bottom: 4px; }
-.ch-lead-diff { flex-basis: 100%; margin-top: 4px; }
 .ch-day { display: flex; flex-direction: column; gap: 2px; padding: 12px 0 0; }
 .ch-day-label { display: flex; align-items: baseline; gap: 10px; color: var(--text-2); font-size: 13px; font-weight: 600; }
 .ch-day-label span { color: var(--text-3); font-weight: 500; }
@@ -79,8 +62,6 @@
 .bar.tuned i { background: var(--good); }
 
 @media (max-width: 860px) {
-  .pg-lead { grid-template-columns: minmax(0, 1fr); padding: 22px 0 4px; }
-  .pg-lead-fig { display: none; }
   .ch-entry,
   .ch-timeline > .ch-entry { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
   .ch-time { padding: 0; }
