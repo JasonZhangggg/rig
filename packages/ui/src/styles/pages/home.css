@@ -5,6 +5,10 @@
    of the tone each tile sits on, so a dark tile or another accent needs nothing here. */
 .f-home { --home-gap: 40px; max-width: 1880px; gap: var(--home-gap); container: home / inline-size; }
 
+/* On the grid each widget fills a tile of a set size, so it measures that box: content picks compact or full forms from
+   the tile's height as well as its width. In the phone's list a tile takes its content's height, so nothing measures there. */
+.dash:not([data-cols="1"]) .dw-body:not(:has(> .f-pc)) { container: wbox / size; }
+
 .f-link {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 0; border: 0; background: transparent;
   color: var(--text); font: 600 14px/1.2 var(--font); white-space: nowrap; text-decoration: none; cursor: pointer;
@@ -68,6 +72,9 @@
 .f-stage { position: relative; min-height: 0; }
 .f-pc .stage-slot { inset: -60px 0 -30px; -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); }
 .dw.tone-dark .part-label { background: color-mix(in srgb, var(--surface-2) 92%, transparent); }
+/* On Home the parts' labels would crowd the PC and its name, and the temperatures already read large under it,
+   so only a part you pick keeps its label. The 3D view shows them all. */
+.f-pc .part-label:not(.is-selected) { display: none !important; }
 
 /* The model names stand once, beside the PC; the temperatures read large under it, by part kind only. */
 .f-specs { display: none; margin: 0; }
@@ -116,8 +123,6 @@
   .f-read { padding: 12px 16px 10px; }
   .f-read:nth-child(odd) { padding-left: 0; border-left: 0; }
   .f-read:nth-child(n + 3) { border-top: 1px solid var(--line); }
-  .f-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .f-chip { flex: none; }
 }
 
 /* ----- Health ----- */
@@ -141,7 +146,7 @@
 .f-health[data-style="compact"] .f-ring { width: 72px; height: 72px; }
 .f-health[data-style="compact"] .f-ring .tr, .f-health[data-style="compact"] .f-ring .vl { stroke-width: 12; }
 .f-health[data-style="compact"] .f-ring b { font-size: 24px; }
-.f-health[data-style="compact"] .f-ring span { display: none; }
+.f-health[data-style="compact"] .f-ring b + span { display: none; }
 .f-health[data-style="compact"] .f-health-main { gap: 18px; }
 .f-health[data-style="compact"] p { -webkit-line-clamp: 2; font-size: 14px; }
 .f-hparts { display: grid; gap: 12px; margin: 0; padding: 18px 0 0; border-top: 1px solid var(--line); list-style: none; }
@@ -152,14 +157,48 @@
 .f-hparts > li:is(.warn, .bad) > i > i { background: var(--s-b); }
 .f-hparts > li > b { color: var(--text); font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 .f-hparts > li > small { grid-column: 1 / -1; color: var(--text-3); font-size: 12.5px; font-weight: 500; }
+/* Not scored yet: an empty ring, and the words in its place. */
+.f-health.unscored .f-ring span { max-width: 9ch; margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.25; text-align: center; }
+.f-health.unscored .f-hnum b { color: var(--text-3); font-size: 2.75rem; }
+/* A bigger tile gets a bigger score, and a tall narrow one stacks the score over the words. */
+@container wbox (min-height: 1px) {
+  .f-ring { width: clamp(84px, min(40cqi, 74cqh), 220px); height: auto; aspect-ratio: 1; }
+  .f-ring b { font-size: clamp(28px, min(10cqi, 20cqh), 64px); }
+  .f-hnum b { font-size: clamp(3rem, min(21cqi, 42cqh), 8.5rem); }
+  .f-health h2 { font-size: clamp(18px, 4.6cqi, 24px); }
+  .f-health[data-style="compact"] .f-ring { width: clamp(72px, min(18cqi, 36cqh), 128px); height: auto; }
+  .f-health[data-style="compact"] .f-ring b { font-size: clamp(24px, min(5.5cqi, 11cqh), 40px); }
+  .f-health p { font-size: clamp(14px, 3.6cqi, 17px); }
+}
+@container wbox (orientation: portrait) and (min-height: 300px) {
+  .f-health-main { flex-direction: column; align-items: flex-start; gap: 20px; }
+  .f-hnum b { font-size: clamp(3rem, 26cqi, 7.5rem); }
+  .f-ring { width: clamp(96px, min(58cqi, 44cqh), 200px); }
+  .f-ring b { font-size: clamp(30px, 17cqi, 60px); }
+  .f-health-text { flex: none; }
+}
 @container tile (max-width: 240px) {
   .f-health-main { gap: 16px; }
   .f-ring { width: 84px; height: 84px; }
   .f-ring b { font-size: 28px; }
-  .f-ring span { display: none; }
+  .f-ring b + span { display: none; }
   .f-hnum { min-width: 0; }
   .f-hnum b { font-size: 3rem; }
   .f-health p { display: none; }
+}
+/* Larger text in a small tile: a smaller score, so the title and link keep their room. */
+@container wbox (max-width: 190px) {
+  .f-health-main, .f-health[data-style="compact"] .f-health-main { gap: 12px; }
+  .f-ring, .f-health[data-style="compact"] .f-ring { width: 64px; height: 64px; }
+  .f-ring b, .f-health[data-style="compact"] .f-ring b { font-size: 22px; }
+  .f-hnum b { font-size: 2.5rem; }
+  .f-hnum span { display: none; }
+}
+@container wbox (max-width: 160px) {
+  .f-health-main, .f-health[data-style="compact"] .f-health-main { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .f-ring, .f-health[data-style="compact"] .f-ring { width: 56px; height: 56px; }
+  .f-ring b, .f-health[data-style="compact"] .f-ring b { font-size: 20px; }
+  .f-hnum b { font-size: 2.25rem; }
 }
 
 /* ----- Things to look at: a rust bubble with the part marks what needs a look; a check marks what's only worth knowing. ----- */
@@ -167,7 +206,24 @@
 .f-todo-head { display: flex; align-items: center; gap: 12px; }
 .f-todo-head h2, .f-asks h2 { font: 500 clamp(1.4rem, 1.6vw, 1.75rem)/1.1 var(--font); letter-spacing: -.025em; }
 .f-count { min-width: 26px; height: 26px; padding: 0 8px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--look); color: var(--graphite); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.f-todo-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 14px -8px 0; padding: 0 8px; overflow-y: auto; scrollbar-width: thin; list-style: none; }
+.f-todo-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 14px -8px 0; padding: 0 8px; list-style: none; }
+/* The row that says how many more there are, when the tile shows only some. */
+.f-more { flex: none; display: flex; align-items: center; padding: 6px 0 0; }
+.f-more .f-link { align-self: flex-start; font-size: 14px; }
+/* A small tile keeps each row to its title, and the checkup link to the link alone. */
+@container wbox (max-height: 320px) {
+  .f-todo-row small { display: none; }
+  .f-todo-list .f-todo-row { padding-block: 10px; }
+  .f-todo[data-style="cards"] .f-todo-row { gap: 8px; padding: 12px; }
+  .f-todo-foot { padding-top: 10px; }
+  .f-todo-foot p { display: none; }
+}
+@container wbox (max-width: 260px) {
+  .f-todo-row { gap: 10px; }
+  .f-todo-list .f-todo-ico { width: 30px; height: 30px; }
+  .f-todo-ico svg { width: 15px; height: 15px; }
+  .f-todo-list .f-todo-go { display: none; }
+}
 .f-todo-list > li { display: flex; flex-direction: column; }
 .f-todo-list > li + li { border-top: 1px solid var(--line); }
 .f-todo-row { flex: none; display: flex; align-items: flex-start; gap: 16px; margin: 0 -8px; padding: 18px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background .15s; }
@@ -195,15 +251,16 @@
 .f-todo[data-style="cards"] .f-todo-row { height: 100%; flex-direction: column; gap: 12px; margin: 0; padding: 16px; border-radius: var(--r-sm); background: var(--chip); box-shadow: inset 0 0 0 1px var(--line); }
 .f-todo[data-style="cards"] .f-todo-go { position: absolute; top: 12px; right: 12px; }
 .f-todo[data-style="cards"] .f-todo-list > li { position: relative; }
+.f-todo[data-style="cards"] .f-todo-list > .f-more { grid-column: 1 / -1; }
 .f-todo-empty { display: flex; align-items: center; gap: 16px; margin-top: 14px; padding: 12px 0; }
 .f-todo-empty .f-todo-ico { width: 48px; height: 48px; background: var(--good); color: var(--graphite); }
 .f-todo-empty p { max-width: 32ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
-.f-todo-foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding-top: 20px; }
+.f-todo-foot { flex: none; margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding-top: 20px; }
 .f-todo-foot p { color: var(--text-2); font-size: 14px; font-weight: 500; }
 
 /* ----- Ask Rig ----- */
 .f-asks { min-height: 0; display: flex; flex-direction: column; gap: 14px; }
-.f-asks-list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.f-asks-list { display: flex; flex-direction: column; min-height: 0; }
 .f-asks-list button {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 2px 11px 0; border: 0; border-top: 1px solid var(--line);
   background: transparent; color: var(--text); font: 500 15px/1.35 var(--font); text-align: left; cursor: pointer;
@@ -211,8 +268,21 @@
 .f-asks[data-style="chips"] .f-asks-list { flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 8px; }
 .f-asks[data-style="chips"] .f-asks-list button { padding: 10px 16px; border: 0; border-radius: var(--r-pill); background: var(--chip); box-shadow: inset 0 0 0 1px var(--line); font-size: 14px; }
 .f-asks[data-style="chips"] .f-go { display: none; }
-.f-askbox { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 18px; border: 0; border-radius: var(--r-pill); background: var(--chip); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-3); font: 500 15px var(--font); text-align: left; cursor: text; }
+.f-askbox { flex: none; display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 18px; border: 0; border-radius: var(--r-pill); background: var(--chip); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-3); font: 500 15px var(--font); text-align: left; cursor: text; }
 .f-askbox svg { width: 18px; height: 18px; flex: none; color: var(--text-2); }
+/* A roomy tile spreads the questions over it and sets them larger, rather than leaving them in a corner. */
+@container wbox (min-height: 1px) {
+  .f-asks-list { flex: 1; }
+  .f-asks[data-style="rows"] .f-asks-list { justify-content: center; }
+  .f-asks[data-style="rows"] .f-asks-list button { flex: 0 1 clamp(44px, 20cqh, 112px); font-size: clamp(15px, min(2.4cqi, 4.4cqh), 22px); }
+  .f-asks[data-style="chips"] .f-asks-list { align-content: center; gap: clamp(8px, 2.4cqh, 16px); }
+  .f-asks[data-style="chips"] .f-asks-list button { padding: clamp(10px, 2.6cqh, 16px) clamp(16px, 2.2cqi, 24px); font-size: clamp(14px, min(2.2cqi, 4cqh), 19px); }
+  .f-asks h2 { font-size: clamp(1.4rem, min(3.4cqi, 6cqh), 2.25rem); }
+}
+@container wbox (max-height: 150px) {
+  .f-asks { gap: 8px; }
+  .f-asks[data-style="rows"] .f-asks-list button { padding-block: 8px; }
+}
 @media (hover: hover) and (pointer: fine) {
   .f-asks-list button:hover .f-go { color: var(--text); transform: translateX(3px); }
   .f-asks[data-style="chips"] .f-asks-list button:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
@@ -227,6 +297,14 @@
 .pl-figure b { color: var(--text); font: 600 2.25rem/1 var(--font); letter-spacing: -.02em; white-space: nowrap; }
 .pl-figure.look b { color: var(--warn); }
 .pl-figure span { color: var(--text-3); font-size: 13px; font-weight: 600; }
+/* A narrow tile puts the headline number under the title, on one line with its label. */
+@container wbox (max-width: 200px) {
+  .pl-head { flex-wrap: wrap; gap: 6px 8px; }
+  .pl-head h3 { font-size: 16px; }
+  .pl-figure { display: flex; align-items: baseline; gap: 6px; text-align: left; }
+  .pl-figure b { font-size: 1.6rem; }
+  .pl-figure span { font-size: 12px; }
+}
 .bl-empty { margin: auto 0; max-width: 38ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
 
 .pl-stats { display: flex; gap: 12px 32px; flex-wrap: wrap; }
@@ -245,7 +323,7 @@
 .pl-cap-col { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; min-height: 0; }
 .pl-cap-col::before { content: ""; position: absolute; top: 0; bottom: 30px; left: 50%; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--s-track); }
 .pl-cap-stack { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; margin-top: calc(var(--lift, 0) * var(--lift-max)); }
-.pl-cap { width: min(46px, 100%); min-width: 32px; height: var(--cap-h, 58px); display: grid; place-items: center; border-radius: var(--r-pill); color: var(--s-ink); font: 700 13px var(--font); font-variant-numeric: tabular-nums; }
+.pl-cap { width: min(46px, 100%); min-width: 28px; height: var(--cap-h, 58px); display: grid; place-items: center; border-radius: var(--r-pill); color: var(--s-ink); font: 700 13px var(--font); font-variant-numeric: tabular-nums; }
 .pl-cap.a { background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
 .pl-cap.b { background: var(--s-b); }
 .pl-cap.b.top { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--s-b); }
@@ -254,6 +332,9 @@
 .pl-cap-stack > i:first-of-type { background: var(--s-b); }
 .pl-cap-col small { margin-top: auto; color: var(--text-3); font-size: 12px; font-weight: 600; line-height: 20px; }
 .pl-cap-col.today small { color: var(--text); font-weight: 700; }
+@container wbox (min-height: 1px) {
+  .pl-caps { --lift-max: clamp(16px, 14cqh, 90px); --cap-h: clamp(34px, 10.5cqh, 64px); }
+}
 .dw[data-frame="open"] .pl-cap.b.top { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--s-b); }
 
 /* Temperatures, range rows: a row a day, a line from idle to peak, and the figures in columns. */
@@ -263,6 +344,8 @@
 .pl-rt-head > span:nth-child(n + 3) { text-align: right; }
 .pl-rt-scale { display: flex; justify-content: space-between; }
 .pl-rt-scale > span { width: 0; display: flex; justify-content: center; white-space: nowrap; }
+.pl-rt-scale > span:first-child { justify-content: flex-start; }
+.pl-rt-scale > span:last-child { justify-content: flex-end; }
 .pl-rt-day { color: var(--text-2); font-size: 13px; font-weight: 600; }
 .pl-rt-row.today .pl-rt-day { color: var(--text); }
 .pl-rt-plot { position: relative; align-self: stretch; background: linear-gradient(to right, var(--s-track) 1px, transparent 1px) 0 0 / calc(100% / var(--ticks)) 100% repeat-x; box-shadow: inset -1px 0 0 var(--s-track); }
@@ -284,12 +367,25 @@
 .pl-big-day:first-child { padding-left: 0; border-left: 0; }
 .pl-big-day small { color: var(--text-3); font-size: 12px; font-weight: 600; }
 .pl-big-day.today small { color: var(--text); font-weight: 700; }
-.pl-big-day b { color: var(--text); font: 500 clamp(1.4rem, 4.2cqi, 2.4rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.pl-big-day b { color: var(--text); font: 500 clamp(1rem, min(4.2cqi, 100cqi / var(--n) * .4), 2.4rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .pl-big-day b.top { color: var(--warn); }
 .pl-big-day span { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .pl-big-day span i { width: 8px; height: 8px; flex: none; border-radius: 2px; background: var(--x, var(--s-c)); }
 .pl-big-day span i.a { --x: var(--s-a); }
 .pl-big-day span i.b { --x: var(--s-b); }
+/* A narrow tile: tighter columns, and the range keeps only its two ends on the scale. */
+@container wbox (max-width: 380px) {
+  .pl-big-day { padding-left: 6px; }
+  .pl-big-day span { gap: 3px; font-size: 12px; }
+  .pl-big-day span i { width: 6px; height: 6px; }
+  .pl-rt-row { grid-template-columns: 34px minmax(0, 1fr) repeat(var(--cols), 34px); column-gap: 8px; }
+  .pl-rt-n { font-size: 14px; }
+  .pl-rt-scale > span:not(:first-child):not(:last-child) { visibility: hidden; }
+}
+@container wbox (max-width: 300px) {
+  .pl-big-day { padding-left: 4px; gap: 6px; }
+  .pl-big-day span { gap: 2px; font-size: 11px; }
+}
 
 /* A small tile's strip of the days' peaks. */
 .pl-strip { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
@@ -297,6 +393,7 @@
 .pl-strip > span > i { width: 100%; max-width: 22px; border-radius: var(--r-pill); background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
 .pl-strip > span.top > i { background: var(--s-b); box-shadow: none; }
 .pl-strip small { color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+@container wbox (max-width: 190px) { .pl-strip { gap: 3px; } .pl-strip small { font-size: 10.5px; } }
 
 /* Fans, dot grid (the original): a column of dots per six hours, lit up to the fastest fan. */
 .pl-dots { display: block; flex: 1; min-height: 0; width: 100%; margin-top: auto; }
@@ -310,12 +407,12 @@
 /* Fans, rings: each fan against its own top speed. */
 .pl-rings { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); align-content: center; gap: 18px 12px; margin: 0; padding: 0; list-style: none; }
 .pl-rings > li { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; font-weight: 600; }
-.pl-ring { position: relative; width: 100%; max-width: 148px; aspect-ratio: 1; display: grid; place-items: center; }
+.pl-ring { position: relative; width: 100%; max-width: clamp(96px, 34cqh, 200px); aspect-ratio: 1; display: grid; place-items: center; }
 .pl-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .pl-ring .tr { fill: none; stroke: var(--s-track); stroke-width: 7; }
 .pl-ring .vl { fill: none; stroke: var(--s-a); stroke-width: 7; stroke-linecap: round; }
 .pl-rings > li.warn .vl { stroke: var(--s-b); }
-.pl-ring b { color: var(--text); font: 600 1.35rem/1 var(--font); font-variant-numeric: tabular-nums; }
+.pl-ring b { color: var(--text); font: 600 clamp(1.1rem, 7cqh, 2rem)/1 var(--font); font-variant-numeric: tabular-nums; }
 .pl-ring b small { margin-left: 1px; color: var(--text-2); font-size: .6em; }
 
 /* Evenings: a lane a day, a mark per session where it started and as long as it ran. */
@@ -341,6 +438,8 @@
 .pl-tl-axis { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 14px; padding-top: 6px; border-top: 1px solid var(--line-strong); }
 .pl-tl-ticks { display: flex; justify-content: space-between; color: var(--text-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .pl-tl-ticks > span { width: 0; display: flex; justify-content: center; white-space: nowrap; }
+.pl-tl-ticks > span:first-child { justify-content: flex-start; }
+.pl-tl-ticks > span:last-child { justify-content: flex-end; }
 .dw[data-frame="open"] .bl-week { --s-edge: var(--line-strong); }
 
 .pl-games { display: flex; flex-direction: column; gap: 10px; margin: auto 0 0; padding: 0; list-style: none; }
@@ -378,7 +477,8 @@
 
 /* ----- Storage ----- */
 .f-store, .f-live, .f-parts { min-height: 0; display: flex; flex-direction: column; gap: 18px; }
-.f-store-bar { display: flex; gap: 3px; height: 14px; }
+.f-store-bar { flex: none; display: flex; gap: 3px; height: 14px; }
+.f-store-free { display: none; }
 .f-store-bar i { min-width: 6px; border-radius: var(--r-pill); background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
 .f-store-bar i.more { background: var(--s-c); }
 .f-store-bar i.free { background: var(--s-track); box-shadow: none; }
@@ -394,9 +494,36 @@
 .f-store-num { display: grid; gap: 6px; margin-top: auto; }
 .f-store-num b { color: var(--text); font: 500 clamp(2.5rem, 14cqi, 4rem)/.95 var(--font); letter-spacing: -.045em; }
 .f-store-num span { color: var(--text-2); font-size: 14px; font-weight: 600; }
-.f-store-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.f-store-list { min-height: 0; display: grid; align-content: start; gap: 0; margin: 0; padding: 0; list-style: none; }
 .f-store[data-style="number"] .f-store-list { margin-top: auto; }
-.f-store-list > li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+/* A roomy tile sets the bar and its figure larger and puts the drives at the bottom, rather than leaving the lower half bare. */
+@container wbox (min-height: 1px) {
+  .f-store-bar { height: clamp(14px, 7cqh, 44px); }
+  .f-store[data-style="bar"] .pl-figure b, .f-store[data-style="ring"] .pl-figure b { font-size: clamp(2.25rem, min(9cqi, 14cqh), 4.25rem); }
+  .f-store[data-style="bar"] .f-store-list { margin-top: auto; }
+  .f-store-ring { width: clamp(88px, min(34cqi, 52cqh), 220px); }
+  .f-store-ring b { font-size: clamp(1rem, min(6cqi, 7cqh), 1.9rem); }
+  .f-store-num b { font-size: clamp(2.5rem, min(14cqi, 22cqh), 5.5rem); }
+}
+/* A tall bar tile also says how much is free, large, between the bar and the drives. */
+@container wbox (min-height: 330px) {
+  .f-store[data-style="bar"] .f-store-free { display: grid; gap: 6px; margin-block: auto; }
+  .f-store-free b { color: var(--text); font: 500 clamp(2.25rem, min(12cqi, 12cqh), 4.5rem)/.95 var(--font); letter-spacing: -.04em; }
+  .f-store-free span { color: var(--text-2); font-size: 14px; font-weight: 600; }
+  .f-store[data-style="bar"] .f-store-free + .f-store-list { margin-top: 0; }
+}
+@container wbox (max-height: 150px) {
+  .f-store, .f-live, .f-parts { gap: 10px; }
+  .f-store-ring { display: none; }
+  .f-store[data-style="ring"] .f-store-list { grid-column: 1 / -1; }
+}
+/* Too narrow for the drives beside the ring: the ring stands alone, centred, and the drives go under it when there's room. */
+@container wbox (max-width: 300px) {
+  .f-store[data-style="ring"] { grid-template-columns: minmax(0, 1fr); justify-items: center; align-content: start; row-gap: 14px; }
+  .f-store[data-style="ring"] > .pl-head { justify-self: stretch; }
+  .f-store[data-style="ring"] .f-store-list { justify-self: stretch; }
+}
+.f-store-list > li { min-width: 0; display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; font-weight: 600; }
 .f-store-list > li > span { color: var(--text-2); }
 .f-store-list > li > b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .f-store-list > li.free > b { color: var(--text-3); }
@@ -418,13 +545,39 @@
 .f-live[data-style="list"] .f-live-list > li { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; padding: 10px 0; border-left: 0; border-top: 1px solid var(--line); }
 .f-live[data-style="list"] .f-live-list > li > b { font-size: 1.25rem; font-weight: 600; text-align: right; }
 .f-live[data-style="list"] .f-live-list > li > small { grid-column: 1 / -1; }
+@container wbox (max-width: 190px) {
+  .f-live[data-style] .f-live-list { gap: 10px 10px; }
+  .f-live-list > li { padding-left: 10px; }
+  .f-live[data-style]:not([data-style="list"]) .f-live-list > li > b { font-size: 1.35rem; }
+}
+/* A short tile puts the title beside the readings and drops the notes, so a row of figures fits in two grid rows. */
+@container wbox (max-height: 170px) {
+  .f-live { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr); align-items: end; column-gap: 24px; }
+  .f-live > .pl-head { align-self: start; }
+  .f-live[data-style] .f-live-list { align-self: stretch; align-content: end; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px 16px; }
+  .f-live[data-style] .f-live-list > li > b { font-size: 1.85rem; font-weight: 500; }
+  .f-live .f-meter { margin: 2px 0 0; }
+  .f-live[data-style="list"] .f-live-list > li { grid-template-columns: minmax(0, 1fr); padding: 0 0 0 14px; border-top: 0; border-left: 1px solid var(--line); }
+  .f-live[data-style="list"] .f-live-list > li > b { text-align: left; }
+}
+@container wbox (max-height: 170px) and (max-width: 420px) {
+  .f-live { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); row-gap: 8px; }
+  .f-live .f-faint, .f-live .f-live-list > li > small { display: none; }
+  .f-live[data-style] .f-live-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+  .f-live[data-style] .f-live-list > li > b { font-size: 1.5rem; }
+}
+@container wbox (max-height: 130px) {
+  .f-live .f-live-list > li > small { display: none; }
+}
 
 /* ----- Parts ----- */
-.f-parts-list { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; margin: 0 -8px; padding: 0 8px; overflow-y: auto; scrollbar-width: thin; list-style: none; }
+.f-parts-list { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; margin: 0 -8px; padding: 0 8px; list-style: none; }
+.f-parts-list > .f-more { grid-column: 1 / -1; padding: 4px 0 0; border-top: 0 !important; }
 .f-parts-list > li + li { border-top: 1px solid var(--line); }
 .f-parts-list button { width: 100%; display: flex; align-items: center; gap: 14px; margin: 0 -8px; padding: 10px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .f-parts-list button > i { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--chip); box-shadow: inset 0 0 0 1px var(--line); }
 .f-parts-list button > i svg { width: 16px; height: 16px; }
+.f-parts-list button > i { color: var(--text-2); }
 .f-parts-list button > span { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .f-parts-list small { color: var(--text-3); font-size: 12.5px; font-weight: 600; }
 .f-parts-list b { overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
@@ -459,4 +612,11 @@
 }
 @container home (max-width: 440px) {
   .f-date { display: none; }
+}
+
+/* The phone's options sheet dims the page behind it; a press on the dimmed page closes the sheet. */
+.dpop-scrim { position: fixed; inset: 0; z-index: 69; background: rgba(17, 17, 17, .36); animation: dpop-scrim .2s ease-out; }
+@keyframes dpop-scrim { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dpop-scrim { animation: none; }
 }

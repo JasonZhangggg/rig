@@ -4,10 +4,12 @@ import { StageSlot } from "../../components/Stage";
 import { useAlertKindsOff, useApp, useTemp, useTempText, type Ctx } from "../../state";
 import { alertIssue, bySeverity, dustIssue, issueGo, partIcon, shortType } from "../shared";
 import type { OptValue, SizeName } from "./layout";
+import { useFit } from "./parts";
 
 export const Go = () => <svg className="f-go" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 export const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const Check = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10" /></svg>;
+const Chip = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5" /><path d="M9.5 3v3M14.5 3v3M9.5 18v3M14.5 18v3M3 9.5h3M3 14.5h3M18 9.5h3M18 14.5h3" strokeLinecap="round" /></svg>;
 const Chat = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 18.5V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8.5z" /></svg>;
 
 /** What a widget knows about its tile: its size name and how many grid cells it covers. */
@@ -15,6 +17,11 @@ export interface TileBox { size: SizeName; span: number; rows: number; cols: num
 export interface WidgetProps { style: string; opts: Record<string, OptValue>; box: TileBox; editing: boolean }
 
 const on = (opts: Record<string, OptValue>, key: string) => opts[key] !== false;
+/** On the grid a tile has a fixed size and its lists drop what doesn't fit; in the phone's list every item shows. */
+const fixed = (box: TileBox) => box.cols > 1;
+
+/** True once Rig has scored the PC. A new PC reports 0 with nothing behind it until its first checkup. */
+export const scored = (pc: { health: number; breakdown?: unknown[] }) => pc.health > 0 || (pc.breakdown?.length ?? 0) > 0;
 const offList = (opts: Record<string, OptValue>, key: string) => (Array.isArray(opts[key]) ? (opts[key] as string[]) : []);
 
 /** Alerts and findings in the order Home shows them, with what needs a look first. */
@@ -77,7 +84,7 @@ export function PCWidget({ style, opts, editing, views }: WidgetProps & { views:
           <div className="f-chips" role="group" aria-label="Temperatures">
             {reads.map(([id, p]) => (
               <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => open(id)}>
-                <i aria-hidden="true">{partIcon[id] ?? null}</i><span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}</b>
+                <i aria-hidden="true">{partIcon[id] ?? <Chip />}</i><span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}</b>
               </button>
             ))}
           </div>
@@ -101,35 +108,40 @@ export function HealthWidget({ style, opts, box }: WidgetProps) {
   const { pc } = useApp();
   const { summary } = useHomeIssues();
   const ringC = 2 * Math.PI * 52;
-  const parts = on(opts, "breakdown") && box.rows >= 4 ? pc.breakdown ?? [] : [];
+  const known = scored(pc);
+  const all = on(opts, "breakdown") && known ? pc.breakdown ?? [] : [];
+  const [list, fits] = useFit<HTMLUListElement>(all.length, { on: fixed(box), min: 0, watch: style });
+  const parts = all.slice(0, fits);
+  const value = known ? pc.health : null;
+  const label = known ? `Health ${pc.health} of 100` : "Health not scored yet";
   const text = (
     <div className="f-health-text">
       <h2>Health</h2>
-      {on(opts, "summary") && <p>{summary}</p>}
+      {on(opts, "summary") && <p>{known ? summary : `Rig gives ${pc.name} a score once it has had a good look. Keep using it as usual.`}</p>}
       {on(opts, "link") && <a className="f-link" href="#history">See history<Go /></a>}
     </div>
   );
   return (
-    <section className="f-health" data-style={style}>
+    <section className={`f-health${known ? "" : " unscored"}`} data-style={style}>
       <div className="f-health-main">
         {style === "number" ? (
-          <div className="f-hnum" role="img" aria-label={`Health ${pc.health} of 100`}>
-            <b>{pc.health}</b><span>of 100</span>
-            <i style={{ "--v": `${pc.health}%` } as CSSProperties} />
+          <div className="f-hnum" role="img" aria-label={label}>
+            <b>{value ?? "Soon"}</b><span>{known ? "of 100" : "Not scored yet"}</span>
+            <i style={{ "--v": `${value ?? 0}%` } as CSSProperties} />
           </div>
         ) : (
-          <div className="f-ring" role="img" aria-label={`Health ${pc.health} of 100`}>
+          <div className="f-ring" role="img" aria-label={label}>
             <svg viewBox="0 0 120 120" aria-hidden="true">
               <circle cx="60" cy="60" r="52" className="tr" />
-              <circle cx="60" cy="60" r="52" className="vl" strokeDasharray={`${(ringC * pc.health) / 100} ${ringC}`} transform="rotate(-90 60 60)" />
+              {value != null && <circle cx="60" cy="60" r="52" className="vl" strokeDasharray={`${(ringC * value) / 100} ${ringC}`} transform="rotate(-90 60 60)" />}
             </svg>
-            <div aria-hidden="true"><b>{pc.health}</b><span>of 100</span></div>
+            <div aria-hidden="true">{value != null ? <><b>{value}</b><span>of 100</span></> : <span>Not scored yet</span>}</div>
           </div>
         )}
         {text}
       </div>
-      {parts.length > 0 && (
-        <ul className="f-hparts">
+      {all.length > 0 && (
+        <ul className="f-hparts" ref={list}>
           {parts.map((p) => (
             <li key={p.label} className={p.sev}>
               <span>{p.label}</span>
@@ -146,18 +158,20 @@ export function HealthWidget({ style, opts, box }: WidgetProps) {
 
 // ----- Things to look at -----
 
-export function TodoWidget({ style, opts }: WidgetProps) {
+export function TodoWidget({ style, opts, box }: WidgetProps) {
   const { pc, ask } = useApp();
   const inUnit = useTempText();
   const openIssue = useOpenIssue();
   const { issues: all, open } = useHomeIssues();
   const issues = on(opts, "worth") ? all : open;
+  const [list, fits] = useFit<HTMLUListElement>(issues.length, { on: fixed(box), reserve: 40, min: 0, watch: style });
+  const rest = issues.length - fits;
   return (
     <section className="f-todo" data-style={style}>
       <div className="f-todo-head"><h2>Things to look at</h2>{on(opts, "count") && open.length > 0 && <span className="f-count" aria-label={`${open.length} open`}>{open.length}</span>}</div>
       {issues.length > 0 ? (
-        <ul className="f-todo-list">
-          {issues.map((i) => (
+        <ul className="f-todo-list" ref={list}>
+          {issues.slice(0, fits).map((i) => (
             <li key={i.id}>
               <button type="button" className={`f-todo-row ${i.severity}`} onClick={() => openIssue(i)}>
                 <i className="f-todo-ico">{i.severity === "ok" ? <Check /> : partIcon[i.part ?? ""] ?? <Check />}</i>
@@ -166,6 +180,11 @@ export function TodoWidget({ style, opts }: WidgetProps) {
               </button>
             </li>
           ))}
+          {rest > 0 && (
+            <li data-more="" className="f-more">
+              <button type="button" className="f-link" onClick={() => ask(`What needs a look on ${pc.name} right now?`)}>{fits ? (rest === 1 ? "One more to look at" : `${rest} more to look at`) : `See all ${rest}`}<Go /></button>
+            </li>
+          )}
         </ul>
       ) : (
         <div className="f-todo-empty"><i className="f-todo-ico"><Check /></i><p>Nothing to look at. Rig keeps watching while you use {pc.name}.</p></div>
@@ -190,16 +209,18 @@ export const questions = (name: string) => [
   `Is ${name} ready for new games?`,
 ];
 
-export function AsksWidget({ style, opts }: WidgetProps) {
+export function AsksWidget({ style, opts, box }: WidgetProps) {
   const { pc, ask, set } = useApp();
-  const asks = questions(pc.name).slice(0, Number(opts.count) || 3);
+  const all = questions(pc.name).slice(0, Number(opts.count) || 3);
+  const [list, fits] = useFit<HTMLDivElement>(all.length, { on: fixed(box), watch: `${style}${opts.box}` });
+  const asks = all.slice(0, fits);
   return (
     <section className="f-asks" data-style={style} aria-labelledby="f-asks-title">
       <h2 id="f-asks-title">Ask Rig</h2>
       {opts.box === true && (
         <button type="button" className="f-askbox" onClick={() => set({ palette: true })}><Chat /><span>Ask anything about {pc.name}</span></button>
       )}
-      <div className="f-asks-list" role="group" aria-label="Ask Rig">
+      <div className="f-asks-list" role="group" aria-label="Ask Rig" ref={list}>
         {asks.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}<Go /></button>)}
       </div>
     </section>
@@ -213,6 +234,7 @@ const size = (gb: number) => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${M
 export function StorageWidget({ style, opts, box }: WidgetProps) {
   const { pc } = useApp();
   const st = pc.storage;
+  const [drives, fits] = useFit<HTMLUListElement>(st?.slices.length ?? 0, { on: fixed(box), min: 0, watch: style });
   if (!st || !st.totalGb) {
     return (
       <section className="f-store" data-style={style}>
@@ -226,7 +248,7 @@ export function StorageWidget({ style, opts, box }: WidgetProps) {
   const pct = Math.round((used / st.totalGb) * 100);
   const slices = st.slices.filter((s) => s.label !== "Free");
   const c = 2 * Math.PI * 44;
-  const list = on(opts, "list") && box.rows >= (style === "number" ? 5 : 3);
+  const list = on(opts, "list");
   return (
     <section className="f-store" data-style={style}>
       <div className="pl-head">
@@ -249,9 +271,10 @@ export function StorageWidget({ style, opts, box }: WidgetProps) {
           {free > 0 && <i className="free" style={{ flexGrow: free }} />}
         </div>
       )}
+      {style === "bar" && <div className="f-store-free" aria-hidden="true"><b>{size(free)}</b><span>free of {size(st.totalGb)}</span></div>}
       {list && (
-        <ul className="f-store-list">
-          {st.slices.map((s) => <li key={s.label} className={s.label === "Free" ? "free" : undefined}><span>{s.label}</span><b>{size(s.gb)}</b></li>)}
+        <ul className="f-store-list" ref={drives}>
+          {st.slices.slice(0, fits).map((s) => <li key={s.label} className={s.label === "Free" ? "free" : undefined}><span>{s.label}</span><b>{size(s.gb)}</b></li>)}
         </ul>
       )}
     </section>
@@ -267,18 +290,20 @@ function share(s: Stat, limits: { CPU?: number; GPU?: number }) {
   return limit ? s.value / limit : null;
 }
 
-export function LiveWidget({ style, opts }: WidgetProps) {
+export function LiveWidget({ style, opts, box }: WidgetProps) {
   const { pc } = useApp();
   const temp = useTemp();
   const off = offList(opts, "off");
-  const stats = (pc.stats ?? []).filter((s) => !off.includes(s.label));
+  const all = (pc.stats ?? []).filter((s) => !off.includes(s.label));
+  const [list, fits] = useFit<HTMLUListElement>(all.length, { on: fixed(box), watch: `${style}${on(opts, "notes")}` });
+  const stats = all.slice(0, fits);
   const limits = { CPU: pc.parts?.cpu?.limit, GPU: pc.parts?.gpu?.limit };
   const value = (s: Stat) => (s.unit === "°C" ? temp(s.value, { mark: "degree" }) : `${s.value}${s.unit}`);
   return (
     <section className="f-live" data-style={style}>
       <div className="pl-head"><div><h3>Right now</h3><span className="f-faint">{pc.online ? "Live from " + pc.name : "Last readings from " + pc.name}</span></div></div>
       {stats.length ? (
-        <ul className="f-live-list">
+        <ul className="f-live-list" ref={list}>
           {stats.map((s) => {
             const f = share(s, limits);
             return (
@@ -292,7 +317,7 @@ export function LiveWidget({ style, opts }: WidgetProps) {
           })}
         </ul>
       ) : (
-        <p className="bl-empty">{pc.stats?.length ? "Every reading is switched off. Pick some in this widget's options." : `Live readings show up here once ${pc.name} reports them.`}</p>
+        <p className="bl-empty">{pc.stats?.length ? "Every reading is switched off. Turn some back on in this widget's options." : `Live readings show up here once ${pc.name} reports them.`}</p>
       )}
     </section>
   );
@@ -300,28 +325,36 @@ export function LiveWidget({ style, opts }: WidgetProps) {
 
 // ----- Parts -----
 
-export function PartsWidget({ style, opts }: WidgetProps) {
+export function PartsWidget({ style, opts, box }: WidgetProps) {
   const { pc, set, go } = useApp();
   const temp = useTemp();
   const off = offList(opts, "off");
-  const parts = Object.entries(pc.parts ?? {}).filter(([id]) => !off.includes(id));
+  const found = Object.entries(pc.parts ?? {});
+  const parts = found.filter(([id]) => !off.includes(id));
+  const [list, fits] = useFit<HTMLUListElement>(parts.length, { on: fixed(box), reserve: 44, watch: `${style}${on(opts, "temps")}` });
+  const rest = parts.length - fits;
   return (
     <section className="f-parts" data-style={style}>
-      <div className="pl-head"><div><h3>Parts</h3><span className="f-faint">{parts.length} {parts.length === 1 ? "part" : "parts"} in {pc.name}</span></div></div>
+      <div className="pl-head"><div><h3>Parts</h3>{parts.length > 0 && <span className="f-faint">{parts.length} {parts.length === 1 ? "part" : "parts"} in {pc.name}</span>}</div></div>
       {parts.length ? (
-        <ul className="f-parts-list">
-          {parts.map(([id, p]) => (
+        <ul className="f-parts-list" ref={list}>
+          {parts.slice(0, fits).map(([id, p]) => (
             <li key={id}>
               <button type="button" onClick={() => { set({ selected: id, tab: "live" }); go("pc"); }}>
-                <i aria-hidden="true">{partIcon[id] ?? null}</i>
+                <i aria-hidden="true">{partIcon[id] ?? <Chip />}</i>
                 <span><small>{shortType(p.type)}</small><b>{p.name}</b></span>
                 {on(opts, "temps") && p.temp != null && <em className={p.warn ? "hot" : undefined}>{temp(p.temp, { mark: "degree" })}</em>}
               </button>
             </li>
           ))}
+          {rest > 0 && (
+            <li data-more="" className="f-more">
+              <a className="f-link" href="#pc">{`See all ${parts.length} parts`}<Go /></a>
+            </li>
+          )}
         </ul>
       ) : (
-        <p className="bl-empty">Every part is switched off. Pick some in this widget's options.</p>
+        <p className="bl-empty">{found.length ? "Every part is switched off. Turn some back on in this widget's options." : `Rig lists each part here once it has had a look inside ${pc.name}.`}</p>
       )}
     </section>
   );
