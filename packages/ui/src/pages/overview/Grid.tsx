@@ -265,11 +265,27 @@ export function Grid(p: GridProps) {
     /** The layout last worked out, with the sizes each tile was chosen at, which the drop saves. */
     last: Cell[] | null;
   } | null>(null);
+  const pxOf = (c: Cell) => {
+    const { cols: n, gridWidth: cw, row: rh, gap: g } = latest.current;
+    return calcGridItemPosition({ cols: n, margin: [g, g], containerPadding: [0, 0], containerWidth: cw, rowHeight: rh, maxRows: Infinity }, c.x, c.y, c.w, c.h);
+  };
+  // A tile being resized shows the size it will land at, cell by cell, not the pointer's every pixel: the library draws
+  // it at the pointer, so its box is pinned to the landing slot here, and the tiles around it, its buttons and handles
+  // and the drop spot all agree with it at every step.
+  const holdAt = (id: string, c: Cell | null) => {
+    const el = wrap.current?.querySelector<HTMLElement>(`.dg[data-id="${id}"]`);
+    if (!el) return;
+    if (!c) { delete el.dataset.hold; for (const k of ["--hold-t", "--hold-w", "--hold-h"]) el.style.removeProperty(k); return; }
+    const pos = pxOf(c);
+    el.style.setProperty("--hold-t", `translate(${pos.left}px, ${pos.top}px)`);
+    el.style.setProperty("--hold-w", `${pos.width}px`);
+    el.style.setProperty("--hold-h", `${pos.height}px`);
+    el.dataset.hold = "";
+  };
   const spotAt = (c: Cell, instant = false) => {
     const el = spot.current;
     if (!el) return;
-    const { cols: n, gridWidth: cw, row: rh, gap: g } = latest.current;
-    const pos = calcGridItemPosition({ cols: n, margin: [g, g], containerPadding: [0, 0], containerWidth: cw, rowHeight: rh, maxRows: Infinity }, c.x, c.y, c.w, c.h);
+    const pos = pxOf(c);
     if (instant) el.style.transition = "none";
     el.style.transform = `translate(${pos.left}px, ${pos.top}px)`;
     el.style.width = `${pos.width}px`;
@@ -284,7 +300,13 @@ export function Grid(p: GridProps) {
       const a = active.current;
       const now = strip(layout);
       if (!a) return withLimits(compactUp(now, n), n);
-      if (a.cancelled) { a.last = a.base; spotAt(a.base.find((c) => c.i === a.id) ?? a.size); return withLimits(a.base, n); }
+      if (a.cancelled) {
+        const home = a.base.find((c) => c.i === a.id) ?? a.size;
+        a.last = a.base;
+        spotAt(home);
+        if (a.type === "resize") holdAt(a.id, home);
+        return withLimits(a.base, n);
+      }
       const me = now.find((c) => c.i === a.id);
       if (!me) return withLimits(compactUp(now, n), n);
       const key = a.type === "drag" ? `${a.cell.x},${a.cell.y}` : `${me.w},${me.h}`;
@@ -296,6 +318,7 @@ export function Grid(p: GridProps) {
       const landed = out.find((c) => c.i === a.id)!;
       const slot = `${landed.x},${landed.y},${landed.w},${landed.h}`;
       if (slot !== a.slot) { spotAt(landed); tick(spot.current); a.slot = slot; }
+      if (a.type === "resize") holdAt(a.id, landed);
       a.last = out;
       if (a.type === "resize" || a.dropped) return withLimits(out, n);
       return withLimits(out.map((c) => (c.i === a.id ? { ...c, w: a.size.w, h: a.size.h } : c)), n);
@@ -334,6 +357,7 @@ export function Grid(p: GridProps) {
     el?.classList.remove("dragging");
     el?.style.removeProperty("min-height");
     spot.current?.removeAttribute("data-on");
+    if (a) holdAt(a.id, null);
     el?.querySelectorAll<HTMLElement>(".dg[data-lift]").forEach((d) => delete d.dataset.lift);
     setLive(null);
     if (!a) return;
@@ -367,7 +391,11 @@ export function Grid(p: GridProps) {
   };
   const onDragStop: EventCallback = (layout) => end(layout);
   const onResizeStart: EventCallback = (_l, _o, item) => { if (item) begin("resize", item.i); };
-  const onResize: EventCallback = (_l, _o, item) => { if (item) setLive((v) => (v && v.i === item.i && v.w === item.w && v.h === item.h ? v : { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h })); };
+  // The content takes the size the tile lands at, which can differ from the pointer's when that size can't close every gap.
+  const onResize: EventCallback = (_l, _o, item) => {
+    const got = item && (active.current?.last?.find((c) => c.i === item.i) ?? item);
+    if (got) setLive((v) => (v && v.i === got.i && v.w === got.w && v.h === got.h ? v : { i: got.i, x: got.x, y: got.y, w: got.w, h: got.h }));
+  };
   const onResizeStop: EventCallback = (layout) => end(layout);
   const handlers = useRef({ onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop });
   handlers.current = { onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop };

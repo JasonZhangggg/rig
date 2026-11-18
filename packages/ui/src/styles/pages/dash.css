@@ -25,6 +25,8 @@
 .dash-grid > .dg[data-heavy].cssTransforms { transition: transform var(--glide) var(--spring); }
 .dash-grid > .dg.react-draggable-dragging { z-index: 30; transition: none; will-change: transform; }
 .dash-grid > .dg.resizing { z-index: 20; transition: none; will-change: width, height; }
+/* Held by a resize, the tile shows the slot it lands in, set by Grid.tsx, rather than following the pointer pixel by pixel. */
+.dash-grid > .dg.resizing[data-hold] { transform: var(--hold-t) !important; width: var(--hold-w) !important; height: var(--hold-h) !important; }
 .dash[data-still] .dash-grid, .dash[data-still] .dash-grid > .dg { transition: none; }
 
 /* The drop spot: where the tile lands, in the accent tint. Grid.tsx draws it from the slot it chose; the library's own stays hidden. */

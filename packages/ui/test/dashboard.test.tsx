@@ -156,6 +156,28 @@ describe("the grid while dragging", () => {
     }
   });
 
+  it("pushes the tiles below out of the way at every size while Health is pulled taller and shorter, from its bottom edge and its corner", () => {
+    const home = at(base, "health"), { maxH, minH } = limits("health", 12);
+    // Every size the pointer passes through on the way down and back up, worked out from the layout the resize began with.
+    const heights = [...Array(maxH - home.h + 1).keys()].map((k) => home.h + k);
+    const sizes = [
+      ...[...heights, ...heights.slice().reverse(), minH].map((h) => [home.w, h]),
+      ...[...heights, ...heights.slice().reverse()].map((h, k) => [home.w - (k % 2), h]),
+    ];
+    let last = base;
+    for (const [w, h] of sizes) {
+      const out = resizeFlow(base, "health", w, h, 12);
+      expect(overlapping(out)).toBe(false);
+      expect(gaps(out)).toBe(0);
+      const got = at(out, "health");
+      expect(got.y + got.h).toBeLessThanOrEqual(Math.min(...out.filter((c) => c.i !== "health" && c.x < got.x + got.w && got.x < c.x + c.w && c.y >= got.y).map((c) => c.y)));
+      last = out;
+    }
+    // Let go at the last size: what's saved is that layout, still whole.
+    expect(overlapping(last)).toBe(false);
+    expect(gaps(last)).toBe(0);
+  });
+
   it("lets the neighbour fill the row when a tile is made narrower, and give the room back when it widens", () => {
     const smaller = resizeFlow(base, "temps", 5, 5, 12);
     expect(at(smaller, "temps").w).toBe(5);
@@ -346,6 +368,35 @@ describe("customizing Home", () => {
     last.focus();
     fireEvent.keyDown(last, { key: "Backspace" });
     await waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toMatch(/place 6 of 6$/));
+  });
+
+  it("resizes Health taller and shorter from its bottom edge, the tile and its landing spot agreeing and the tiles below moving out of the way", async () => {
+    await customize();
+    const box = (el: Element) => {
+      const s = (el as HTMLElement).style, held = "hold" in (el as HTMLElement).dataset;
+      const [x, y] = ((held ? s.getPropertyValue("--hold-t") : s.transform).match(/[-\d.]+/g) ?? []).map(Number);
+      return { x, y, w: parseFloat(held ? s.getPropertyValue("--hold-w") : s.width), h: parseFloat(held ? s.getPropertyValue("--hold-h") : s.height) };
+    };
+    const health = () => document.querySelector('.dg[data-id="health"]')!;
+    const handle = health().querySelector(".dw-rh-s")!;
+    const tiles = () => [...document.querySelectorAll(".dash-grid > .dg")].map((el) => ({ i: (el as HTMLElement).dataset.id!, ...box(el) }));
+    const apart = () => tiles().every((a) => tiles().every((b) => a.i === b.i || a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y));
+    fireEvent.mouseDown(handle, { button: 0, clientX: 1000, clientY: 200 });
+    for (const y of [260, 330, 420, 500, 420, 330, 230]) {
+      fireEvent.mouseMove(document, { clientX: 1000, clientY: y });
+      const held = box(health()), spot = box(document.querySelector(".dash-spot")!);
+      expect(health().classList.contains("resizing")).toBe(true);
+      expect([held.x, held.y, held.w, held.h]).toEqual([spot.x, spot.y, spot.w, spot.h]);
+      expect(apart()).toBe(true);
+    }
+    fireEvent.mouseMove(document, { clientX: 1000, clientY: 330 });
+    fireEvent.mouseUp(document, { clientX: 1000, clientY: 330 });
+    expect(said()).toMatch(/^Health is now /);
+    const saved: Cell[] = stored().layouts.lg;
+    expect(at(saved, "health").h).toBeGreaterThan(2);
+    expect(overlapping(saved)).toBe(false);
+    expect(gaps(saved)).toBe(0);
+    expect(apart()).toBe(true);
   });
 
   it("undoes the last change from the note, and with Ctrl Z", async () => {
