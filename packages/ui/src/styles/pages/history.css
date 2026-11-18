@@ -2,26 +2,36 @@
 @media (max-width: 860px) { .trend { grid-template-columns: 1fr; } }
 
 .hi-page { gap: 24px; }
-.hi-lede-text { font-size: clamp(1.15rem, 1rem + .5vw, 1.4rem); font-weight: 500; line-height: 1.3; letter-spacing: -.02em; text-wrap: balance; }
-.hi-chart { display: flex; flex-direction: column; gap: 14px; padding: 20px 0 0; }
-.legend .hi-lg-band { width: 12px; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--text-3) 18%, transparent); }
+.hi-chart { display: flex; flex-direction: column; gap: 12px; }
+.legend .hi-lg-band { width: 12px; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--text-3) 14%, transparent); }
 .hi-chart .chart-band { transition: fill .2s ease; }
-.hi-chart.busy .chart-band { fill: color-mix(in srgb, var(--good-mark) 22%, transparent); }
-.hi-chart.busy .hi-lg-band { background: color-mix(in srgb, var(--good-mark) 40%, transparent); }
+.hi-chart.busy .chart-band { fill: color-mix(in srgb, var(--good-mark) 18%, transparent); }
+.hi-chart.busy .hi-lg-band { background: color-mix(in srgb, var(--good-mark) 34%, transparent); }
 
-/* The figures under the chart. Those that point at something on it are buttons. */
-.hi-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 20px; margin: 6px -12px 0; padding-top: 12px; border-top: 1px solid var(--line); }
-.hi-stat { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; }
+/* The hottest moment is the lead's figure, and a button that shows that moment on the chart. */
+.hi-hot.pg-lead-fig { align-items: flex-end; max-width: 30ch; margin: 0; padding: 10px 12px 10px 40px; border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.hi-hot .label { order: 1; }
+.hi-hot .hi-figure { order: 0; font: 600 2.5rem/1 var(--font); letter-spacing: -.04em; }
+.hi-hot .hi-figure.warn { color: var(--look-text); }
+.hi-hot .muted { order: 2; font-size: 12.5px; text-wrap: balance; }
+
+/* The figures under the chart: quieter than the lead, a label and a number with a line of context. */
+.hi-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; margin: 0 -12px; max-width: 760px; }
+.hi-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; }
 button.hi-stat { cursor: pointer; transition: background-color .12s ease; }
 button.hi-stat:hover { background: var(--surface-2); }
 button.hi-stat[aria-pressed="true"] { background: var(--good-bg); }
-button.hi-stat .label::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; translate: 0 -1px; opacity: .7; }
-.hi-figure { font-size: clamp(1.25rem, 1.05rem + .7vw, 1.6rem); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.hi-stats button.hi-stat .label::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; translate: 0 -1px; opacity: .7; }
+.hi-figure { font-size: 1.1rem; font-weight: 600; letter-spacing: -.015em; line-height: 1.25; }
 .hi-figure.warn { color: var(--warn); }
-.hi-stat .muted { font-size: 13px; }
+.hi-stat .muted { font-size: 12.5px; }
 
-.hi-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-top: 20px; border-top: 1px solid var(--line); }
-.hi-switch button { height: 30px; padding: 0 14px; font-size: 13.5px; }
+/* Details under it all: what happened, or each part's range, picked like tabs. */
+.hi-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+.hi-tabs { display: flex; gap: 18px; }
+.hi-tabs button { padding: 0 0 4px; border: 0; border-bottom: 1.5px solid transparent; background: none; color: var(--text-3); font: 600 var(--fs)/1.3 var(--font); letter-spacing: -.01em; cursor: pointer; }
+.hi-tabs button:hover { color: var(--text-2); }
+.hi-tabs button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
 .hi-panel { align-self: stretch; display: flex; flex-direction: column; gap: 16px; }
 
 .hi-ranges { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px 48px; }
@@ -29,16 +39,16 @@ button.hi-stat .label::after { content: ""; display: inline-block; width: 6px; h
 .hi-range-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; font-size: 14px; }
 .hi-range-head b { font-weight: 600; }
 .hi-range-head .faint { font-size: 13px; }
-.hi-track { position: relative; height: 10px; border-radius: var(--r-pill); background: var(--surface-2); }
+.hi-track { position: relative; height: 6px; border-radius: var(--r-pill); background: var(--surface-2); }
 .hi-track i { position: absolute; top: 0; height: 100%; }
 .hi-span { border-radius: var(--r-pill); background: var(--good); }
 .hi-span.look { background: var(--look); }
-.hi-typical { width: 3px; margin-left: -1.5px; top: -3px !important; height: 16px !important; border-radius: 2px; background: var(--graphite); }
-.hi-limit { width: 0; top: -5px !important; height: 20px !important; border-left: 1.5px dashed var(--text-3); }
+.hi-typical { width: 3px; margin-left: -1.5px; top: -3px !important; height: 12px !important; border-radius: 2px; background: var(--graphite); }
+.hi-limit { width: 0; top: -4px !important; height: 14px !important; border-left: 1.5px dashed var(--text-3); }
 .hi-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
 .hi-figs div { display: flex; flex-direction: column; gap: 2px; }
 .hi-figs dt { color: var(--text-3); font-size: 12.5px; font-weight: 500; }
-.hi-figs dd { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -.02em; }
+.hi-figs dd { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: -.015em; }
 .hi-figs dd.look { color: var(--look-text); }
 .hi-fig-btn { margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-decoration: underline dotted 1.5px; text-underline-offset: 4px; cursor: pointer; }
 .hi-fig-btn:hover { background: var(--surface-2); }
@@ -53,15 +63,14 @@ button.hi-stat .label::after { content: ""; display: inline-block; width: 6px; h
   padding: 9px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .hi-ev:hover { background: var(--surface-2); }
-.hi-ev:hover .hi-ev-ico:not(.look) { background: var(--surface); }
 .hi-ev[aria-pressed="true"] { background: var(--good-bg); }
-.hi-ev-ico { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text-2); }
-.hi-ev-ico.look { background: var(--look-bg); color: var(--look-text); }
+.hi-ev-ico { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: var(--text-3); }
+.hi-ev-ico.look { color: var(--look-text); }
 .hi-ev-ico svg { width: 18px; height: 18px; }
 .hi-ev-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
-.hi-ev-main b { overflow: hidden; font-size: 14.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.hi-ev-main b { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .hi-ev-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
-.hi-ev-fig b { color: var(--text); font-size: 14.5px; font-weight: 600; }
+.hi-ev-fig b { color: var(--text); font-size: 14px; font-weight: 500; }
 .hi-ev-fig.look :is(b, span) { color: var(--look-text); }
 .hi-more { align-self: flex-start; }
 
@@ -81,7 +90,3 @@ button.hi-stat .label::after { content: ""; display: inline-block; width: 6px; h
   .hi-ev { flex-basis: 100%; grid-template-columns: 36px minmax(0, 1fr); }
   .hi-ev-fig { grid-column: 2; flex-direction: row; align-items: baseline; gap: 6px; }
 }
-
-/* The line charts on History, Games and Logs share these. The processor takes brass so both lines are data colors. */
-.chart-line.cpu { stroke: var(--good-mark); }
-.legend .lg-cpu { background: var(--good-mark); }

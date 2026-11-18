@@ -38,12 +38,11 @@
 .part-list button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 5px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .part-txt { min-width: 0; display: grid; gap: 0; line-height: 1.35; }
 .part-txt .pn { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.part-live { flex: none; display: flex; align-items: center; gap: 10px; }
-.part-live .spark { opacity: .8; }
-.part-temp { min-width: 3.2em; color: var(--text-3); font-size: 14px; text-align: right; border-radius: 6px; animation: part-tick .9s var(--ease-out); }
+.part-temp { flex: none; min-width: 3.2em; color: var(--text-3); font-size: 14px; text-align: right; animation: part-tick .8s var(--ease-out); }
 .part-temp.look { color: var(--look-text); font-weight: 600; }
 /* A new reading gives its number a brief warm wash, so the list reads as live. */
-@keyframes part-tick { from { background: var(--good-bg); color: var(--text); } }
+/* A new reading darkens the number for a moment, then it settles back. */
+@keyframes part-tick { from { color: var(--text); } }
 .part-list button.is-lit { background: var(--surface-2); }
 .part-list button.is-lit .pn { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
 
@@ -59,8 +58,7 @@
 .live { display: flex; flex-direction: column; gap: 4px; }
 .live .big { font: 500 1.5em/1.1 var(--font); }
 .live-wide { grid-column: 1 / -1; }
-.live-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.live-tick { border-radius: 6px; animation: part-tick .9s var(--ease-out); }
+.live-tick { animation: part-tick .8s var(--ease-out); }
 .live-meter { display: grid; gap: 6px; margin-top: 6px; font-size: 12.5px; }
 .live-meter::before { content: ""; grid-area: 1 / 1; height: 6px; border-radius: var(--r-pill); background: var(--surface-2); }
 .live-meter > i { grid-area: 1 / 1; height: 6px; border-radius: var(--r-pill); background: var(--good); transition: width .6s var(--ease-out); }

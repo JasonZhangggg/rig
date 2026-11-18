@@ -12,32 +12,24 @@ export const dayStart = (t: number) => { const d = new Date(t); d.setHours(0, 0,
 const nextDay = (t: number) => { const d = new Date(t); d.setDate(d.getDate() + 1); d.setHours(0, 0, 0, 0); return d.getTime(); };
 export const onDay = (e: PCEvent, day: number) => e.t >= day && e.t < nextDay(day);
 
-/** "last Nov 11", or just the day when it happened once. */
-const lastWords = (list: readonly PCEvent[]) => {
-  if (!list.length) return "";
-  const last = Math.max(...list.map((e) => e.t));
-  return list.length === 1 ? shortDay(last) : `last ${shortDay(last)}`;
-};
-
 /** What the counts can pick: one thing that went wrong (its key), the minor entries, or everything (null). */
 export type EventPick = string | null;
 export const MINOR = "minor";
 
-/** One count per thing that went wrong, then the minor entries and all of them. Each one filters the list. */
+/** One count per thing that went wrong, then the minor entries and all of them: a row of filters over the list. */
 export function Counters({ groups, events, pick, onPick }: { groups: Highlight[]; events: PCEvent[]; pick: EventPick; onPick: (p: EventPick) => void }) {
   const minor = events.filter((e) => !serious(e));
   const items = [
-    ...groups.map((g) => ({ key: g.key as EventPick, n: g.events.length, label: g.short, list: g.events, tone: g.key.startsWith("app:") ? "" : " look" })),
-    ...(minor.length ? [{ key: MINOR as EventPick, n: minor.length, label: "Minor", list: minor, tone: " quiet" }] : []),
-    { key: null as EventPick, n: events.length, label: "All", list: events, tone: " quiet" },
+    ...groups.map((g) => ({ key: g.key as EventPick, n: g.events.length, label: g.short, tone: g.key.startsWith("app:") ? "" : " look" })),
+    ...(minor.length ? [{ key: MINOR as EventPick, n: minor.length, label: "Minor", tone: " quiet" }] : []),
+    { key: null as EventPick, n: events.length, label: "All", tone: " quiet" },
   ];
   return (
-    <div className="lg-counts" role="group" aria-label="Show only">
+    <div className="counts" role="group" aria-label="Show only">
       {items.map((it) => (
-        <button key={it.key ?? "all"} type="button" className={`lg-count${it.tone}`} aria-pressed={pick === it.key} onClick={() => onPick(pick === it.key ? null : it.key)}>
-          <span className="lg-count-n num">{it.n}</span>
-          <span className="lg-count-label">{it.label}</span>
-          <span className="lg-count-when faint">{lastWords(it.list)}</span>
+        <button key={it.key ?? "all"} type="button" className={`count${it.tone}`} aria-pressed={pick === it.key} onClick={() => onPick(pick === it.key ? null : it.key)}>
+          <span className="count-n num">{it.n}</span>
+          <span className="count-label">{it.label}</span>
         </button>
       ))}
     </div>

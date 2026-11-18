@@ -26,7 +26,9 @@ describe("Logs", () => {
     await open("logs");
     const counts = await screen.findByRole("group", { name: "Show only" });
     const count = (name: RegExp) => within(counts).getByRole("button", { name });
-    expect(count(/Driver resets/).textContent).toMatch(/^2Driver resetslast /);
+    expect(count(/Driver resets/).textContent).toBe("2Driver resets");
+    // The page leads with the thing most worth a look.
+    expect(screen.getByRole("region", { name: "Graphics driver reset" }).textContent).toMatch(/2times in 30 days, last /);
     expect(count(/Unexpected shutdown/).textContent).toMatch(/^1Unexpected shutdown/);
     expect(count(/Discord crash/).textContent).toMatch(/^1Discord crash/);
     expect(count(/Minor/).textContent).toMatch(/^3Minor/);
@@ -44,8 +46,9 @@ describe("Logs", () => {
     expect(count(/All/).getAttribute("aria-pressed")).toBe("false");
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(2);
     expect(within(list).queryByText("Discord.exe crashed")).toBeNull();
-    within(list).getByText(/Heat or an outdated graphics driver is the usual cause/);
-    within(list).getByRole("button", { name: "Ask about this" });
+    const lead = screen.getByRole("region", { name: "Graphics driver reset" });
+    within(lead).getByText(/Heat or an outdated graphics driver is the usual cause/);
+    within(lead).getByRole("button", { name: "Ask about this" });
 
     fireEvent.click(count(/Minor/));
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(3);
@@ -111,8 +114,11 @@ describe("Logs", () => {
     const row = within(recs).getByRole("button", { name: /Watch temperatures, load and Windows events while you play/ });
     expect(row.textContent).toMatch(/Found: The graphics driver stopped and recovered/);
     expect(row.textContent).toMatch(/Finished/);
+    // The lead offers the recording only for events it caught.
+    const counts = await screen.findByRole("group", { name: "Show only" });
+    fireEvent.click(within(counts).getByRole("button", { name: /Discord crash/ }));
     expect(screen.queryByRole("button", { name: "See the recording" })).toBeNull();
-    fireEvent.click(within(await screen.findByRole("group", { name: "Show only" })).getByRole("button", { name: /Driver resets/ }));
+    fireEvent.click(within(counts).getByRole("button", { name: /Driver resets/ }));
     fireEvent.click(screen.getByRole("button", { name: "See the recording" }));
     await screen.findByText("What Rig found");
   });
