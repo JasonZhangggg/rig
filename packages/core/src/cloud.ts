@@ -7,7 +7,7 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import type { ActionCall } from "./actions";
 import {
   ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, readJson, unreachableText,
-  type ChatRequest, type DeleteAccountRequest, type MachineSync, type SyncReply,
+  type AddManualRequest, type ChatRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
 } from "./api";
 import type { DataExport } from "./export";
 import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
@@ -203,16 +203,44 @@ export class CloudClient implements RigClient {
     return this.req<SyncReply>(paths.sync(id), { method: "PUT", body: JSON.stringify(payload) });
   }
 
-  /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
-  // Manuals: filled in by the manuals work. These stubs keep every client compiling meanwhile.
-  async manuals(_id: string): Promise<Manual[]> { return []; }
-  async addManualFile(_id: string, _t: ManualTarget, _f: { name: string; bytes: number }): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
-  async manualFile(_id: string, _mid: string): Promise<ArrayBuffer> { throw new Error("Manuals aren't ready yet."); }
-  async saveManualPages(_id: string, _mid: string, _p: ManualPage[], _d: ManualDiagram[]): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
-  async searchManuals(_id: string, _q: string, _o?: { manualId?: string; limit?: number }): Promise<ManualHit[]> { return []; }
-  async manualPage(_id: string, _mid: string, _n: number): Promise<ManualPage | null> { return null; }
-  async removeManual(_id: string, _mid: string): Promise<void> {}
+  manuals(id: string) { return this.req<Manual[]>(paths.manuals(id)); }
 
+  async findManual(id: string, target: ManualTarget): Promise<Manual | null> {
+    const r = await this.req<{ manual: Manual | null }>(paths.manualFind(id), { method: "POST", body: JSON.stringify(target) });
+    return r.manual;
+  }
+
+  addManualFile(id: string, target: ManualTarget, file: { name: string; bytes: number }) {
+    const body: AddManualRequest = { target, name: file.name, bytes: file.bytes };
+    return this.req<Manual>(paths.manuals(id), { method: "POST", body: JSON.stringify(body) });
+  }
+
+  /** The maker's PDF, downloaded through Rig's server. */
+  async manualFile(id: string, mid: string): Promise<ArrayBuffer> {
+    const res = await this.send(paths.manualPdf(id, mid));
+    if (!res.ok) throw new ApiError(res.status, await errorText(res));
+    return res.arrayBuffer();
+  }
+
+  saveManualPages(id: string, mid: string, pages: ManualPage[], diagrams: ManualDiagram[]) {
+    const body: SaveManualPagesRequest = { pages, diagrams };
+    return this.req<Manual>(paths.manualPages(id, mid), { method: "PUT", body: JSON.stringify(body) });
+  }
+
+  searchManuals(id: string, query: string, opts: { manualId?: string; limit?: number } = {}) {
+    return this.req<ManualHit[]>(paths.manualSearch(id, query, opts.manualId, opts.limit));
+  }
+
+  async manualPage(id: string, mid: string, n: number): Promise<ManualPage | null> {
+    try { return await this.req<ManualPage>(paths.manualPage(id, mid, n)); } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async removeManual(id: string, mid: string) { await this.req(paths.manual(id, mid), { method: "DELETE" }); }
+
+  /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
   async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts }) {
     const body: ChatRequest = { machineId, messages: history.map(({ from, text }) => ({ from, text })), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...live };
     const res = await this.send(paths.chat, { method: "POST", headers: { accept: "text/event-stream" }, body: JSON.stringify(body), signal });
