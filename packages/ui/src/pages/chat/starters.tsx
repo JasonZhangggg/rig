@@ -62,7 +62,7 @@ export function FollowUps({ starters }: { starters: Starter[] }) {
   return (
     <div className="followups" aria-label="Ask next">
       {starters.slice(0, 3).map((s) => (
-        <button key={s.q} type="button" onClick={() => ask(s.q)}><StarterIcon part={s.part} />{s.q}</button>
+        <button key={s.q} type="button" onClick={() => ask(s.q)}>{s.q}</button>
       ))}
     </div>
   );

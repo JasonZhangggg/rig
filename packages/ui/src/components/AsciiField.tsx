@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { APPEARANCE_EVENT, reducedMotion } from "../appearance";
 
 /* A PC tower drawn in characters, turning slowly on a turntable and read like a
    thermal camera: denser glyphs face the light and the data colors mean hotter.
@@ -420,7 +421,7 @@ export function AsciiField({ fit }: { fit?: TowerFit }) {
     try { ctx = cv.getContext("2d"); } catch { ctx = null; }
     if (!ctx) return;
     const g = ctx;
-    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    let still = reducedMotion();
     let grid: Grid | null = null;
     let sprites: ReturnType<typeof atlas> = null;
     let colors = palette(el);
@@ -645,6 +646,14 @@ export function AsciiField({ fit }: { fit?: TowerFit }) {
 
     const onVis = () => loop();
     document.addEventListener("visibilitychange", onVis);
+    // A new look or motion setting from Settings: repaint in the new colors, and stop or start turning.
+    const onLook = () => {
+      still = reducedMotion();
+      if (still) vel = 0;
+      resize();
+      loop();
+    };
+    window.addEventListener(APPEARANCE_EVENT, onLook);
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
     ro?.observe(el);
     const io = typeof IntersectionObserver !== "undefined" ? new IntersectionObserver(([e]) => { visible = e.isIntersecting; loop(); }) : null;
@@ -658,6 +667,7 @@ export function AsciiField({ fit }: { fit?: TowerFit }) {
       ro?.disconnect();
       io?.disconnect();
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener(APPEARANCE_EVENT, onLook);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);

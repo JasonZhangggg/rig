@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const longDayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long" });
@@ -20,10 +21,11 @@ export function useGrowOnce(key: string) {
 
 export type LegendMark = "a" | "b" | "c";
 
-export function Legend({ items }: { items: [LegendMark, string][] }) {
+export function Legend({ items, total }: { items: [LegendMark, string][]; total?: ReactNode }) {
   return (
     <div className="pl-legend">
       {items.map(([mark, text]) => <span key={text}><i className={mark} />{text}</span>)}
+      {total && <span className="pl-total">{total}</span>}
     </div>
   );
 }
@@ -36,4 +38,57 @@ export const CardHead = ({ title, note, figure }: { title: string; note?: string
   </div>
 );
 
-export const EmptyNote = ({ children }: { children: ReactNode }) => <p className="bl-empty">{children}</p>;
+/** Faint bars where a chart will be, so a tile still waiting for readings looks finished, not broken. */
+const GHOST = [42, 66, 50, 82, 58, 72, 46];
+export const EmptyNote = ({ children, ghost = true }: { children: ReactNode; ghost?: boolean }) => (
+  <div className="bl-empty">
+    {ghost && <span className="bl-ghost" aria-hidden="true">{GHOST.map((h, k) => <i key={k} style={{ height: `${h}%` }} />)}</span>}
+    <p>{children}</p>
+  </div>
+);
+
+const MEASURING = Infinity;
+
+/**
+ * How many of a list's items fit in its box whole, so a small tile drops a row rather than cut one in half.
+ * The list's parent should keep its size whatever the list holds (the tile does). Every item shows where nothing
+ * measures (a phone's natural height list, or no ResizeObserver). `reserve` keeps room, in CSS pixels, for a "more" row.
+ */
+export function useFit<T extends HTMLElement>(count: number, { on = true, reserve = 0, min = 1, watch = "" }: { on?: boolean; reserve?: number; min?: number; watch?: string } = {}) {
+  const ref = useRef<T>(null);
+  const [fit, setFit] = useState(MEASURING);
+  const can = on && typeof ResizeObserver !== "undefined";
+  const again = useCallback(() => setFit(MEASURING), []);
+  useLayoutEffect(again, [count, watch, can, again]);
+  useEffect(() => {
+    const host = ref.current?.parentElement;
+    if (!can || !host) return;
+    let w = -1, h = -1;
+    const ro = new ResizeObserver(([e]) => {
+      const { width, height } = e.contentRect;
+      if (width === w && height === h) return;
+      w = width; h = height;
+      flushSync(again);
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [can, again]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (fit !== MEASURING || !el || !can) return;
+    const box = el.getBoundingClientRect();
+    // Rects are in zoomed pixels under Settings' text size; the reserve is in CSS pixels.
+    const zoom = el.offsetHeight ? box.height / el.offsetHeight : 1;
+    const rects = [...el.children].filter((c) => !(c as HTMLElement).dataset.more).map((c) => c.getBoundingClientRect());
+    // The room is the list's box inside its parent's. A list set to the bottom overflows at the top, so then it counts from the first item.
+    const host = el.parentElement?.getBoundingClientRect() ?? box;
+    const top = Math.max(box.top, host.top), bottom = Math.min(box.bottom, host.bottom);
+    const start = rects.length && rects[0].top < top ? rects[0].top : top;
+    const room = (r: DOMRect, keep: number) => r.bottom - start <= bottom - top - keep * zoom + 1;
+    if (rects.every((r) => room(r, 0))) { setFit(count); return; }
+    let k = 0;
+    while (k < rects.length && room(rects[k], reserve)) k++;
+    setFit(Math.max(Math.min(min, count), k));
+  }, [fit, can, count, reserve, min]);
+  return [ref, fit === MEASURING || !can ? count : Math.min(fit, count)] as const;
+}

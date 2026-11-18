@@ -6,7 +6,7 @@ import { navItems } from "./Shell";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
-const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "games", "upgrades"]], ["Help", ["chat", "changes", "history", "logs"]]];
+const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "history", "games", "upgrades"]], ["Fix problems", ["chat", "logs", "changes"]], ["", ["settings"]]];
 
 function useOutside(open: boolean, close: () => void) {
   const box = useRef<HTMLDivElement>(null);
@@ -129,8 +129,8 @@ export function Sidebar({ children }: { children: ReactNode }) {
               {open && <PCMenu onPick={() => setOpen(false)} />}
             </div>
             {groups.map(([g, ids]) => (
-              <div key={g} className="fp-group">
-                <div className="fp-label">{g}</div>
+              <div key={g || ids[0]} className="fp-group">
+                {g && <div className="fp-label">{g}</div>}
                 {ids.map((r) => (
                   <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={ui.route === r ? "page" : undefined}>
                     <Icon d={path(r)} /><span>{label(r)}</span>{count(r)}

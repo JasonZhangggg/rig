@@ -1,5 +1,6 @@
 /* Rig's design tokens. Graphite and warm greys carry the chrome; color lives
-   only in data, in the brass set below. */
+   only in data, in the brass set below. Settings, Appearance, overrides these
+   on the page (see appearance.ts), so these are the defaults. */
 :root {
   --font: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
   --fs: 15px;
@@ -15,6 +16,7 @@
   --text-2: #5E5D59;
   --text-3: #6B6A66;
   --graphite: #1B1B1F;
+  --graphite-2: #26262B;
   --foam: #ECE8FA;
   --primary: var(--graphite);
   --primary-text: #FFFFFF;
@@ -23,6 +25,7 @@
   /* Data colors: pale gold is settled, rust needs a look, warm grey is what's normal. */
   --good: #E6D3A3; --good-mark: #7C6A3A; --good-text: #6A5A2E; --good-bg: #F3EDDD;
   --look: #D9804F; --look-text: #A4471C; --look-bg: #F8E2D5;
+  --good-on-dark: var(--good); --look-on-dark: var(--look);
   --expected: #A7A39B;
   --ok: var(--good-text); --ok-bg: var(--good-bg);
   --warn: var(--look-text); --warn-bg: var(--look-bg);
@@ -45,13 +48,21 @@
 
 /* Graphite tiles inside a light page. Data uses the full brass set, with dark ink on the brass and rust fills. */
 .tone-dark {
-  --surface: var(--graphite); --surface-2: #26262B;
+  --surface: var(--graphite); --surface-2: var(--graphite-2);
   --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
   --line: rgba(255, 255, 255, .10);
-  --ok: var(--good); --warn: var(--look); --focus: var(--good);
-  --s-a: var(--good); --s-mark-a: var(--good); --s-b: var(--look); --s-c: var(--expected);
+  --ok: var(--good-on-dark); --warn: var(--look-on-dark); --focus: var(--good-on-dark);
+  --s-a: var(--good); --s-mark-a: var(--good-on-dark); --s-b: var(--look); --s-c: var(--expected);
   --s-ink: #111111; --s-c-ink: var(--graphite);
   --s-track: rgba(255, 255, 255, .12); --s-dim: rgba(255, 255, 255, .08); --s-edge: transparent;
   background: var(--graphite);
   color: var(--text);
 }
+
+/* Set from Settings, Appearance. */
+:root[data-text="large"] { zoom: 1.1; }
+:root[data-text="larger"] { zoom: 1.2; }
+:root[data-motion="reduce"],
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] ::before,
+:root[data-motion="reduce"] ::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }

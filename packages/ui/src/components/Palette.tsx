@@ -3,14 +3,29 @@ import type { Game, Route, Upgrade } from "@rig/core";
 import { useApp, useTemp } from "../state";
 import { focusSection, settingsSections } from "../pages/settings/sections";
 import { minutes, stateWord, whenRan } from "../pages/logs/words";
+import { navItems } from "./Shell";
 
-type Kind = "parts" | "changes" | "games" | "upgrades" | "logs" | "settings";
+/** What a page is about, so a search in a person's own words finds it. */
+const pageWords: Partial<Record<Route, [string, string]>> = {
+  overview: ["Your dashboard: health, temperatures and things to look at", "home dashboard overview health summary tiles customize"],
+  pc: ["Your PC in 3D with every part and its details", "my pc 3d parts specs components hardware drivers manual"],
+  history: ["Temperatures over the day, week or month", "temperature history temps heat hot chart graph week month"],
+  games: ["How your games ran and how warm they got", "games fps gaming performance tuning"],
+  upgrades: ["What fits your PC and what would help most", "upgrades buy parts ram memory ssd storage fan"],
+  chat: ["Ask Rig anything about your PC", "ask chat help question"],
+  logs: ["Windows errors and Rig's recordings", "logs events crashes errors blue screen driver shutdown recordings record"],
+  changes: ["What Rig or you changed, with undo", "changes undo fixes applied review"],
+  settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
+};
+
+type Kind = "pages" | "parts" | "changes" | "games" | "upgrades" | "logs" | "settings";
 /** searchOnly items show once something typed matches them. */
 interface Item { id: string; kind: Kind; title: string; sub: string; keys?: string; searchOnly?: boolean; badge?: { text: string; tone: string }; run: () => void }
 
-const kindLabel: Record<Kind, string> = { parts: "Parts", changes: "Changes", games: "Games", upgrades: "Upgrades", logs: "Logs", settings: "Settings" };
+const kindLabel: Record<Kind, string> = { pages: "Pages", parts: "Parts", changes: "Changes", games: "Games", upgrades: "Upgrades", logs: "Logs", settings: "Settings" };
 const recTone = { pending: "muted", recording: "info", done: "ok", cancelled: "muted", failed: "warn" } as const;
 const icon: Record<Kind, string> = {
+  pages: "M5 4h14v16H5zM5 9h14M9 9v11",
   parts: "M6 6h12v12H6zM9.5 9.5h5v5h-5zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3",
   changes: "M4 12a8 8 0 1 0 2.5-5.8M4 4v4h4M12 8v4l3 2",
   games: "M5 9h14v7H5zM8.5 11v3M7 12.5h3M15 12h.01M17 13.5h.01",
@@ -51,6 +66,10 @@ export function Palette() {
 
   const all = useMemo<Item[]>(() => {
     const items: Item[] = [];
+    for (const [route, name] of navItems) {
+      const [sub, keys] = pageWords[route] ?? ["", ""];
+      items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" ? { recordingId: null } : {}) });
+    }
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({
         id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${temp(p.temp)} now` : p.sub].filter(Boolean).join(" · "),
@@ -61,7 +80,6 @@ export function Palette() {
     for (const c of data.changes) items.push({ id: `c-${c.id}`, kind: "changes", title: c.title, sub: `${new Date(c.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${c.by === "you" ? "You" : "Rig"}`, badge: { text: c.status === "applied" ? "Applied" : "Undone", tone: c.status === "applied" ? "ok" : "muted" }, run: () => open("changes") });
     for (const g of extra.games) items.push({ id: `g-${g.id}`, kind: "games", title: g.name, sub: [g.res, g.now && `${g.now.avg} FPS`].filter(Boolean).join(" · "), badge: g.now && g.tuned ? { text: `+${g.tuned.avg - g.now.avg} FPS possible`, tone: "info" } : undefined, run: () => open("games") });
     for (const u of extra.upgrades) items.push({ id: `u-${u.title}`, kind: "upgrades", title: u.title, sub: [u.part, u.price].filter(Boolean).join(" · "), badge: u.fit === "fits" ? { text: "Fits", tone: "ok" } : u.fit === "check" ? { text: "Check first", tone: "warn" } : undefined, run: () => open("upgrades") });
-    items.push({ id: "l-logs", kind: "logs", title: "Logs", sub: `Windows errors on ${pc.name} and Rig's recordings`, keys: "logs events crashes errors blue screen driver shutdown recordings record", searchOnly: true, run: () => open("logs", { recordingId: null }) });
     for (const r of data.recordings) items.push({ id: `r-${r.id}`, kind: "logs", title: r.reason, sub: `Recording · ${whenRan(r)} · ${minutes(r.minutes)}`, keys: r.headline, badge: { text: stateWord[r.state], tone: recTone[r.state] }, run: () => { openRecording(r.id); close(); } });
     for (const sec of settingsSections) {
       if (sec.show && !sec.show(ctx)) continue;
@@ -90,13 +108,13 @@ export function Palette() {
   };
 
   let n = -1;
-  const groups = (["parts", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
+  const groups = (["pages", "parts", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return (
     <div className="palette-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKey}>
         <div className="pal-search">
           <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M13.5 13.5 17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-          <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setActive(0); }} placeholder={`Search ${pc.name}: parts, changes, games, logs`} aria-label="Search" />
+          <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setActive(0); }} placeholder="Search pages, parts, changes, games and logs" aria-label="Search" />
           <kbd>Esc</kbd>
         </div>
         <div className="pal-tabs" role="tablist">
