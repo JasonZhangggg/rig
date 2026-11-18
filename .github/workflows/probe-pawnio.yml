@@ -1,0 +1,39 @@
+name: Probe PawnIO
+on: { push: { branches: [probe/pawnio] } }
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - name: Latest release
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh api repos/namazso/PawnIO.Setup/releases --jq '.[0:3][] | {tag: .tag_name, date: .published_at, assets: [.assets[] | {name, size, url: .browser_download_url, digest}]}'
+          url=$(gh api repos/namazso/PawnIO.Setup/releases/latest --jq '.assets[] | select(.name=="PawnIO_setup.exe") | .browser_download_url')
+          curl -sSL -o PawnIO_setup.exe "$url"
+          sha256sum PawnIO_setup.exe
+      - name: Signature and version
+        shell: pwsh
+        run: |
+          $s = Get-AuthenticodeSignature .\PawnIO_setup.exe
+          "Status: $($s.Status)"; "Signer: $($s.SignerCertificate.Subject)"; "Issuer: $($s.SignerCertificate.Issuer)"
+          (Get-Item .\PawnIO_setup.exe).VersionInfo | Format-List *
+      - name: Help text
+        shell: pwsh
+        run: |
+          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-help" -Wait -PassThru -RedirectStandardOutput help.txt -RedirectStandardError helperr.txt
+          "exit $($p.ExitCode)"; Get-Content help.txt, helperr.txt
+      - name: Silent install, check, silent uninstall
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
+          "before: $(Test-Path $key)"
+          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-install","-silent" -Wait -PassThru; "install exit $($p.ExitCode)"
+          if (Test-Path $key) { Get-ItemProperty $key | Format-List * }
+          Get-Service PawnIO -ErrorAction SilentlyContinue | Format-List *
+          sc.exe qc PawnIO
+          Test-Path '\\?\GLOBALROOT\Device\PawnIO'
+          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-install","-silent" -Wait -PassThru; "reinstall exit $($p.ExitCode)"
+          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-uninstall","-silent" -Wait -PassThru; "uninstall exit $($p.ExitCode)"
+          "after: $(Test-Path $key)"
+          Get-Service PawnIO -ErrorAction SilentlyContinue
