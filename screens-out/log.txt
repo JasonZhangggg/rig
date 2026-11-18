@@ -1,0 +1,9 @@
+ok manuals-page
+FAIL search: page.screenshot: Timeout 30000ms exceeded.
+ok viewer
+FAIL laptop-find: page.screenshot: Timeout 30000ms exceeded.
+ok part-tab
+ok chat
+FAIL upgrades: page.screenshot: Timeout 30000ms exceeded.
+ok phone
+ok dark
