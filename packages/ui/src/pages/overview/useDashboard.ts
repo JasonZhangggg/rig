@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defaultDashboard, defaultWidget, parseDashboard, serialize, syncLayouts, update, type Bp, type Cell, type Dashboard, type Widget } from "./layout";
+import { arrange, defaultDashboard, defaultWidget, parseDashboard, serialize, syncLayouts, update, type Bp, type Cell, type Dashboard, type Widget } from "./layout";
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
@@ -41,8 +41,8 @@ export function useDashboard(key: string) {
     dash,
     change,
     setWidget: useCallback((id: string, patch: Partial<Widget>) => change((d) => ({ ...d, widgets: update(d.widgets, id, patch) })), [change]),
-    /** One grid's new arrangement. */
-    setCells: useCallback((bp: Bp, cells: Cell[]) => change((d) => ({ ...d, layouts: { ...d.layouts, [bp]: cells } })), [change]),
+    /** One grid's new arrangement, carried to the other grid so the two keep the same order. */
+    setCells: useCallback((bp: Bp, cells: Cell[]) => change((d) => arrange(d, bp, cells)), [change]),
     setPhone: useCallback((order: string[]) => change((d) => ({ ...d, phone: order })), [change]),
     hide: useCallback((id: string) => show(id, true), [show]),
     /** Shows a hidden widget again in the first gap it fits, with the settings it had. */

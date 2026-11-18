@@ -369,6 +369,10 @@ function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, h
     const near = c.i === lead && f >= c.y && c.x < b && a < c.x + c.w;
     for (const w of new Set(fixed.has(c.i) ? [c.w] : [Math.min(c.w, room), Math.min(room, most)])) {
       if (w > room || w < lo) continue;
+      // The spot the held tile claims: under the pointer, or flush with the stretch's end when that would leave a sliver.
+      let spot = Math.max(a, Math.min(b - w, c.x));
+      if (spot > a && spot - a < least) spot = a;
+      else if (b - spot - w > 0 && b - spot - w < least) spot = b - w;
       for (const x of new Set([a, b - w, Math.max(a, Math.min(b - w, c.x))])) {
         const left = x - a, right = b - x - w;
         if ((left && left < least) || (right && right < least)) continue;
@@ -376,7 +380,7 @@ function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, h
         // when the pointer is below its top row or barely over its edge: the held tile goes beside or below it instead.
         const wall = (o: Cell) => o.w * o.h >= 2 * c.w * c.h && overlaps(o, { i: c.i, x, y: f, w, h: c.h })
           && (o.y < c.y || 2 * (Math.min(x + w, o.x + o.w) - Math.max(x, o.x)) < w);
-        const claims = near && w <= c.w && x === Math.max(a, Math.min(b - w, c.x)) && !others.some(wall);
+        const claims = near && w <= c.w && x === spot && !others.some(wall);
         const resize = w === c.w ? 0 : w > c.w ? (w - c.w) * COST.stretch * (c.i === lead ? 0.5 : 1) : (c.w - w) * COST.squeeze;
         const shift = Math.abs(c.x - x) * COST.side;
         const cost = claims ? -100 + resize + shift
@@ -495,6 +499,16 @@ export function dragFlow(base: readonly Cell[], id: string, x: number, y: number
   const held: Cell = home || !adapt ? { ...me } : { i: id, x, y, w: want.w, h: want.h };
   held.x = Math.max(0, Math.min(cols - held.w, x));
   held.y = Math.max(0, y);
+  // Held over the middle of a tile twice its size or more, it goes to whichever of that tile's sides or its foot is
+  // nearest, instead of wherever the rest leave room, which can be the end of the page.
+  const wall = base.find((o) => o.i !== id && o.w * o.h >= 2 * held.w * held.h && o.y < held.y && overlaps(o, held)
+    && 2 * (Math.min(held.x + held.w, o.x + o.w) - Math.max(held.x, o.x)) >= held.w);
+  if (wall) {
+    const spots = [{ x: wall.x - held.w, y: held.y }, { x: wall.x + wall.w, y: held.y }, { x: held.x, y: wall.y + wall.h }]
+      .filter((p) => p.x >= 0 && p.x < cols);
+    const to = spots.sort((p, q) => Math.abs(p.x - held.x) + Math.abs(p.y - held.y) - Math.abs(q.x - held.x) - Math.abs(q.y - held.y))[0];
+    if (to) { held.x = to.x; held.y = to.y; }
+  }
   return settle(base.map((c) => (c.i === id ? held : c)), cols, { lead: id, fixed: adapt ? none : new Set([id]) });
 }
 
@@ -613,6 +627,25 @@ export function cellsFor(d: Dashboard, bp: Bp): Cell[] {
     const want = chosenOf(lg.find((x) => x.i === i)!);
     return { i, w: Math.max(limits(kindOf(i), cols).minW, spanFor(want.w, cols)), h: want.h };
   }), cols), cols);
+}
+
+/**
+ * One grid's new arrangement, carried over so the wide and tablet grids never drift apart. A change on the wide grid
+ * lets the tablet grid follow it again. A change on the tablet grid is kept there, and the wide grid takes the same
+ * order, with a tile resized there at the matching wide size.
+ */
+export function arrange(d: Dashboard, bp: Bp, cells: Cell[]): Dashboard {
+  if (bp === "lg") return { ...d, layouts: { lg: cells } };
+  const was = cellsFor(d, "md"), lg = d.layouts.lg ?? [];
+  // Each tile wants the same spot, scaled to the wide grid, and keeps its wide size unless it was resized here.
+  const wants = cells.map((c) => {
+    const now = chosenOf(c), before = was.find((o) => o.i === c.i), wide = lg.find((o) => o.i === c.i);
+    const lim = limits(kindOf(c.i), 12);
+    const same = (k: "w" | "h") => !!wide && !!before && chosenOf(before)[k] === now[k];
+    const w = same("w") ? chosenOf(wide!).w : Math.max(lim.minW, Math.min(lim.maxW, Math.round((now.w * 12) / COLS.md)));
+    return { i: c.i, x: Math.min(12 - w, Math.round((c.x * 12) / COLS.md)), y: c.y, w, h: same("h") ? chosenOf(wide!).h : now.h };
+  });
+  return { ...d, layouts: { lg: settle(wants, 12), md: cells } };
 }
 
 /** The phone's order: its own once changed, otherwise the wide grid's reading order. */
