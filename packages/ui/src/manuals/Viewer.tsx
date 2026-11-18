@@ -5,7 +5,7 @@ import { getCopy, putCopy } from "./cache";
 import { closePdf, isCancelled, renderPage } from "./pdf";
 import { HitList, useManualSearch } from "./Search";
 import { useManuals } from "./useManuals";
-import { closeManual, setViewerPage, useViewer } from "./viewer";
+import { closeManual, setViewerPage, useViewer } from "./viewerState";
 import { partName } from "./words";
 
 const zooms = [0.75, 1, 1.25, 1.5, 2, 3];

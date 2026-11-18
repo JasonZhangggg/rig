@@ -1,6 +1,6 @@
 import type { DiagramKind } from "@rig/core";
 import { useManuals } from "./useManuals";
-import { openManual } from "./viewer";
+import { openManual } from "./viewerState";
 
 const forPart: Record<string, DiagramKind> = { Memory: "memory-slots", Storage: "m2-slots" };
 

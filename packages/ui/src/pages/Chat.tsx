@@ -7,7 +7,7 @@ import { ChatBar } from "./chat/ChatBar";
 import { ProbeNote, ScriptCard } from "./chat/ScriptCard";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
-import { openManualLink } from "../manuals/viewer";
+import { openManualLink } from "../manuals/viewerState";
 
 export function Chat() {
   const { data, pc, client, clearChat } = useApp();
