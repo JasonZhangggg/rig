@@ -1,2 +1,10 @@
-ok manuals-page
-ok search
+ok logs-events
+ok logs-temps
+ok logs-games
+ok ctrl-k
+ok chat
+ok pc
+ok part-upgrade
+ok board-manual
+ok case-manual
+ok phone
