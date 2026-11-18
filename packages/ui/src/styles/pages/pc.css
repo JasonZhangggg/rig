@@ -1,3 +1,5 @@
+@import "../scene-labels.css";
+
 .pc-view { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: var(--gap); align-items: start; }
 .stage-card {
   isolation: isolate;
