@@ -1,4 +1,4 @@
-// Screenshots of the fewer-pages layout in the demo. Usage: node shoot-manuals.mjs <baseUrl> <outDir>
+// Screenshots of each page for the flat-pages review. Usage: node shoot-manuals.mjs <baseUrl> <outDir>
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 const [base = "http://localhost:4173", out = "shots"] = process.argv.slice(2);
@@ -9,7 +9,7 @@ const browser = await chromium.launch({ args: ["--use-gl=angle", "--enable-unsaf
 const p = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
 p.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 p.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text()}`); });
-const shot = (name) => p.screenshot({ path: `${out}/${name}.png`, timeout: 60000, animations: "disabled" });
+const shot = (name, fullPage = false) => p.screenshot({ path: `${out}/${name}.png`, timeout: 60000, animations: "disabled", fullPage });
 const go = async (hash, wait = 1500) => { await p.evaluate((h) => { location.hash = h; }, hash); await p.waitForTimeout(wait); };
 const click = (loc) => loc.first().evaluate((el) => el.click());
 async function step(name, fn) {
@@ -18,51 +18,28 @@ async function step(name, fn) {
 await p.goto(`${base}/app/?demo#logs`);
 await p.getByRole("heading", { name: "Logs" }).waitFor({ timeout: 30000 });
 await p.waitForTimeout(1500);
-await step("logs-events", () => shot("1-logs-events"));
-await step("logs-temps", async () => { await go("history", 2500); await shot("2-logs-temperatures"); });
-await step("logs-games", async () => { await go("games", 2500); await shot("3-logs-games"); });
-await step("ctrl-k", async () => {
-  await p.keyboard.press("Control+k");
-  await p.waitForTimeout(500);
-  await p.locator('input[aria-label="Search"]').fill("F_PANEL");
-  await p.waitForTimeout(1500);
-  await shot("4-ctrl-k-manuals");
-  await p.keyboard.press("Escape");
-});
-await step("chat", async () => { await go("chat", 1500); await shot("5-ask"); });
-await step("pc", async () => { await go("pc", 4000); await shot("6-mypc-parts-upgrades"); await p.screenshot({ path: `${out}/6b-mypc-full.png`, fullPage: true, timeout: 60000 }).catch(() => {}); });
-await step("part-upgrade", async () => {
-  await click(p.locator(".pc-ups-list button", { hasText: /SSD/ }));
-  await p.waitForTimeout(1500);
-  await shot("7-part-upgrade-tab");
-});
+await step("logs-events", () => shot("01-logs-events", true));
+await step("recording", async () => { await click(p.getByText(/See the timeline and readings/)); await p.waitForTimeout(2000); await shot("02-logs-recording", true); });
+await step("logs-temps", async () => { await go("history", 2500); await shot("03-logs-temperatures", true); });
+await step("logs-games", async () => { await go("games", 2500); await shot("04-logs-games", true); });
+await step("game-detail", async () => { await click(p.getByRole("button", { name: /See Cyberpunk 2077/ })); await p.waitForTimeout(2000); await shot("05-game-detail", true); });
+await step("changes", async () => { await go("changes", 2000); await shot("06-changes", true); });
+await step("settings", async () => { await go("settings", 2000); await shot("07-settings", true); });
+await step("chat", async () => { await go("chat", 1500); await shot("08-ask"); });
+await step("home", async () => { await go("overview", 3000); await shot("09-home"); });
+await step("pc", async () => { await go("pc", 4000); await shot("10-mypc", true); });
 await step("board-manual", async () => {
-  await click(p.locator(".detail-back"));
-  await p.waitForTimeout(500);
   await click(p.locator(".part-list button", { hasText: /Motherboard/ }));
   await p.waitForTimeout(500);
   await click(p.getByRole("tab", { name: "Manual" }));
   await p.waitForTimeout(1500);
-  await shot("8-part-manual-tab");
-});
-await step("case-manual", async () => {
-  await click(p.locator(".detail-back"));
-  await p.waitForTimeout(500);
-  await click(p.locator(".part-list button", { hasText: /^Case/ }));
-  await p.waitForTimeout(500);
-  await click(p.getByRole("tab", { name: "Manual" }));
-  await p.waitForTimeout(1500);
-  await shot("9-case-manual-tab");
+  await shot("11-mypc-part-manual");
 });
 await step("phone", async () => {
   await click(p.locator(".detail-back"));
   await p.setViewportSize({ width: 390, height: 844 });
-  await go("logs", 2500);
-  await shot("10-phone-logs");
   await go("pc", 3000);
-  await p.evaluate(() => document.getElementById("pc-upgrades")?.scrollIntoView());
-  await p.waitForTimeout(800);
-  await shot("11-phone-upgrades");
+  await shot("12-phone-mypc", true);
 });
 await browser.close();
 writeFileSync(`${out}/log.txt`, [...log, "", ...errors].join("\n"));
