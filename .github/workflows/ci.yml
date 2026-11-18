@@ -64,8 +64,8 @@ jobs:
             (& $probe "t-tampered" 30 @{ kind = "script"; shell = "powershell"; text = "Write-Output changed"; admin = $false; timeout = 30 } @{ hash = $hash; approvedAt = $now })
           )
           @{ probes = $probes } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$dir/probes.json"
-          $p = Start-Process helper-out/RigHelper.exe -ArgumentList "--record-for", "20", "--data-dir", $dir -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Recording for 20 seconds failed: $($p.ExitCode)" }
+          $p = Start-Process helper-out/RigHelper.exe -ArgumentList "--record-for", "45", "--data-dir", $dir -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Recording for 45 seconds failed: $($p.ExitCode)" }
           $custom = Get-ChildItem "$dir/custom/$sid/*.jsonl" | Select-Object -First 1
           if (-not $custom) { throw "No custom log written" }
           Get-Content $custom | Select-Object -First 40
