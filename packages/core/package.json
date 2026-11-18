@@ -1,7 +1,7 @@
 {
   "name": "@rig/core",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Shared types and logic for Rig: hardware readings, the PC view, health checks, the fix catalog and the data client contract.",
   "main": "src/index.ts",
