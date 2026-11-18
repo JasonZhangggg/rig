@@ -1,8 +1,6 @@
-ok pc-hover
+ok pc
 ok pc-live
 ok logs
-ok logs-day
 ok temps
 ok games
 ok changes
-ok recording
