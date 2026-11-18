@@ -186,6 +186,20 @@
   .f-hnum b { font-size: 3rem; }
   .f-health p { display: none; }
 }
+/* Larger text in a small tile: a smaller score, so the title and link keep their room. */
+@container wbox (max-width: 190px) {
+  .f-health-main, .f-health[data-style="compact"] .f-health-main { gap: 12px; }
+  .f-ring, .f-health[data-style="compact"] .f-ring { width: 64px; height: 64px; }
+  .f-ring b, .f-health[data-style="compact"] .f-ring b { font-size: 22px; }
+  .f-hnum b { font-size: 2.5rem; }
+  .f-hnum span { display: none; }
+}
+@container wbox (max-width: 160px) {
+  .f-health-main, .f-health[data-style="compact"] .f-health-main { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .f-ring, .f-health[data-style="compact"] .f-ring { width: 56px; height: 56px; }
+  .f-ring b, .f-health[data-style="compact"] .f-ring b { font-size: 20px; }
+  .f-hnum b { font-size: 2.25rem; }
+}
 
 /* ----- Things to look at: a rust bubble with the part marks what needs a look; a check marks what's only worth knowing. ----- */
 .f-todo { min-height: 0; display: flex; flex-direction: column; }
@@ -283,6 +297,14 @@
 .pl-figure b { color: var(--text); font: 600 2.25rem/1 var(--font); letter-spacing: -.02em; white-space: nowrap; }
 .pl-figure.look b { color: var(--warn); }
 .pl-figure span { color: var(--text-3); font-size: 13px; font-weight: 600; }
+/* A narrow tile puts the headline number under the title, on one line with its label. */
+@container wbox (max-width: 200px) {
+  .pl-head { flex-wrap: wrap; gap: 6px 8px; }
+  .pl-head h3 { font-size: 16px; }
+  .pl-figure { display: flex; align-items: baseline; gap: 6px; text-align: left; }
+  .pl-figure b { font-size: 1.6rem; }
+  .pl-figure span { font-size: 12px; }
+}
 .bl-empty { margin: auto 0; max-width: 38ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
 
 .pl-stats { display: flex; gap: 12px 32px; flex-wrap: wrap; }
@@ -345,12 +367,25 @@
 .pl-big-day:first-child { padding-left: 0; border-left: 0; }
 .pl-big-day small { color: var(--text-3); font-size: 12px; font-weight: 600; }
 .pl-big-day.today small { color: var(--text); font-weight: 700; }
-.pl-big-day b { color: var(--text); font: 500 clamp(1.4rem, 4.2cqi, 2.4rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.pl-big-day b { color: var(--text); font: 500 clamp(1rem, min(4.2cqi, 100cqi / var(--n) * .4), 2.4rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .pl-big-day b.top { color: var(--warn); }
 .pl-big-day span { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .pl-big-day span i { width: 8px; height: 8px; flex: none; border-radius: 2px; background: var(--x, var(--s-c)); }
 .pl-big-day span i.a { --x: var(--s-a); }
 .pl-big-day span i.b { --x: var(--s-b); }
+/* A narrow tile: tighter columns, and the range keeps only its two ends on the scale. */
+@container wbox (max-width: 380px) {
+  .pl-big-day { padding-left: 6px; }
+  .pl-big-day span { gap: 3px; font-size: 12px; }
+  .pl-big-day span i { width: 6px; height: 6px; }
+  .pl-rt-row { grid-template-columns: 34px minmax(0, 1fr) repeat(var(--cols), 34px); column-gap: 8px; }
+  .pl-rt-n { font-size: 14px; }
+  .pl-rt-scale > span:not(:first-child):not(:last-child) { visibility: hidden; }
+}
+@container wbox (max-width: 300px) {
+  .pl-big-day { padding-left: 4px; gap: 6px; }
+  .pl-big-day span { gap: 2px; font-size: 11px; }
+}
 
 /* A small tile's strip of the days' peaks. */
 .pl-strip { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
@@ -358,6 +393,7 @@
 .pl-strip > span > i { width: 100%; max-width: 22px; border-radius: var(--r-pill); background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
 .pl-strip > span.top > i { background: var(--s-b); box-shadow: none; }
 .pl-strip small { color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+@container wbox (max-width: 190px) { .pl-strip { gap: 3px; } .pl-strip small { font-size: 10.5px; } }
 
 /* Fans, dot grid (the original): a column of dots per six hours, lit up to the fastest fan. */
 .pl-dots { display: block; flex: 1; min-height: 0; width: 100%; margin-top: auto; }
@@ -509,6 +545,11 @@
 .f-live[data-style="list"] .f-live-list > li { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; padding: 10px 0; border-left: 0; border-top: 1px solid var(--line); }
 .f-live[data-style="list"] .f-live-list > li > b { font-size: 1.25rem; font-weight: 600; text-align: right; }
 .f-live[data-style="list"] .f-live-list > li > small { grid-column: 1 / -1; }
+@container wbox (max-width: 190px) {
+  .f-live[data-style] .f-live-list { gap: 10px 10px; }
+  .f-live-list > li { padding-left: 10px; }
+  .f-live[data-style]:not([data-style="list"]) .f-live-list > li > b { font-size: 1.35rem; }
+}
 /* A short tile puts the title beside the readings and drops the notes, so a row of figures fits in two grid rows. */
 @container wbox (max-height: 170px) {
   .f-live { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr); align-items: end; column-gap: 24px; }
