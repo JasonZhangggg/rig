@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import { useApp } from "../../state";
-import { KINDS, SIZE_LABEL, type Corners, type Dashboard, type Density, type OptValue, type SizeName, type Spacing, type Tone, type Widget } from "./layout";
+import { KINDS, SIZE_LABEL, type Cell, type Dashboard, type OptValue, type SizeName, type Spacing, type Tone, type Widget } from "./layout";
 import { sourceItems } from "./widgets";
 
 function Seg<T extends string>({ label, value, options, onPick, disabled }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void; disabled?: boolean }) {
+  const id = `dopt-${label.toLowerCase().replace(/\W+/g, "-")}`;
   return (
     <div className="dopt">
-      <span className="dopt-label" id={`dopt-${label}`}>{label}</span>
-      <div className="dseg" role="group" aria-labelledby={`dopt-${label}`}>
+      <span className="dopt-label" id={id}>{label}</span>
+      <div className="dseg" role="group" aria-labelledby={id}>
         {options.map(([v, text]) => (
           <button key={v} type="button" aria-pressed={v === value} disabled={disabled} onClick={() => onPick(v)}>{text}</button>
         ))}
@@ -33,8 +34,8 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 const SERIES = ["idle", "typical", "peak"];
 
 /** Every choice for one widget. Changes show on the tile straight away. */
-export function WidgetOptions({ w, index, count, size, onChange, onSize, onMove, onHide, onReset }: {
-  w: Widget; index: number; count: number; size: SizeName | null;
+export function WidgetOptions({ w, index, count, size, cell, list, onChange, onSize, onMove, onHide, onReset }: {
+  w: Widget; index: number; count: number; size: SizeName | null; cell?: Cell; list?: boolean;
   onChange: (patch: Partial<Widget>) => void; onSize: (size: SizeName) => void; onMove: (by: -1 | 1) => void; onHide: () => void; onReset: () => void;
 }) {
   const ctx = useApp();
@@ -47,8 +48,14 @@ export function WidgetOptions({ w, index, count, size, onChange, onSize, onMove,
     <>
       <Section title="Look">
         <Seg label="Style" value={w.style} options={meta.styles} onPick={(style) => onChange({ style })} />
-        <Seg<SizeName | "custom"> label="Size" value={size ?? "custom"} options={(Object.keys(meta.sizes) as SizeName[]).map((s) => [s, SIZE_LABEL[s]])} onPick={(s) => { if (s !== "custom") onSize(s); }} />
-        {!size && <p className="dnote">A size of your own. Pick one above, or pull the tile's edge.</p>}
+        {list ? (
+          <p className="dnote">On a narrow screen every widget takes the full width. Sizes apply when the window is wider.</p>
+        ) : (
+          <>
+            <Seg<SizeName | "custom"> label="Size" value={size ?? "custom"} options={(Object.keys(meta.sizes) as SizeName[]).map((s) => [s, SIZE_LABEL[s]])} onPick={(s) => { if (s !== "custom") onSize(s); }} />
+            {!size && <p className="dnote">{cell ? `A size of your own, ${cell.w} columns wide and ${cell.h} rows tall.` : "A size of your own."} Pick one above, or pull the tile's edge.</p>}
+          </>
+        )}
         <Seg<Tone> label="Tone" value={w.tone} options={[["light", "Light"], ["dark", "Dark"]]} onPick={(tone) => onChange({ tone })} />
         <Seg label="Background" value={dark ? "tile" : w.frame} options={[["tile", "Tile"], ["open", "On the page"]]} onPick={(frame) => onChange({ frame })} disabled={dark} />
         {dark && <p className="dnote">Dark widgets always sit on a tile.</p>}
@@ -95,9 +102,9 @@ export function WidgetOptions({ w, index, count, size, onChange, onSize, onMove,
 
 const Plus = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
 
-/** The hidden widgets, to put back at the end of the dashboard. */
+/** The hidden widgets, to put back on Home. */
 export function AddWidgets({ hidden, onAdd }: { hidden: Widget[]; onAdd: (id: string) => void }) {
-  if (!hidden.length) return <p className="dnote">Every widget is on your dashboard. Hide one from its options and it waits here.</p>;
+  if (!hidden.length) return <p className="dnote">Every widget is on Home. Hide one from its options and it waits here.</p>;
   return (
     <ul className="dlib">
       {hidden.map((w) => (
@@ -113,20 +120,24 @@ export function AddWidgets({ hidden, onAdd }: { hidden: Widget[]; onAdd: (id: st
   );
 }
 
-/** Choices for the whole dashboard. */
-export function DashOptions({ dash, onChange, onTone }: { dash: Dashboard; onChange: (patch: Partial<Dashboard>) => void; onTone: (tone: Tone | "default") => void }) {
+/** Choices for the whole of Home. Corners and density belong to Settings, Appearance, so every screen matches. */
+export function DashOptions({ dash, onSpacing, onTone, onAppearance }: { dash: Dashboard; onSpacing: (spacing: Spacing) => void; onTone: (tone: Tone | "default") => void; onAppearance: () => void }) {
   return (
     <>
       <Section title="Layout">
-        <Seg<Density> label="Density" value={dash.density} options={[["comfortable", "Comfortable"], ["compact", "Compact"]]} onPick={(density) => onChange({ density })} />
-        <Seg<Spacing> label="Spacing" value={dash.spacing} options={[["tight", "Tight"], ["normal", "Normal"], ["roomy", "Roomy"]]} onPick={(spacing) => onChange({ spacing })} />
-        <Seg<Corners> label="Corners" value={dash.corners} options={[["round", "Round"], ["soft", "Soft"], ["square", "Square"]]} onPick={(corners) => onChange({ corners })} />
+        <Seg<Spacing> label="Space between widgets" value={dash.spacing} options={[["tight", "Tight"], ["normal", "Normal"], ["roomy", "Roomy"]]} onPick={onSpacing} />
       </Section>
       <Section title="Every widget">
         <div className="dfoot-row">
           <button type="button" className="dbtn" onClick={() => onTone("light")}>All light</button>
           <button type="button" className="dbtn" onClick={() => onTone("dark")}>All dark</button>
           <button type="button" className="dbtn" onClick={() => onTone("default")}>As they started</button>
+        </div>
+      </Section>
+      <Section title="Corners and density">
+        <p className="dnote">Home follows the corners, density and colors you pick in Settings, so every screen matches.</p>
+        <div className="dfoot-row">
+          <button type="button" className="dbtn" onClick={onAppearance}>Open Appearance settings</button>
         </div>
       </Section>
     </>
