@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { ActionCall, Change, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, Snapshot, SystemFacts } from "@rig/core";
+import type { ActionCall, Change, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, Snapshot, SystemFacts } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -33,6 +33,13 @@ export const tauriStore: LocalStore = {
 export const tauriToken = {
   get: () => invoke<string | null>("token_get"),
   set: (token: string | null) => invoke<void>("token_set", { token }),
+};
+
+/** Rig's background recorder: a Windows service that keeps a log while the app is closed (src-tauri/src/recorder.rs). */
+export const tauriRecorder: RecorderLink = {
+  status: () => invoke<RecorderStatus>("recorder_status"),
+  read: (from: number, cursor: RecorderCursor | null) => invoke("recorder_read", { from, cursor }),
+  set: (on: boolean) => invoke<void>("recorder_set", { on }),
 };
 
 /** Starting with Windows, through Tauri's autostart plugin (a Run entry for this user). */

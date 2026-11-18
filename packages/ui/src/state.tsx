@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import type { RecorderLink } from "@rig/core";
 import { alertRules, formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "web", "signin", "settings"];
@@ -9,6 +10,8 @@ export interface AppHost {
   autostart?: { get(): Promise<boolean>; set(on: boolean): Promise<void> };
   /** The Rig server this app signs in to, shown in Settings. */
   server?: string;
+  /** Rig's background recorder, turned on and off in Settings. Windows only. */
+  recorder?: Pick<RecorderLink, "status" | "set">;
 }
 
 /** The review sheet shown before any change is made. */

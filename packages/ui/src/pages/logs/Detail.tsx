@@ -39,14 +39,15 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
       <div className="page-head">
         <div>
           <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />All logs</button>
-          <h1>{info.minutes}-minute recording</h1>
+          <h1>{info.background ? "Background log" : `${info.minutes}-minute recording`}</h1>
           <p className="rec-reason">{info.reason}</p>
-          <p className="sub">{whenRan(info)}. Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</p>
+          <p className="sub">{whenRan(info)}. {info.background ? "Recorded by Rig in the background and kept only on this PC" : <>Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</>}</p>
         </div>
         <div className="gm-actions">
           <StateChip state={info.state} />
           {active && <button type="button" className="btn" onClick={() => stopRecording(info.id)}>Stop recording</button>}
-          <button type="button" className="btn primary" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>
+          {/* Rig's chat reads recordings on its server, and background logs stay on this PC. */}
+          {!info.background && <button type="button" className="btn primary" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>}
         </div>
       </div>
 

@@ -1,9 +1,11 @@
 //! Rig's desktop shell. The screens and all the logic live in TypeScript
 //! (packages/core and packages/ui); this side only does what a web page can't:
 //! start the elevated helper, keep data on disk, keep the sign-in token in
-//! the keychain and start with Windows when the person turns that on.
+//! the keychain, start with Windows when the person turns that on, and read
+//! the background recorder's log.
 
 mod helper;
+mod recorder;
 mod secrets;
 mod store;
 
@@ -41,6 +43,29 @@ fn token_get() -> R<Option<String>> { secrets::get() }
 #[tauri::command]
 fn token_set(token: Option<String>) -> R<()> { secrets::set(token.as_deref()) }
 
+/// Whether the background recorder is installed and running, and how much its log takes.
+#[tauri::command]
+async fn recorder_status() -> Value {
+    tauri::async_runtime::spawn_blocking(|| recorder::status(recorder::data_dir().as_deref(), recorder::service_state()))
+        .await
+        .unwrap_or(Value::Null)
+}
+
+/// The recorder's log from a time, or from where the last read stopped.
+#[tauri::command]
+async fn recorder_read(from: i64, cursor: Option<recorder::Cursor>) -> R<recorder::Page> {
+    let Some(dir) = recorder::data_dir() else { return Err("unsupported: the background recorder is a Windows service.".into()) };
+    tauri::async_runtime::spawn_blocking(move || recorder::read(&dir, from, cursor, recorder::MAX_RECORDS, recorder::MAX_BYTES))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Turns the background recorder on or off. Windows asks for permission.
+#[tauri::command]
+async fn recorder_set(on: bool) -> R<()> {
+    tauri::async_runtime::spawn_blocking(move || recorder::set(on)).await.map_err(|e| e.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -55,7 +80,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            helper_call, kv_get, kv_set, history_add, history_since, changes_list, change_put, token_get, token_set
+            helper_call, kv_get, kv_set, history_add, history_since, changes_list, change_put, token_get, token_set,
+            recorder_status, recorder_read, recorder_set
         ])
         .run(tauri::generate_context!())
         .expect("Rig couldn't start");

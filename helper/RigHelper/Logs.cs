@@ -19,7 +19,7 @@ public static class EventLogs
     const int MessageMax = 300;
 
     /// Sources whose warnings matter: driver resets, corrected hardware errors and disk retries are logged as warnings, not errors.
-    static readonly string[] WarningSources =
+    public static readonly string[] WarningSources =
     [
         "Display", "nvlddmkm", "amdkmdag", "amdwddmg", "atikmdag", "igfx", "dxgkrnl",
         "Microsoft-Windows-WHEA-Logger", "disk", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "stornvme", "storahci",
@@ -66,7 +66,7 @@ public static class EventLogs
 
     static string Level(byte? level) => level switch { 1 => "critical", 3 => "warning", _ => "error" };
 
-    static string Message(EventRecord rec)
+    public static string Message(EventRecord rec)
     {
         string? text = null;
         try { text = rec.FormatDescription(); } catch (EventLogException) { }

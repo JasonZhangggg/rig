@@ -4,7 +4,7 @@ import { clock, dayName, kindWord, shortDay } from "./words";
 
 const DAYS = 30;
 const DAY = 864e5;
-const serious = (e: PCEvent) => e.kind !== "other" && (e.level !== "warning" || e.kind === "driver");
+const serious = (e: PCEvent) => e.kind !== "other" && e.kind !== "power" && (e.level !== "warning" || e.kind === "driver");
 
 /** One Windows event: when, what it means, and what Windows wrote. */
 export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {

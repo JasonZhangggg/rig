@@ -2,7 +2,8 @@
 // Yes), it connects back to the app's private pipe and answers one JSON
 // request per line. It reads sensors, the PC's parts, a few settings, the
 // Windows event log and the busiest apps, and makes only the changes in Rig's
-// fix catalog. It quits when the app does.
+// fix catalog. It quits when the app does. Run with --service it is Rig's
+// background recorder instead (RecorderService.cs).
 
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -37,6 +38,14 @@ public static class Program
             await File.WriteAllTextAsync(outFile, all.ToJsonString(new JsonSerializerOptions(Json.Options) { WriteIndented = true }));
             return all.Any(kv => kv.Value is JsonObject o && o["error"] != null) ? 1 : 0;
         }
+
+        // The background recorder: run by Windows as a service, installed and removed by Rig's installer and Settings.
+        if (args.Contains("--service")) { System.ServiceProcess.ServiceBase.Run(new RecorderService()); return 0; }
+        if (args.Contains("--install-recorder")) return RecorderSetup.Install(Arg(args, "--app-dir"));
+        if (args.Contains("--uninstall-recorder")) return RecorderSetup.Uninstall(Arg(args, "--app-dir"));
+        // RigHelper.exe --record-for 60 --data-dir <folder>: records in this process for a while, for the CI smoke test.
+        if (Arg(args, "--record-for") is string secs && int.TryParse(secs, out int recordSecs) && Arg(args, "--data-dir") is string recordDir)
+            return RecorderCore.RunFor(recordDir, Math.Clamp(recordSecs, 1, 3600));
 
         string? pipe = Arg(args, "--pipe");
         if (pipe == null || !int.TryParse(Arg(args, "--parent"), out int parent)) return 2;
@@ -111,6 +120,36 @@ public static class Program
         if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90 } || ranked[1].Name != "System") yield return "process ranking is off";
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 3) yield return "event queries are off";
+        foreach (var p in RecorderChecks()) yield return p;
+    }
+
+    /// The background recorder's pure rules: file names, pruning, the line format and when it takes a closer look.
+    static IEnumerable<string> RecorderChecks()
+    {
+        const long day = 86_400_000;
+        long now = DateTimeOffset.Parse("2026-11-18T12:00:00Z").ToUnixTimeMilliseconds();
+        if (LogFiles.NameFor(now) != "2026-11-18.jsonl") yield return "recorder file names are off";
+        var files = new[] { ("2026-10-01.jsonl", 10L), ("2026-11-17.jsonl", 150L << 20), ("2026-11-18.jsonl", 100L << 20), ("status.json", 1L) };
+        var drop = LogFiles.Prune(files, now);
+        if (!drop.SequenceEqual(new[] { "2026-10-01.jsonl", "2026-11-17.jsonl" })) yield return $"recorder pruning is off: {string.Join(",", drop)}";
+        if (LogFiles.Prune([("2026-01-01.jsonl", 999L << 20)], now).Count != 0) yield return "recorder pruning dropped the only file";
+
+        var line = LogLine.Sample(now, [41.5, null], [new ProcessDto("game.exe", 50, 2048, 90)], detail: true).ToJsonString();
+        if (line != """{"k":"s","t":1795003200000,"v":[41.5,null],"top":[{"name":"game.exe","cpu":50,"memMb":2048,"gpu":90}],"d":1}""") yield return $"recorder sample line is off: {line}";
+
+        var w = new Watch();
+        SensorDto S(string hw, string type, string name, double? v) => new($"/{hw}/{name}", hw, hw, type, name, v, null, null);
+        var r = Reading.From(now, [S("cpu", "temperature", "Core Max", 70), S("cpu", "temperature", "CPU Core #1 Distance to TjMax", 30), S("gpu", "temperature", "GPU Hot Spot", 99), S("gpu", "temperature", "GPU Core", 60)]);
+        if (r.Cpu != 70 || r.Gpu != 60) yield return $"recorder picks the wrong temperatures: {r.Cpu} {r.Gpu}";
+        r = r with { Gpu = 70 };
+        if (w.Check(r with { T = now }) != null) yield return "recorder fired on a calm reading";
+        if (w.Check(r with { T = now + 5000, Gpu = 90 }) != null) yield return "recorder fired on one hot reading";
+        if (w.Check(r with { T = now + 10_000, Gpu = 90 })?.Why != "gpu-hot") yield return "recorder missed a hot graphics card";
+        if (w.Check(r with { T = now + 15_000, Gpu = 91 }) != null) yield return "recorder fired twice for the same heat";
+        if (w.Check(r with { T = now + 20_000, Cpu = 97 })?.Why != "cpu-jump") yield return "recorder missed a sudden jump";
+        var crash = new EventDto(now, "Application", "Application Error", 1000, "error", "x");
+        if (w.Check(crash)?.Why != "event") yield return "recorder missed a crash event";
+        if (w.Check(crash with { T = now + day, Source = "DistributedCOM", Id = 10016 }) != null) yield return "recorder fired on a harmless error";
     }
 
     static string? Arg(string[] args, string name)
