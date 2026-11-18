@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { formatTemp, HOT_MARGIN, type GameLibrary, type GameStats, type TempUnit } from "@rig/core";
 import { useTempUnit } from "../../state";
 import { Icon } from "../../components/common";
@@ -17,8 +18,8 @@ export function LimitChip({ game }: { game: GameStats }) {
   return <span className="chip warn">{game.headroom < 0 ? "Over the limit" : "Near the limit"}</span>;
 }
 
-/** Every game in the range, most played first. Each row opens the game. */
-export function Library({ library, when, tuned, onOpen }: { library: GameLibrary; when: string; tuned: (name: string) => boolean; onOpen: (name: string) => void }) {
+/** Every game in the range, most played first. Each row opens the game; anything more goes in the footer. */
+export function Library({ library, when, tuned, onOpen, children }: { library: GameLibrary; when: string; tuned: (name: string) => boolean; onOpen: (name: string) => void; children?: ReactNode }) {
   const unit = useTempUnit();
   const top = library.games[0]?.hours || 1;
   return (
@@ -30,8 +31,8 @@ export function Library({ library, when, tuned, onOpen }: { library: GameLibrary
             <button type="button" className="gm-row" onClick={() => onOpen(g.name)}>
               <span className="gm-badge" aria-hidden="true">{initials(g.name) || g.name[0]}</span>
               <span className="gm-name">
-                <span className="gm-title"><b>{g.name}</b><LimitChip game={g} />{tuned(g.name) && <span className="chip info no-dot">Settings to try</span>}</span>
-                <span className="faint">{sessionCount(g.sessions.length)} · last played {ago(g.lastPlayed)}</span>
+                <span className="gm-title"><b>{g.name}</b><LimitChip game={g} /></span>
+                <span className="faint">{sessionCount(g.sessions.length)}, last played {ago(g.lastPlayed)}{tuned(g.name) && <>, <span className="gm-tuned">settings to try</span></>}</span>
               </span>
               <span className="gm-hours">
                 <span className="bar"><i style={{ width: `${(g.hours / top) * 100}%` }} /></span>
@@ -46,6 +47,7 @@ export function Library({ library, when, tuned, onOpen }: { library: GameLibrary
           </li>
         ))}
       </ul>
+      {children}
     </section>
   );
 }

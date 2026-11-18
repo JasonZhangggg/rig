@@ -75,7 +75,7 @@ function DeleteAccount() {
         <li>Every sign-in, including the Rig app on your PCs</li>
       </ul>
       {client.kind === "desktop" && <p>What this PC keeps on its own disk stays, and Rig keeps working here signed out.</p>}
-      <p>Want a copy first? Use Download my data below.</p>
+      <p>Want a copy first? Download my data is under Your data, below.</p>
       <div className="field">
         <label className="label" htmlFor="delete-confirm">Type {DELETE_WORD} to confirm</label>
         <input className="input" id="delete-confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} />

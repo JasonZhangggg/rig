@@ -1,6 +1,5 @@
 import { seenLabel } from "@rig/core";
 import { useApp, useTemp } from "../../state";
-import { partIcon } from "../shared";
 
 interface Pill { key: string; label: string; value: string; look?: boolean }
 
@@ -33,9 +32,7 @@ export function ChatBar({ onNew }: { onNew: () => void }) {
         <ul className="chat-live" aria-label={pc.online ? "What Rig can see now" : "Last readings"}>
           {pills.map((p) => (
             <li key={p.key} className={p.look ? "look" : undefined}>
-              <i aria-hidden="true">{partIcon[p.key]}</i>
-              <span className="pill-label">{p.label}</span>
-              <b className="num">{p.value}</b>
+              <span className="pill-label">{p.label}</span> <b className="num">{p.value}</b>
             </li>
           ))}
         </ul>

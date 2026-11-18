@@ -28,7 +28,15 @@ describe("Ask", () => {
     expect(screen.getByRole("heading", { name: /What's going on with Atlas\?/ })).toBeTruthy();
     const starters = within(screen.getByRole("list", { name: "Questions to start with" })).getAllByRole("button");
     expect(starters).toHaveLength(4);
+    expect(starters[0].textContent).toMatch(/startup apps/);
+    expect(screen.getByText(/Rig shows every change first and waits for your yes/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  });
+
+  it("shows what Rig can see now as one line of readings", async () => {
+    await openChat();
+    const live = screen.getByRole("list", { name: "What Rig can see now" });
+    expect(within(live).getAllByRole("listitem").map((li) => li.textContent)).toEqual([expect.stringMatching(/^Processor \d+°$/), expect.stringMatching(/^Graphics card \d+°$/), "Fans ok"]);
   });
 
   it("sends with Enter, keeps Shift and Enter for a new line, and shows Rig's answer", async () => {

@@ -33,7 +33,7 @@ describe("Games", () => {
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
     await screen.findByText("Most played this month");
     const cyberpunk = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Cyberpunk 2077"))!;
-    expect(within(cyberpunk).getByText("Settings to try")).toBeTruthy();
+    expect(within(cyberpunk).getByText("settings to try")).toBeTruthy();
     fireEvent.click(cyberpunk);
     expect(await screen.findByRole("heading", { level: 1, name: "Cyberpunk 2077" })).toBeTruthy();
     expect(screen.getByText("What Rig noticed")).toBeTruthy();
@@ -52,7 +52,31 @@ describe("Games", () => {
     client.games = async () => [];
     await openGames(client);
     await screen.findByRole("list", { name: "Games" });
-    expect(screen.queryByText("Settings to try")).toBeNull();
+    expect(screen.queryByText(/settings to try/i)).toBeNull();
+  });
+
+  it("says every game ran cool when none came near the limit, and points to settings to try", async () => {
+    const client = new DemoClient();
+    const start = Date.now() - 2 * 864e5;
+    client.history = async () => Array.from({ length: 12 }, (_, i) => ({ t: start + i * 5 * 6e4, cpu: 55, gpu: 60, busy: true, game: "Cyberpunk 2077" }));
+    await openGames(client);
+    const lead = await screen.findByRole("region", { name: "Every game ran cool this week" });
+    expect(within(lead).getByText(/peaked at 60°C in Cyberpunk 2077/)).toBeTruthy();
+    expect(within(lead).getByText(/from 78 to 96 fps/)).toBeTruthy();
+    fireEvent.click(within(lead).getByRole("button", { name: "See settings for Cyberpunk 2077" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Cyberpunk 2077" })).toBeTruthy();
+  });
+
+  it("leads with the game that came closest to the limit", async () => {
+    const client = new DemoClient();
+    const start = Date.now() - 2 * 864e5;
+    const at = (i: number, gpu: number, game: string) => ({ t: start + i * 5 * 6e4, cpu: 55, gpu, busy: true, game });
+    client.history = async () => [...Array.from({ length: 12 }, (_, i) => at(i, 60, "Quiet Game")), ...Array.from({ length: 12 }, (_, i) => at(100 + i, i === 6 ? 200 : 70, "Loud Game"))];
+    await openGames(client);
+    const lead = await screen.findByRole("region", { name: "Loud Game ran over the safe limit" });
+    expect(within(lead).getByText(/slowed itself down/)).toBeTruthy();
+    fireEvent.click(within(lead).getByRole("button", { name: "See Loud Game" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Loud Game" })).toBeTruthy();
   });
 
   it("says no games are recorded yet on a PC without history", async () => {

@@ -8,6 +8,8 @@ vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
 const { LineChart } = await import("../src/chart");
+const { highlights, summaryLine } = await import("../src/pages/logs/summary");
+const { cleanEvents } = await import("@rig/core");
 
 async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
@@ -17,19 +19,46 @@ describe("Logs", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });
   afterEach(() => cleanup());
 
-  it("is in the sidebar under Help and lists Windows events with a filter", async () => {
+  it("is in the sidebar under Help, leads with a summary and the events that matter, and keeps every event behind All events", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     expect(screen.getByRole("link", { name: /Logs/ }).getAttribute("href")).toBe("#logs");
     await open("logs");
-    await screen.findByText("Windows events");
-    expect((await screen.findAllByText("The graphics driver stopped and recovered")).length).toBe(2);
-    screen.getByText("The PC turned off without shutting down");
-    screen.getByText("Discord.exe crashed");
+    const summary = await screen.findByRole("region", { name: "Summary" });
+    await waitFor(() => expect(summary.textContent).toMatch(/In the last 30 days, the graphics driver reset twice, Atlas shut off unexpectedly once and Discord crashed once\./));
+    expect(summary.textContent).toMatch(/3 minor things/);
 
+    const worth = screen.getByRole("region", { name: "Worth knowing" });
+    const items = within(worth).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0].textContent).toMatch(/Graphics driver reset/);
+    expect(items[0].textContent).toMatch(/2 times, last/);
+    within(worth).getByText("Atlas turned off without shutting down");
+    within(worth).getByText("Discord crashed");
+    expect(worth.textContent).not.toMatch(/event 4101|nvlddmkm|0xc0000005/);
+
+    expect(screen.queryByText("Discord.exe crashed")).toBeNull();
+    const toggle = screen.getByRole("button", { name: /All events/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    screen.getByText("Discord.exe crashed");
+    screen.getByText("Application Error · event 1000");
     fireEvent.click(within(screen.getByRole("group", { name: "Kind of event" })).getByRole("button", { name: /Shutdowns/ }));
     expect(screen.queryByText("Discord.exe crashed")).toBeNull();
     screen.getByText("The PC turned off without shutting down");
+  });
+
+  it("shows a finished recording as what it found, and opens it from the event it caught", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const recs = await screen.findByRole("region", { name: "Recordings" });
+    const row = within(recs).getByRole("button", { name: /Watch temperatures, load and Windows events while you play/ });
+    expect(row.textContent).toMatch(/Found: The graphics driver stopped and recovered/);
+    expect(row.textContent).toMatch(/Finished/);
+    fireEvent.click(await screen.findByRole("button", { name: /A recording caught this/ }));
+    await screen.findByText("What Rig found");
   });
 
   it("opens a recording with what Rig found, its charts and Ask about this", async () => {
@@ -42,6 +71,8 @@ describe("Logs", () => {
     screen.getByText(/Graphics card load fell from/);
     screen.getByRole("img", { name: "Temperatures during the recording" });
     screen.getByRole("img", { name: "Load during the recording" });
+    expect(screen.queryByText("Cyberpunk2077.exe", { selector: "td" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Readings, apps and Windows events" }));
     screen.getByText("Cyberpunk2077.exe", { selector: "td" });
     screen.getByText("Windows events during the recording");
 
@@ -75,6 +106,9 @@ describe("Logs", () => {
     await open("logs");
     await screen.findByText(/Nothing went wrong on Pebble in the last 30 days/);
     screen.getByText(/No recordings yet/);
+    expect(screen.queryByRole("region", { name: "Worth knowing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /All events/ })).toBeNull();
+    screen.getByRole("button", { name: "Start recording" });
   });
 
   it("shows a recording in °F when that's the unit picked", async () => {
@@ -112,5 +146,21 @@ describe("Logs", () => {
     const times = ticks.filter((x) => /\d:\d\d/.test(x));
     expect(times).toHaveLength(2);
     expect(times[0]).not.toBe(times[1]);
+  });
+
+  it("groups repeats and words the summary from the events alone", () => {
+    const t = Date.now();
+    const ev = (n: number, source: string, id: number, level: "critical" | "error" | "warning", message = "") => ({ t: t - n * 36e5, log: "System" as const, source, id, level, message });
+    const events = cleanEvents([
+      ev(1, "Application Error", 1000, "error", "Faulting application name: game.exe, version: 1"),
+      ev(2, "Application Error", 1000, "error", "Faulting application name: game.exe, version: 1"),
+      ev(3, "Application Error", 1000, "error", "Faulting application name: game.exe, version: 1"),
+      ev(4, "Microsoft-Windows-WER-SystemErrorReporting", 1001, "error"),
+      ev(5, "Microsoft-Windows-WHEA-Logger", 19, "warning"),
+    ]);
+    const groups = highlights(events, "Box");
+    expect(groups.map((g) => [g.title, g.events.length])).toEqual([["Windows crashed (blue screen)", 1], ["game crashed", 3]]);
+    expect(summaryLine(events, "Box")).toEqual({ main: "In the last 30 days, Windows crashed once and game crashed 3 times.", rest: "Windows also noted 1 minor thing." });
+    expect(summaryLine(events.slice(4), "Box").main).toBe("Nothing serious happened on Box in the last 30 days.");
   });
 });
