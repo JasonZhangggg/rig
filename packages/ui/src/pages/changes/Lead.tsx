@@ -12,7 +12,7 @@ export function Lead({ fix, more, rows, latest, onReview }: { fix?: Issue; more:
   if (fix) {
     return (
       <PageLead id="ch-lead-h" tone="look" tag="Waiting for you" title={fix.title}
-        body={`${fix.body} Nothing changes until you review it.${more ? ` ${more === 1 ? "1 more change waits" : `${more} more changes wait`} below.` : ""}`}>
+        body={`${fix.body}${more ? ` ${more === 1 ? "1 more change waits" : `${more} more changes wait`} below.` : ""}`}>
         <button className="btn primary" type="button" aria-label={`Review: ${fix.title}`} onClick={onReview}>Review</button>
         {rows?.length ? <button className="btn ghost" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide what changes" : "What changes"}</button> : null}
         {open && rows?.length ? <div className="diff-wrap ch-lead-diff"><DiffTable rows={rows} /></div> : null}
