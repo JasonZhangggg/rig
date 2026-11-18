@@ -6,7 +6,7 @@ import { navItems } from "./Shell";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
-const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "games", "upgrades"]], ["Help", ["chat", "changes", "history", "logs"]]];
+const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "manuals", "games", "upgrades"]], ["Help", ["chat", "changes", "history", "logs"]]];
 
 function useOutside(open: boolean, close: () => void) {
   const box = useRef<HTMLDivElement>(null);

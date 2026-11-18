@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { alertRules, formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
-export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "web", "signin", "settings"];
+export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "manuals", "web", "signin", "settings"];
 
 /** What the app around the screens can do beyond the client. The desktop app passes these; the website passes none. */
 export interface AppHost {

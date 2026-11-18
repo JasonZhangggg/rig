@@ -82,7 +82,9 @@ function snippet(text: string, phrase: RegExp | null, res: RegExp[]): string {
   let to = Math.min(flat.length, from + SNIPPET);
   if (to < flat.length) { const sp = flat.lastIndexOf(" ", to); if (sp > at) to = sp; }
   const piece = flat.slice(from, to);
-  const any = new RegExp([phrase, ...res].filter(Boolean).map((r) => `(?:${r!.source})`).join("|"), "giu");
+  // When the words are on the page together, mark only that, not every stray "panel".
+  const marks = phrase && count(lower, phrase) ? [phrase] : res;
+  const any = new RegExp(marks.map((r) => `(?:${r.source})`).join("|"), "giu");
   return `${from > 0 ? "…" : ""}${piece.replace(any, (m) => `«${m}»`)}${to < flat.length ? "…" : ""}`;
 }
 

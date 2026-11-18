@@ -4,6 +4,7 @@ import { Icon } from "../components/common";
 import { useApp } from "../state";
 import { partIcon } from "./shared";
 import { roomIn, type Room } from "./upgrades/room";
+import { ManualRef } from "../manuals/ManualRef";
 
 const fitChip: Record<Upgrade["fit"], JSX.Element> = {
   fits: <span className="chip ok">Fits</span>,
@@ -104,6 +105,7 @@ function UpgradeCard({ u }: { u: Upgrade }) {
       <h3>{u.title}</h3>
       <p className="muted">{u.detail}</p>
       {u.gain && <p className="up-gain"><span className="label">What it helps with</span>{u.gain}</p>}
+      <ManualRef part={u.part} />
       <div className="up-card-foot">
         {u.price ? <span className="up-price">{u.price}</span> : u.fit !== "no" && <button className="btn sm" type="button" onClick={() => ask(`${u.title}: what exactly should I buy for ${pc.name}, and will it fit?`)}>Ask what to buy</button>}
       </div>
