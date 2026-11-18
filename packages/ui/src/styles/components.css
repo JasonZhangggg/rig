@@ -191,5 +191,26 @@
 .legend .lg-cpu { background: var(--text); }
 .legend .lg-gpu { background: var(--look); }
 .legend .lg-limit { height: 0; border-top: 1.5px dashed var(--text-3); border-radius: 0; background: none; }
+/* The readout: a crosshair on the nearest reading with a dot on each line, and its values beside it. */
+.chart-box { position: relative; }
+.chart-box > .chart { touch-action: pan-y; cursor: crosshair; border-radius: 4px; }
+.chart-box > .chart:focus { outline: none; }
+.chart-box > .chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.chart-cross line { stroke: var(--text-2); stroke-width: 1; }
+.chart-dot { stroke: var(--surface); stroke-width: 2; }
+.chart-dot.cpu { fill: var(--good-mark); }
+.chart-dot.gpu { fill: var(--look); }
+.chart-tip {
+  position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 3px; min-width: 150px; padding: 8px 10px; pointer-events: none;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 20px rgba(27, 27, 31, .10);
+  font-size: 12.5px; white-space: nowrap; transform: translateX(12px); animation: chart-tip-in .12s var(--ease-out);
+}
+.chart-tip.flip { transform: translateX(calc(-100% - 12px)); }
+.chart-tip-when { color: var(--text-3); font-weight: 500; }
+.chart-tip-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; color: var(--text-2); }
+.chart-tip-row b { color: var(--text); font-weight: 600; }
+.chart-tip-row .chart-line { stroke-width: 3; stroke-linecap: round; }
+@keyframes chart-tip-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .chart-tip { animation: none; } }
 
 .notify-note { max-width: 58ch; margin: 0; padding: 6px 0 4px; font-size: 13px; }
