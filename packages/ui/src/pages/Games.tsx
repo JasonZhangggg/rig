@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } from "@rig/core";
 import { useApp, useHistory } from "../state";
 import { Detail } from "./games/Detail";
-import { Library } from "./games/Library";
+import { Library, type GameSort } from "./games/Library";
 import { Lead, RecentSessions } from "./games/Summary";
 import { partName } from "./games/words";
 import { LogsHead } from "./logs/Head";
@@ -35,6 +35,7 @@ export function Games() {
   const { pc, ask } = useApp();
   const [range, setRange] = useState<GameRange>("7d");
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<GameSort>("played");
   const points = useHistory(range);
   const library = useLibrary(pc, points);
   const tuning = useTuning();
@@ -59,7 +60,7 @@ export function Games() {
       {library == null ? <p className="muted" role="status">Loading…</p> : library.games.length ? (
         <>
           <Lead library={library} when={when} tuning={tuning} onOpen={show} />
-          <Library library={library} when={when} tuned={(name) => !!tuning(name)} onOpen={show}>
+          <Library library={library} when={when} sort={sort} onSort={setSort} tuned={(name) => !!tuning(name)} onOpen={show}>
             <RecentSessions library={library} onOpen={show} />
           </Library>
         </>

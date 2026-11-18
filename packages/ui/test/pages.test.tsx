@@ -149,24 +149,45 @@ describe("Games", () => {
 });
 
 describe("History", () => {
-  it("leads with the answer, then folds each part's range and what happened until asked", async () => {
+  const readout = () => screen.getByRole("img", { name: "Temperature history" }).parentElement!.querySelector("[aria-live]")!.textContent!;
+
+  it("leads with a one line answer, then shows what happened and each part's range inline, each pinning the chart", async () => {
     await show("history");
     const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(summary.textContent).toMatch(/safe limit this week|look good this week|fine this week/);
-    expect(summary.textContent).toMatch(/The hottest moment was \d+°C on .+, (during|while)/);
-    expect(screen.queryByText("Safe limit 89°C")).toBeNull();
+    expect(summary.textContent).toMatch(/^(Temperatures look good|Temperatures are fine|Your .+ (went|reached)).*this week/);
+    expect(summary.textContent).not.toMatch(/hottest moment/i);
+    expect(readout()).toBe("");
 
-    fireEvent.click(screen.getByRole("button", { name: "Lowest, typical and highest" }));
+    const hottest = screen.getByRole("button", { name: /^Hottest moment/ });
+    expect(hottest.textContent).toMatch(/(under|over|at) the limit/);
+    fireEvent.click(hottest);
+    expect(hottest.getAttribute("aria-pressed")).toBe("true");
+    expect(readout()).toContain(hottest.querySelector(".hi-figure")!.textContent!);
+    fireEvent.click(hottest);
+    expect(readout()).toBe("");
+
+    const events = screen.getByRole("list", { name: "What happened" });
+    const row = within(events).getAllByRole("button", { pressed: false })[0];
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    expect(readout()).toMatch(/Processor \d+°C, Graphics card \d+°C/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ranges" }));
+    expect(screen.queryByRole("list", { name: "What happened" })).toBeNull();
     const ranges = screen.getByRole("region", { name: "Lowest, typical and highest" });
     expect(within(ranges).getByText("Processor")).toBeTruthy();
     expect(within(ranges).getByText("Graphics card")).toBeTruthy();
     expect(ranges.textContent).not.toMatch(/NaN|undefined/);
+    const high = within(ranges).getByRole("button", { name: /^Graphics card highest/ });
+    fireEvent.click(high);
+    expect(readout()).toContain(`Graphics card ${high.textContent}`);
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    expect(screen.queryByRole("list", { name: "What happened" })).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: "What happened" }));
-    const events = await screen.findByRole("list", { name: "What happened" });
-    const before = within(events).getAllByRole("listitem").length;
+    await screen.findByRole("img", { name: "Temperature history" });
+    expect(readout()).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "What happened" }));
+    const month = await screen.findByRole("list", { name: "What happened" });
+    const before = within(month).getAllByRole("listitem").length;
     fireEvent.click(screen.getByRole("button", { name: /^Show all \d+$/ }));
     expect(within(screen.getByRole("list", { name: "What happened" })).getAllByRole("listitem").length).toBeGreaterThan(before);
   });
@@ -177,8 +198,9 @@ describe("History", () => {
     client.history = async () => Array.from({ length: 60 }, (_, i) => ({ t: t - (60 - i) * 6e4, cpu: 40 + (i === 30 ? 12 : 0), gpu: 38, busy: false, game: null }));
     await show("history", client);
     const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(summary.textContent).toMatch(/^Temperatures look good this week, well under the safe limit\./);
-    expect(summary.textContent).toMatch(/while nothing heavy was running\.$/);
+    expect(summary.textContent).toBe("Temperatures look good this week, well under the safe limit.");
+    expect(screen.getByRole("button", { name: /^Hottest moment/ }).textContent).toMatch(/while nothing heavy was running\./);
+    expect(screen.queryByRole("button", { name: /when busy/ })).toBeNull();
   });
 
   it("explains what will appear before there's any history", async () => {

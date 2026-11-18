@@ -18,15 +18,29 @@ export function LimitChip({ game }: { game: GameStats }) {
   return <span className="chip warn">{game.headroom < 0 ? "Over the limit" : "Near the limit"}</span>;
 }
 
-/** Every game in the range, most played first. Each row opens the game; anything more goes in the footer. */
-export function Library({ library, when, tuned, onOpen, children }: { library: GameLibrary; when: string; tuned: (name: string) => boolean; onOpen: (name: string) => void; children?: ReactNode }) {
+export type GameSort = "played" | "hot" | "recent";
+const sorts: [GameSort, string][] = [["played", "Most played"], ["hot", "Hottest"], ["recent", "Recent"]];
+
+/** The games in the chosen order: most played (as the library has them), hottest peak first, or latest played first. */
+export function sortGames(games: GameStats[], sort: GameSort) {
+  if (sort === "played") return games;
+  return [...games].sort(sort === "recent" ? (a, b) => b.lastPlayed - a.lastPlayed : (a, b) => (b.peak ?? -Infinity) - (a.peak ?? -Infinity) || b.hours - a.hours);
+}
+
+/** Every game in the range, in the order picked in its header. Each row opens the game; anything more goes in the footer. */
+export function Library({ library, when, sort, onSort, tuned, onOpen, children }: { library: GameLibrary; when: string; sort: GameSort; onSort: (s: GameSort) => void; tuned: (name: string) => boolean; onOpen: (name: string) => void; children?: ReactNode }) {
   const unit = useTempUnit();
-  const top = library.games[0]?.hours || 1;
+  const top = Math.max(...library.games.map((g) => g.hours)) || 1;
   return (
-    <section className="card">
-      <div className="card-head"><h2>Most played {when}</h2><span className="faint">{hours(library.hours)} in all</span></div>
+    <section className="card" aria-labelledby="gm-list-h">
+      <div className="card-head gm-list-head">
+        <div className="gm-list-title"><h2 id="gm-list-h">Games {when}</h2><span className="faint">{hours(library.hours)} in all</span></div>
+        <div className="seg gm-sort" role="group" aria-label="Sort games">
+          {sorts.map(([k, label]) => <button key={k} type="button" aria-pressed={sort === k} onClick={() => onSort(k)}>{label}</button>)}
+        </div>
+      </div>
       <ul className="gm-list" aria-label="Games">
-        {library.games.map((g) => (
+        {sortGames(library.games, sort).map((g) => (
           <li key={g.name}>
             <button type="button" className="gm-row" onClick={() => onOpen(g.name)}>
               <span className="gm-badge" aria-hidden="true">{initials(g.name) || g.name[0]}</span>

@@ -1,32 +1,31 @@
 .trend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
 @media (max-width: 860px) { .trend { grid-template-columns: 1fr; } }
 
-.hi-page { gap: 28px; }
-.hi-lede { max-width: 920px; }
-.hi-lede-text { font-size: clamp(1.25rem, 1.05rem + .7vw, 1.6rem); font-weight: 500; line-height: 1.3; letter-spacing: -.02em; text-wrap: pretty; }
+.hi-page { gap: 24px; }
+.hi-lede-text { font-size: clamp(1.15rem, 1rem + .5vw, 1.4rem); font-weight: 500; line-height: 1.3; letter-spacing: -.02em; text-wrap: balance; }
 .hi-chart { display: flex; flex-direction: column; gap: 14px; padding: 20px 0 0; }
 .legend .hi-lg-band { width: 12px; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--text-3) 18%, transparent); }
-.hi-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; margin-top: 6px; padding-top: 18px; border-top: 1px solid var(--line); }
-.hi-stats > div { display: flex; flex-direction: column; gap: 4px; }
-.hi-stats .big-figure { font-size: clamp(1.25rem, 1.05rem + .7vw, 1.6rem); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
-.hi-stats .muted { font-size: 13px; }
+.hi-chart .chart-band { transition: fill .2s ease; }
+.hi-chart.busy .chart-band { fill: color-mix(in srgb, var(--good-mark) 22%, transparent); }
+.hi-chart.busy .hi-lg-band { background: color-mix(in srgb, var(--good-mark) 40%, transparent); }
 
-.hi-fold { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.hi-fold-h { font-size: 1em; font-weight: 600; letter-spacing: -.01em; }
-.hi-fold-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: -6px; padding: 6px 10px 6px 6px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
-.hi-fold-toggle:hover { background: var(--surface-2); }
-.hi-fold-toggle svg { width: 18px; height: 18px; color: var(--text-3); transition: rotate .15s ease; }
-.hi-fold-toggle[aria-expanded="true"] svg { rotate: 90deg; }
-.hi-fold-hint { font-size: 13px; }
-@media (prefers-reduced-motion: reduce) { .hi-fold-toggle svg { transition: none; } }
+/* The figures under the chart. Those that point at something on it are buttons. */
+.hi-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 20px; margin: 6px -12px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.hi-stat { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; }
+button.hi-stat { cursor: pointer; transition: background-color .12s ease; }
+button.hi-stat:hover { background: var(--surface-2); }
+button.hi-stat[aria-pressed="true"] { background: var(--good-bg); }
+button.hi-stat .label::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; translate: 0 -1px; opacity: .7; }
+.hi-figure { font-size: clamp(1.25rem, 1.05rem + .7vw, 1.6rem); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.hi-figure.warn { color: var(--warn); }
+.hi-stat .muted { font-size: 13px; }
 
-.hi-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 28px 48px; }
-.hi-card { display: flex; flex-direction: column; gap: 16px; padding: 20px 0 0; }
+.hi-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-top: 20px; border-top: 1px solid var(--line); }
+.hi-switch button { height: 30px; padding: 0 14px; font-size: 13.5px; }
+.hi-panel { align-self: stretch; display: flex; flex-direction: column; gap: 16px; }
 
-.hi-ranges { display: flex; flex-direction: column; }
-.hi-range { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; border-top: 1px solid var(--line); }
-.hi-range:first-child { padding-top: 0; border-top: 0; }
-.hi-range:last-child { padding-bottom: 0; }
+.hi-ranges { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px 48px; }
+.hi-range { display: flex; flex-direction: column; gap: 10px; }
 .hi-range-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; font-size: 14px; }
 .hi-range-head b { font-weight: 600; }
 .hi-range-head .faint { font-size: 13px; }
@@ -41,10 +40,21 @@
 .hi-figs dt { color: var(--text-3); font-size: 12.5px; font-weight: 500; }
 .hi-figs dd { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -.02em; }
 .hi-figs dd.look { color: var(--look-text); }
+.hi-fig-btn { margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-decoration: underline dotted 1.5px; text-underline-offset: 4px; cursor: pointer; }
+.hi-fig-btn:hover { background: var(--surface-2); }
+.hi-fig-btn[aria-pressed="true"] { background: var(--good-bg); text-decoration: none; }
 
-.hi-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.hi-events li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
-.hi-events li:first-child { padding-top: 0; border-top: 0; }
+.hi-events { list-style: none; margin: 0 -10px; padding: 0; display: flex; flex-direction: column; }
+.hi-events li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
+.hi-events li:first-child { border-top-color: transparent; }
+.hi-events li > .btn { margin-right: 10px; }
+.hi-ev {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 9px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.hi-ev:hover { background: var(--surface-2); }
+.hi-ev:hover .hi-ev-ico:not(.look) { background: var(--surface); }
+.hi-ev[aria-pressed="true"] { background: var(--good-bg); }
 .hi-ev-ico { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text-2); }
 .hi-ev-ico.look { background: var(--look-bg); color: var(--look-text); }
 .hi-ev-ico svg { width: 18px; height: 18px; }
@@ -62,14 +72,14 @@
 .hi-empty-list li { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
 .hi-empty-list b { font-weight: 600; }
 
-@media (max-width: 1100px) { .hi-row { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) {
   .hi-stats { grid-template-columns: minmax(0, 1fr); }
   .hi-empty { grid-template-columns: minmax(0, 1fr); padding: 22px 0 0; }
   .hi-empty-list { padding: 22px 0 0; border-left: 0; border-top: 1px solid var(--line); }
-  .hi-events li { grid-template-columns: 36px minmax(0, 1fr); }
-  .hi-events li > :last-child:not(.hi-ev-main) { grid-column: 2; justify-self: start; }
-  .hi-ev-fig { flex-direction: row; align-items: baseline; gap: 6px; }
+  .hi-events li { flex-wrap: wrap; }
+  .hi-events li > .btn { margin: 0 0 8px 58px; }
+  .hi-ev { flex-basis: 100%; grid-template-columns: 36px minmax(0, 1fr); }
+  .hi-ev-fig { grid-column: 2; flex-direction: row; align-items: baseline; gap: 6px; }
 }
 
 /* The line charts on History, Games and Logs share these. The processor takes brass so both lines are data colors. */
