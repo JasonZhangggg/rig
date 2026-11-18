@@ -34,7 +34,7 @@ export function events(points: readonly HistoryPoint[], changes: Change[], pc: P
   return [...busy, ...made].sort((a, b) => b.t - a.t);
 }
 
-export function Events({ points, range, when }: { points: HistoryPoint[]; range: Range; when: string }) {
+export function Events({ points, range }: { points: HistoryPoint[]; range: Range }) {
   const { pc, data, go } = useApp();
   const temp = useTemp();
   const [all, setAll] = useState(false);
@@ -42,7 +42,6 @@ export function Events({ points, range, when }: { points: HistoryPoint[]; range:
   const shown = all ? list : list.slice(0, SHOWN);
   return (
     <section className="card card-pad hi-card">
-      <div className="hi-card-head"><h2>What happened</h2><span className="faint">{when}</span></div>
       {list.length === 0 ? <p className="muted">Nothing heavy ran and nothing was changed in this range. Games, heavy work and changes show up here as they happen.</p> : (
         <ul className="hi-events" aria-label="What happened">
           {shown.map((e) => e.kind === "busy" ? (

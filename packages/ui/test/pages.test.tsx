@@ -94,18 +94,36 @@ describe("Games", () => {
 });
 
 describe("History", () => {
-  it("shows each part's range and what happened, with more on request", async () => {
+  it("leads with the answer, then folds each part's range and what happened until asked", async () => {
     await show("history");
-    const ranges = (await screen.findByText("Lowest, typical and highest")).closest("section")!;
+    const summary = await screen.findByRole("region", { name: "Summary" });
+    expect(summary.textContent).toMatch(/safe limit this week|look good this week|fine this week/);
+    expect(summary.textContent).toMatch(/The hottest moment was \d+°C on .+, (during|while)/);
+    expect(screen.queryByText("Safe limit 89°C")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lowest, typical and highest" }));
+    const ranges = screen.getByRole("region", { name: "Lowest, typical and highest" });
     expect(within(ranges).getByText("Processor")).toBeTruthy();
     expect(within(ranges).getByText("Graphics card")).toBeTruthy();
     expect(ranges.textContent).not.toMatch(/NaN|undefined/);
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    expect(screen.queryByRole("list", { name: "What happened" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "What happened" }));
     const events = await screen.findByRole("list", { name: "What happened" });
     const before = within(events).getAllByRole("listitem").length;
     fireEvent.click(screen.getByRole("button", { name: /^Show all \d+$/ }));
     expect(within(screen.getByRole("list", { name: "What happened" })).getAllByRole("listitem").length).toBeGreaterThan(before);
+  });
+
+  it("says temperatures look good when nothing came near the limit, and what was running at the hottest moment", async () => {
+    const client = new DemoClient();
+    const t = Date.now();
+    client.history = async () => Array.from({ length: 60 }, (_, i) => ({ t: t - (60 - i) * 6e4, cpu: 40 + (i === 30 ? 12 : 0), gpu: 38, busy: false, game: null }));
+    await show("history", client);
+    const summary = await screen.findByRole("region", { name: "Summary" });
+    expect(summary.textContent).toMatch(/^Temperatures look good this week, well under the safe limit\./);
+    expect(summary.textContent).toMatch(/while nothing heavy was running\.$/);
   });
 
   it("explains what will appear before there's any history", async () => {
