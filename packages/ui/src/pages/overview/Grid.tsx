@@ -262,6 +262,8 @@ export function Grid(p: GridProps) {
     dropped: boolean;
     /** Where the held tile lands, waiting for the commit that draws the tiles around it there. */
     pending?: Cell;
+    /** The grid column under the pointer during a drag. */
+    pointer?: number;
     /** Set by Escape: everything goes back to where it was when the drag began. */
     cancelled: boolean;
     /** The layout last worked out, with the sizes each tile was chosen at, which the drop saves. */
@@ -311,10 +313,10 @@ export function Grid(p: GridProps) {
       }
       const me = now.find((c) => c.i === a.id);
       if (!me) return withLimits(compactUp(now, n), n);
-      const key = a.type === "drag" ? `${a.cell.x},${a.cell.y}` : `${me.w},${me.h}`;
+      const key = a.type === "drag" ? `${a.cell.x},${a.cell.y},${a.pointer}` : `${me.w},${me.h}`;
       let out = a.cache.get(key);
       if (!out) {
-        out = a.type === "drag" ? dragFlow(a.base, a.id, a.cell.x, a.cell.y, n) : resizeFlow(a.base, a.id, me.w, me.h, n);
+        out = a.type === "drag" ? dragFlow(a.base, a.id, a.cell.x, a.cell.y, n, undefined, a.pointer) : resizeFlow(a.base, a.id, me.w, me.h, n);
         a.cache.set(key, out);
       }
       const landed = out.find((c) => c.i === a.id)!;
@@ -408,6 +410,10 @@ export function Grid(p: GridProps) {
     const box = node.getBoundingClientRect(), at = grid.getBoundingClientRect();
     const col = (cw - g * (n - 1)) / n;
     a.cell = stickyCell(a.cell, (box.left - at.left) / z / (col + g), (box.top - at.top) / z / (rh + g), n - a.size.w);
+    // The column under the pointer, so a big tile held over a narrower one can take its place.
+    const ev = _e as MouseEvent | TouchEvent | undefined;
+    const cx = ev && ("touches" in ev ? ev.touches[0]?.clientX : (ev as MouseEvent).clientX);
+    if (typeof cx === "number") a.pointer = Math.max(0, Math.min(n - 1, Math.floor((cx - at.left) / z / (col + g))));
   };
   const onDragStop: EventCallback = (layout) => end(layout);
   const onResizeStart: EventCallback = (_l, _o, item) => { if (item) begin("resize", item.i); };

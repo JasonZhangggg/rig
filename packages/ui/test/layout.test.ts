@@ -150,6 +150,24 @@ describe("the grid while dragging", () => {
     expect(at(dragFlow(base, "fans", 6, 2, 12), "fans")).toMatchObject({ x: 8, y: 2 });
   });
 
+  it("shrinks a big tile held over a narrower one in another row to take its place, as a medium tile does", () => {
+    for (const [id, over] of [["temps", "todo"], ["temps", "health"], ["evenings", "todo"], ["fans", "todo"]] as const) {
+      const o = at(base, over), out = dragFlow(base, id, o.x, o.y, 12, undefined, o.x + 1), me = at(out, id);
+      expect(me).toMatchObject({ x: o.x, y: o.y, w: o.w });
+      expect(me.w).toBeGreaterThanOrEqual(limits(id, 12).minW);
+      expect(gaps(out)).toBe(0);
+      expect(overlapping(out)).toBe(false);
+    }
+  });
+
+  it("keeps a big tile its size when the slot is narrower than it may go, and when it swaps with a tile on its own row", () => {
+    const pc = dragFlow(base, "pc", 8, 0, 12, undefined, 9);
+    expect(at(pc, "pc").w).toBe(at(base, "pc").w);
+    const fans = at(base, "fans"), swap = dragFlow(base, "temps", fans.x - 2, fans.y, 12, undefined, fans.x + 2);
+    expect(at(swap, "temps").w).toBe(at(base, "temps").w);
+    expect(gaps(swap)).toBe(0);
+  });
+
   it("takes a big tile dragged past the end of Home to the end, under the pointer, instead of sending it back", () => {
     const end = Math.max(...base.map((c) => c.y + c.h));
     for (const [id, x, y] of [["temps", 0, end - 2], ["temps", 0, end + 6], ["temps", 5, end + 1], ["pc", 0, end + 1]] as const) {
@@ -280,13 +298,15 @@ describe("the grid after any change", () => {
     }
   };
 
+  // SWEEP_SEED and SWEEP_RUNS run a longer or different sweep by hand, e.g. SWEEP_RUNS=600 SWEEP_SEED=7 pnpm test:layout.
+  const runs = Number(process.env.SWEEP_RUNS) || 60, salt = Number(process.env.SWEEP_SEED) || 0;
   for (const cols of [12, 8]) {
     it(`never leaves a gap, an overlap or a tile past its limits after thousands of moves, resizes, hides and adds at ${cols} columns`, () => {
-      const r = seeded(cols);
+      const r = seeded(cols + salt * 1000);
       const pick = <T,>(a: readonly T[]) => a[Math.floor(r() * a.length)];
       const int = (lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1));
       let ops = 0;
-      for (let run = 0; run < 60; run++) {
+      for (let run = 0; run < runs; run++) {
         let cur = cellsFor(defaultDashboard(), cols === 12 ? "lg" : "md");
         for (let k = 0; k < 40; k++, ops++) {
           const shown = cur.map((c) => c.i), hidden = kinds.filter((x) => !shown.includes(x));
@@ -294,7 +314,7 @@ describe("the grid after any change", () => {
           const id = pick(shown), me = at(cur, id), lim = limits(id as Kind, cols);
           const bottom = Math.max(...cur.map((c) => c.y + c.h));
           let next = cur, touched: string | null = id;
-          if (op === "drag") next = dragFlow(cur, id, int(0, cols - me.w), int(0, bottom), cols);
+          if (op === "drag") { const x = int(0, cols - me.w); next = dragFlow(cur, id, x, int(0, bottom), cols, undefined, Math.min(cols - 1, x + int(0, me.w - 1))); }
           else if (op === "resize") next = resizeFlow(cur, id, int(lim.minW, lim.maxW), int(lim.minH, lim.maxH), cols);
           else if (op === "preset") { const [w, h] = presetCells(id as Kind, pick(Object.keys(KINDS[id as Kind].sizes) as SizeName[]), cols); next = resizeFlow(cur, id, w, h, cols); }
           else if (op === "key") { const to = stepTarget(cur, id, pick(["left", "right", "up", "down"] as const), cols); if (to) next = dragFlow(cur, id, to.x, to.y, cols); }
@@ -305,7 +325,7 @@ describe("the grid after any change", () => {
           cur = next;
         }
       }
-      expect(ops).toBe(2400);
+      expect(ops).toBe(runs * 40);
     });
   }
 

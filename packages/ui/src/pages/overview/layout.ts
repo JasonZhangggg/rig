@@ -346,7 +346,7 @@ const COST = { side: 1, rise: 0.15, lift: 3, sink: 0.25, jump: 1, stretch: 0.8, 
 interface Laying { sky: number[]; out: Cell[]; rest: Cell[] }
 
 /** The ways to fill the lowest open stretch of a half laid layout, cheapest first. */
-function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, hold: Hold, loose: boolean): { cost: number; next: Laying }[] {
+function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, hold: Hold, loose: boolean, wide = false): { cost: number; next: Laying }[] {
   const { fixed = none, lead } = hold;
   const { sky, out, rest } = st;
   const f = Math.min(...sky), a = sky.indexOf(f);
@@ -364,8 +364,10 @@ function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, h
     const lo = minW(c), most = fixed.has(c.i) ? c.w : reach(c, cols).w;
     const ahead = rest.reduce((n, o) => n + (rank.get(o.i)! < rank.get(c.i)! ? 1 : 0), 0);
     const near = c.i === lead && f >= c.y && c.x < b && a < c.x + c.w;
-    for (const w of new Set(fixed.has(c.i) ? [c.w] : [Math.min(c.w, room), Math.min(room, most)])) {
-      if (w > room || w < lo) continue;
+    // Besides its own width and the whole stretch, it may take what's left beside another waiting tile, so two tiles share a row.
+    const share = !wide || fixed.has(c.i) ? [] : others.flatMap((o) => [room - o.w, room - minW(o)]);
+    for (const w of new Set(fixed.has(c.i) ? [c.w] : [Math.min(c.w, room), Math.min(room, most), ...share])) {
+      if (w > room || w < lo || w > most) continue;
       // The spot the held tile claims: under the pointer, or flush with the stretch's end when that would leave a sliver.
       let spot = Math.max(a, Math.min(b - w, c.x));
       if (spot > a && spot - a < least) spot = a;
@@ -417,25 +419,46 @@ function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, h
  * dead end, where nothing can fill a stretch, steps back to the next choice. A layout with no gap comes back as it was.
  */
 export function settle(cells: readonly Cell[], cols: number, hold: Hold = {}): Cell[] {
-  const queue = [...cells].sort((p, q) => byRow(p, q) || (p.i === hold.lead ? -1 : q.i === hold.lead ? 1 : 0));
-  const rank = new Map(queue.map((c, k) => [c.i, k]));
-  const start: Laying = { sky: Array<number>(cols).fill(0), out: [], rest: queue.map((c) => ({ ...c, w: Math.min(c.w, cols) })) };
   // The cheapest choice at every stretch nearly always works. When it leads to a stretch nothing can fill, the search
   // allows one other choice somewhere along the way, then two, and of the layouts found at that count keeps the cheapest.
   // Tiles narrow at most a step first; only if that can't close every gap may they go as narrow as their limits allow.
-  for (const loose of [false, true]) {
-    for (let turns = 0; turns <= 2; turns++) {
-      let budget = 2500, found: Laying | null = null, low = Infinity;
+  // A wider search also tries splitting rows between tiles and more detours; it costs more, so it runs only when the quick
+  // ones find nothing. And the held tile's wish to sit under the pointer can be what makes every layout leave a gap (a big
+  // tile pulled below two small ones that can't fill its row): then the pointer gives way, before the slower search.
+  const quick = [{ loose: false, wide: false, most: 2, budget: 2500 }, { loose: true, wide: false, most: 2, budget: 2500 }];
+  const slow = [{ loose: true, wide: true, most: 4, budget: 1500 }];
+  const free: Hold = { fixed: hold.fixed };
+  for (const [h, passes] of [[hold, quick], ...(hold.lead ? [[free, quick]] : []), [hold, slow], ...(hold.lead ? [[free, slow]] : [])] as [Hold, typeof quick][]) {
+    const found = search(cells, cols, h, passes);
+    if (found) return found;
+  }
+  return fallback(cells, cols, hold);
+}
+
+function search(cells: readonly Cell[], cols: number, hold: Hold, passes: { loose: boolean; wide: boolean; most: number; budget: number }[]): Cell[] | null {
+  const queue = [...cells].sort((p, q) => byRow(p, q) || (p.i === hold.lead ? -1 : q.i === hold.lead ? 1 : 0));
+  const rank = new Map(queue.map((c, k) => [c.i, k]));
+  const start: Laying = { sky: Array<number>(cols).fill(0), out: [], rest: queue.map((c) => ({ ...c, w: Math.min(c.w, cols) })) };
+  for (const { loose, wide, most, budget: cap } of passes) {
+    for (let turns = 0; turns <= most; turns++) {
+      let budget = cap, found: Laying | null = null, low = Infinity;
       const lay = (st: Laying, spent: number, left: number) => {
         if (!st.rest.length) { if (spent < low) { low = spent; found = st; } return; }
         if (--budget < 0 || spent >= low) return;
-        const ms = movesFor(st, cols, rank, hold, loose);
+        const ms = movesFor(st, cols, rank, hold, loose, wide);
         for (let k = 0; k < Math.min(ms.length, 1 + left); k++) lay(ms[k].next, spent + ms[k].cost, left - k);
       };
       lay(start, 0, turns);
       if (found) return inOrder((found as Laying).out, cells);
     }
   }
+  return null;
+}
+
+function fallback(cells: readonly Cell[], cols: number, hold: Hold): Cell[] {
+  const queue = [...cells].sort((p, q) => byRow(p, q) || (p.i === hold.lead ? -1 : q.i === hold.lead ? 1 : 0));
+  const rank = new Map(queue.map((c, k) => [c.i, k]));
+  const start: Laying = { sky: Array<number>(cols).fill(0), out: [], rest: queue.map((c) => ({ ...c, w: Math.min(c.w, cols) })) };
   // No way found without a gap: the cheapest choice each time, and where nothing fits, the first tile waiting goes where it fits.
   let st = start;
   while (st.rest.length) {
@@ -488,7 +511,7 @@ const reshape = (a: readonly Cell[], b: readonly Cell[], skip: string) => {
  * Worked out from `base` every time, so dragging back undoes what dragging over did. The dragged tile takes the spot
  * at the size the person chose, narrowing to share a row when it must; the others keep their order around it.
  */
-export function dragFlow(base: readonly Cell[], id: string, x: number, y: number, cols: number, adapt = !KINDS[kindOf(id)].heavy): Cell[] {
+export function dragFlow(base: readonly Cell[], id: string, x: number, y: number, cols: number, adapt = !KINDS[kindOf(id)].heavy, pointer?: number): Cell[] {
   const me = base.find((c) => c.i === id);
   if (!me) return clone(base);
   const home = me.x === x && me.y === y;
@@ -496,6 +519,13 @@ export function dragFlow(base: readonly Cell[], id: string, x: number, y: number
   const held: Cell = home || !adapt ? { ...me } : { i: id, x, y, w: want.w, h: want.h };
   held.x = Math.max(0, Math.min(cols - held.w, x));
   held.y = Math.max(0, y);
+  // Held with the pointer over a narrower tile in another row, it takes that tile's place at that tile's width, shrinking
+  // as far as its limits allow, the way a medium tile already slips into a small column. Two tiles on one row just swap.
+  const under = pointer === undefined ? undefined : base.find((o) => o.i !== id && o.x <= pointer && pointer < o.x + o.w
+    && o.y <= held.y && held.y < o.y + o.h && !(o.y < me.y + me.h && me.y < o.y + o.h));
+  if (adapt && under && under.w < held.w && under.w >= limits(kindOf(id), cols).minW) {
+    held.x = under.x; held.y = under.y; held.w = under.w;
+  }
   // Past the end of Home it goes to the foot of the tiles left, under the pointer, instead of finding no spot there.
   const left = settle(base.filter((c) => c.i !== id), cols);
   const foot = Math.max(0, ...left.filter((o) => o.x < held.x + held.w && held.x < o.x + o.w).map((o) => o.y + o.h));
