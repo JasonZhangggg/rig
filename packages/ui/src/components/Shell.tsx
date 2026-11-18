@@ -6,6 +6,7 @@ import { DiffTable } from "./common";
 export const navItems: [Route, string, string][] = [
   ["overview", "Overview", "M3 10.5 10 4l7 6.5V17H3z"],
   ["pc", "My PC", "M6 3h8v14H6zM9 6h2M9 14h2"],
+  ["manuals", "Manuals", "M4 15.5V4.5A1.5 1.5 0 0 1 5.5 3H16v12H5.5A1.5 1.5 0 0 0 4 16.5 1.5 1.5 0 0 0 5.5 18H16M8 7h5"],
   ["chat", "Ask", "M4 5h12v8H9l-4 3v-3H4z"],
   ["changes", "Changes", "M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2"],
   ["upgrades", "Upgrades", "M10 16V5M5.5 9.5 10 5l4.5 4.5"],

@@ -5,6 +5,7 @@ import { StageSlot, getStage } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince } from "./shared";
+import { PartManual } from "../manuals/PartManual";
 
 /** The last few readings of a value, kept while the page is open. */
 function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40) {
@@ -213,9 +214,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   if (tab === "manual") {
     return (
       <>
-        {part.manual.length
-          ? <table className="kv"><tbody>{part.manual.map(([k, v]) => <tr key={k}><th style={{ width: "auto", color: "var(--text)" }}>{k}</th><td style={{ textAlign: "right", whiteSpace: "nowrap" }}><span className="faint">{v}</span></td></tr>)}</tbody></table>
-          : <p className="muted">Ask a question and Rig looks it up in the {part.name} manual from the maker's support site.</p>}
+        <PartManual id={id} />
         <form className="ask-inline card" style={{ padding: "6px 6px 6px 12px" }} onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(`About my ${part.name}: ${q.trim()}`); }}>
           <input id="ask-manual" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask this manual a question" aria-label="Ask this manual a question" />
           <button className="btn sm">Ask</button>

@@ -16,6 +16,10 @@ export interface Part {
   type: string;
   sub?: string;
   modelSource: "library" | "generic";
+  /** Who made it, where the inventory says ("MSI", "ASUS"). Used to look up its manual. */
+  maker?: string;
+  /** The model as the maker writes it ("MAG B650 TOMAHAWK WIFI"). */
+  model?: string;
   dims?: string;
   temp?: number;
   /** Highest temperature seen today. */

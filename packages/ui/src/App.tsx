@@ -18,6 +18,8 @@ import { Web } from "./pages/Web";
 import { SignIn } from "./pages/SignIn";
 import { DeviceApprove } from "./pages/DeviceApprove";
 import { Settings } from "./pages/settings/Settings";
+import { Manuals } from "./pages/Manuals";
+import { ManualViewer } from "./manuals/Viewer";
 
 export interface RigAppProps {
   client: RigClient;
@@ -100,11 +102,12 @@ function Root() {
     else if (ui.route !== "pc") scene.select(null);
   }, [ui.route, pc.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, logs: Logs, manuals: Overview, web: Web, signin: Overview, settings: Settings }[ui.route];
+  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: Upgrades, games: Games, history: History, logs: Logs, manuals: Manuals, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (
     <>
       <Sidebar><Page /></Sidebar>
       <ReviewSheet />
+      <ManualViewer />
       <Palette />
       <Toast />
     </>
