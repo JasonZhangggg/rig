@@ -49,11 +49,13 @@
 
 /* ----- Your PC: the model on a soft light of its own, its name over it and its temperatures large under it. ----- */
 .f-pc {
+  --pc-ground: var(--bg);
   container: hero / inline-size; position: relative; min-width: 0; height: 100%;
   background:
     radial-gradient(closest-side at 58% 64%, var(--surface) 0%, color-mix(in srgb, var(--surface) 70%, transparent) 45%, transparent 100%),
     radial-gradient(closest-side at 58% 92%, color-mix(in srgb, var(--good) 45%, transparent) 0%, transparent 100%);
 }
+.dw[data-frame="tile"] .f-pc, .dw.tone-dark .f-pc { --pc-ground: var(--surface); }
 .dw[data-frame="tile"] .f-pc { background: radial-gradient(closest-side at 58% 92%, color-mix(in srgb, var(--good) 40%, transparent) 0%, transparent 100%); }
 .f-pc-in { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 0 32px; }
 .f-pc-top { position: relative; z-index: 2; grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; }
@@ -68,13 +70,20 @@
   .f-views button[aria-pressed="false"]:hover { color: var(--text); }
 }
 
-/* The stage runs past its row on both ends so the PC can stand tall under the name and sit right on the parts. */
+/* The stage runs past its row on both ends so the PC can stand tall under the name and sit right on the parts.
+   --fit-inset is the box inside the stage the PC fills (scene.ts reads it), so it grows with the tile. */
 .f-stage { position: relative; min-height: 0; }
-.f-pc .stage-slot { inset: -60px 0 -30px; -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); mask-image: linear-gradient(to bottom, #000 80%, transparent 98%); }
-.dw.tone-dark .part-label { background: color-mix(in srgb, var(--surface-2) 92%, transparent); }
+.f-pc .stage-slot {
+  --fit-inset: 72px 26px 40px 26px; inset: -60px 0 -30px;
+  --fade: linear-gradient(to bottom, #000 80%, transparent 98%), linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: var(--fade); mask-image: var(--fade); -webkit-mask-composite: source-in; mask-composite: intersect;
+}
+/* In the phone's list the stage starts right under the buttons (dash.css), so the PC can use all of it. */
+.dash[data-cols="1"] .f-pc .stage-slot { --fit-inset: 10px 0 26px 0; }
+.dw.tone-dark .scene-pin .part-label { background: color-mix(in srgb, var(--surface-2) 92%, transparent); }
 /* On Home the parts' labels would crowd the PC and its name, and the temperatures already read large under it,
    so only a part you pick keeps its label. The 3D view shows them all. */
-.f-pc .part-label:not(.is-selected) { display: none !important; }
+.f-pc .scene-pin:not(.is-selected) { display: none !important; }
 
 /* The model names stand once, beside the PC; the temperatures read large under it, by part kind only. */
 .f-specs { display: none; margin: 0; }
@@ -107,14 +116,27 @@
   .f-chip:hover { box-shadow: 0 0 0 1px var(--line-strong); color: var(--text); }
 }
 
-/* Wide enough, the model names stand in a column of their own beside the PC, over the temperatures. */
-@container hero (min-width: 820px) {
-  .f-pc-in { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
-  .f-stage { grid-column: 2; grid-row: 2; }
+/* Wide enough, the PC stands from the top of the tile to the temperatures, and the model names lean in over
+   its turntable from the left, on a soft wash of the ground behind them, so the two read as one picture. */
+@container hero (min-width: 640px) {
+  .f-pc-in { grid-template-columns: 168px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .f-pc-top { grid-row: 1; }
+  .f-stage { grid-column: 1 / -1; grid-row: 1 / 3; }
+  .f-reads, .f-chips { grid-row: 3; }
+  .f-pc .stage-slot { --fit-inset: 66px 0 34px 116px; --fit-x: .15; inset: 0 0 -30px; }
+  .f-pc.no-specs .stage-slot { --fit-inset: 66px 0 34px 0; --fit-x: .5; }
   .f-specs, .f-pc.no-reads .f-specs { grid-column: 1; grid-row: 2; align-self: end; position: relative; z-index: 2; display: flex; flex-direction: column; padding-bottom: 20px; border-top: 0; }
+  .f-specs::before {
+    content: ""; position: absolute; z-index: -1; inset: -56px -96px 0 -24px; pointer-events: none;
+    background: linear-gradient(to right, var(--pc-ground) calc(100% - 150px), color-mix(in srgb, var(--pc-ground) 75%, transparent) calc(100% - 90px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 72px); mask-image: linear-gradient(to bottom, transparent, #000 72px);
+  }
   .f-pc.no-reads .f-specs { align-self: center; }
   .f-pc.no-reads .f-specs > div + div { border-top: 1px solid var(--line); }
-  .f-pc.no-specs .f-stage { grid-column: 1 / -1; }
+}
+@container hero (min-width: 900px) {
+  .f-pc-in { grid-template-columns: 196px minmax(0, 1fr); }
+  .f-pc .stage-slot { --fit-inset: 96px 0 34px 120px; --fit-x: .08; }
 }
 @container hero (max-width: 560px) {
   .f-pc-top { flex-direction: column; gap: 14px; }
