@@ -1,18 +1,21 @@
 import { cloneElement, isValidElement, memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { GridLayout, type Compactor, type EventCallback, type Layout, type ResizeHandleAxis } from "react-grid-layout";
-import { COLS, KINDS, clampCell, compactUp, dragFlow, kindOf, limits, nearestSize, orderOf, resizeFlow, sizeLabel, stepTarget, type Bp, type Cell, type Dir, type Widget } from "./layout";
+import { calcGridItemPosition } from "react-grid-layout/core";
+import { COLS, KINDS, clampCell, compactUp, dragFlow, kindOf, limits, nearestSize, orderOf, resizeFlow, sizeLabel, stepTarget, stickyCell, type Bp, type Cell, type Dir, type Widget } from "./layout";
 import type { TileBox } from "./widgets";
 
 /** How long a press has to rest before it picks the dashboard up for customizing. */
 const LONG_PRESS = 450;
 /** How close to the top or bottom of the window a drag starts scrolling it. */
 const EDGE = 84;
+/** The fastest the window scrolls under a drag, in pixels a millisecond, with the pointer right at the edge. */
+const SPEED = 1.5;
 /** Widths below this get the phone's single column list. */
 const PHONE = 700;
 /** The resize handles, one per edge that resizes. */
 const HANDLE: Partial<Record<ResizeHandleAxis, string>> = { se: "dw-rh dw-rh-se", e: "dw-rh dw-rh-e", s: "dw-rh dw-rh-s" };
-// The grid library sets cssTransforms, react-draggable-dragging, resizing and placeholder-resizing on tiles itself; dash.css styles them.
+// The grid library sets cssTransforms, react-draggable-dragging and resizing on tiles itself; dash.css styles them.
 
 export type Mode = "lg" | "md" | "phone";
 
@@ -143,17 +146,30 @@ function useWidth(ref: RefObject<HTMLDivElement>) {
   return width;
 }
 
-/** Scrolls the window while a drag rests near its top or bottom edge, and tells the drag the pointer moved with the page. */
+/**
+ * Scrolls the window while a drag rests near its top or bottom edge, faster the deeper the pointer goes, and tells the
+ * drag the pointer moved with the page. It waits until the pointer has moved, so picking up a tile near an edge doesn't
+ * set the page off.
+ */
 function edgeScroll() {
-  let raf = 0, x = 0, y = -1;
+  let raf = 0, x = 0, y = -1, from = -1, armed = false, last = 0, carry = 0;
   const track = (e: MouseEvent | TouchEvent) => {
     const p = "touches" in e ? e.touches[0] : e;
-    if (p) { x = p.clientX; y = p.clientY; }
+    if (!p) return;
+    x = p.clientX; y = p.clientY;
+    if (from < 0) from = y;
+    armed ||= Math.abs(y - from) > 8;
   };
-  const tick = () => {
-    const vh = window.innerHeight;
-    const depth = y < 0 ? 0 : y < EDGE ? y - EDGE : y > vh - EDGE ? y - (vh - EDGE) : 0;
-    if (depth) { window.scrollBy({ top: Math.max(-24, Math.min(24, depth * 0.3)), behavior: "instant" }); scrolled(); }
+  const tick = (t: number) => {
+    const dt = last ? Math.min(32, t - last) : 16;
+    last = t;
+    const vh = window.innerHeight, zone = Math.min(EDGE, vh / 5);
+    const into = !armed || y < 0 ? 0 : y < zone ? (y - zone) / zone : y > vh - zone ? (y - (vh - zone)) / zone : 0;
+    if (into) {
+      carry += Math.sign(into) * Math.min(1, Math.abs(into)) ** 2 * SPEED * dt;
+      const step = Math.trunc(carry);
+      if (step) { carry -= step; window.scrollBy({ top: step, behavior: "instant" }); scrolled(); }
+    } else carry = 0;
     raf = requestAnimationFrame(tick);
   };
   // However the page scrolls, by the edge or a wheel, the held tile is redrawn under the pointer before the next paint.
@@ -171,22 +187,20 @@ function edgeScroll() {
 }
 
 /** A small press of the drop spot when the dragged tile snaps into a new slot, the way a phone ticks. */
-function tick(root: HTMLElement | null) {
+function tick(spot: HTMLElement | null) {
   if (reduced()) return;
-  requestAnimationFrame(() => {
-    const ph = root?.querySelector<HTMLElement>(".react-grid-placeholder");
-    ph?.animate?.([{ scale: "1" }, { scale: "1.025" }, { scale: "1" }], { duration: 220, easing: "cubic-bezier(.2, .9, .3, 1.2)" });
-  });
+  spot?.animate?.([{ scale: "1" }, { scale: "1.025" }, { scale: "1" }], { duration: 220, easing: "cubic-bezier(.2, .9, .3, 1.2)" });
 }
 
 /**
- * Widgets on a grid, laid out and dragged by react-grid-layout. Its pointer handling, placeholder and transforms do
+ * Widgets on a grid, laid out and dragged by react-grid-layout. Its pointer handling and transforms do
  * the moving; where everything lands is worked out here, from the layout as it was when the drag began, so the
  * grid never keeps a gap and dragging back puts things back.
  */
 export function Grid(p: GridProps) {
   const { widgets, editing, compact, gap, titleOf, render } = p;
   const wrap = useRef<HTMLDivElement>(null);
+  const spot = useRef<HTMLDivElement>(null);
   const width = useWidth(wrap);
   const measured = width > 0 || typeof ResizeObserver === "undefined";
   const gridWidth = width || 1200;
@@ -211,11 +225,33 @@ export function Grid(p: GridProps) {
     return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
   }, [mode]);
 
-  const latest = useRef({ p, cells, cols, bp, mode, editing });
-  latest.current = { p, cells, cols, bp, mode, editing };
+  const latest = useRef({ p, cells, cols, bp, mode, editing, gridWidth, row, gap });
+  latest.current = { p, cells, cols, bp, mode, editing, gridWidth, row, gap };
 
   // ----- Where things land: a compactor that works from the layout as it was when the drag began. -----
-  const active = useRef<{ type: "drag" | "resize"; id: string; base: Cell[]; cache: Map<string, Cell[]>; slot: string; stop: () => void } | null>(null);
+  // The library's own placeholder (react-grid-placeholder, hidden in dash.css) reads the dragged item after its move has
+  // changed it in place, so when two moves come between renders (a scroll and the pointer, in one frame) it shows the raw
+  // pointer cell for a frame and flickers. The drop spot is drawn here instead, from the slot this compactor chose.
+  const active = useRef<{
+    type: "drag" | "resize"; id: string; base: Cell[]; cache: Map<string, Cell[]>; slot: string; stop: () => void;
+    /** The cell the held tile is over, which only changes once the tile is well into the next one. */
+    cell: { x: number; y: number };
+    /** The held tile's size when picked up. It keeps that size under the pointer; the drop spot shows where and how big it lands. */
+    size: Cell;
+    /** Set the moment the pointer is let go, so the layout the drop settles on has the tile at the size it landed. */
+    dropped: boolean;
+  } | null>(null);
+  const spotAt = (c: Cell, instant = false) => {
+    const el = spot.current;
+    if (!el) return;
+    const { cols: n, gridWidth: cw, row: rh, gap: g } = latest.current;
+    const pos = calcGridItemPosition({ cols: n, margin: [g, g], containerPadding: [0, 0], containerWidth: cw, rowHeight: rh, maxRows: Infinity }, c.x, c.y, c.w, c.h);
+    if (instant) el.style.transition = "none";
+    el.style.transform = `translate(${pos.left}px, ${pos.top}px)`;
+    el.style.width = `${pos.width}px`;
+    el.style.height = `${pos.height}px`;
+    if (instant) { void el.offsetWidth; el.style.transition = ""; }
+  };
   const compactor = useMemo<Compactor>(() => ({
     type: "vertical",
     // The grid moves only the dragged tile; this compactor places the rest.
@@ -226,33 +262,52 @@ export function Grid(p: GridProps) {
       if (!a) return withLimits(compactUp(now, n), n);
       const me = now.find((c) => c.i === a.id);
       if (!me) return withLimits(compactUp(now, n), n);
-      const key = a.type === "drag" ? `${me.x},${me.y}` : `${me.w},${me.h}`;
+      const key = a.type === "drag" ? `${a.cell.x},${a.cell.y}` : `${me.w},${me.h}`;
       let out = a.cache.get(key);
       if (!out) {
-        out = a.type === "drag" ? dragFlow(a.base, a.id, me.x, me.y, n) : resizeFlow(a.base, a.id, me.w, me.h, n);
+        out = a.type === "drag" ? dragFlow(a.base, a.id, a.cell.x, a.cell.y, n) : resizeFlow(a.base, a.id, me.w, me.h, n);
         a.cache.set(key, out);
       }
       const landed = out.find((c) => c.i === a.id)!;
       const slot = `${landed.x},${landed.y},${landed.w},${landed.h}`;
-      if (slot !== a.slot) { if (a.slot) tick(wrap.current); a.slot = slot; }
-      return withLimits(out, n);
+      if (slot !== a.slot) { spotAt(landed); tick(spot.current); a.slot = slot; }
+      if (a.type === "resize" || a.dropped) return withLimits(out, n);
+      return withLimits(out.map((c) => (c.i === a.id ? { ...c, w: a.size.w, h: a.size.h } : c)), n);
     },
   }), []);
 
   const begin = (type: "drag" | "resize", id: string) => {
     const { cells: base, editing: on, p: props } = latest.current;
     active.current?.stop();
-    const c = base.find((x) => x.i === id);
-    active.current = { type, id, base, cache: new Map(), slot: c ? `${c.x},${c.y},${c.w},${c.h}` : "", stop: edgeScroll() };
-    wrap.current?.classList.add("dragging");
+    const c = base.find((x) => x.i === id) ?? { i: id, x: 0, y: 0, w: 1, h: 1 };
+    const el = wrap.current;
+    // The page keeps at least its height until the drop, so it never shrinks under the pointer and jumps the scroll.
+    if (el) el.style.minHeight = `${el.offsetHeight}px`;
+    const drop = () => { if (active.current === a) a.dropped = true; };
+    const scroll = edgeScroll();
+    const a = {
+      type, id, base, cache: new Map<string, Cell[]>(), slot: `${c.x},${c.y},${c.w},${c.h}`, cell: { x: c.x, y: c.y }, size: c, dropped: false,
+      stop: () => {
+        scroll();
+        for (const t of ["mouseup", "touchend", "touchcancel"]) window.removeEventListener(t, drop, true);
+      },
+    };
+    for (const t of ["mouseup", "touchend", "touchcancel"]) window.addEventListener(t, drop, true);
+    active.current = a;
+    spotAt(c, true);
+    spot.current?.setAttribute("data-on", "");
+    el?.classList.add("dragging");
     if (!on) props.onEdit();
   };
   const end = (layout: Layout) => {
     const a = active.current;
     active.current = null;
     a?.stop();
-    wrap.current?.classList.remove("dragging");
-    wrap.current?.querySelectorAll<HTMLElement>(".dg[data-lift]").forEach((el) => delete el.dataset.lift);
+    const el = wrap.current;
+    el?.classList.remove("dragging");
+    el?.style.removeProperty("min-height");
+    spot.current?.removeAttribute("data-on");
+    el?.querySelectorAll<HTMLElement>(".dg[data-lift]").forEach((d) => delete d.dataset.lift);
     setLive(null);
     if (!a) return;
     const { cells: was, bp: at, p: props } = latest.current;
@@ -271,7 +326,18 @@ export function Grid(p: GridProps) {
   };
 
   const onDragStart: EventCallback = (_l, _o, item) => { if (item) begin("drag", item.i); };
-  const onDrag: EventCallback = () => follow();
+  const onDrag: EventCallback = (_l, _o, _n, _p, _e, node) => {
+    // Drawn now rather than at the next render, which lands a frame after the pointer moved.
+    flushSync(follow);
+    const a = active.current, grid = node?.parentElement, el = wrap.current;
+    // The page may grow while a tile is held low, but never shrinks back under the pointer until the drop.
+    if (el && el.offsetHeight > parseFloat(el.style.minHeight || "0")) el.style.minHeight = `${el.offsetHeight}px`;
+    if (a?.type !== "drag" || !node || !grid) return;
+    const { cols: n, gridWidth: cw, row: rh, gap: g } = latest.current;
+    const box = node.getBoundingClientRect(), at = grid.getBoundingClientRect();
+    const col = (cw - g * (n - 1)) / n;
+    a.cell = stickyCell(a.cell, (box.left - at.left) / (col + g), (box.top - at.top) / (rh + g), n - a.size.w);
+  };
   const onDragStop: EventCallback = (layout) => end(layout);
   const onResizeStart: EventCallback = (_l, _o, item) => { if (item) begin("resize", item.i); };
   const onResize: EventCallback = (_l, _o, item) => { if (item) setLive((v) => (v && v.i === item.i && v.w === item.w && v.h === item.h ? v : { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h })); };
@@ -462,6 +528,7 @@ export function Grid(p: GridProps) {
 
   return (
     <div ref={wrap} className={`dash${editing ? " editing" : ""}`} data-cols={cols} style={{ "--dgap": `${gap}px`, "--row": `${row}px` } as CSSProperties}>
+      <div ref={spot} className="dash-spot" aria-hidden="true" />
       {mode === "phone" ? (
         p.phone.map((id) => children.find((c) => c.key === id)).filter(Boolean)
       ) : measured ? (

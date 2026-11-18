@@ -22,14 +22,16 @@
 .dash-grid > .dg.resizing { z-index: 20; transition: none; will-change: width, height; }
 .dash[data-still] .dash-grid, .dash[data-still] .dash-grid > .dg { transition: none; }
 
-/* The drop spot: where the tile lands, in the accent tint. */
-.dash-grid > .react-grid-placeholder {
-  z-index: 0; border-radius: var(--dr); pointer-events: none;
+/* The drop spot: where the tile lands, in the accent tint. Grid.tsx draws it from the slot it chose; the library's own stays hidden. */
+.dash-grid > .react-grid-placeholder { display: none; }
+.dash-spot {
+  position: absolute; top: 0; left: 0; z-index: 0; width: 0; height: 0; border-radius: var(--dr); pointer-events: none; opacity: 0;
   background: color-mix(in srgb, var(--good) 26%, transparent);
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--good-mark) 42%, transparent);
-  transition: transform .16s var(--ease-out), width .16s var(--ease-out), height .16s var(--ease-out);
+  transition: transform .16s var(--ease-out), width .16s var(--ease-out), height .16s var(--ease-out), opacity .12s;
 }
-.dash-grid > .react-grid-placeholder.placeholder-resizing { transition-duration: .1s; }
+.dash-spot[data-on] { opacity: 1; }
+.dash.dragging:has(.dg.resizing) .dash-spot { transition-duration: .1s; }
 
 .dw {
   --chip: var(--surface);
@@ -129,7 +131,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dash { --glide: 0s; }
-  .dash-grid > .dg.cssTransforms, .dash-grid > .react-grid-placeholder, .dash-grid { transition: none; }
+  .dash-grid > .dg.cssTransforms, .dash-spot, .dash-grid { transition: none; }
   .dash.editing .dw { animation: none; }
   .dw, .dw-grip, .dw-del, .dw-opt, .dw-rh, .dw-rh::before { transition: none; animation: none; }
   .dg[data-lift] > .dw, .dg.react-draggable-dragging > .dw { scale: none; transition: none; }
