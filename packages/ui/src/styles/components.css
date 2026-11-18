@@ -52,13 +52,15 @@
 .callout { padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-size: .93em; }
 .callout.warn { background: var(--warn-bg); color: var(--text); }
 
-/* Counts that sum up a page and filter what's under them: a big number over a short label. */
-.stats { display: flex; flex-wrap: wrap; gap: 6px 36px; }
-.stat { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 4px; padding: 2px 0 8px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-2); font: 500 13px var(--font); text-align: left; text-decoration: none; cursor: pointer; transition: border-color .15s, color .15s; }
-.stat b { color: var(--text); font: 600 2.1rem/1 var(--font); letter-spacing: -.035em; }
+/* Counts that sum up a page and filter what's under them: a big number over a short label. Logs uses the same look (.lg-count). */
+.stats { display: flex; flex-wrap: wrap; gap: 8px 6px; margin: 0 -12px; }
+.stat { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 2px; min-width: 112px; padding: 8px 12px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: 600 13.5px var(--font); text-align: left; text-decoration: none; cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; }
+.stat b { font-size: clamp(1.6rem, 1.3rem + .9vw, 2.1rem); font-weight: 600; line-height: 1.1; letter-spacing: -.03em; }
 .stat.look b { color: var(--look-text); }
-.stat:hover { color: var(--text); border-bottom-color: var(--line-strong); }
-.stat[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
+.stat:hover { background: var(--surface-2); }
+.stat[aria-pressed="true"] { box-shadow: inset 0 -2px 0 var(--text); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.stats:has([aria-pressed="true"]) .stat:not([aria-pressed="true"]):not(:hover) { opacity: .6; }
+@media (prefers-reduced-motion: reduce) { .stat { transition: none; } }
 .chip-x { border: 0; cursor: pointer; }
 .chip-x:hover { background: var(--line); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .stat { transition: none; } }
