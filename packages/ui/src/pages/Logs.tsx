@@ -36,7 +36,8 @@ export function Logs() {
       <section className="lg-lede" aria-label="Summary">
         {events == null ? <p className="lg-lede-text muted">Reading the event log…</p> : (
           <>
-            <p className="lg-lede-text">{line.main}{line.rest && <span className="muted"> {line.rest}</span>}</p>
+            <p className="lg-lede-text">{line.main}</p>
+            {line.rest && <p className="muted lg-lede-rest">{line.rest}</p>}
             {groups.length > 0 && <button type="button" className="btn sm" disabled={data.answering} onClick={() => ask(`What do the recent Windows logs say about ${pc.name}, and should I do anything?`)}>Ask Rig what to do</button>}
           </>
         )}
