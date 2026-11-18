@@ -149,6 +149,8 @@ describe("searchPages", () => {
     const [hit] = searchPages([{ manual: manual("l", "Long"), pages: pages(long) }], "f_panel");
     expect(hit.snippet.length).toBeLessThan(220);
     expect(hit.snippet).toMatch(/^….*«F_PANEL».*…$/);
+    const [both] = searchPages([{ manual: manual("m", "Mixed"), pages: pages("Front panel wires go on F_PANEL") }], "F_PANEL");
+    expect(both.snippet).toBe("Front panel wires go on «F_PANEL»");
     expect(searchPages(docs, "panel", { manualId: "b" }).every((h) => h.manualId === "b")).toBe(true);
     expect(searchPages(docs, "panel", { limit: 1 })).toHaveLength(1);
     expect(searchPages(docs, "  ")).toEqual([]);
