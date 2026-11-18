@@ -81,11 +81,14 @@ export function UpgradesCard({ ups }: { ups: PCUpgrades }) {
   const rest = list?.filter((u) => u !== pick?.idea && u.fit !== "no") ?? [];
   return (
     <section className="card pc-ups" aria-labelledby="pc-ups-h" id="pc-upgrades">
-      <div className="card-head"><h2 id="pc-ups-h">Upgrades</h2></div>
+      <div className="card-head">
+        <h2 id="pc-ups-h">Upgrades</h2>
+        <button className="linkish pc-ups-ask" type="button" onClick={() => ask(`Which upgrade would make the biggest difference for ${pc.name}?`)}>Have a part in mind? Ask if it fits</button>
+      </div>
       {list == null ? <p className="muted pc-ups-pad" role="status">Looking at what fits…</p>
         : !list.length ? <p className="muted pc-ups-pad">{failed ? "Couldn't check upgrades just now." : `Nothing to suggest for ${pc.name} right now.`}</p>
         : (
-          <>
+          <div className="pc-ups-body">
             {pick && (
               <button type="button" className="pc-ups-pick" onClick={() => open(pick.idea)}>
                 <span className="label">Rig's pick</span>
@@ -106,11 +109,8 @@ export function UpgradesCard({ ups }: { ups: PCUpgrades }) {
                 ))}
               </ul>
             )}
-          </>
+          </div>
         )}
-      <div className="pc-ups-foot">
-        <button className="linkish" type="button" onClick={() => ask(`Which upgrade would make the biggest difference for ${pc.name}?`)}>Have a part in mind? Ask if it fits</button>
-      </div>
     </section>
   );
 }
