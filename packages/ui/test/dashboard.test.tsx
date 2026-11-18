@@ -121,7 +121,7 @@ describe("customizing Home", () => {
     expect(tile("Fans").getAttribute("aria-label")).toMatch(/place 5 of 8$/);
   });
 
-  it("changes what a widget shows when its style, size and tone change", async () => {
+  it("changes what a widget shows when its style and tone change, leaving size to dragging", async () => {
     await customize();
     const temps = () => screen.getByRole("heading", { name: "Temperatures" }).closest(".dw")!;
     await waitFor(() => expect(temps().querySelector(".pl-cap")).toBeTruthy());
@@ -137,10 +137,7 @@ describe("customizing Home", () => {
     expect(panel.getByRole("button", { name: "On the page" })).toHaveProperty("disabled", true);
     fireEvent.click(panel.getByRole("switch", { name: "Show the key" }));
     expect(within(temps() as HTMLElement).queryByText("Graphics card, peak")).toBeNull();
-    fireEvent.click(panel.getByRole("button", { name: "Small" }));
-    expect(temps().getAttribute("data-size")).toBe("s");
-    expect(tile("Temperatures").getAttribute("aria-label")).toMatch(/^Temperatures, Small, /);
-    expect(panel.getByRole("button", { name: "Small" }).getAttribute("aria-pressed")).toBe("true");
+    for (const name of ["Small", "Move earlier", "Move later", "Reset this widget", "Hide widget"]) expect(panel.queryByRole("button", { name })).toBeNull();
   });
 
   it("puts everything back after asking first", async () => {

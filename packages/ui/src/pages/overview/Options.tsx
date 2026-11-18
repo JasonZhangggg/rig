@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useApp } from "../../state";
-import { KINDS, SIZE_LABEL, type Cell, type Dashboard, type OptValue, type SizeName, type Spacing, type Tone, type Widget } from "./layout";
+import { KINDS, type Dashboard, type OptValue, type Spacing, type Tone, type Widget } from "./layout";
 import { sourceItems } from "./widgets";
 
 function Seg<T extends string>({ label, value, options, onPick, disabled }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void; disabled?: boolean }) {
@@ -34,10 +34,7 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 const SERIES = ["idle", "typical", "peak"];
 
 /** Every choice for one widget. Changes show on the tile straight away. */
-export function WidgetOptions({ w, index, count, size, cell, list, onChange, onSize, onMove, onHide, onReset }: {
-  w: Widget; index: number; count: number; size: SizeName | null; cell?: Cell; list?: boolean;
-  onChange: (patch: Partial<Widget>) => void; onSize: (size: SizeName) => void; onMove: (by: -1 | 1) => void; onHide: () => void; onReset: () => void;
-}) {
+export function WidgetOptions({ w, onChange }: { w: Widget; onChange: (patch: Partial<Widget>) => void }) {
   const ctx = useApp();
   const meta = KINDS[w.kind];
   const setOpt = (key: string, v: OptValue) => onChange({ opts: { ...w.opts, [key]: v } });
@@ -48,14 +45,6 @@ export function WidgetOptions({ w, index, count, size, cell, list, onChange, onS
     <>
       <Section title="Look">
         <Seg label="Style" value={w.style} options={meta.styles} onPick={(style) => onChange({ style })} />
-        {list ? (
-          <p className="dnote">On a narrow screen every widget takes the full width. Sizes apply when the window is wider.</p>
-        ) : (
-          <>
-            <Seg<SizeName | "custom"> label="Size" value={size ?? "custom"} options={(Object.keys(meta.sizes) as SizeName[]).map((s) => [s, SIZE_LABEL[s]])} onPick={(s) => { if (s !== "custom") onSize(s); }} />
-            {!size && <p className="dnote">{cell ? `A size of your own, ${cell.w} columns wide and ${cell.h} rows tall.` : "A size of your own."} Pick one above, or pull the tile's edge.</p>}
-          </>
-        )}
         <Seg<Tone> label="Tone" value={w.tone} options={[["light", "Light"], ["dark", "Dark"]]} onPick={(tone) => onChange({ tone })} />
         <Seg label="Background" value={dark ? "tile" : w.frame} options={[["tile", "Tile"], ["open", "On the page"]]} onPick={(frame) => onChange({ frame })} disabled={dark} />
         {dark && <p className="dnote">Dark widgets always sit on a tile.</p>}
@@ -86,16 +75,6 @@ export function WidgetOptions({ w, index, count, size, cell, list, onChange, onS
           )}
         </Section>
       )}
-      <div className="dfoot">
-        <div className="dfoot-row">
-          <button type="button" className="dbtn" disabled={index === 0} onClick={() => onMove(-1)}>Move earlier</button>
-          <button type="button" className="dbtn" disabled={index === count - 1} onClick={() => onMove(1)}>Move later</button>
-        </div>
-        <div className="dfoot-row">
-          <button type="button" className="dbtn quiet" onClick={onReset}>Reset this widget</button>
-          <button type="button" className="dbtn" onClick={onHide}>Hide widget</button>
-        </div>
-      </div>
     </>
   );
 }

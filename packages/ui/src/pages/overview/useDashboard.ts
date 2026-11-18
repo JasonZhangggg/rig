@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { arrange, defaultDashboard, defaultWidget, parseDashboard, serialize, syncLayouts, update, type Bp, type Cell, type Dashboard, type Widget } from "./layout";
+import { arrange, defaultDashboard, parseDashboard, serialize, syncLayouts, update, type Bp, type Cell, type Dashboard, type Widget } from "./layout";
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
@@ -48,7 +48,6 @@ export function useDashboard(key: string) {
     /** Shows a hidden widget again in the first gap it fits, with the settings it had. */
     add: useCallback((id: string) => show(id, false), [show]),
     /** Back to how it started for this one widget, keeping its place. */
-    resetWidget: useCallback((id: string) => change((d) => ({ ...d, widgets: d.widgets.map((w) => (w.id === id ? { ...defaultWidget(w.kind), hidden: false } : w)) })), [change]),
     /** Back to the defaults, and forgets the saved copy so Home follows the defaults again. */
     reset: useCallback(() => {
       forget(key);

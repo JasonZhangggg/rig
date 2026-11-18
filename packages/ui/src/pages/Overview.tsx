@@ -4,7 +4,7 @@ import { getStage } from "../components/Stage";
 import { useApp, useAppearance, useHistory } from "../state";
 import { FansCard, type FansStyle } from "./overview/FansCard";
 import { Grid, type Mode } from "./overview/Grid";
-import { COLS, KINDS, SIZE_LABEL, cellsFor, defaultWidget, dragFlow, fullRows, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, type Bp, type Cell, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
+import { KINDS, cellsFor, defaultWidget, fullRows, phoneOrder, type Kind, type Tone, type Widget } from "./overview/layout";
 import { AddWidgets, DashOptions, ResetConfirm, WidgetOptions } from "./overview/Options";
 import { Popover } from "./overview/Popover";
 import { TempsCard, type TempsStyle } from "./overview/TempsCard";
@@ -144,37 +144,11 @@ export function Overview() {
     announce(list ? "Customizing Home. Use the up and down buttons on a tile, or the arrow keys, to change the order." : "Customizing Home. Drag a tile or use the arrow keys to move it.");
     if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus({ preventScroll: true }));
   };
-  const grid: Bp = mode === "md" ? "md" : "lg";
   const hide = (id: string) => {
     const w = shown.find((x) => x.id === id);
     board.hide(id);
     if (panel?.type === "widget") close();
     if (w) changed(`${titleOf(w)} hidden. Add it back from Add widget.`);
-  };
-  /** A preset size from the options, applied to the grid on screen; neighbours make room the way a drag would. */
-  const resize = (w: Widget, size: SizeName) => {
-    const n = COLS[grid];
-    const [pw, ph] = presetCells(w.kind, size, n);
-    board.setCells(grid, resizeFlow(cells[grid], w.id, pw, ph, n));
-    changed(`${titleOf(w)} is now ${SIZE_LABEL[size]}.`);
-  };
-  /** One place earlier or later in reading order: the tile takes the place of the one before or after it. */
-  const moveBy = (w: Widget, by: -1 | 1) => {
-    if (mode === "phone") {
-      const order = [...phone], at = order.indexOf(w.id);
-      order.splice(at, 1);
-      order.splice(at + by, 0, w.id);
-      board.setPhone(order);
-      changed(`${titleOf(w)} moved to place ${at + by + 1} of ${order.length}.`);
-      return;
-    }
-    const now = cells[grid], order = orderOf(now);
-    const target = now.find((c) => c.i === order[order.indexOf(w.id) + by]);
-    if (!target) return;
-    const next = dragFlow(now, w.id, target.x, target.y, COLS[grid]);
-    board.setCells(grid, next);
-    const after = orderOf(next);
-    changed(`${titleOf(w)} moved to place ${after.indexOf(w.id) + 1} of ${after.length}.`);
   };
 
   // Escape finishes and Ctrl or Command Z undoes, from anywhere on the page while customizing.
@@ -207,12 +181,6 @@ export function Overview() {
     setPanel(next ? { ...panel, at: next } : null);
   });
   const current = panel?.type === "widget" ? shown.find((w) => w.id === panel.id) : undefined;
-  const place = (w: Widget) => (mode === "phone" ? phone : orderOf(cells[grid])).indexOf(w.id);
-  const cellOf = (w: Widget): Cell | undefined => cells[grid].find((x) => x.i === w.id);
-  const sizeNow = (w: Widget): SizeName | null => {
-    const c = cellOf(w);
-    return c ? presetOf(w.kind, c.w, c.h, COLS[grid]) : null;
-  };
 
   return (
     <div className="page f-home" data-density={look.density}>
@@ -281,16 +249,12 @@ export function Overview() {
       {current && panel?.type === "widget" && (
         <Popover anchor={panel.at} label={`${titleOf(current)} options`} onClose={close}>
           <WidgetOptions
-            w={current} index={place(current)} count={shown.length} size={sizeNow(current)} cell={cellOf(current)} list={list}
+            w={current}
             onChange={(patch) => {
               const text = saidFor(current, patch, { pc });
               board.setWidget(current.id, patch);
               changed(text);
             }}
-            onSize={(size) => resize(current, size)}
-            onMove={(by) => moveBy(current, by)}
-            onHide={() => hide(current.id)}
-            onReset={() => { board.resetWidget(current.id); changed(`${titleOf(current)} is back to how it started.`); }}
           />
         </Popover>
       )}

@@ -257,7 +257,6 @@
 @media (prefers-reduced-motion: reduce) {
   .dtog i, .dtog i::after { transition: none; }
 }
-.dfoot { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
 .dfoot-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .dfoot-row .dbtn { flex: 1 1 auto; }
 .dfoot-row.end { justify-content: flex-end; margin-top: 16px; }
