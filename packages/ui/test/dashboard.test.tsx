@@ -27,7 +27,7 @@ describe("the saved layout", () => {
   it("starts with the PC biggest at the top left, Health and Things to look at beside it, and no gaps", () => {
     const d = defaultDashboard();
     const lg = d.layouts.lg!;
-    expect(orderOf(lg)).toEqual(["pc", "health", "todo", "temps", "fans", "evenings", "asks", "storage"]);
+    expect(orderOf(lg)).toEqual(["pc", "health", "todo", "temps", "fans", "evenings", "storage", "asks"]);
     expect(at(lg, "pc")).toEqual({ i: "pc", x: 0, y: 0, w: 8, h: 8 });
     expect(at(lg, "health")).toMatchObject({ x: 8, y: 0 });
     expect(holes(lg, 12)).toBe(0);

@@ -1,4 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject } from "react";
+import { cloneElement, isValidElement, memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { GridLayout, type Compactor, type EventCallback, type Layout, type ResizeHandleAxis } from "react-grid-layout";
 import { COLS, KINDS, clampCell, compactUp, dragFlow, kindOf, limits, nearestSize, orderOf, resizeFlow, sizeLabel, stepTarget, type Bp, type Cell, type Dir, type Widget } from "./layout";
 import type { TileBox } from "./widgets";
@@ -152,17 +153,21 @@ function edgeScroll() {
   const tick = () => {
     const vh = window.innerHeight;
     const depth = y < 0 ? 0 : y < EDGE ? y - EDGE : y > vh - EDGE ? y - (vh - EDGE) : 0;
-    if (depth) {
-      const before = window.scrollY;
-      window.scrollBy(0, Math.max(-24, Math.min(24, depth * 0.3)));
-      if (window.scrollY !== before) document.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }));
-    }
+    if (depth) { window.scrollBy({ top: Math.max(-24, Math.min(24, depth * 0.3)), behavior: "instant" }); scrolled(); }
     raf = requestAnimationFrame(tick);
+  };
+  // However the page scrolls, by the edge or a wheel, the held tile is redrawn under the pointer before the next paint.
+  let sent = window.scrollY;
+  const scrolled = () => {
+    if (y < 0 || window.scrollY === sent) return;
+    sent = window.scrollY;
+    flushSync(() => document.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true })));
   };
   window.addEventListener("mousemove", track, true);
   window.addEventListener("touchmove", track, { capture: true, passive: true });
+  window.addEventListener("scroll", scrolled, { passive: true });
   raf = requestAnimationFrame(tick);
-  return () => { cancelAnimationFrame(raf); window.removeEventListener("mousemove", track, true); window.removeEventListener("touchmove", track, true); };
+  return () => { cancelAnimationFrame(raf); window.removeEventListener("mousemove", track, true); window.removeEventListener("touchmove", track, true); window.removeEventListener("scroll", scrolled); };
 }
 
 /** A small press of the drop spot when the dragged tile snaps into a new slot, the way a phone ticks. */
@@ -191,6 +196,8 @@ export function Grid(p: GridProps) {
   const row = Math.round((gridWidth >= 1500 ? 88 : 80) * (compact ? 0.82 : 1));
   const cells = p.cells[bp];
   const [live, setLive] = useState<Cell | null>(null);
+  // Bumped on every pointer move of a drag, so the dragged tile re-renders where the pointer is, not only when it changes cell.
+  const [, follow] = useReducer((n: number) => n + 1, 0);
   const [touch] = useState(coarse);
 
   useEffect(() => { p.onMode?.(mode); }, [mode, p.onMode]);
@@ -264,15 +271,17 @@ export function Grid(p: GridProps) {
   };
 
   const onDragStart: EventCallback = (_l, _o, item) => { if (item) begin("drag", item.i); };
+  const onDrag: EventCallback = () => follow();
   const onDragStop: EventCallback = (layout) => end(layout);
   const onResizeStart: EventCallback = (_l, _o, item) => { if (item) begin("resize", item.i); };
-  const onResize: EventCallback = (_l, _o, item) => { if (item) setLive((v) => (v && v.i === item.i && v.w === item.w && v.h === item.h ? v : { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h })); };
+  const onResize: EventCallback = (_l, _o, item) => { follow(); if (item) setLive((v) => (v && v.i === item.i && v.w === item.w && v.h === item.h ? v : { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h })); };
   const onResizeStop: EventCallback = (layout) => end(layout);
-  const handlers = useRef({ onDragStart, onDragStop, onResizeStart, onResize, onResizeStop });
-  handlers.current = { onDragStart, onDragStop, onResizeStart, onResize, onResizeStop };
+  const handlers = useRef({ onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop });
+  handlers.current = { onDragStart, onDrag, onDragStop, onResizeStart, onResize, onResizeStop };
   // Stable callbacks: a new function each render would re-render every tile on every frame of a drag.
   const [calls] = useState(() => ({
     onDragStart: ((...a) => handlers.current.onDragStart(...a)) as EventCallback,
+    onDrag: ((...a) => handlers.current.onDrag(...a)) as EventCallback,
     onDragStop: ((...a) => handlers.current.onDragStop(...a)) as EventCallback,
     onResizeStart: ((...a) => handlers.current.onResizeStart(...a)) as EventCallback,
     onResize: ((...a) => handlers.current.onResize(...a)) as EventCallback,
@@ -447,6 +456,10 @@ export function Grid(p: GridProps) {
     handleComponent: (axis: ResizeHandleAxis, ref: Ref<HTMLElement>) => <span ref={ref as Ref<HTMLSpanElement>} className={`react-resizable-handle ${HANDLE[axis] ?? "dw-rh"}`} aria-hidden="true" />,
   }), []);
   const layout = useMemo(() => withLimits(cells, cols), [cells, cols]);
+  // The library redraws a tile only when its props change; a fresh element for the held one lets it track the pointer.
+  // The 3D PC is the exception while resized: it snaps from cell to cell rather than redraw its scene at every move.
+  const act = active.current;
+  const held = act && (act.type === "drag" || !KINDS[kindOf(act.id)].heavy) ? act.id : null;
 
   return (
     <div ref={wrap} className={`dash${editing ? " editing" : ""}`} data-cols={cols} style={{ "--dgap": `${gap}px`, "--row": `${row}px` } as CSSProperties}>
@@ -456,10 +469,10 @@ export function Grid(p: GridProps) {
         <GridLayout
           className="dash-grid" width={gridWidth} layout={layout} compactor={compactor}
           gridConfig={gridConfig} dragConfig={dragConfig} resizeConfig={resizeConfig}
-          onDragStart={calls.onDragStart} onDragStop={calls.onDragStop}
+          onDragStart={calls.onDragStart} onDrag={calls.onDrag} onDragStop={calls.onDragStop}
           onResizeStart={calls.onResizeStart} onResize={calls.onResize} onResizeStop={calls.onResizeStop}
         >
-          {children}
+          {held ? children.map((c) => (isValidElement(c) && c.key === held ? cloneElement(c) : c)) : children}
         </GridLayout>
       ) : null}
     </div>

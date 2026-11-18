@@ -10,6 +10,8 @@
 .f-home[data-corners="soft"] .dash { --dr: 12px; }
 .f-home[data-corners="square"] .dash { --dr: 4px; }
 .dash[data-cols="1"] { display: flex; flex-direction: column; gap: var(--dgap); }
+/* Room below the last tile while customizing, so it can scroll clear of the floating bar. Nothing above it moves. */
+.dash.editing { padding-bottom: 104px; }
 
 .dash-grid { position: relative; transition: height var(--glide) var(--ease-out); }
 .dash-grid > .dg { position: absolute; z-index: 1; touch-action: auto; }
@@ -67,25 +69,26 @@
   .dash.editing .dw-grip { opacity: 1; transform: translateX(-50%); width: 56px; height: 28px; top: -14px; }
 }
 
-/* Round buttons on the corners while customizing: hide on the left, options on the right. */
+/* Round buttons on the dashed edge while customizing, clear of the tile's own title: hide on the top left corner,
+   as on a phone's home screen, and options on the middle of the top edge, so neighbours' buttons never meet in the gap. */
 .dw-ctl { position: absolute; z-index: 5; }
 .dw-del, .dw-opt {
-  top: -10px; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  --b: 28px; top: calc(-7px - var(--b) / 2); width: var(--b); height: var(--b); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
   background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .24); cursor: pointer;
   animation: dw-pop .22s var(--spring) both; transition: transform .12s var(--ease-out);
 }
-.dw-del { left: -10px; }
-.dw-opt { right: -10px; }
+.dw-del { left: calc(-7px - var(--b) / 2); }
+.dw-opt { left: calc(50% - var(--b) / 2); }
 .dw-del:active, .dw-opt:active { transform: scale(.9); }
-.dw-del svg, .dw-opt svg { width: 16px; height: 16px; }
+.dg.react-draggable-dragging .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
+.dw-del svg, .dw-opt svg { width: 15px; height: 15px; }
 @keyframes dw-pop { from { scale: .4; opacity: 0; } }
 @media (pointer: coarse) {
-  .dw-del, .dw-opt { width: 40px; height: 40px; top: -16px; }
-  .dw-del { left: -14px; }
-  .dw-opt { right: -14px; }
+  .dw-del, .dw-opt { --b: 40px; }
+  .dw-opt { left: calc(50% + 34px); }
 }
 
-.dw-steps { top: -16px; right: 34px; display: flex; gap: 6px; }
+.dw-steps { top: -27px; right: 8px; display: flex; gap: 6px; }
 .dw-steps button { width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .22); cursor: pointer; }
 .dw-steps button:disabled { opacity: .35; cursor: default; }
 .dw-steps svg { width: 18px; height: 18px; }
@@ -156,6 +159,7 @@
   .dash-bar, .dash-toast { animation: none; }
 }
 @container home (max-width: 640px) {
+  .dash.editing { padding-bottom: 150px; }
   .dash-bar { border-radius: calc(var(--r) - 6px); padding: 12px; width: 100%; }
   .dash-bar p { padding: 0 6px; }
   .dash-bar p span { display: none; }

@@ -175,8 +175,8 @@ export const KINDS: Record<Kind, KindMeta> = {
   },
 };
 
-/** Default order: the PC leads, then what needs attention, then the week, then the rest. */
-export const KIND_ORDER: Kind[] = ["pc", "health", "todo", "temps", "fans", "evenings", "asks", "storage", "live", "parts"];
+/** Default order: the PC leads, then what needs attention, then the week, then the rest. Storage, a card, sits above Ask Rig, whose short list then ends the column instead of leaving a gap above the card. */
+export const KIND_ORDER: Kind[] = ["pc", "health", "todo", "temps", "fans", "evenings", "storage", "asks", "live", "parts"];
 
 const isKind = (k: unknown): k is Kind => typeof k === "string" && k in KINDS;
 export const kindOf = (i: string): Kind => (isKind(i) ? i : "storage");
