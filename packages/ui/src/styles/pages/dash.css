@@ -87,8 +87,8 @@
   background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .24); cursor: pointer;
   animation: dw-pop .22s var(--spring) both; transition: transform .12s var(--ease-out);
 }
-.dw-del { top: calc(-10px - var(--b) / 2); left: calc(-10px - var(--b) / 2); }
-.dw-opt { top: calc(-1px - var(--b)); left: 11px; }
+.dw-del { top: calc(-12px - var(--b) / 2); left: calc(-12px - var(--b) / 2); }
+.dw-opt { top: calc(-4px - var(--b)); left: 10px; }
 .dw-del:active, .dw-opt:active { transform: scale(.9); }
 .dg.react-draggable-dragging .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
 .dw-del svg, .dw-opt svg { width: 15px; height: 15px; }
