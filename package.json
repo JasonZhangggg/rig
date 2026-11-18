@@ -8,6 +8,7 @@
     "dev:web": "pnpm --filter @rig/web dev",
     "dev:server": "pnpm --filter @rig/server dev",
     "dev:desktop": "pnpm --filter @rig/desktop tauri dev",
+    "desktop": "node tools/desktop.mjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "node --test tools/version.test.mjs && pnpm -r test",

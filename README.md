@@ -16,9 +16,12 @@ You need Node 22 and pnpm 10.
 pnpm install
 pnpm dev:web        # website and demo at http://localhost:5173 (demo: /app/?demo)
 pnpm dev:server     # the API at http://localhost:8787 (first time: see docs/deploy.md)
-pnpm dev:desktop    # the desktop app (Tauri). On a Mac or Linux it runs on a simulated PC.
+pnpm desktop        # the desktop app against the live server; on Windows it builds the helper and fetches PawnIO first
+pnpm dev:desktop    # the desktop app (Tauri) on its own. On a Mac or Linux it runs on a simulated PC.
 pnpm test           # all tests
 ```
+
+`pnpm desktop` on Windows also needs Rust (with the Visual Studio C++ build tools) and the .NET 8 SDK. After a `git pull`, run `pnpm install` and `pnpm desktop` again; screen changes show up live while it runs.
 
 Building the Windows installer needs Windows with Rust, .NET 8 and Node. CI does it for you: Actions tab, CI, Run workflow, then download `rig-windows-installer`.
 
