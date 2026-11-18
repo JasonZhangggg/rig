@@ -501,11 +501,15 @@ export function dragFlow(base: readonly Cell[], id: string, x: number, y: number
   held.y = Math.max(0, y);
   // Held over the middle of a tile twice its size or more, it goes to whichever of that tile's sides or its foot is
   // nearest, instead of wherever the rest leave room, which can be the end of the page.
-  const wall = base.find((o) => o.i !== id && o.w * o.h >= 2 * held.w * held.h && o.y < held.y && overlaps(o, held)
-    && 2 * (Math.min(held.x + held.w, o.x + o.w) - Math.max(held.x, o.x)) >= held.w);
+  const wallAt = (x: number, y: number) => {
+    const box = { ...held, x, y };
+    return base.find((o) => o.i !== id && o.w * o.h >= 2 * held.w * held.h && o.y < y && overlaps(o, box)
+      && 2 * (Math.min(x + held.w, o.x + o.w) - Math.max(x, o.x)) >= held.w);
+  };
+  const wall = wallAt(held.x, held.y);
   if (wall) {
     const spots = [{ x: wall.x - held.w, y: held.y }, { x: wall.x + wall.w, y: held.y }, { x: held.x, y: wall.y + wall.h }]
-      .filter((p) => p.x >= 0 && p.x < cols);
+      .filter((p) => p.x >= 0 && p.x < cols && !wallAt(p.x, p.y));
     const to = spots.sort((p, q) => Math.abs(p.x - held.x) + Math.abs(p.y - held.y) - Math.abs(q.x - held.x) - Math.abs(q.y - held.y))[0];
     if (to) { held.x = to.x; held.y = to.y; }
   }
