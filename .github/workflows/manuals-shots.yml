@@ -18,6 +18,14 @@ jobs:
       - run: npm install --no-save --prefix /tmp/pw playwright@1.63.0 && npx --prefix /tmp/pw playwright install --with-deps chromium
       - run: (cd apps/web && npx vite preview --port 4173 --strictPort &) && sleep 5
       - run: cp tools/shoot-manuals.mjs /tmp/pw/ && node /tmp/pw/shoot-manuals.mjs http://localhost:4173 shots
+      - name: Make a small gif of the clip
+        if: always()
+        run: |
+          if [ -f shots/clip.webm ]; then
+            ffmpeg -y -i shots/clip.webm -vf "fps=8,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer" shots/clip.gif || true
+            ffmpeg -y -i shots/clip.webm -vf "scale=1440:-2" -c:v libx264 -pix_fmt yuv420p -movflags +faststart shots/clip.mp4 || true
+            rm -rf shots/video
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: manuals-shots, path: shots }
