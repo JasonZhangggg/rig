@@ -245,13 +245,18 @@ describe("a manual's PDF", () => {
 
   it("refuses what isn't a PDF, or is too big, when it's downloaded later", async () => {
     const t = await manualSetup([report({ found: true, url: BOARD_URL })]);
-    const m = (await t.found())!;
+    let m = (await t.found())!;
     const pdf = () => t.call(`${t.base}/${m.id}/pdf`, { cookie: t.cookie });
 
     t.web.routes[BOARD_URL] = () => new Response("<html>moved</html>", { headers: { "content-type": "text/html" } });
     const html = await pdf();
     expect(html.status).toBe(502);
     expect(((await html.json()) as { message: string }).message).toMatch(/isn't a PDF/);
+    // The shared cache forgets that address, so the next lookup searches again.
+    t.web.routes[BOARD_URL] = pdfAt;
+    expect(t.seen).toHaveLength(1);
+    m = (await t.found())!;
+    expect(t.seen).toHaveLength(2);
 
     t.web.routes[BOARD_URL] = () => new Response(PDF, { headers: { "content-length": String(MANUAL_MAX_BYTES + 1) } });
     const big = await pdf();

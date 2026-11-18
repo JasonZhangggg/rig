@@ -303,6 +303,11 @@ export class Store {
       .onConflict((oc) => oc.column("key").doUpdateSet(values)).execute();
   }
 
+  /** Forgets a found address that turned out to be gone, so the next lookup searches again. */
+  async forgetManualSource(key: string, url: string): Promise<void> {
+    await this.db.deleteFrom("manual_sources").where("key", "=", key).where("url", "=", url).execute();
+  }
+
   /** Website rename, new color or "I cleaned it today". */
   async rename(userId: string, id: string, patch: Identity, now = new Date()): Promise<boolean> {
     const m = await this.machine(userId, id);

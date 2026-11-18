@@ -119,6 +119,7 @@ export function manualRoutes(app: AppHono, d: ManualDeps) {
     if (!man.url) return c.json({ message: "This manual was added from a file, so only the device it was added on has it." }, 404);
     const open = await openPdf(d.fetch, man.maker, man.url, c.req.raw.signal);
     if (!open.ok) {
+      if (open.stale) await c.get("store").forgetManualSource(sourceKey(man), man.url);
       return c.json({ message: open.tooBig ? "This manual is bigger than Rig downloads." : `Rig couldn't download this manual from ${man.host}. ${open.reason}` }, 502);
     }
     return new Response(pdfStream(open), {

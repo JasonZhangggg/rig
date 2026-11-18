@@ -122,7 +122,8 @@ const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // %PDF
 
 export type PdfOpen =
   | { ok: true; url: string; host: string; bytes?: number; head: Uint8Array; rest: ReadableStreamDefaultReader<Uint8Array> }
-  | { ok: false; reason: string; tooBig?: boolean };
+  /** stale: the address is gone or no longer a PDF on the maker's site, so it's worth looking again. */
+  | { ok: false; reason: string; tooBig?: boolean; stale?: boolean };
 
 /**
  * Opens a manual's PDF on the maker's site: checks the address (and each
@@ -134,7 +135,7 @@ export async function openPdf(fetchFn: Fetch, maker: string, address: string, si
   let url = address;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const problem = addressProblem(maker, url);
-    if (problem) return { ok: false, reason: problem };
+    if (problem) return { ok: false, reason: problem, stale: true };
     let res: Response;
     try {
       res = await fetchFn(url, { redirect: "manual", headers: { accept: "application/pdf" }, signal });
@@ -147,7 +148,10 @@ export async function openPdf(fetchFn: Fetch, maker: string, address: string, si
       url = new URL(location, url).href;
       continue;
     }
-    if (!res.ok || !res.body) { await res.body?.cancel(); return { ok: false, reason: `${new URL(url).hostname} answered with error ${res.status}.` }; }
+    if (!res.ok || !res.body) {
+      await res.body?.cancel();
+      return { ok: false, reason: `${new URL(url).hostname} answered with error ${res.status}.`, stale: res.status === 404 || res.status === 410 };
+    }
     const length = Number(res.headers.get("content-length"));
     const bytes = Number.isFinite(length) && length > 0 ? length : undefined;
     if (bytes && bytes > MANUAL_MAX_BYTES) { await res.body.cancel(); return { ok: false, reason: "The file is bigger than Rig downloads.", tooBig: true }; }
@@ -162,7 +166,7 @@ export async function openPdf(fetchFn: Fetch, maker: string, address: string, si
       have += value.length;
     }
     const head = concat(chunks, have);
-    if (!PDF_MAGIC.every((b, i) => head[i] === b)) { await rest.cancel(); return { ok: false, reason: "That address isn't a PDF file." }; }
+    if (!PDF_MAGIC.every((b, i) => head[i] === b)) { await rest.cancel(); return { ok: false, reason: "That address isn't a PDF file.", stale: true }; }
     return { ok: true, url, host: new URL(url).hostname.toLowerCase(), bytes, head, rest };
   }
   return { ok: false, reason: "The address redirected too many times." };
