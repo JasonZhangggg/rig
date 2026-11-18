@@ -4,7 +4,8 @@ import {
   textSizes, type Appearance, type DataColors,
 } from "../../appearance";
 import { resetAppearance, setAppearance, useApp, useAppearance } from "../../state";
-import { SettingRow } from "./parts";
+import { MoreToggle, SettingRow } from "./parts";
+import { peekFocusSection } from "./focus";
 
 const roles: { key: keyof DataColors; name: string; about: string }[] = [
   { key: "good", name: "Settled", about: "Running well, the usual reading" },
@@ -15,11 +16,13 @@ const roles: { key: keyof DataColors; name: string; about: string }[] = [
 export function AppearanceSection() {
   const look = useAppearance();
   const { toast } = useApp();
+  const [more, setMore] = useState(() => peekFocusSection() === "appearance");
+  const named = <T extends { id: string; name: string }>(list: readonly T[], id: string) => list.find((x) => x.id === id)?.name ?? "";
+  const summary = `${named(chromes, look.chrome)} chrome, ${named(pageTones, look.page).toLowerCase()} page, ${named(cornerSets, look.corners).toLowerCase()} corners, ${named(densities, look.density).toLowerCase()} spacing`;
   return (
     <>
-      <Sample />
       <div className="set-block">
-        <div className="set-text"><b id="look-colors">Colors</b><p className="muted">The colors that mark your readings on every screen, the 3D PC and the sign-in art included. Chrome stays dark and calm.</p></div>
+        <div className="set-text"><b id="look-colors">Colors</b><p className="muted">The colors that mark your readings on every screen and the 3D PC.</p></div>
         <div className="look-presets" role="group" aria-labelledby="look-colors">
           {palettes.map((p) => (
             <PresetCard key={p.id} name={p.name} blurb={p.blurb} colors={p.colors} on={look.palette === p.id} onPick={() => setAppearance({ palette: p.id })} />
@@ -28,23 +31,29 @@ export function AppearanceSection() {
         </div>
         {look.palette === "custom" && <CustomColors look={look} />}
       </div>
-      <div className="set-block">
-        <div className="set-text"><b id="look-chrome">Chrome</b><p className="muted">The dark color of the menu, buttons and dark tiles.</p></div>
-        <div className="look-swatches" role="group" aria-labelledby="look-chrome">
-          {chromes.map((c) => <Swatch key={c.id} name={c.name} color={c.graphite} on={look.chrome === c.id} onPick={() => setAppearance({ chrome: c.id })} />)}
-        </div>
-      </div>
-      <div className="set-block">
-        <div className="set-text"><b id="look-page">Page</b><p className="muted">The tone behind the cards.</p></div>
-        <div className="look-swatches" role="group" aria-labelledby="look-page">
-          {pageTones.map((p) => <Swatch key={p.id} name={p.name} color={p.ground} light on={look.page === p.id} onPick={() => setAppearance({ page: p.id })} />)}
-        </div>
-      </div>
-      <Choice id="look-corners" title="Corners" body="How round cards, buttons and tiles are." options={cornerSets} value={look.corners} onPick={(corners) => setAppearance({ corners })} />
-      <Choice id="look-density" title="Density" body="Compact puts cards closer together and the text a size smaller, so more fits on screen." options={densities} value={look.density} onPick={(density) => setAppearance({ density })} />
       <Choice id="look-text" title="Text size" body="Makes every screen a little bigger, the 3D PC included." options={textSizes} value={look.text} onPick={(text) => setAppearance({ text })} />
-      <Choice id="look-motion" title="Motion" body="Reduce keeps the 3D PC and the sign-in art still and turns off animations. Follow system does what your device is set to." options={motions} value={look.motion} onPick={(motion) => setAppearance({ motion })} />
-      <SettingRow title="Reset appearance" body="Back to Brass, Graphite and the rest of how Rig ships. Your custom colors are cleared too.">
+      <Choice id="look-motion" title="Motion" body="Reduce keeps the 3D PC and the sign-in art still and turns off animations." options={motions} value={look.motion} onPick={(motion) => setAppearance({ motion })} />
+      <MoreToggle id="look-more" title="More appearance options" summary={summary} open={more} onToggle={() => setMore(!more)} />
+      {more && (
+        <div className="look-more" id="look-more">
+          <Sample />
+          <div className="set-block">
+            <div className="set-text"><b id="look-chrome">Chrome</b><p className="muted">The dark color of the menu, buttons and dark tiles.</p></div>
+            <div className="look-swatches" role="group" aria-labelledby="look-chrome">
+              {chromes.map((c) => <Swatch key={c.id} name={c.name} color={c.graphite} on={look.chrome === c.id} onPick={() => setAppearance({ chrome: c.id })} />)}
+            </div>
+          </div>
+          <div className="set-block">
+            <div className="set-text"><b id="look-page">Page</b><p className="muted">The tone behind the cards.</p></div>
+            <div className="look-swatches" role="group" aria-labelledby="look-page">
+              {pageTones.map((p) => <Swatch key={p.id} name={p.name} color={p.ground} light on={look.page === p.id} onPick={() => setAppearance({ page: p.id })} />)}
+            </div>
+          </div>
+          <Choice id="look-corners" title="Corners" body="How round cards, buttons and tiles are." options={cornerSets} value={look.corners} onPick={(corners) => setAppearance({ corners })} />
+          <Choice id="look-density" title="Density" body="Compact puts cards closer together and the text a size smaller." options={densities} value={look.density} onPick={(density) => setAppearance({ density })} />
+        </div>
+      )}
+      <SettingRow title="Reset appearance" body="Back to how Rig ships. Your custom colors are cleared too.">
         <button className="btn sm" type="button" disabled={isDefaultAppearance(look)} onClick={() => { resetAppearance(); toast("Appearance is back to how Rig ships."); }}>Reset appearance</button>
       </SettingRow>
     </>
