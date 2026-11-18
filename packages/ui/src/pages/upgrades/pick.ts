@@ -15,8 +15,10 @@ function need(u: Upgrade, pc: PC, room: Room[]): string {
   const issue = (pc.issues ?? []).find((i) => i.severity !== "ok" && (issuePart[i.part ?? ""] === u.part || (u.part === "Storage" && i.id.startsWith("vol-"))));
   if (issue) return `${issue.title}.`;
   const r = room.find((x) => roomPart[x.key] === u.part);
+  // Wanting more room only makes a pick when the part fits as it is.
+  if (u.fit !== "fits") return "";
   if (u.part === "Storage" && r?.meter?.kind === "share" && r.meter.value / r.meter.of >= 0.75) return `${pc.name} has ${r.figure} free and is filling up.`;
-  if (u.part === "Battery" && u.fit === "fits") return `${u.detail} Most people replace it around this point.`;
+  if (u.part === "Battery") return `${u.detail} Most people replace it around this point.`;
   const ram = gbOf(pc.parts?.ram?.specs.find(([k]) => k === "Total")?.[1]);
   if (u.part === "Memory" && ram != null && ram < 32) return `${pc.name} has ${ram} GB, and newer games and heavy multitasking like more.`;
   return "";

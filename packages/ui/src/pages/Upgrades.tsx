@@ -81,7 +81,7 @@ function PickCard({ idea, why, room }: { idea: Upgrade; why: string; room?: Room
           <b className="num">{room.figure}</b>
           <span className="muted">{room.unit}</span>
           <Meter r={room} />
-          <span className="faint">{room.part}</span>
+          {room.part !== room.figure && <span className="faint">{room.part}</span>}
         </div>
       )}
     </section>
@@ -95,7 +95,7 @@ function IdeaRow({ u, room }: { u: Upgrade; room?: Room }) {
       <div className="up-row-text">
         <span className="up-row-title"><h3>{u.title}</h3>{u.fit !== "fits" && fitChip[u.fit]}</span>
         <p className="muted">{u.detail}{u.gain ? ` ${u.gain}.` : ""}</p>
-        {room && <p className="faint up-row-room"><Meter r={room} /><span>{room.figure} {room.unit}, {room.part}</span></p>}
+        {room && <p className="faint up-row-room"><Meter r={room} /><span>{room.figure} {room.unit}{room.part !== room.figure && `, ${room.part}`}</span></p>}
       </div>
       <div className="up-row-go"><AskBuy u={u} /></div>
     </li>

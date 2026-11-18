@@ -76,8 +76,7 @@ export function RecentSessions({ library, onOpen }: { library: GameLibrary; onOp
           {recent.map(({ s, g }) => (
             <li key={`${g.name}-${s.from}`}>
               <button type="button" className="gm-recent-row" onClick={() => onOpen(g.name)}>
-                <b className="gm-recent-name">{g.name}</b>
-                <span className="muted">{day(s.from)}, {timeRange(s.from, s.to)}</span>
+                <span className="gm-recent-what"><b className="gm-recent-name">{g.name}</b><span className="muted">{day(s.from)}, {timeRange(s.from, s.to)}</span></span>
                 <span className="num">{hours(s.hours)}</span>
                 {s.hot ? <span className="gm-hot">Ran hot, {temp(s.peak, unit)}</span> : <span className="muted">Peak {temp(s.peak, unit)}</span>}
               </button>
