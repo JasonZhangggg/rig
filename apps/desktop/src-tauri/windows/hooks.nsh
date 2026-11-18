@@ -9,13 +9,23 @@
 ;
 ; The uninstaller does the reverse before it removes Rig's files. If its prompt
 ; is refused, the recorder notices Rig is gone and removes itself within the hour.
+;
+; The same prompt adds PawnIO, the signed driver processor temperatures and
+; board fans are read through, when it's missing or older than the bundled one
+; (see helper/RigHelper/PawnIOSetup.cs). Uninstalling removes PawnIO only if
+; Rig installed it and no other Rig install remains.
 
 !macro NSIS_HOOK_POSTINSTALL
-  DetailPrint "Setting up Rig's background recorder..."
-  ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--install-recorder --app-dir "$INSTDIR"' SW_HIDE
+  DetailPrint "Setting up Rig's background recorder and PawnIO..."
+  ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--install-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "Removing Rig's background recorder..."
-  ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR"' SW_HIDE
+  ; An update reinstalls Rig straight after, so it keeps PawnIO.
+  ${If} $UpdateMode = 1
+    ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR"' SW_HIDE
+  ${Else}
+    ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
+  ${EndIf}
 !macroend

@@ -47,6 +47,8 @@ export interface Snapshot {
   game?: string | null;
   /** False when the helper runs without admin rights and some sensors are missing. */
   elevated: boolean;
+  /** PawnIO, the driver processor temperatures and board fans are read through. Missing from helpers before 0.1.2. */
+  driver?: { installed: boolean; version?: string | null };
 }
 
 /** Settings Rig can read and change, read from the PC on request. */
