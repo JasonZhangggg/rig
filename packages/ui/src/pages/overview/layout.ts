@@ -338,8 +338,9 @@ const none: ReadonlySet<string> = new Set();
 
 // What each kind of change costs when the grid picks how to fill an open stretch. Sliding sideways is far more jarring
 // than rising into room above, a tile squeezed narrower loses more than one stretched a little wider, and a tile that
-// jumps ahead of others waiting above it reads as the layout shuffling.
-const COST = { side: 1, rise: 0.15, sink: 0.25, jump: 1, stretch: 0.8, squeeze: 2, fill: 0.5 };
+// jumps ahead of others waiting above it reads as the layout shuffling. The held tile rising above the pointer reads as
+// the drop being refused, so the tiles around it fill that room first.
+const COST = { side: 1, rise: 0.15, lift: 3, sink: 0.25, jump: 1, stretch: 0.8, squeeze: 2, fill: 0.5 };
 
 /** A layout half laid down: how far down each column is full, the tiles placed, and the tiles still to place. */
 interface Laying { sky: number[]; out: Cell[]; rest: Cell[] }
@@ -380,7 +381,7 @@ function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, h
         const resize = w === c.w ? 0 : w > c.w ? (w - c.w) * COST.stretch * (c.i === lead ? 0.5 : 1) : (c.w - w) * COST.squeeze;
         const shift = Math.abs(c.x - x) * COST.side;
         const cost = claims ? -100 + resize + shift
-          : resize + shift + (c.y > f ? (c.y - f) * COST.rise : (f - c.y) * COST.sink) + (c.i === lead ? 0 : ahead * COST.jump) + rank.get(c.i)! * 1e-3;
+          : resize + shift + (c.y > f ? (c.y - f) * (c.i === lead ? COST.lift : COST.rise) : (f - c.y) * COST.sink) + (c.i === lead ? 0 : ahead * COST.jump) + rank.get(c.i)! * 1e-3;
         const t = sized(c, w, c.h, x, f), s = [...sky];
         raise(s, t);
         moves.push({ cost, next: { sky: s, out: [...out, t], rest: others } });
@@ -495,6 +496,10 @@ export function dragFlow(base: readonly Cell[], id: string, x: number, y: number
   const held: Cell = home || !adapt ? { ...me } : { i: id, x, y, w: want.w, h: want.h };
   held.x = Math.max(0, Math.min(cols - held.w, x));
   held.y = Math.max(0, y);
+  // Past the end of Home it goes to the foot of the tiles left, under the pointer, instead of finding no spot there.
+  const left = settle(base.filter((c) => c.i !== id), cols);
+  const foot = Math.max(0, ...left.filter((o) => o.x < held.x + held.w && held.x < o.x + o.w).map((o) => o.y + o.h));
+  if (held.y > foot) held.y = foot;
   // Held over the middle of a tile twice its size or more, it goes to whichever of that tile's sides or its foot is
   // nearest, instead of wherever the rest leave room, which can be the end of the page.
   const wallAt = (x: number, y: number) => {

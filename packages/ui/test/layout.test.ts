@@ -150,6 +150,17 @@ describe("the grid while dragging", () => {
     expect(at(dragFlow(base, "fans", 6, 2, 12), "fans")).toMatchObject({ x: 8, y: 2 });
   });
 
+  it("takes a big tile dragged past the end of Home to the end, under the pointer, instead of sending it back", () => {
+    const end = Math.max(...base.map((c) => c.y + c.h));
+    for (const [id, x, y] of [["temps", 0, end - 2], ["temps", 0, end + 6], ["temps", 5, end + 1], ["pc", 0, end + 1]] as const) {
+      const out = dragFlow(base, id, x, y, 12), me = at(out, id);
+      expect(me.y).toBeGreaterThan(at(base, id).y);
+      expect(Math.max(...out.filter((c) => c.i !== id).map((c) => c.y + c.h))).toBeLessThanOrEqual(me.y + me.h);
+      expect(gaps(out)).toBe(0);
+      expect(overlapping(out)).toBe(false);
+    }
+  });
+
   it("puts a small tile held over the middle of a big one at its foot, not at the end of the page", () => {
     for (const [x, y] of [[0, 1], [1, 3], [2, 4]]) {
       const out = dragFlow(base, "health", x, y, 12);
