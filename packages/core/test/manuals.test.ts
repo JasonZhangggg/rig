@@ -132,6 +132,9 @@ describe("searchPages", () => {
       const hits = searchPages([{ manual: manual("g", "Gigabyte"), pages: pages(gigabyte.install, gigabyte.panel) }], q);
       expect(hits[0]?.page, q).toBe(2);
     }
+    // A header name typed as one word skips pages that only say "panel".
+    const rear = searchPages([{ manual: manual("r", "Board"), pages: pages("Rear I/O panel\nUSB LAN HDMI", "Specifications\nInternal connectors F_PANEL, CPU_FAN") }], "F_PANEL");
+    expect(rear.map((h) => h.page)).toEqual([2]);
     expect(searchPages(docs, "cpu fan")[0]).toMatchObject({ manualId: "a", page: 2 });
     expect(searchPages(docs, "m.2")[0]).toMatchObject({ manualId: "a", page: 2 });
   });
