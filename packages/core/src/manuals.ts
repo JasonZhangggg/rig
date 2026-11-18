@@ -4,7 +4,7 @@
 // screens.
 //
 // How a manual gets here:
-// 1. The person (or the Manuals page, for detected parts) asks to find one.
+// 1. The person asks to find one from the part's Manual tab on My PC.
 //    The server looks it up on the maker's site and records the PDF's address.
 // 2. The app downloads the PDF through the server, keeps a copy on the device,
 //    reads its text page by page (pdf.js) and marks the diagram pages.

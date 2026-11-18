@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
 import { alertRules, formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "manuals", "web", "signin", "settings"];
@@ -63,8 +64,12 @@ const storage = {
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
 };
 
+/** Pages that moved into My PC: their old addresses still open it. */
+const movedToPC: Route[] = ["manuals", "upgrades"];
+
 function routeFromHash(): Route {
   const h = location.hash.replace("#", "") as Route;
+  if (movedToPC.includes(h)) { history.replaceState(null, "", "#pc"); return "pc"; }
   return routes.includes(h) ? h : "overview";
 }
 
@@ -367,4 +372,36 @@ export function setRecordingNotice(on: boolean) {
 
 export function useRecordingNoticeOn(): boolean {
   return useSyncExternalStore(onAlertPrefs, recordingNoticeOn, () => true);
+}
+
+// ----- Appearance, kept on this device -----
+
+const APPEARANCE = "rig.appearance.v1";
+const appearanceListeners = new Set<() => void>();
+let appearanceCache: { raw: string | null | undefined; value: Appearance } = { raw: undefined, value: defaultAppearance };
+
+/** How Rig looks on this device: colors, chrome, corners, density, text size and motion. */
+export function storedAppearance(): Appearance {
+  const raw = storage.get(APPEARANCE);
+  if (raw !== appearanceCache.raw) appearanceCache = { raw, value: parseAppearance(raw) };
+  return appearanceCache.value;
+}
+
+export function setAppearance(patch: Partial<Appearance>) {
+  storage.set(APPEARANCE, JSON.stringify({ ...storedAppearance(), ...patch }));
+  appearanceListeners.forEach((f) => f());
+}
+
+export const resetAppearance = () => setAppearance(defaultAppearance);
+
+function onAppearance(f: () => void) {
+  const fromOtherWindow = (e: StorageEvent) => { if (e.key === APPEARANCE) f(); };
+  appearanceListeners.add(f);
+  window.addEventListener("storage", fromOtherWindow);
+  return () => { appearanceListeners.delete(f); window.removeEventListener("storage", fromOtherWindow); };
+}
+
+/** The appearance picked on this device, kept current as it changes here or in another window. */
+export function useAppearance(): Appearance {
+  return useSyncExternalStore(onAppearance, storedAppearance, () => defaultAppearance);
 }

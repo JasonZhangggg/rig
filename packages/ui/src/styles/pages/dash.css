@@ -1,0 +1,277 @@
+/* The Home dashboard: widgets on a 12 column grid (8 on a narrow screen) that react-grid-layout positions with transforms.
+   Neighbours glide with a small spring; the dragged tile follows the pointer with no transition at all.
+   On a phone the dashboard is one column and each tile takes its natural height. */
+.dash {
+  --dr: calc(var(--r) - 6px); --pad: 28px; --edit-line: color-mix(in srgb, var(--graphite) 26%, transparent);
+  --spring: cubic-bezier(.2, .9, .3, 1.2); --glide: .22s;
+  position: relative;
+}
+.f-home[data-density="compact"] .dash { --pad: 20px; }
+.f-home[data-corners="soft"] .dash { --dr: 12px; }
+.f-home[data-corners="square"] .dash { --dr: 4px; }
+.dash[data-cols="1"] { display: flex; flex-direction: column; gap: var(--dgap); }
+.dash[data-cols="1"] > .dg { position: relative; }
+/* Room below the last tile while customizing, so it can scroll clear of the floating bar. Nothing above it moves. */
+.dash.editing { padding-bottom: 104px; }
+/* Nothing on the grid or the bar selects while customizing, so a press always picks a tile up instead of dragging text. */
+.dash.editing, .dash-bar { -webkit-user-select: none; user-select: none; }
+/* The phone's list opens up while customizing, so each tile's buttons get a strip of their own above it. */
+.dash.editing[data-cols="1"] { gap: calc(var(--dgap) + 40px); padding-top: 16px; }
+
+.dash-grid { position: relative; transition: height var(--glide) var(--ease-out); }
+.dash-grid > .dg { position: absolute; z-index: 1; touch-action: auto; }
+.dash-grid > .dg.cssTransforms { transition: transform var(--glide) var(--spring), width var(--glide) var(--spring), height var(--glide) var(--spring); }
+/* The 3D PC snaps to a new size in one step instead of redrawing its scene at every frame of a glide. */
+.dash-grid > .dg[data-heavy].cssTransforms { transition: transform var(--glide) var(--spring); }
+.dash-grid > .dg.react-draggable-dragging { z-index: 30; transition: none; will-change: transform; }
+.dash-grid > .dg.resizing { z-index: 20; transition: none; will-change: width, height; }
+/* Held by a resize, the tile shows the slot it lands in, set by Grid.tsx, rather than following the pointer pixel by pixel. */
+.dash-grid > .dg.resizing[data-hold] { transform: var(--hold-t) !important; width: var(--hold-w) !important; height: var(--hold-h) !important; }
+.dash[data-still] .dash-grid, .dash[data-still] .dash-grid > .dg { transition: none; }
+
+/* The drop spot: where the tile lands, in the accent tint. Grid.tsx draws it from the slot it chose; the library's own stays hidden. */
+.dash-grid > .react-grid-placeholder { display: none; }
+.dash-spot {
+  position: absolute; top: 0; left: 0; z-index: 0; width: 0; height: 0; border-radius: var(--dr); pointer-events: none; opacity: 0;
+  background: color-mix(in srgb, var(--good) 26%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--good-mark) 42%, transparent);
+  transition: transform .16s var(--ease-out), width .16s var(--ease-out), height .16s var(--ease-out), opacity .12s;
+}
+.dash-spot[data-on] { opacity: 1; }
+/* While a tile is resized it, its drop spot and the tiles it pushes all move together on one short curve, so at the moment
+   a size snaps nothing covers a neighbour that hasn't moved yet. */
+.dash.dragging:has(.dg.resizing) { --rz: .14s; }
+.dash.dragging:has(.dg.resizing) .dash-spot,
+.dash.dragging:has(.dg.resizing) .dash-grid > .dg.cssTransforms:not(.resizing) { transition-duration: var(--rz); transition-timing-function: var(--ease-out); }
+.dash-grid > .dg.resizing[data-hold] { transition: transform var(--rz, .14s) var(--ease-out), width var(--rz, .14s) var(--ease-out), height var(--rz, .14s) var(--ease-out); }
+
+.dw {
+  --chip: var(--surface);
+  container: tile / inline-size; position: relative; height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--dr);
+  transition: scale .3s var(--spring), box-shadow .22s var(--ease-out), background-color .22s;
+}
+.dw[data-frame="tile"] { --chip: var(--surface-2); padding: var(--pad); background: var(--surface); }
+.dw.tone-dark { --chip: var(--surface-2); --line-strong: rgba(255, 255, 255, .2); --look-text: var(--look); --good-text: var(--good); }
+.dw-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: clip; overflow-clip-margin: 10px; }
+.dw-body > * { flex: 1; min-height: 0; }
+.dash[data-cols="1"] .dw-body { overflow: visible; }
+.dash[data-cols="1"] .dw[data-kind="pc"] { height: clamp(580px, 160vw, 720px); }
+.dash[data-cols="1"] .f-pc .stage-slot { inset: 0 0 -20px; }
+.dash[data-cols="1"] .dw[data-kind="evenings"] .pl-tl-row { flex: none; height: 50px; }
+.dash[data-cols="1"] .dw[data-kind="temps"] .pl-caps { min-height: 300px; }
+.dash[data-cols="1"] .dw[data-kind="fans"] .pl-dots { flex: none; height: auto; }
+.dash[data-cols="1"] .f-todo-list { overflow: visible; }
+
+/* Picked up: the tile rises the moment it's pressed, and settles back with a little spring when let go. */
+.dg[data-lift] > .dw, .dg.react-draggable-dragging > .dw { scale: 1.03; box-shadow: var(--shadow-lg); transition: scale .14s var(--ease-out), box-shadow .14s var(--ease-out); }
+.dg[data-lift] > .dw[data-frame="open"], .dg.react-draggable-dragging > .dw[data-frame="open"] { background-color: var(--bg); }
+.dash.dragging .dg:not(.react-draggable-dragging) .dw-grip { opacity: 0; }
+
+/* The handle: a small pill on the tile's top edge. Out of customizing it shows on hover and focus, so it's there when wanted. */
+.dw-grip {
+  position: absolute; z-index: 4; top: -11px; left: 50%; width: 44px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-pill);
+  background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 8px rgba(27, 27, 31, .18); cursor: grab; touch-action: none;
+  opacity: 0; transform: translateX(-50%) scale(.9); transition: opacity .16s, transform .16s var(--ease-out);
+}
+.dw-grip svg { width: 20px; height: 12px; }
+.dw-grip:focus-visible { opacity: 1; transform: translateX(-50%); }
+@media (hover: hover) and (pointer: fine) {
+  .dash:not(.editing) .dg:hover .dw-grip { opacity: 1; transform: translateX(-50%); }
+}
+/* With touch the pill stays as the handle while customizing, just above the tile, so a swipe on a tile still scrolls the page. */
+@media (pointer: coarse) {
+  .dash.editing .dw-grip { opacity: 1; transform: translateX(-50%); width: 56px; height: 28px; top: -32px; }
+}
+
+/* Round buttons beside the tile while customizing, never on it, so they don't cover a title or badge: hide just off the
+   top left corner, as on a phone's home screen, and options above the top edge next to it. Both stay clear of the
+   resize handles of the tiles above, which sit on their bottom edge's middle and right corner. */
+.dw-ctl { position: absolute; z-index: 5; }
+.dw-del, .dw-opt {
+  --b: 26px; width: var(--b); height: var(--b); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .24); cursor: pointer;
+  animation: dw-pop .22s var(--spring) both; transition: transform .12s var(--ease-out);
+}
+.dw-del { top: calc(-12px - var(--b) / 2); left: calc(-12px - var(--b) / 2); }
+.dw-opt { top: calc(-4px - var(--b)); left: 10px; }
+.dw-del:active, .dw-opt:active { transform: scale(.9); }
+.dg.react-draggable-dragging .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
+/* While one tile is moved or resized, the others' buttons step back so none sits on the held tile's edge. */
+.dash.dragging .dg:not(.resizing) .dw-ctl { opacity: 0; pointer-events: none; transition: opacity .1s; }
+.dw-del svg, .dw-opt svg { width: 15px; height: 15px; }
+@keyframes dw-pop { from { scale: .4; opacity: 0; } }
+@media (pointer: coarse) {
+  .dw-del, .dw-opt { --b: 40px; }
+  .dw-del { top: -35px; left: -35px; }
+  .dw-opt { top: -42px; left: 12px; }
+  /* A finger resizes from the corner; the edge pills would sit where the next tile's buttons are. */
+  .dw-rh-e, .dw-rh-s { display: none; }
+}
+/* In the phone's list every button sits in the strip above its tile: hide and options on the left, up and down on the right. */
+.dash[data-cols="1"] .dw-del, .dash[data-cols="1"] .dw-opt, .dash[data-cols="1"] .dw-steps { top: calc(-9px - var(--b, 26px)); }
+.dash[data-cols="1"] .dw-del { left: 0; }
+.dash[data-cols="1"] .dw-opt { left: calc(var(--b) + 10px); }
+
+.dw-steps { --b: 40px; top: -27px; right: 8px; display: flex; gap: 6px; }
+.dash[data-cols="1"] .dw-steps { right: 0; }
+.dw-steps button { width: var(--b); height: var(--b); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--graphite); color: #FFFFFF; box-shadow: 0 2px 10px rgba(27, 27, 31, .22); cursor: pointer; }
+.dw-steps button:disabled { opacity: .35; cursor: default; }
+.dw-steps svg { width: 18px; height: 18px; }
+
+/* Resize handles: a corner bracket and two edge pills. Always there while customizing, on hover otherwise. */
+.dw-rh { position: absolute; z-index: 6; touch-action: none; opacity: 0; transition: opacity .16s; }
+.dw-rh { --rh: color-mix(in srgb, var(--graphite) 55%, transparent); }
+.dw-rh::before { content: ""; position: absolute; transition: background .15s, border-color .15s, scale .15s var(--spring); }
+.dw-rh:hover, .dg.resizing .dw-rh { --rh: var(--graphite); }
+.dw-rh-se { right: -12px; bottom: -12px; width: 34px; height: 34px; cursor: nwse-resize; }
+.dw-rh-se::before { right: 9px; bottom: 9px; width: 14px; height: 14px; border-right: 3px solid var(--rh); border-bottom: 3px solid var(--rh); border-bottom-right-radius: 8px; }
+.dw-rh-e { top: 50%; right: -12px; width: 24px; height: 64px; margin-top: -32px; cursor: ew-resize; }
+.dw-rh-e::before { top: 18px; left: 10px; width: 4px; height: 28px; border-radius: 2px; background: var(--rh); }
+.dw-rh-s { left: 50%; bottom: -12px; width: 64px; height: 24px; margin-left: -32px; cursor: ns-resize; }
+.dw-rh-s::before { left: 18px; top: 10px; width: 28px; height: 4px; border-radius: 2px; background: var(--rh); }
+.dw-rh:hover::before, .dg.resizing .dw-rh::before { scale: 1.15; }
+.dg:has(> .tone-dark) .dw-rh { --rh: var(--good); }
+.dash.editing .dw-rh { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .dash:not(.editing) .dg:hover > .dw-rh-se { opacity: .7; }
+}
+.dash.dragging .dg:not(.resizing) > .dw-rh { opacity: 0; }
+
+/* Customizing: tiles wear a dashed edge, wobble gently like a phone's home screen, and move as a whole. */
+.dash.editing .dw { cursor: grab; animation: dw-jiggle var(--jig-t, .52s) ease-in-out var(--jig-d, 0s) infinite; }
+.dash.editing .dw::after { content: ""; position: absolute; inset: -7px; z-index: 3; border: 1.5px dashed var(--edit-line); border-radius: calc(var(--dr) + 7px); pointer-events: none; }
+.dash.editing .dw:focus-visible { outline: none; animation: none; }
+.dash.editing .dw:focus-visible::after { border: 2px solid var(--focus); }
+.dash.editing .dw-body { pointer-events: none; user-select: none; }
+.dash.editing .dg[data-lift] > .dw, .dash.editing .dg.react-draggable-dragging > .dw, .dash.editing .dg.resizing > .dw { animation: none; cursor: grabbing; }
+.dg.react-draggable-dragging > .dw::after { opacity: 0; }
+.dg.resizing > .dw::after { border-style: solid; border-color: var(--graphite); }
+.dash.dragging, .dash.dragging * { user-select: none; }
+@keyframes dw-jiggle {
+  0%, 100% { rotate: calc(var(--jig) * -1); }
+  50% { rotate: var(--jig); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash { --glide: 0s; }
+  .dash-grid > .dg.cssTransforms, .dash-spot, .dash-grid { transition: none; }
+  .dash.editing .dw { animation: none; }
+  .dw, .dw-grip, .dw-del, .dw-opt, .dw-rh, .dw-rh::before { transition: none; animation: none; }
+  .dg[data-lift] > .dw, .dg.react-draggable-dragging > .dw { scale: none; transition: none; }
+}
+/* Motion picked in Settings: the stylesheet tokens already stop transitions and animations; a lifted tile stays its size. */
+:root[data-motion="reduce"] .dg[data-lift] > .dw, :root[data-motion="reduce"] .dg.react-draggable-dragging > .dw { scale: none; }
+
+/* The dock: floats at the bottom of the window and takes no room, so customizing never moves the page.
+   It carries the customize bar and, after a change, a note with Undo. On a short page the page still reaches the bottom
+   of the window and the dock sits at its foot, so the bar never floats halfway up. */
+.page:has(> .dash-dock) { min-height: 100%; }
+.dash-dock {
+  position: sticky; z-index: 40; bottom: 20px; height: 0; margin-top: auto; margin-bottom: calc(-1 * var(--home-gap, 40px)); pointer-events: none;
+}
+.dash-dock-in { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 12px; }
+.dash-dock-in > * { pointer-events: auto; }
+.dash-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 22px; max-width: 100%;
+  padding: 10px 10px 10px 24px; border-radius: var(--r-pill); box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, .06);
+  animation: dash-rise .28s var(--spring) both;
+}
+.dash-bar p { display: grid; gap: 1px; color: var(--text-2); font-size: 13px; font-weight: 500; line-height: 1.3; }
+.dash-bar p b { color: var(--text); font-size: 14.5px; font-weight: 600; }
+.dash-bar-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.dash-toast {
+  display: flex; align-items: center; gap: 14px; max-width: min(560px, 100%); padding: 8px 8px 8px 20px; border-radius: var(--r-pill);
+  box-shadow: var(--shadow-lg); color: var(--text); font-size: 14px; font-weight: 500; animation: dash-rise .24s var(--spring) both;
+}
+.dash-toast span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-toast button { flex: none; height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: var(--good); color: var(--graphite); font: 600 13.5px var(--font); cursor: pointer; }
+@keyframes dash-rise { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+@media (prefers-reduced-motion: reduce) {
+  .dash-bar, .dash-toast { animation: none; }
+}
+@container home (max-width: 640px) {
+  .dash.editing { padding-bottom: 150px; }
+  .dash-bar { border-radius: calc(var(--r) - 6px); padding: 12px; width: 100%; }
+  .dash-bar p { padding: 0 6px; }
+  .dash-bar p span { display: none; }
+  .dash-bar-tools { width: 100%; }
+  .dash-bar-tools .dbtn { flex: 1 1 auto; height: 38px; padding: 0 12px; }
+}
+/* In the phone's list the hint says how to move a tile at all, so it stays even on a narrow screen. */
+.page:has(> .dash[data-cols="1"]) .dash-bar p span { display: revert; }
+
+.dbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text); font: 600 14px var(--font); white-space: nowrap; cursor: pointer; transition: background .15s;
+}
+.dbtn:disabled { opacity: .45; cursor: default; }
+.dbtn.primary { background: var(--text); color: var(--surface); }
+.dbtn.quiet { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dbtn em { min-width: 22px; height: 22px; padding: 0 7px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--good); color: var(--graphite); font-size: 12px; font-style: normal; }
+@media (hover: hover) and (pointer: fine) {
+  .dbtn:not(:disabled):not(.primary):hover { background: color-mix(in srgb, var(--text) 12%, var(--surface-2)); }
+}
+
+.dash-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 48px; border-radius: calc(var(--r) - 6px); background: var(--surface); }
+.dash-empty p { max-width: 40ch; color: var(--text-2); font-size: 16px; font-weight: 500; line-height: 1.5; }
+
+/* ----- Panels: a widget's options, the library, the whole dashboard ----- */
+.dpop {
+  position: fixed; z-index: 70; display: flex; flex-direction: column; overflow: hidden; border-radius: calc(var(--r-sm) + 6px);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg), 0 0 0 1px var(--line); font-family: var(--font);
+  animation: dpop-in .18s var(--ease-out);
+}
+.dpop.sheet { left: 0; right: 0; bottom: 0; max-height: 82vh; border-radius: var(--r) var(--r) 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); animation-name: dpop-up; }
+@keyframes dpop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+@keyframes dpop-up { from { transform: translateY(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dpop { animation: none; }
+}
+.dpop-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 14px 8px 22px; }
+.dpop-head h2 { font: 600 17px/1.2 var(--font); letter-spacing: -.01em; }
+.dpop-x { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-2); cursor: pointer; }
+.dpop-x svg { width: 18px; height: 18px; }
+.dpop-x:hover { background: var(--surface-2); color: var(--text); }
+.dpop-body { min-height: 0; overflow-y: auto; padding: 4px 22px 20px; scrollbar-width: thin; }
+.dsec { display: grid; gap: 14px; padding: 14px 0 16px; }
+.dsec + .dsec { border-top: 1px solid var(--line); }
+.dsec h3 { color: var(--text-3); font-size: 12.5px; font-weight: 600; }
+.dopt { display: grid; gap: 7px; }
+.dopt-label, .dset legend { color: var(--text); font-size: 14px; font-weight: 600; }
+.dseg { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 16px; background: var(--surface-2); }
+.dseg button { flex: 1 1 auto; min-height: 34px; padding: 0 12px; border: 0; border-radius: 13px; background: transparent; color: var(--text-2); font: 600 13px var(--font); white-space: nowrap; cursor: pointer; }
+.dseg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(27, 27, 31, .14), 0 0 0 1px var(--line); }
+.dseg button:disabled { cursor: default; opacity: .5; }
+.dnote { color: var(--text-2); font-size: 14px; font-weight: 500; line-height: 1.5; }
+.dtogs, .dset { display: grid; gap: 2px; margin: 0; padding: 0; border: 0; }
+.dset legend { margin-bottom: 4px; padding: 0; }
+.dtog { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer; }
+.dtog input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.dtog i { position: relative; width: 40px; height: 24px; flex: none; border-radius: var(--r-pill); background: var(--line-strong); transition: background .15s; }
+.dtog i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(27, 27, 31, .2); transition: transform .18s var(--ease-out); }
+.dtog input:checked + i { background: var(--graphite); }
+.dtog input:checked + i::after { transform: translateX(16px); }
+.dtog input:focus-visible + i { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dtog input:disabled + i { opacity: .45; }
+.dtog:has(input:disabled) { cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .dtog i, .dtog i::after { transition: none; }
+}
+.dfoot-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.dfoot-row .dbtn { flex: 1 1 auto; }
+.dfoot-row.end { justify-content: flex-end; margin-top: 16px; }
+.dfoot-row.end .dbtn { flex: 0 0 auto; }
+.dlib { display: grid; gap: 8px; margin: 0; padding: 4px 0 0; list-style: none; }
+.dlib button { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 14px 14px 18px; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+.dlib button > span { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.dlib b { font-size: 15px; font-weight: 600; }
+.dlib small { color: var(--text-2); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.dlib button > i { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; }
+.dlib button > i svg { width: 16px; height: 16px; }
+@media (hover: hover) and (pointer: fine) {
+  .dlib button:hover { background: color-mix(in srgb, var(--text) 8%, var(--surface-2)); }
+}
+
+/* A resized tile follows the pointer cell by cell with no glide when motion is reduced. */
+@media (prefers-reduced-motion: reduce) { .dash-grid > .dg.resizing[data-hold] { transition: none; } }
+:root[data-motion="reduce"] .dash-grid > .dg.resizing[data-hold], .dash[data-still] .dash-grid > .dg.resizing[data-hold] { transition: none; }

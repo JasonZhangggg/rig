@@ -22,9 +22,8 @@ export function Chat() {
       <div className="chat-main">
         {empty ? (
           <div className="chat-hello">
-            <span className="chat-mark" aria-hidden="true">R<i /></span>
             <h1>What's going on with {pc.name}?</h1>
-            <p>Rig reads {pc.name}'s temperatures, settings and parts, and answers from your parts' manuals and maker support pages.</p>
+            <p>Ask in your own words. Rig reads {pc.name}'s temperatures, settings and parts, and checks your parts' manuals.</p>
           </div>
         ) : (
           <>
@@ -38,7 +37,7 @@ export function Chat() {
           {!empty && <FollowUps starters={next} />}
           <Composer ref={box} big={empty} />
           <p className="chat-rules">
-            Rig shows every change first. Nothing changes until you say yes, and you can undo it in <a href="#changes">Changes</a>. When Rig needs more to go on, it records readings for a while, which you can stop in <a href="#logs">Logs</a>.
+            Rig shows every change first and waits for your yes. Undo anything in <a href="#changes">Changes</a>, and stop a recording in <a href="#logs">Logs</a>.
             {!client.caps.applyChanges && <> Fixes are made from the Rig app on {pc.name}.</>}
           </p>
         </div>

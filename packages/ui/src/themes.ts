@@ -1,4 +1,5 @@
 import type { SceneTheme } from "./scene";
+import { chromeOf, sceneColorsOf, type Appearance } from "./appearance";
 
 /** The 3D look: a light case drawn in ink on a see-through stage, lit in brass. UI colors live in styles/tokens.css. */
 export const sceneTheme: SceneTheme = {
@@ -12,6 +13,15 @@ export const sceneTheme: SceneTheme = {
   glow: 0.4, glowBlend: "normal", interior: 1.5, pedestal: "#FFFFFF", pedestalRim: 0.35,
   air: 0.7, airCool: "#D2C08F", airWarm: "#D9804F", airBlend: "normal",
 };
+
+/** The 3D look in the colors picked in Settings, Appearance. */
+export function sceneThemeFor(a: Appearance): SceneTheme {
+  const c = sceneColorsOf(a);
+  return {
+    ...sceneTheme, trim: chromeOf(a).graphite,
+    heatCool: c.heatCool, heatWarm: c.heatWarm, heatHot: c.heatHot, highlight: c.highlight, accent: c.highlight, airCool: c.airCool, airWarm: c.airWarm,
+  };
+}
 
 /** Colors a person can pick to mark their PC in the list of PCs. */
 export const pcAccents = ["#EA5A72", "#E8692E", "#3C7BF0", "#2E9E6B", "#C2477A", "#8A63D2", "#C9A227", "#5B6573"];

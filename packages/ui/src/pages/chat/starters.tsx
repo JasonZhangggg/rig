@@ -1,6 +1,7 @@
 import type { ChatMessage, Issue, PC } from "@rig/core";
 import { Icon } from "../../components/common";
 import { useApp, useTempText } from "../../state";
+import { useManuals } from "../../manuals/useManuals";
 import { partIcon } from "../shared";
 
 export interface Starter { q: string; why: string; part?: string; topic?: string }
@@ -24,7 +25,12 @@ export function useStarters(): Starter[] {
   const inUnit = useTempText();
   const fromIssues = (pc.issues ?? []).filter((i) => i.ask).slice(0, 2)
     .map((i): Starter => ({ q: inUnit(i.ask!), why: inUnit(i.title), part: partOf(i), topic: i.id }));
-  const all = [...fromIssues, ...generic(pc).filter((g) => !fromIssues.some((i) => i.topic === g.topic))];
+  // A read board manual answers wiring questions with the page, so one of those starts near the top.
+  const { manuals } = useManuals();
+  const board = manuals?.find((m) => m.indexed && m.diagrams.some((d) => d.kind === "front-panel"));
+  const everyday = generic(pc);
+  if (board) everyday.splice(1, 0, { q: "Where do the front panel cables plug in?", why: "Rig answers from your motherboard's manual and says which page.", part: "board", topic: "manual" });
+  const all = [...fromIssues, ...everyday.filter((g) => !fromIssues.some((i) => i.topic === g.topic))];
   return all.filter((s, n) => all.findIndex((x) => x.q === s.q) === n);
 }
 
@@ -62,7 +68,7 @@ export function FollowUps({ starters }: { starters: Starter[] }) {
   return (
     <div className="followups" aria-label="Ask next">
       {starters.slice(0, 3).map((s) => (
-        <button key={s.q} type="button" onClick={() => ask(s.q)}><StarterIcon part={s.part} />{s.q}</button>
+        <button key={s.q} type="button" onClick={() => ask(s.q)}>{s.q}</button>
       ))}
     </div>
   );
