@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
-import { KIND_ORDER, LAYOUT_VERSION, cellsFor, compactUp, defaultDashboard, dragFlow, holes, orderOf, parseDashboard, resizeFlow, stickyCell, type Cell } from "../src/pages/overview/layout";
+import { KINDS, KIND_ORDER, LAYOUT_VERSION, STEP, addCell, cellsFor, chosenOf, clampCell, compactUp, defaultDashboard, dragFlow, holes, limits, orderOf, parseDashboard, presetCells, resizeFlow, settle, stepTarget, stickyCell, type Cell, type Kind, type SizeName } from "../src/pages/overview/layout";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -60,9 +60,10 @@ describe("the saved layout", () => {
     expect(d.spacing).toBe("tight");
     const lg = d.layouts.lg!;
     expect(lg.map((c) => c.i).sort()).toEqual(["asks", "evenings", "fans", "health", "pc", "storage", "temps", "todo"]);
-    expect(at(lg, "fans")).toMatchObject({ x: 7, y: 0, w: 5 });
     expect(at(lg, "pc")).toMatchObject({ x: 0, y: 0, h: 5 });
     expect(at(lg, "pc").w).toBeGreaterThanOrEqual(5);
+    expect(at(lg, "fans")).toMatchObject({ x: at(lg, "pc").w, y: 0 });
+    expect(chosenOf(at(lg, "fans"))).toEqual({ w: 5, h: 5 });
     expect(at(lg, "todo").w).toBe(12);
     expect(overlapping(lg)).toBe(false);
     expect(compactUp(lg, 12)).toEqual(lg);
@@ -79,7 +80,7 @@ describe("the saved layout", () => {
     expect(order[0]).toBe("fans");
     expect(order.indexOf("pc")).toBeLessThan(order.indexOf("temps"));
     expect(at(lg, "fans")).toMatchObject({ x: 0, y: 0, w: 7, h: 5 });
-    expect(at(lg, "pc")).toMatchObject({ w: 6, h: 6 });
+    expect(chosenOf(at(lg, "pc"))).toEqual({ w: 6, h: 6 });
     expect(lg.some((c) => c.i === "health")).toBe(false);
     expect(lg.some((c) => c.i === "live")).toBe(true);
     expect(d.v).toBe(LAYOUT_VERSION);
@@ -180,6 +181,71 @@ describe("the grid while dragging", () => {
     expect(cells([[8.4, 0], [8.65, 0], [8.35, 0]])).toEqual([8, 8, 8]);
     expect(cells([[7.6, 0], [7.25, 0], [7.4, 0], [7.65, 0], [7.75, 0]])).toEqual([8, 7, 7, 7, 8]);
     expect(drag("health", [[8, 0.6], [8, 0.75], [8, 0.4], [8, 0.25]]).map((s) => s.cell.y)).toEqual([0, 1, 1, 0]);
+  });
+});
+
+describe("the grid after any change", () => {
+  // A seeded random run of everything a person can do, so a failure always comes back the same way.
+  const seeded = (seed: number) => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const kinds = Object.keys(KINDS) as Kind[];
+  // Open cells above the top of the lowest tile: inside the grid or down its sides. Below that it's the ragged end of the page.
+  const open = (cells: Cell[], cols: number) => {
+    const end = Math.max(0, ...cells.map((c) => c.y));
+    let n = 0;
+    for (let y = 0; y < end; y++) for (let x = 0; x < cols; x++) if (!cells.some((c) => c.x <= x && x < c.x + c.w && c.y <= y && y < c.y + c.h)) n++;
+    return n;
+  };
+  const check = (next: Cell[], prev: Cell[], cols: number, touched: string | null, what: string) => {
+    const where = `${what} at ${cols} columns: ${JSON.stringify(prev)} -> ${JSON.stringify(next)}`;
+    expect(overlapping(next), where).toBe(false);
+    expect(open(next, cols), where).toBe(0);
+    for (const c of next) {
+      const lim = limits(c.i as Kind, cols), want = chosenOf(c);
+      expect(c.x >= 0 && c.y >= 0 && c.x + c.w <= cols, where).toBe(true);
+      expect(c.w >= lim.minW && c.w <= lim.maxW && c.h >= lim.minH && c.h <= lim.maxH, where).toBe(true);
+      // Stretched to close a gap at most a step past the size the person chose, and that size stays theirs.
+      expect(c.w <= want.w + STEP && c.h <= want.h + STEP, where).toBe(true);
+      const was = prev.find((o) => o.i === c.i);
+      if (was && c.i !== touched) expect(chosenOf(c), where).toEqual(chosenOf(was));
+    }
+  };
+
+  for (const cols of [12, 8]) {
+    it(`never leaves a gap, an overlap or a tile past its limits after thousands of moves, resizes, hides and adds at ${cols} columns`, () => {
+      const r = seeded(cols);
+      const pick = <T,>(a: readonly T[]) => a[Math.floor(r() * a.length)];
+      const int = (lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1));
+      let ops = 0;
+      for (let run = 0; run < 60; run++) {
+        let cur = cellsFor(defaultDashboard(), cols === 12 ? "lg" : "md");
+        for (let k = 0; k < 40; k++, ops++) {
+          const shown = cur.map((c) => c.i), hidden = kinds.filter((x) => !shown.includes(x));
+          const op = pick(["drag", "drag", "resize", "preset", "key", "keysize", ...(shown.length > 2 ? ["hide"] : []), ...(hidden.length ? ["add"] : [])]);
+          const id = pick(shown), me = at(cur, id), lim = limits(id as Kind, cols);
+          const bottom = Math.max(...cur.map((c) => c.y + c.h));
+          let next = cur, touched: string | null = id;
+          if (op === "drag") next = dragFlow(cur, id, int(0, cols - me.w), int(0, bottom), cols);
+          else if (op === "resize") next = resizeFlow(cur, id, int(lim.minW, lim.maxW), int(lim.minH, lim.maxH), cols);
+          else if (op === "preset") { const [w, h] = presetCells(id as Kind, pick(Object.keys(KINDS[id as Kind].sizes) as SizeName[]), cols); next = resizeFlow(cur, id, w, h, cols); }
+          else if (op === "key") { const to = stepTarget(cur, id, pick(["left", "right", "up", "down"] as const), cols); if (to) next = dragFlow(cur, id, to.x, to.y, cols); }
+          else if (op === "keysize") { const [dw, dh] = pick([[1, 0], [-1, 0], [0, 1], [0, -1]]); const want = clampCell({ ...me, w: me.w + dw, h: me.h + dh }, cols); next = resizeFlow(cur, id, want.w, want.h, cols); }
+          else if (op === "hide") { next = settle(cur.filter((c) => c.i !== id), cols); touched = null; }
+          else { touched = pick(hidden); next = addCell(cur, touched, cols); }
+          check(next, cur, cols, touched, `${op} ${id}`);
+          cur = next;
+        }
+      }
+      expect(ops).toBe(2400);
+    });
+  }
+
+  it("mends a damaged saved layout without a gap", () => {
+    const r = seeded(7);
+    for (let n = 0; n < 300; n++) {
+      const lg = defaultDashboard().layouts.lg!.filter(() => r() > 0.15).map((c) => ({ ...c, x: c.x + Math.round((r() - 0.5) * 6), y: c.y + Math.round((r() - 0.5) * 8), w: c.w + Math.round((r() - 0.5) * 6), h: c.h + Math.round((r() - 0.5) * 4) }));
+      const d = parseDashboard(JSON.stringify({ v: LAYOUT_VERSION, widgets: [], layouts: { lg } }));
+      check(d.layouts.lg!, [], 12, null, "load");
+    }
   });
 });
 

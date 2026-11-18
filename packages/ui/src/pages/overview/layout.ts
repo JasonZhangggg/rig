@@ -1,7 +1,5 @@
 // The Home dashboard as data: which widgets show, where each sits on the grid, and how each looks.
 // Stored per account on this device, parsed defensively so an old or broken copy never breaks Home.
-import { verticalCompactor } from "react-grid-layout/core";
-
 export const LAYOUT_VERSION = 2;
 
 export type Kind = "pc" | "health" | "todo" | "asks" | "temps" | "fans" | "evenings" | "storage" | "live" | "parts";
@@ -17,8 +15,11 @@ export type Bp = "lg" | "md";
 
 export const COLS: Record<Bp, number> = { lg: 12, md: 8 };
 
-/** Where a widget sits, in grid cells. `i` is the widget's id. */
-export interface Cell { i: string; x: number; y: number; w: number; h: number }
+/**
+ * Where a widget sits, in grid cells. `i` is the widget's id. `cw` and `ch` are the size the person chose, kept only
+ * while the grid shows the tile at another size to close a gap.
+ */
+export interface Cell { i: string; x: number; y: number; w: number; h: number; cw?: number; ch?: number }
 
 export interface Widget {
   id: string;
@@ -237,10 +238,36 @@ export function sizeLabel(kind: Kind, w: number, h: number, cols: number) {
 const overlaps = (a: Cell, b: Cell) => a.i !== b.i && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const hitsAny = (c: Cell, list: readonly Cell[]) => list.some((o) => overlaps(c, o));
 const byRow = (a: Cell, b: Cell) => a.y - b.y || a.x - b.x;
-const clone = (cells: readonly Cell[]) => cells.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
+const clone = (cells: readonly Cell[]) => cells.map((c) => ({ ...c }));
+/** Cells in the order of `like`, so a layout that ends up where it started is equal to it. */
+const inOrder = (cells: readonly Cell[], like: readonly Cell[]) => {
+  const at = new Map(like.map((c, k) => [c.i, k]));
+  return [...cells].sort((a, b) => (at.get(a.i) ?? 1e9) - (at.get(b.i) ?? 1e9));
+};
 
 /** Widget ids top to bottom, left to right: the reading order and the order a phone shows. */
 export const orderOf = (cells: readonly Cell[]) => [...cells].sort(byRow).map((c) => c.i);
+
+/** How far past the size the person chose the grid may stretch a tile to close a gap, in cells each way: about one preset size. */
+export const STEP = 2;
+
+/** The size the person chose for a tile. The grid shows it up to STEP larger when that closes a gap, or smaller when squeezed. */
+export const chosenOf = (c: Cell) => ({ w: c.cw ?? c.w, h: c.ch ?? c.h });
+
+/** A tile at a size the grid picked, still remembering the size the person chose. */
+function sized(c: Cell, w: number, h: number, x = c.x, y = c.y): Cell {
+  const want = chosenOf(c);
+  const out: Cell = { i: c.i, x, y, w, h };
+  if (want.w !== w) out.cw = want.w;
+  if (want.h !== h) out.ch = want.h;
+  return out;
+}
+
+/** The largest the grid may stretch a tile: one step past the size the person chose, and never past its limits. */
+function reach(c: Cell, cols: number) {
+  const lim = limits(kindOf(c.i), cols), want = chosenOf(c);
+  return { w: Math.min(lim.maxW, want.w + STEP), h: Math.min(lim.maxH, want.h + STEP) };
+}
 
 /** Puts each item in the first free slot, top to bottom, left to right, around any cells already taken. */
 export function place(items: readonly { i: string; w: number; h: number }[], cols: number, taken: readonly Cell[] = []): Cell[] {
@@ -260,54 +287,167 @@ export function place(items: readonly { i: string; w: number; h: number }[], col
   return out;
 }
 
-/** Everything as high as it will go, using the grid library's own vertical compaction. */
+/** Everything as high as it will go, in reading order, the way the grid library compacts. Cells keep the order they came in. */
 export function compactUp(cells: readonly Cell[], cols: number): Cell[] {
-  return clone(verticalCompactor.compact(clone(cells), cols) as Cell[]);
-}
-
-/** Empty cells with a widget somewhere below them, plus a lighter cost for a ragged bottom edge. */
-export function holes(cells: Iterable<Cell>, cols: number) {
-  const bottom = Array<number>(cols).fill(0), filled = Array<number>(cols).fill(0);
-  for (const b of cells) for (let c = b.x; c < b.x + b.w && c < cols; c++) { bottom[c] = Math.max(bottom[c], b.y + b.h); filled[c] += b.h; }
-  const end = Math.max(0, ...bottom);
-  return bottom.reduce((n, bt, c) => n + (bt - filled[c]) + (end - bt) * 0.25, 0);
-}
-
-/** Which cells are taken, as a flat array of rows. */
-function occupancy(cells: readonly Cell[], cols: number) {
-  const rows = cells.reduce((n, c) => Math.max(n, c.y + c.h), 0);
-  const grid = new Uint8Array(rows * cols);
-  const bottom = new Int32Array(cols);
-  for (const c of cells) {
-    for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) grid[y * cols + x] = 1;
-    for (let x = c.x; x < c.x + c.w; x++) bottom[x] = Math.max(bottom[x], c.y + c.h);
-  }
-  return { busy: (x: number, y: number) => y >= rows || y < 0 ? y < 0 : grid[y * cols + x] === 1, hole: (x: number, y: number) => y >= 0 && y < bottom[x] && grid[y * cols + x] === 0 };
-}
-
-/** Lets neighbours grow into any hole beside, above or below them, so a dashboard never has gaps in the middle. */
-export function fillHoles(cells: readonly Cell[], cols: number, keep: ReadonlySet<string> = new Set()): Cell[] {
-  const out = clone(cells).sort(byRow);
-  for (let guard = 0; guard < 200; guard++) {
-    const { busy, hole } = occupancy(out, cols);
-    const column = (x: number, y0: number, h: number) => { let any = false; for (let y = y0; y < y0 + h; y++) { if (busy(x, y)) return false; any ||= hole(x, y); } return any; };
-    const row = (y: number, x0: number, w: number) => { if (y < 0) return false; let any = false; for (let x = x0; x < x0 + w; x++) { if (busy(x, y)) return false; any ||= hole(x, y); } return any; };
-    let grew = false;
-    for (const b of out) {
-      if (keep.has(b.i)) continue;
-      const lim = limits(kindOf(b.i), cols);
-      if (b.w < lim.maxW && b.x + b.w < cols && column(b.x + b.w, b.y, b.h)) { b.w++; grew = true; break; }
-      if (b.w < lim.maxW && b.x > 0 && column(b.x - 1, b.y, b.h)) { b.x--; b.w++; grew = true; break; }
-      if (b.h < lim.maxH && row(b.y + b.h, b.x, b.w)) { b.h++; grew = true; break; }
-      if (b.h < lim.maxH && row(b.y - 1, b.x, b.w)) { b.y--; b.h++; grew = true; break; }
-    }
-    if (!grew) break;
+  const out = clone(cells);
+  const done: Cell[] = [];
+  for (const c of [...out].sort(byRow)) {
+    c.w = Math.max(1, Math.min(c.w, cols));
+    c.x = Math.max(0, Math.min(cols - c.w, c.x));
+    c.y = Math.max(0, Math.min(c.y, done.reduce((m, o) => Math.max(m, o.y + o.h), 0)));
+    while (c.y > 0 && !hitsAny({ ...c, y: c.y - 1 }, done)) c.y--;
+    for (let hit = done.find((o) => overlaps(c, o)); hit; hit = done.find((o) => overlaps(c, o))) c.y = hit.y + hit.h;
+    done.push(c);
   }
   return out;
 }
 
-/** Compacts upward, fills what's left, compacts again. `keep` are the tiles the person just set; they never change size. */
-export const settle = (cells: readonly Cell[], cols: number, keep: ReadonlySet<string> = new Set()) => compactUp(fillHoles(compactUp(cells, cols), cols, keep), cols);
+/** Which cells are taken, and how far down each column reaches. */
+function occupancy(cells: readonly Cell[], cols: number) {
+  const rows = cells.reduce((n, c) => Math.max(n, c.y + c.h), 0);
+  const taken = new Uint8Array(rows * cols), bottom = new Int32Array(cols);
+  for (const c of cells) {
+    for (let x = Math.max(0, c.x); x < Math.min(cols, c.x + c.w); x++) {
+      bottom[x] = Math.max(bottom[x], c.y + c.h);
+      for (let y = Math.max(0, c.y); y < c.y + c.h; y++) taken[y * cols + x] = 1;
+    }
+  }
+  return { rows, bottom, busy: (x: number, y: number) => x < 0 || x >= cols || y < 0 || (y < rows && taken[y * cols + x] === 1) };
+}
+
+/** How far down tiles start: an open cell above the last tile's top row is a gap; below it, it's just the ragged end of the page. */
+const lastTop = (cells: readonly Cell[]) => cells.reduce((n, c) => Math.max(n, c.y), 0);
+
+/** Open cells the dashboard never keeps: any above the top row of its last tile, inside the grid or at its sides. */
+export function gapsIn(cells: readonly Cell[], cols: number) {
+  const { busy } = occupancy(cells, cols), end = lastTop(cells);
+  let n = 0;
+  for (let y = 0; y < end; y++) for (let x = 0; x < cols; x++) if (!busy(x, y)) n++;
+  return n;
+}
+
+/** Gaps, plus a lighter cost for a ragged bottom edge. */
+export function holes(cells: readonly Cell[], cols: number) {
+  const { bottom } = occupancy(cells, cols);
+  const end = Math.max(0, ...bottom);
+  return gapsIn(cells, cols) + bottom.reduce((n, b) => n + (end - b) * 0.25, 0);
+}
+
+/**
+ * What the grid holds steady while it lays tiles down. `fixed` tiles keep their size. `lead` is the tile the person is
+ * moving: it takes the spot it's over as soon as the rows above that spot are full, ahead of whatever was there.
+ */
+export interface Hold { fixed?: ReadonlySet<string>; lead?: string }
+const none: ReadonlySet<string> = new Set();
+
+// What each kind of change costs when the grid picks how to fill an open stretch. Sliding sideways is far more jarring
+// than rising into room above, a tile squeezed narrower loses more than one stretched a little wider, and a tile that
+// jumps ahead of others waiting above it reads as the layout shuffling.
+const COST = { side: 1, rise: 0.15, sink: 0.25, jump: 1, stretch: 0.8, squeeze: 2, fill: 0.5 };
+
+/** A layout half laid down: how far down each column is full, the tiles placed, and the tiles still to place. */
+interface Laying { sky: number[]; out: Cell[]; rest: Cell[] }
+
+/** The ways to fill the lowest open stretch of a half laid layout, cheapest first. */
+function movesFor(st: Laying, cols: number, rank: ReadonlyMap<string, number>, hold: Hold, loose: boolean): { cost: number; next: Laying }[] {
+  const { fixed = none, lead } = hold;
+  const { sky, out, rest } = st;
+  const f = Math.min(...sky), a = sky.indexOf(f);
+  let b = a;
+  while (b < cols && sky[b] === f) b++;
+  const room = b - a;
+  // How narrow a tile may go: a step under the size chosen, or when nothing else works, as narrow as its limits allow.
+  const minW = (c: Cell) => (fixed.has(c.i) ? c.w : Math.max(limits(kindOf(c.i), cols).minW, loose ? 0 : Math.min(c.w, chosenOf(c).w - STEP)));
+  const moves: { cost: number; next: Laying }[] = [];
+  const raise = (s: number[], c: Cell) => { for (let x = c.x; x < c.x + c.w; x++) s[x] = Math.max(s[x], c.y + c.h); };
+
+  rest.forEach((c, k) => {
+    const others = rest.filter((_, j) => j !== k);
+    const least = others.length ? Math.min(...others.map(minW)) : 0;
+    const lo = minW(c), most = fixed.has(c.i) ? c.w : reach(c, cols).w;
+    const ahead = rest.reduce((n, o) => n + (rank.get(o.i)! < rank.get(c.i)! ? 1 : 0), 0);
+    const near = c.i === lead && f >= c.y && c.x < b && a < c.x + c.w;
+    for (const w of new Set(fixed.has(c.i) ? [c.w] : [Math.min(c.w, room), Math.min(room, most)])) {
+      if (w > room || w < lo) continue;
+      for (const x of new Set([a, b - w, Math.max(a, Math.min(b - w, c.x))])) {
+        const left = x - a, right = b - x - w;
+        if ((left && left < least) || (right && right < least)) continue;
+        // The held tile takes only the spot nearest the pointer. A tile twice its size or more still waiting there is a wall
+        // when the pointer is below its top row or barely over its edge: the held tile goes beside or below it instead.
+        const wall = (o: Cell) => o.w * o.h >= 2 * c.w * c.h && overlaps(o, { i: c.i, x, y: f, w, h: c.h })
+          && (o.y < c.y || 2 * (Math.min(x + w, o.x + o.w) - Math.max(x, o.x)) < w);
+        const claims = near && w <= c.w && x === Math.max(a, Math.min(b - w, c.x)) && !others.some(wall);
+        const resize = w === c.w ? 0 : w > c.w ? (w - c.w) * COST.stretch * (c.i === lead ? 0.5 : 1) : (c.w - w) * COST.squeeze;
+        const shift = Math.abs(c.x - x) * COST.side;
+        const cost = claims ? -100 + resize + shift
+          : resize + shift + (c.y > f ? (c.y - f) * COST.rise : (f - c.y) * COST.sink) + (c.i === lead ? 0 : ahead * COST.jump) + rank.get(c.i)! * 1e-3;
+        const t = sized(c, w, c.h, x, f), s = [...sky];
+        raise(s, t);
+        moves.push({ cost, next: { sky: s, out: [...out, t], rest: others } });
+      }
+    }
+  });
+
+  // A tile already on this row beside the stretch widens into it.
+  for (const o of out) {
+    if (o.y !== f || fixed.has(o.i) || o.w + room > reach(o, cols).w || (o.x + o.w !== a && o.x !== b)) continue;
+    const t = sized(o, o.w + room, o.h, o.x === b ? a : o.x), s = [...sky];
+    raise(s, t);
+    moves.push({ cost: room * o.h * COST.fill, next: { sky: s, out: out.map((p) => (p === o ? t : p)), rest } });
+  }
+  // The tiles under the stretch grow down to meet the taller columns on both sides.
+  const up = Math.min(a > 0 ? sky[a - 1] : Infinity, b < cols ? sky[b] : Infinity);
+  const floor = out.filter((o) => o.y + o.h === f && o.x < b && a < o.x + o.w);
+  if (f > 0 && up < Infinity && floor.length && floor.reduce((n, o) => n + o.w, 0) === room
+    && floor.every((o) => o.x >= a && o.x + o.w <= b && !fixed.has(o.i) && o.h + up - f <= reach(o, cols).h)) {
+    const grown = new Map(floor.map((o) => [o, sized(o, o.w, o.h + up - f)]));
+    const s = [...sky];
+    for (let x = a; x < b; x++) s[x] = up;
+    moves.push({ cost: (up - f) * room * COST.fill, next: { sky: s, out: out.map((p) => grown.get(p) ?? p), rest } });
+  }
+  return moves.sort((p, q) => p.cost - q.cost);
+}
+
+/**
+ * Lays tiles down one at a time, always into the lowest open stretch of the grid, so no open cell is ever left above a
+ * tile: every gap is closed by construction. The tile that goes there is the one whose wanted spot (its x and y in
+ * `cells`) is nearest, at its size or up to a step wider or narrower to share a row; or a neighbour on the same row widens
+ * into the stretch, or the tiles under it stretch down to meet their neighbours. The cheapest choice is tried first and a
+ * dead end, where nothing can fill a stretch, steps back to the next choice. A layout with no gap comes back as it was.
+ */
+export function settle(cells: readonly Cell[], cols: number, hold: Hold = {}): Cell[] {
+  const queue = [...cells].sort((p, q) => byRow(p, q) || (p.i === hold.lead ? -1 : q.i === hold.lead ? 1 : 0));
+  const rank = new Map(queue.map((c, k) => [c.i, k]));
+  const start: Laying = { sky: Array<number>(cols).fill(0), out: [], rest: queue.map((c) => ({ ...c, w: Math.min(c.w, cols) })) };
+  // The cheapest choice at every stretch nearly always works. When it leads to a stretch nothing can fill, the search
+  // allows one other choice somewhere along the way, then two, and of the layouts found at that count keeps the cheapest.
+  // Tiles narrow at most a step first; only if that can't close every gap may they go as narrow as their limits allow.
+  for (const loose of [false, true]) {
+    for (let turns = 0; turns <= 2; turns++) {
+      let budget = 2500, found: Laying | null = null, low = Infinity;
+      const lay = (st: Laying, spent: number, left: number) => {
+        if (!st.rest.length) { if (spent < low) { low = spent; found = st; } return; }
+        if (--budget < 0 || spent >= low) return;
+        const ms = movesFor(st, cols, rank, hold, loose);
+        for (let k = 0; k < Math.min(ms.length, 1 + left); k++) lay(ms[k].next, spent + ms[k].cost, left - k);
+      };
+      lay(start, 0, turns);
+      if (found) return inOrder((found as Laying).out, cells);
+    }
+  }
+  // No way found without a gap: the cheapest choice each time, and where nothing fits, the first tile waiting goes where it fits.
+  let st = start;
+  while (st.rest.length) {
+    const m = movesFor(st, cols, rank, hold, true)[0];
+    if (m) { st = m.next; continue; }
+    const [c, ...rest] = st.rest;
+    const w = Math.min(c.w, cols), x = Math.max(0, Math.min(cols - w, c.x));
+    const t = { ...c, w, x, y: Math.max(...st.sky.slice(x, x + w)) }, sky = [...st.sky];
+    for (let k = x; k < x + w; k++) sky[k] = t.y + t.h;
+    st = { sky, out: [...st.out, t], rest };
+  }
+  return inOrder(st.out, cells);
+}
 
 /** Keeps a box inside the grid and inside its widget's limits. */
 export function clampCell(c: Cell, cols: number): Cell {
@@ -330,29 +470,6 @@ export function stickyCell(prev: { x: number; y: number }, fx: number, fy: numbe
   };
 }
 
-const lowest = (c: Cell, placed: readonly Cell[]) => { const t = { ...c, y: 0 }; while (hitsAny(t, placed)) t.y++; return t.y; };
-
-/**
- * The others around tiles that stay put, each as high as it will go in its own columns. One that would be pushed
- * down slides sideways instead when that keeps it higher, so two tiles side by side trade places.
- */
-function packAround(base: readonly Cell[], pinned: readonly Cell[], cols: number): Cell[] {
-  const ids = new Set(pinned.map((p) => p.i));
-  const out = clone(pinned);
-  for (const o of [...base].filter((c) => !ids.has(c.i)).sort(byRow)) {
-    let best = { ...o, y: lowest(o, out) };
-    if (best.y > o.y) {
-      for (let x = 0; x + o.w <= cols; x++) {
-        if (x === o.x) continue;
-        const y = lowest({ ...o, x }, out);
-        if (y < best.y || (y === best.y && Math.abs(x - o.x) < Math.abs(best.x - o.x))) best = { ...o, x, y };
-      }
-    }
-    out.push(best);
-  }
-  return compactUp(out, cols);
-}
-
 const reshape = (a: readonly Cell[], b: readonly Cell[], skip: string) => {
   let n = 0, moved = 0;
   for (const c of b) {
@@ -367,80 +484,76 @@ const reshape = (a: readonly Cell[], b: readonly Cell[], skip: string) => {
 
 /**
  * Where everything goes while `id` is dragged to cell (x, y) of a layout that was `base` when the drag began.
- * Worked out from `base` every time, so dragging back undoes what dragging over did. The dragged tile may take
- * a narrower or wider size when that closes a gap; neighbours may grow into gaps beside them.
+ * Worked out from `base` every time, so dragging back undoes what dragging over did. The dragged tile takes the spot
+ * at the size the person chose, narrowing to share a row when it must; the others keep their order around it.
  */
 export function dragFlow(base: readonly Cell[], id: string, x: number, y: number, cols: number, adapt = !KINDS[kindOf(id)].heavy): Cell[] {
   const me = base.find((c) => c.i === id);
   if (!me) return clone(base);
-  const lim = limits(kindOf(id), cols);
-  const keep = new Set([id]);
-  let best: Cell[] = clone(base), cost = Infinity;
-  const widths = adapt ? Array.from({ length: lim.maxW - lim.minW + 1 }, (_, k) => lim.minW + k) : [me.w];
-  // A tile twice the size or more under the pointer, below its top row, is a wall: besides shoving it, try sitting beside it or just below it.
-  const wallsAt = (cx: number, w: number) => base.filter((o) => o.i !== id && o.w * o.h >= 2 * w * me.h && y > o.y && overlaps(o, { i: id, x: cx, y, w, h: me.h }));
-  for (const w of widths) {
-    const near = [x, x + me.w - w, x + Math.round((me.w - w) / 2)];
-    const xs = new Set([...near, ...wallsAt(x, w).flatMap((o) => [o.x + o.w, o.x - w])].map((v) => Math.max(0, Math.min(cols - w, v))));
-    for (const cx of xs) {
-      const ys = new Set([y, ...wallsAt(cx, w).map((o) => o.y + o.h)]);
-      for (const cy of ys) {
-        const trial = settle(packAround(base, [{ i: id, x: cx, y: cy, w, h: me.h }], cols), cols, keep);
-        const c = holes(trial, cols) + Math.abs(w - me.w) * 1.1 + (cx - x) ** 2 * 0.15 + Math.abs(cy - y) * 0.6 + reshape(base, trial, id);
-        if (c < cost - 1e-6) { cost = c; best = trial; }
-      }
-    }
-  }
-  return best;
+  const home = me.x === x && me.y === y;
+  const want = chosenOf(me);
+  const held: Cell = home || !adapt ? { ...me } : { i: id, x, y, w: want.w, h: want.h };
+  held.x = Math.max(0, Math.min(cols - held.w, x));
+  held.y = Math.max(0, y);
+  return settle(base.map((c) => (c.i === id ? held : c)), cols, { lead: id, fixed: adapt ? none : new Set([id]) });
 }
 
 /**
- * Where everything goes while `id` is resized to w by h. A neighbour on its right gives way or takes up the room,
- * tiles of the same height beside it can follow its height, and whatever needs the fewest gaps wins.
+ * Where everything goes while `id` is resized to w by h. Tiles that share its column can follow its width and tiles that
+ * share its row its height, the way columns and rows do in a document, and a neighbour on its right can give way or take
+ * up the room. Whichever leaves the tile where it is and moves the rest least wins. It always keeps the exact size asked for.
  */
-export function resizeFlow(base: readonly Cell[], id: string, w: number, h: number, cols: number): Cell[] {
-  const me = base.find((c) => c.i === id);
-  if (!me) return clone(base);
+function resizeTo(base: readonly Cell[], id: string, w: number, h: number, cols: number): Cell[] {
+  const me = base.find((c) => c.i === id)!;
   const r = clampCell({ ...me, w, h }, cols);
-  const keep = new Set([id]);
+  const meet = (a: Cell, b: Cell) => a.y < b.y + b.h && b.y < a.y + a.h;
+  // Neighbours follow only as far as a stretch may take them, and remember the size the person chose for them.
+  const fits = (o: Cell, ow: number, oh: number) => { const lim = limits(kindOf(o.i), cols), most = reach(o, cols); return ow >= lim.minW && ow <= most.w && oh >= lim.minH && oh <= most.h; };
   const follow = base.flatMap((o) => {
-    if (o.i === id || o.x !== me.x + me.w || !(o.y < me.y + me.h && me.y < o.y + o.h)) return [];
-    const nx = r.x + r.w, nw = o.x + o.w - nx, lim = limits(kindOf(o.i), cols);
-    return nw >= lim.minW && nw <= lim.maxW ? [{ ...o, x: nx, w: nw }] : [];
+    if (o.i === id || o.x !== me.x + me.w || !meet(o, me)) return [];
+    const nx = r.x + r.w, nw = o.x + o.w - nx;
+    return fits(o, nw, o.h) ? [sized(o, nw, o.h, nx)] : [];
   });
-  const mates = (list: Cell[]) => base.flatMap((o) => {
-    if (o.i === id || o.y !== me.y || o.h !== me.h || r.h === me.h) return [];
-    const lim = limits(kindOf(o.i), cols);
-    return r.h >= lim.minH && r.h <= lim.maxH ? [{ ...(list.find((c) => c.i === o.i) ?? o), h: r.h }] : [];
-  });
-  const variants = [[], follow, mates([]), [...follow.filter((f) => !mates(follow).some((m) => m.i === f.i)), ...mates(follow)]];
-  // Room a narrower tile gives up, with no neighbour beside it to take it, goes to any tile that fits there, so no gap is left.
-  const from = r.x + r.w;
-  const free = base.reduce((end, o) => (o.i !== id && o.x >= from && o.y < r.y + r.h && r.y < o.y + o.h ? Math.min(end, o.x) : end), cols) - from;
-  if (free > 0 && r.w < me.w) {
-    for (const o of base) {
-      const lim = limits(kindOf(o.i), cols);
-      if (o.i === id || KINDS[kindOf(o.i)].heavy || free < lim.minW) continue;
-      variants.push([{ i: o.i, x: from, y: r.y, w: Math.min(free, lim.maxW), h: Math.max(lim.minH, Math.min(lim.maxH, r.h)) }]);
-    }
-  }
+  const mates = r.h === me.h ? [] : base.flatMap((o) => (o.i !== id && o.y === me.y && o.h === me.h && fits(o, o.w, r.h) ? [sized(o, o.w, r.h)] : []));
+  const stack = r.w === me.w ? [] : base.flatMap((o) => (o.i !== id && o.x === me.x && o.w === me.w && !meet(o, me) && fits(o, r.w, o.h) ? [sized(o, r.w, o.h)] : []));
+  const shift = (cs: Cell[]) => cs.map((c) => ({ ...c, x: Math.max(0, me.x + me.w - c.w) }));
+  const variants: Cell[][] = [[r], [r, ...follow], [r, ...mates], [r, ...stack], [r, ...follow, ...mates.filter((m) => !follow.some((f) => f.i === m.i))]];
+  if (r.w < me.w) variants.push(shift([r]), shift([r, ...stack]));
   let best: Cell[] = clone(base), cost = Infinity;
   for (const v of variants) {
-    const pinned = [r, ...v];
-    if (pinned.some((a) => pinned.some((b) => overlaps(a, b)))) continue;
-    const trial = settle(packAround(base, pinned, cols), cols, keep);
-    const c = holes(trial, cols) + reshape(base, trial, id) * 0.5;
+    const trial = settle(base.map((c) => v.find((t) => t.i === c.i) ?? c), cols, { lead: id, fixed: new Set([id]) });
+    const got = trial.find((c) => c.i === id)!;
+    const c = holes(trial, cols) + gapsIn(trial, cols) * 40 + reshape(base, trial, id) + (Math.abs(got.x - me.x) + Math.abs(got.y - me.y)) * 3;
     if (c < cost - 1e-6) { cost = c; best = trial; }
   }
   return best;
 }
 
-/** Puts `id` into the first gap it fits, or at the bottom, at its default size. */
+/**
+ * The resize as asked, or when no layout at that size can be whole (a tile one column short of a row with nothing narrow
+ * enough to sit beside it), the nearest size that can, so the tile snaps to a size that fits instead of leaving a gap.
+ */
+export function resizeFlow(base: readonly Cell[], id: string, w: number, h: number, cols: number): Cell[] {
+  const me = base.find((c) => c.i === id);
+  if (!me) return clone(base);
+  const asked = clampCell({ ...me, w, h }, cols);
+  const tries = [[0, 0], [1, 0], [-1, 0], [0, 1], [2, 0], [-2, 0], [1, 1], [-1, 1], [0, -1], [3, 0], [-3, 0]]
+    .map(([dw, dh]) => clampCell({ ...asked, w: asked.w + dw, h: asked.h + dh }, cols))
+    .filter((c, k, all) => all.findIndex((o) => o.w === c.w && o.h === c.h) === k);
+  let first: Cell[] | null = null;
+  for (const t of tries) {
+    const out = resizeTo(base, id, t.w, t.h, cols);
+    if (!gapsIn(out, cols)) return out;
+    first ??= out;
+  }
+  return first!;
+}
+
+/** Shows `id` again at its default size, after everything else: at the end of the page, or in a stretch only it fits. */
 export function addCell(cells: readonly Cell[], id: string, cols: number): Cell[] {
   const [w, h] = presetCells(kindOf(id), KINDS[kindOf(id)].size, cols);
   const rest = cells.filter((c) => c.i !== id);
-  const [c] = place([{ i: id, w, h }], cols, rest);
-  return settle([...rest, c], cols, new Set([id]));
+  return settle([...rest, { i: id, x: 0, y: rest.reduce((n, c) => Math.max(n, c.y + c.h), 0), w, h }], cols);
 }
 
 export type Dir = "left" | "right" | "up" | "down";
@@ -497,8 +610,8 @@ export function cellsFor(d: Dashboard, bp: Bp): Cell[] {
   if (bp === "lg") return lg;
   const cols = COLS[bp];
   return settle(place(orderOf(lg).map((i) => {
-    const c = lg.find((x) => x.i === i)!;
-    return { i, w: Math.max(limits(kindOf(i), cols).minW, spanFor(c.w, cols)), h: c.h };
+    const want = chosenOf(lg.find((x) => x.i === i)!);
+    return { i, w: Math.max(limits(kindOf(i), cols).minW, spanFor(want.w, cols)), h: want.h };
   }), cols), cols);
 }
 
@@ -563,12 +676,18 @@ function parseCells(raw: unknown, shown: readonly string[], cols: number): Cell[
   if (!Array.isArray(raw)) return undefined;
   const seen = new Set<string>();
   const cells: Cell[] = [];
-  for (const c of raw) {
-    if (!c || typeof c !== "object") continue;
-    const { i, x, y, w, h } = c as Record<string, unknown>;
+  for (const raw1 of raw) {
+    if (!raw1 || typeof raw1 !== "object") continue;
+    const { i, x, y, w, h, cw, ch } = raw1 as Record<string, unknown>;
     if (typeof i !== "string" || !shown.includes(i) || seen.has(i) || !finite(x) || !finite(y) || !finite(w) || !finite(h)) continue;
     seen.add(i);
-    cells.push(clampCell({ i, x, y: Math.min(y, 500), w, h }, cols));
+    const c = clampCell({ i, x, y: Math.min(y, 500), w, h }, cols);
+    // A size the person chose is kept only when it's a real size for this widget and inside its limits.
+    const lim = limits(kindOf(i), cols);
+    const chosen = (v: unknown, now: number, lo: number, hi: number): v is number => finite(v) && Number.isInteger(v) && v >= lo && v <= hi && v !== now;
+    if (chosen(cw, c.w, lim.minW, lim.maxW)) c.cw = cw;
+    if (chosen(ch, c.h, lim.minH, lim.maxH)) c.ch = ch;
+    cells.push(c);
   }
   if (!cells.length) return undefined;
   // Overlaps resolve in reading order: a cell that lands on one already kept moves down until it's clear.
