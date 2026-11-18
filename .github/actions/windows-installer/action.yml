@@ -57,6 +57,13 @@ runs:
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
       with: { workspaces: apps/desktop/src-tauri }
+    - name: Fetch PawnIO, the driver for processor temperatures (pinned, hash-checked)
+      shell: pwsh
+      run: |
+        node tools/pawnio.mjs
+        $s = Get-AuthenticodeSignature apps/desktop/src-tauri/pawnio/PawnIO_setup.exe
+        if ($s.Status -ne "Valid" -or $s.SignerCertificate.Subject -notmatch "O=namazso") { throw "PawnIO's signature is $($s.Status), signed by $($s.SignerCertificate.Subject)" }
+        "Signed by $($s.SignerCertificate.Subject)"
     - name: Build the installer
       shell: pwsh
       run: pnpm --filter @rig/desktop tauri build
@@ -72,3 +79,26 @@ runs:
         [ ${#files[@]} -eq 1 ] || { echo "::error::Expected one installer in bundle/nsis, found ${#files[@]}"; exit 1; }
         echo "Built ${files[0]}"
         echo "installer=${files[0]}" >> "$GITHUB_OUTPUT"
+
+    - name: Install, check PawnIO and the helper, then uninstall
+      shell: pwsh
+      env:
+        INSTALLER: ${{ steps.find.outputs.installer }}
+      run: |
+        $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
+        if (Test-Path $key) { throw "PawnIO is already on this runner, so the test can't tell who installed it" }
+        $p = Start-Process $env:INSTALLER -ArgumentList "/S" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Installer exited with $($p.ExitCode)" }
+        $dir = Join-Path $env:LOCALAPPDATA "Rig"
+        if (-not (Test-Path (Join-Path $dir "pawnio\PawnIO_setup.exe"))) { throw "PawnIO's setup isn't in $dir" }
+        if (-not (Test-Path $key)) { throw "Installing Rig didn't install PawnIO" }
+        "PawnIO $((Get-ItemProperty $key).DisplayVersion) installed with Rig"
+        if ((Get-ItemProperty 'HKLM:\SOFTWARE\Rig' -ErrorAction SilentlyContinue).PawnIOInstalledByRig -ne "1") { throw "Rig didn't record that it installed PawnIO" }
+        $p = Start-Process (Join-Path $dir "RigHelper.exe") -ArgumentList "--selftest", "installed-selftest.json" -Wait -PassThru
+        $driver = (Get-Content installed-selftest.json | ConvertFrom-Json).snapshot.driver
+        "Helper sees PawnIO: installed=$($driver.installed) version=$($driver.version)"
+        if (-not $driver.installed) { throw "The installed helper can't see PawnIO" }
+        $p = Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S", "_?=$dir" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Uninstaller exited with $($p.ExitCode)" }
+        if (Test-Path $key) { throw "Uninstalling Rig left PawnIO behind, though Rig installed it" }
+        "Uninstalling Rig removed PawnIO"

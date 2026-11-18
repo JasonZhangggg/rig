@@ -2,6 +2,10 @@
   "bundle": {
     "externalBin": [
       "binaries/RigHelper"
-    ]
+    ],
+    "resources": {
+      "pawnio/PawnIO_setup.exe": "pawnio/PawnIO_setup.exe",
+      "pawnio/PAWNIO-NOTICE.txt": "pawnio/PAWNIO-NOTICE.txt"
+    }
   }
 }

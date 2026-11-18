@@ -68,6 +68,15 @@ describe("health", () => {
     const snap: Snapshot = { at: 0, sensors: [], elevated: false };
     expect(findings({ inv: atlas(), snap, facts: null })[0].title).toMatch(/can't read every temperature/);
   });
+
+  it("says why processor temperatures are missing when PawnIO isn't installed", () => {
+    const ids = (driver: Snapshot["driver"], elevated = true) => findings({ inv: atlas(), snap: { at: 0, sensors: [], elevated, driver }, facts: null }).map((f) => f.id);
+    expect(ids({ installed: false })).toContain("needs-driver");
+    expect(ids({ installed: true, version: "2.0.1.0" })).not.toContain("needs-driver");
+    expect(ids(undefined)).not.toContain("needs-driver");
+    expect(ids({ installed: false }, false)).toEqual(expect.arrayContaining(["needs-admin"]));
+    expect(ids({ installed: false }, false)).not.toContain("needs-driver");
+  });
 });
 
 describe("actions", () => {

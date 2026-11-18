@@ -48,7 +48,7 @@ function useSetup() {
   const { pc, data, client, go, set } = useApp();
   const [skipped, setSkipped] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("rig.setupSkipped") ?? "[]"); } catch { return []; } });
   const steps: { id: string; title: string; body: string; cta: string; run: () => void; done: boolean }[] = [
-    { id: "sensors", title: "Allow temperature readings", body: "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "How", run: () => go("chat"), done: !pc.issues?.some((i) => i.id === "needs-admin") },
+    { id: "sensors", title: "Allow temperature readings", body: pc.issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "How", run: () => go("chat"), done: !pc.issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
     { id: "name", title: `Name ${pc.kind === "laptop" ? "your laptop" : "your PC"}`, body: "Pick a name and a color. It marks this PC everywhere you see it.", cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: pc.name !== "My PC" },
     { id: "account", title: "Sign in to sync", body: "See this PC from any browser and keep its history if you reinstall.", cta: "Sign in", run: () => go("signin"), done: !!data.account || client.kind === "demo" },
   ];
