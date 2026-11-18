@@ -21,10 +21,10 @@
 
 
 /* ---------- Changes ---------- */
-.ch-counts { display: flex; flex-direction: row; gap: 32px; margin: 0; }
-.ch-counts > div { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-.ch-counts dt { color: var(--text-2); }
-.ch-counts dd { margin: 0; font: 600 2.5rem/1 var(--font); letter-spacing: -.04em; }
+.ch-lead { display: flex; flex-direction: column; gap: 14px; }
+.ch-latest { max-width: 80ch; }
+.ch-latest b { color: var(--text); font-weight: 600; }
+.ch-next { scroll-margin-top: 20px; }
 
 .ch-next-list,
 .ch-timeline { list-style: none; margin: 0; padding: 0; }
@@ -85,7 +85,6 @@
   .ch-entry,
   .ch-timeline > .ch-entry { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
   .ch-time { padding: 0; }
-  .ch-counts { display: none; }
   .ch-empty { padding: 22px 0 0; }
   .game { grid-template-columns: 1fr; }
 }

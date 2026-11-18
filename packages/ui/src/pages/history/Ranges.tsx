@@ -1,7 +1,7 @@
 import { HOT_MARGIN, median, values, type HistoryPoint, type PC } from "@rig/core";
 import { useTemp } from "../../state";
 
-interface Spread { key: "cpu" | "gpu" | "fan"; name: string; low: number; typical: number; high: number; limit?: number }
+interface Spread { key: "cpu" | "gpu" | "fan"; name: string; low: number; typical: number; high: number; highAt: number; limit?: number }
 
 /** Lowest, typical and highest reading of each part over the points, for the parts that reported any. */
 export function spreads(points: readonly HistoryPoint[], pc: PC): Spread[] {
@@ -13,20 +13,22 @@ export function spreads(points: readonly HistoryPoint[], pc: PC): Spread[] {
   return parts.flatMap(([key, name, limit]) => {
     const xs = values(points, (p) => p[key]);
     if (!xs.length) return [];
-    return [{ key, name, limit, low: Math.round(Math.min(...xs)), typical: Math.round(median(xs)!), high: Math.round(Math.max(...xs)) }];
+    const top = points.reduce<HistoryPoint | null>((a, p) => (p[key] != null && (!a || p[key]! > a[key]!) ? p : a), null)!;
+    return [{ key, name, limit, low: Math.round(Math.min(...xs)), typical: Math.round(median(xs)!), high: Math.round(Math.max(...xs)), highAt: top.t }];
   });
 }
 
-export function Ranges({ points, pc }: { points: HistoryPoint[]; pc: PC }) {
+/** Each part's spread against its safe limit. A temperature's highest reading shows its moment on the chart. */
+export function Ranges({ points, pc, pinned, onPin }: { points: HistoryPoint[]; pc: PC; pinned: string | null; onPin: (key: string, t: number) => void }) {
   const list = spreads(points, pc);
   return (
-    <section className="card card-pad hi-card">
-      {list.length ? <div className="hi-ranges">{list.map((s) => <Row key={s.key} s={s} />)}</div> : <p className="muted">No readings in this range.</p>}
+    <section className="hi-panel" aria-label="Lowest, typical and highest">
+      {list.length ? <div className="hi-ranges">{list.map((s) => <Row key={s.key} s={s} pinned={pinned === `high-${s.key}`} onPin={() => onPin(`high-${s.key}`, s.highAt)} />)}</div> : <p className="muted">No readings in this range.</p>}
     </section>
   );
 }
 
-function Row({ s }: { s: Spread }) {
+function Row({ s, pinned, onPin }: { s: Spread; pinned: boolean; onPin: () => void }) {
   const temp = useTemp();
   const fan = s.key === "fan";
   const show = (v: number) => (fan ? `${v.toLocaleString()} rpm` : temp(v));
@@ -45,7 +47,12 @@ function Row({ s }: { s: Spread }) {
       <dl className="hi-figs">
         <div><dt>Lowest</dt><dd className="num">{show(s.low)}</dd></div>
         <div><dt>Typical</dt><dd className="num">{show(s.typical)}</dd></div>
-        <div><dt>Highest</dt><dd className={`num${near ? " look" : ""}`}>{show(s.high)}</dd></div>
+        <div>
+          <dt>Highest</dt>
+          <dd className={`num${near ? " look" : ""}`}>
+            {fan ? show(s.high) : <button type="button" className="hi-fig-btn" aria-pressed={pinned} aria-label={`${s.name} highest, ${show(s.high)}, show on chart`} onClick={onPin}>{show(s.high)}</button>}
+          </dd>
+        </div>
       </dl>
     </div>
   );

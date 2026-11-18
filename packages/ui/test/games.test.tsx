@@ -9,7 +9,7 @@ vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
 const { noteText } = await import("../src/pages/games/words");
-const { headroomWords } = await import("../src/pages/games/Library");
+const { headroomWords, sortGames } = await import("../src/pages/games/Library");
 
 async function openGames(client = new DemoClient()) {
   location.hash = "games";
@@ -31,7 +31,7 @@ describe("Games", () => {
     expect(document.body.textContent).not.toMatch(/NaN|undefined/);
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    await screen.findByText("Most played this month");
+    await screen.findByText("Games this month");
     const cyberpunk = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Cyberpunk 2077"))!;
     expect(within(cyberpunk).getByText("settings to try")).toBeTruthy();
     fireEvent.click(cyberpunk);
@@ -45,6 +45,48 @@ describe("Games", () => {
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
     expect(location.hash).toBe("#chat");
     expect(await screen.findByText(/How can I make Cyberpunk 2077 run better and cooler/)).toBeTruthy();
+  });
+
+  it("sorts the list by most played, hottest or most recent, and still opens a game", async () => {
+    await openGames();
+    const sort = await screen.findByRole("group", { name: "Sort games" });
+    const peaks = () => within(screen.getByRole("list", { name: "Games" })).getAllByRole("button")
+      .map((r) => Number(r.querySelector(".gm-temp .faint")!.textContent!.match(/Peak (\d+)/)![1]));
+    expect(within(sort).getByRole("button", { name: "Most played" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(sort).getByRole("button", { name: "Hottest" }));
+    expect(within(sort).getByRole("button", { name: "Hottest" }).getAttribute("aria-pressed")).toBe("true");
+    expect([...peaks()].sort((a, b) => b - a)).toEqual(peaks());
+    fireEvent.click(within(sort).getByRole("button", { name: "Recent" }));
+    const first = within(screen.getByRole("list", { name: "Games" })).getAllByRole("button")[0];
+    const name = first.querySelector(".gm-title b")!.textContent!;
+    fireEvent.click(first);
+    expect(await screen.findByRole("heading", { level: 1, name })).toBeTruthy();
+  });
+
+  it("orders recent games by when they were last played", () => {
+    const g = (name: string, lastPlayed: number, peak: number | null, hours = 1) => ({ name, lastPlayed, peak, hours }) as Parameters<typeof sortGames>[0][number];
+    const games = [g("A", 1, 70, 3), g("B", 3, null, 2), g("C", 2, 80, 1)];
+    expect(sortGames(games, "played").map((x) => x.name)).toEqual(["A", "B", "C"]);
+    expect(sortGames(games, "recent").map((x) => x.name)).toEqual(["B", "C", "A"]);
+    expect(sortGames(games, "hot").map((x) => x.name)).toEqual(["C", "A", "B"]);
+  });
+
+  it("holds the chart's readout at the peak of the session picked", async () => {
+    await openGames();
+    const row = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button")[0];
+    fireEvent.click(row);
+    const sessions = await screen.findByRole("list", { name: "Sessions" });
+    const live = () => screen.getByRole("region", { name: "Sessions chart" }).querySelector("[aria-live]")!.textContent!;
+    let charted = 0;
+    for (const button of within(sessions).getAllByRole("button")) {
+      fireEvent.click(button);
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      const peak = button.textContent!.match(/peak (\d+°C)/)![1];
+      if (!button.closest(".gm-sessions")!.querySelector("svg.chart")) continue;
+      expect(live()).toMatch(new RegExp(`Graphics card ${peak}`));
+      charted++;
+    }
+    expect(charted).toBeGreaterThan(1);
   });
 
   it("shows no tuning for games without measurements", async () => {

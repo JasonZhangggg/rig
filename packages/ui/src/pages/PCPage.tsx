@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatTemp, type ActionCall, type Part, type TempUnit } from "@rig/core";
 import { Sparkline } from "../chart";
-import { StageSlot, getStage } from "../components/Stage";
+import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
 import { OtherManuals } from "../manuals/OtherManuals";
 import { PartManual } from "../manuals/PartManual";
@@ -9,13 +9,17 @@ import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince } from "./shared";
 import { PartUpgrade, UpgradesCard, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
 
-/** The last few readings of a value, kept while the page is open. */
-function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40) {
+/** The last few readings of a value, kept while the page is open, after any earlier readings it starts from. */
+function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40, seed: number[] = []) {
   const [trail, setTrail] = useState<{ key: string; v: number[] }>({ key, v: [] });
   useEffect(() => {
     if (value == null) return;
-    setTrail((t) => ({ key, v: [...(t.key === key ? t.v : []), value].slice(-size) }));
+    setTrail((t) => ({ key, v: [...(t.key === key ? t.v : seed), value].slice(-size) }));
+    // The seed only matters when the trail starts.
   }, [key, value, tick, size]);
+  useEffect(() => {
+    if (seed.length) setTrail((t) => (t.key === key && t.v.length > 1 ? t : { key, v: [...seed, ...(t.key === key ? t.v : [])].slice(-size) }));
+  }, [key, seed, size]);
   const v = trail.key === key ? trail.v : [];
   return v.length > 1 ? v : value != null ? [value, value] : [];
 }
@@ -45,7 +49,7 @@ export function PCPage() {
   const ups = useUpgrades();
   return (
     <div className="page">
-      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Pick a part for its details, manual and upgrades. Drag to turn, scroll to zoom.</p></div></div>
+      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Point at a part to find it, pick it for details. Drag to turn, scroll to zoom.</p></div></div>
       <div className="pc-view">
         <section className="card stage-card">
           <StageSlot id="pc-stage" />
@@ -126,10 +130,52 @@ export function partsSummary(parts: Part[], name: string, online: boolean) {
   return "Pick one for its specs, manual and drivers.";
 }
 
+/** The last hour of processor and graphics card readings, so their sparklines have a shape from the start. */
+function useRecent() {
+  const { client, pc } = useApp();
+  const [got, setGot] = useState<{ id: string; cpu: number[]; gpu: number[] } | null>(null);
+  useEffect(() => {
+    let live = true;
+    client.history(pc.id, "day").then((pts) => {
+      const hour = pts.filter((p) => p.t >= Date.now() - 36e5);
+      const of = (k: "cpu" | "gpu") => hour.map((p) => p[k]).filter((v): v is number => v != null).filter((_, i, a) => i % Math.max(1, Math.floor(a.length / 30)) === 0);
+      if (live) setGot({ id: pc.id, cpu: of("cpu"), gpu: of("gpu") });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [client, pc.id]);
+  return got?.id === pc.id ? got : null;
+}
+
+const none: number[] = [];
+
+/** One part in the list: what it is, its temperature as it moves, and a light on it in the 3D view while pointed at. */
+function PartRow({ id, part, lit, seed }: { id: string; part: Part; lit: boolean; seed?: number[] }) {
+  const { pc } = useApp();
+  const temp = useTemp();
+  const trail = useTrail(`${pc.id}:${id}`, part.temp, pc.seenAt, 30, seed ?? none);
+  return (
+    <li>
+      <button type="button" className={lit ? "is-lit" : undefined} onClick={() => getStage().scene.select(id)}
+        onPointerEnter={() => hoverPart(id)} onPointerLeave={() => hoverPart(null)} onFocus={() => hoverPart(id)} onBlur={() => hoverPart(null)}>
+        <span className="part-txt"><span className="pt">{part.type}</span><span className="pn">{part.name}</span></span>
+        {part.temp !== undefined && (
+          <span className="part-live">
+            <Sparkline values={trail} w={48} h={18} warn={part.warn} />
+            <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}</span>
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
 function Detail({ ups }: { ups: PCUpgrades }) {
   const { ui, pc, set } = useApp();
-  const temp = useTemp();
   const parts = pc.parts ?? {};
+  const lit = useStageHover();
+  const recent = useRecent();
+  // Leaving the page or opening a part takes the light off whatever row was pointed at.
+  useEffect(() => () => hoverPart(null), [ui.selected]);
   const select = (id: string | null) => getStage().scene.select(id);
   if (!ui.selected || !parts[ui.selected]) {
     const list = Object.entries(parts);
@@ -141,14 +187,7 @@ function Detail({ ups }: { ups: PCUpgrades }) {
         </div>
         {list.length > 0 && (
           <ul className="part-list" aria-label="Parts">
-            {list.map(([k, v]) => (
-              <li key={k}>
-                <button type="button" onClick={() => select(k)}>
-                  <span className="part-txt"><span className="pt">{v.type}</span><span className="pn">{v.name}</span></span>
-                  {v.temp !== undefined && <span className={`num part-temp${v.warn ? " look" : ""}`}>{temp(v.temp)}</span>}
-                </button>
-              </li>
-            ))}
+            {list.map(([k, v]) => <PartRow key={k} id={k} part={v} lit={lit === k} seed={k === "cpu" || k === "gpu" ? recent?.[k] : undefined} />)}
           </ul>
         )}
         <OtherManuals />
@@ -266,9 +305,21 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
     );
   }
   const tiles: JSX.Element[] = [];
-  if (part.temp !== undefined) tiles.push(<div key="t" className={`live${part.warn ? " warn" : ""}`}><span className="label">Temperature</span><span className="big">{temp(part.temp)}</span><Sparkline values={trail} w={130} h={26} warn={part.warn} /></div>);
+  if (part.temp !== undefined) {
+    tiles.push(
+      <div key="t" className={`live live-wide${part.warn ? " warn" : ""}`}>
+        <span className="label">Temperature</span>
+        <span className="live-row"><span key={Math.round(part.temp)} className="big live-tick">{temp(part.temp)}</span><Sparkline values={trail} w={150} h={30} warn={part.warn} /></span>
+        {part.limit ? (
+          <span className="live-meter" role="img" aria-label={limitWords(part.temp, part.limit, unit)}>
+            <i style={{ width: `${Math.min(100, (part.temp / part.limit) * 100)}%` }} /><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
+          </span>
+        ) : null}
+      </div>,
+    );
+  }
   if (part.tempMax !== undefined) tiles.push(<div key="m" className="live"><span className="label">Highest today</span><span className="big">{temp(part.tempMax)}</span></div>);
-  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span className="big">{part.load}%</span></div>);
+  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span key={part.load} className="big live-tick">{part.load}%</span><span className="bar live-load" aria-hidden="true"><i style={{ width: `${part.load}%` }} /></span></div>);
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
   return (

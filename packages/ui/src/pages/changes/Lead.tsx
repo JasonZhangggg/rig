@@ -2,29 +2,24 @@ import type { Change } from "@rig/core";
 import { ago } from "../games/words";
 
 const count = (n: number) => (n === 1 ? "1 change" : `${n} changes`);
+export type Filter = "all" | "applied" | "undone";
 
-/** What changed lately and what's still in place, in a sentence, with the counts beside it. */
-export function Lead({ changes, pc }: { changes: Change[]; pc: string }) {
+/** The counts that sum up the page, each one a filter for the list under it, and the latest change in one line. */
+export function Lead({ changes, pc, waiting, filter, onFilter }: { changes: Change[]; pc: string; waiting: number; filter: Filter; onFilter: (f: Filter) => void }) {
   const applied = changes.filter((c) => c.status === "applied").length;
   const undone = changes.length - applied;
   const latest = changes.reduce((a, b) => (b.at > a.at ? b : a));
   const by = latest.by === "you" ? "by you" : "by Rig after you said yes";
   const title = applied ? `${count(applied)} in place on ${pc}` : `Every change on ${pc} is undone`;
-  const body = [
-    `The latest, ${ago(new Date(latest.at).getTime())}: ${latest.title}, ${by}${latest.status === "undone" ? ", since undone" : ""}.`,
-    applied ? "If anything feels off since then, undo it below and the old values come back." : `${pc} is back the way it was before.`,
-  ].join(" ");
+  const pick = (f: Filter) => onFilter(filter === f ? "all" : f);
   return (
-    <section className="card pg-lead good" aria-labelledby="ch-lead-h">
-      <div className="pg-lead-text">
-        <span className="pg-lead-tag">{applied ? "Old values saved" : "Nothing in place"}</span>
-        <h2 id="ch-lead-h" className="pg-lead-h">{title}</h2>
-        <p className="pg-lead-body">{body}</p>
+    <section className="ch-lead" aria-label={title}>
+      <div className="stats" role="group" aria-label="Show">
+        <button type="button" className="stat" aria-pressed={filter === "applied"} onClick={() => pick("applied")}><span>In place</span><b className="num">{applied}</b></button>
+        <button type="button" className="stat" aria-pressed={filter === "undone"} onClick={() => pick("undone")}><span>Undone</span><b className="num">{undone}</b></button>
+        {waiting > 0 && <a className="stat look" href="#ch-next" onClick={(e) => { e.preventDefault(); document.getElementById("ch-next")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><span>Waiting for you</span><b className="num">{waiting}</b></a>}
       </div>
-      <dl className="pg-lead-fig ch-counts">
-        <div><dt>In place</dt><dd className="num">{applied}</dd></div>
-        <div><dt>Undone</dt><dd className="num">{undone}</dd></div>
-      </dl>
+      <p className="muted ch-latest">Latest, {ago(new Date(latest.at).getTime())}: <b>{latest.title}</b>, {by}{latest.status === "undone" ? ", since undone" : ""}.</p>
     </section>
   );
 }

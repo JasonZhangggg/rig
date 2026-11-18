@@ -47,10 +47,22 @@
 .card h2:not(.plain-h) { font: 600 1.05rem/1.15 var(--font); letter-spacing: -.02em; color: var(--text); }
 .plain-h,
 .sheet h2 { color: var(--text); font-size: 1.2rem; font-weight: 600; letter-spacing: -.025em; }
-.big-figure { margin: 6px 0 4px; font: 600 2.6rem/1 var(--font); letter-spacing: -.045em; }
 .empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .callout { padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-size: .93em; }
 .callout.warn { background: var(--warn-bg); color: var(--text); }
+
+/* Counts that sum up a page and filter what's under them: a big number over a short label. Logs uses the same look (.lg-count). */
+.stats { display: flex; flex-wrap: wrap; gap: 8px 6px; margin: 0 -12px; }
+.stat { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 2px; min-width: 112px; padding: 8px 12px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: 600 13.5px var(--font); text-align: left; text-decoration: none; cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; }
+.stat b { font-size: clamp(1.6rem, 1.3rem + .9vw, 2.1rem); font-weight: 600; line-height: 1.1; letter-spacing: -.03em; }
+.stat.look b { color: var(--look-text); }
+.stat:hover { background: var(--surface-2); }
+.stat[aria-pressed="true"] { box-shadow: inset 0 -2px 0 var(--text); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.stats:has([aria-pressed="true"]) .stat:not([aria-pressed="true"]):not(:hover) { opacity: .6; }
+@media (prefers-reduced-motion: reduce) { .stat { transition: none; } }
+.chip-x { border: 0; cursor: pointer; }
+.chip-x:hover { background: var(--line); color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .stat { transition: none; } }
 
 .tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .tabs button { margin-bottom: -1px; padding: 10px 8px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-2); font-weight: 500; white-space: nowrap; cursor: pointer; }
@@ -191,5 +203,26 @@
 .legend .lg-cpu { background: var(--text); }
 .legend .lg-gpu { background: var(--look); }
 .legend .lg-limit { height: 0; border-top: 1.5px dashed var(--text-3); border-radius: 0; background: none; }
+/* The readout: a crosshair on the nearest reading with a dot on each line, and its values beside it. */
+.chart-box { position: relative; }
+.chart-box > .chart { touch-action: pan-y; cursor: crosshair; border-radius: 4px; }
+.chart-box > .chart:focus { outline: none; }
+.chart-box > .chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.chart-cross line { stroke: var(--text-2); stroke-width: 1; }
+.chart-dot { stroke: var(--surface); stroke-width: 2; }
+.chart-dot.cpu { fill: var(--good-mark); }
+.chart-dot.gpu { fill: var(--look); }
+.chart-tip {
+  position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 3px; min-width: 150px; padding: 8px 10px; pointer-events: none;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 20px rgba(27, 27, 31, .10);
+  font-size: 12.5px; white-space: nowrap; transform: translateX(12px); animation: chart-tip-in .12s var(--ease-out);
+}
+.chart-tip.flip { transform: translateX(calc(-100% - 12px)); }
+.chart-tip-when { color: var(--text-3); font-weight: 500; }
+.chart-tip-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; color: var(--text-2); }
+.chart-tip-row b { color: var(--text); font-weight: 600; }
+.chart-tip-row .chart-line { stroke-width: 3; stroke-linecap: round; }
+@keyframes chart-tip-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .chart-tip { animation: none; } }
 
 .notify-note { max-width: 58ch; margin: 0; padding: 6px 0 4px; font-size: 13px; }

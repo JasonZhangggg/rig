@@ -1,3 +1,6 @@
+.gm-list-head { flex-wrap: wrap; }
+.gm-list-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.gm-sort button { height: 28px; padding: 0 12px; font-size: 13px; }
 .gm-list { list-style: none; margin: 0 -12px; padding: 0 0 8px; }
 .gm-row {
   width: 100%; display: grid; grid-template-columns: 40px minmax(0, 1.5fr) minmax(90px, 1fr) 190px 20px; align-items: center; gap: 18px;
@@ -42,6 +45,8 @@
 
 .gm-notes { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .gm-notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); }
+.gm-note-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: underline dotted 1.5px; text-decoration-color: var(--text-3); text-underline-offset: 4px; cursor: pointer; }
+.gm-note-btn:hover { color: var(--text); text-decoration-color: currentColor; }
 
 .gm-sessions { display: flex; flex-direction: column; gap: 12px; }
 .gm-sess-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
