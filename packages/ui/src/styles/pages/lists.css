@@ -1,4 +1,25 @@
-/* A main column with a rail beside it, on Changes and Games. */
+/* Focused pages: one lead that answers the page's question, then the list, then quiet notes. Games, Upgrades and Changes. */
+.page.pg-focus { max-width: 1240px; gap: 26px; }
+.pg-lead { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px 48px; padding: 28px 32px 30px; }
+.pg-lead-text { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.pg-lead-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-left: 40px; border-left: 1px solid var(--line); text-align: right; font-size: 13px; }
+.pg-lead-fig b { font: 600 2.5rem/1 var(--font); letter-spacing: -.04em; }
+.pg-lead.look .pg-lead-fig b { color: var(--look-text); }
+.pg-lead-tag { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.pg-lead-tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--expected); }
+.pg-lead.good .pg-lead-tag { color: var(--good-text); }
+.pg-lead.good .pg-lead-tag::before { background: var(--good); }
+.pg-lead.look .pg-lead-tag { color: var(--look-text); }
+.pg-lead.look .pg-lead-tag::before { background: var(--look); }
+.card.pg-lead .pg-lead-h { max-width: 34ch; font: 600 1.5rem/1.2 var(--font); letter-spacing: -.025em; }
+.pg-lead-body { max-width: 68ch; color: var(--text-2); }
+.pg-lead .gm-actions { margin-top: 8px; }
+.pg-section-h { font-size: var(--fs); font-weight: 600; letter-spacing: -.01em; }
+.pg-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px 12px; border-top: 1px solid var(--line); }
+.pg-foot > ul { align-self: stretch; }
+.pg-note { max-width: 72ch; font-size: 13px; }
+
+/* A main column with a rail beside it. */
 .pg-split { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 27%, 440px); align-items: start; gap: var(--gap); }
 .pg-main,
 .pg-rail { min-width: 0; display: flex; flex-direction: column; gap: var(--gap); }
@@ -84,6 +105,8 @@
   .pg-split { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
+  .pg-lead { grid-template-columns: minmax(0, 1fr); padding: 22px 20px 24px; }
+  .pg-lead-fig { display: none; }
   .ch-day { --ch-time: 0px; }
   .ch-day-label { padding-left: 30px; }
   .ch-timeline::before { left: 7px; }
