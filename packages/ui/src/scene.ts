@@ -904,8 +904,24 @@ export function createScene(
   controls.addEventListener("start", () => { dragging = true; spin = false; });
   controls.addEventListener("end", () => { dragging = false; });
   const clock = new THREE.Clock();
-  let raf = 0;
+  // Draws only while the stage is on screen and the tab is showing, and picks up again on the next change.
+  let raf = 0, onScreen = true, tabShown = !document.hidden, built = false, gone = false;
+  const live = () => built && onScreen && tabShown && !gone;
+  function wake() {
+    if (raf || !live()) return;
+    clock.getDelta();
+    tick();
+  }
+  const io = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
+    onScreen = entries[entries.length - 1].isIntersecting;
+    wake();
+  });
+  io?.observe(container);
+  const onVisibility = () => { tabShown = !document.hidden; wake(); };
+  document.addEventListener("visibilitychange", onVisibility);
   function tick() {
+    raf = 0;
+    if (!live()) return;
     raf = requestAnimationFrame(tick);
     const dt = Math.min(clock.getDelta(), 0.05);
     const target = state.exploded ? 1 : 0;
@@ -948,7 +964,8 @@ export function createScene(
     setPC(pc, t) {
       state.pc = pc; state.theme = t; state.selected = null;
       rebuild(); resize(); frame(state.exploded, true);
-      if (!raf) tick();
+      built = true;
+      wake();
     },
     update(pc) { state.pc = pc; refreshLabels(); applyHighlights(); },
     setTheme(t) { state.theme = t; if (state.pc) rebuild(); },
@@ -960,6 +977,14 @@ export function createScene(
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
     setAirflow(v) { state.airOn = v; },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); },
-    dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); },
+    dispose() {
+      gone = true;
+      cancelAnimationFrame(raf);
+      raf = 0;
+      ro.disconnect();
+      io?.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+      renderer.dispose();
+    },
   };
 }
