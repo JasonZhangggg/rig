@@ -20,3 +20,8 @@ export * from "./summary";
 export * from "./seen";
 export * from "./units";
 export * from "./export";
+export * from "./manuals";
+export * from "./manualParts";
+export * from "./diagrams";
+export * from "./manualSearch";
+export * from "./manualText";

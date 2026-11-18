@@ -7,6 +7,7 @@ import { ChatBar } from "./chat/ChatBar";
 import { ProbeNote, ScriptCard } from "./chat/ScriptCard";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
+import { openManualLink } from "../manuals/viewer";
 
 export function Chat() {
   const { data, pc, client, clearChat } = useApp();
@@ -78,7 +79,9 @@ function Message({ m }: { m: ChatMessage }) {
         {paras.length ? paras.map((p, i) => <p key={i}>{p}</p>) : m.pending ? <p className="typing" aria-label="Rig is thinking"><i /><i /><i /></p> : null}
         {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{inUnit(s)}</li>)}</ol>}
         {m.sources && m.sources.length > 0 && (
-          <div className="sources">{m.sources.map((s) => s.url
+          <div className="sources">{m.sources.map((s) => s.url?.startsWith("rig:manual/")
+            ? <button key={s.label} type="button" className="source" onClick={() => openManualLink(s.url)}><b>{s.kind}</b>{s.label}</button>
+            : s.url
             ? <a key={s.label} className="source" href={s.url} target="_blank" rel="noreferrer"><b>{s.kind}</b>{s.label}</a>
             : <span key={s.label} className="source"><b>{s.kind}</b>{s.label}</span>)}</div>
         )}

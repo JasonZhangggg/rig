@@ -3,6 +3,7 @@ import type { Route } from "@rig/core";
 import { useApp } from "../state";
 import { DiffTable } from "./common";
 
+/** Every page, for the sidebar and Ctrl K. Upgrades, Games and Temperatures are parts of other pages now (see homeOf), so only Ctrl K lists them. */
 export const navItems: [Route, string, string][] = [
   ["overview", "Home", "M3 10.5 10 4l7 6.5V17H3z"],
   ["pc", "My PC", "M6 3h8v14H6zM9 6h2M9 14h2"],
@@ -14,6 +15,9 @@ export const navItems: [Route, string, string][] = [
   ["logs", "Logs", "M5 3h7l3 3v11H5zM12 3v3h3M8 10h4M8 13h4"],
   ["settings", "Settings", "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4"],
 ];
+
+/** The page a route lives on in the sidebar: upgrades and manuals are on My PC, temperatures and games are views of Logs. */
+export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" ? "pc" : r === "history" || r === "games" ? "logs" : r);
 
 /** Shows exactly what will change, before anything does. */
 export function ReviewSheet() {

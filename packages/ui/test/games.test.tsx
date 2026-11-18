@@ -9,7 +9,7 @@ vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
 const { noteText } = await import("../src/pages/games/words");
-const { headroomWords } = await import("../src/pages/games/Library");
+const { headroomWords, sortGames } = await import("../src/pages/games/Library");
 
 async function openGames(client = new DemoClient()) {
   location.hash = "games";
@@ -31,7 +31,7 @@ describe("Games", () => {
     expect(document.body.textContent).not.toMatch(/NaN|undefined/);
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    await screen.findByText("Most played this month");
+    await screen.findByText("Games this month");
     const cyberpunk = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Cyberpunk 2077"))!;
     expect(within(cyberpunk).getByText("settings to try")).toBeTruthy();
     fireEvent.click(cyberpunk);
@@ -47,6 +47,48 @@ describe("Games", () => {
     expect(await screen.findByText(/How can I make Cyberpunk 2077 run better and cooler/)).toBeTruthy();
   });
 
+  it("sorts the list by most played, hottest or most recent, and still opens a game", async () => {
+    await openGames();
+    const sort = await screen.findByRole("group", { name: "Sort games" });
+    const peaks = () => within(screen.getByRole("list", { name: "Games" })).getAllByRole("button")
+      .map((r) => Number(r.querySelector(".gm-temp .faint")!.textContent!.match(/Peak (\d+)/)![1]));
+    expect(within(sort).getByRole("button", { name: "Most played" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(sort).getByRole("button", { name: "Hottest" }));
+    expect(within(sort).getByRole("button", { name: "Hottest" }).getAttribute("aria-pressed")).toBe("true");
+    expect([...peaks()].sort((a, b) => b - a)).toEqual(peaks());
+    fireEvent.click(within(sort).getByRole("button", { name: "Recent" }));
+    const first = within(screen.getByRole("list", { name: "Games" })).getAllByRole("button")[0];
+    const name = first.querySelector(".gm-title b")!.textContent!;
+    fireEvent.click(first);
+    expect(await screen.findByRole("heading", { level: 1, name })).toBeTruthy();
+  });
+
+  it("orders recent games by when they were last played", () => {
+    const g = (name: string, lastPlayed: number, peak: number | null, hours = 1) => ({ name, lastPlayed, peak, hours }) as Parameters<typeof sortGames>[0][number];
+    const games = [g("A", 1, 70, 3), g("B", 3, null, 2), g("C", 2, 80, 1)];
+    expect(sortGames(games, "played").map((x) => x.name)).toEqual(["A", "B", "C"]);
+    expect(sortGames(games, "recent").map((x) => x.name)).toEqual(["B", "C", "A"]);
+    expect(sortGames(games, "hot").map((x) => x.name)).toEqual(["C", "A", "B"]);
+  });
+
+  it("holds the chart's readout at the peak of the session picked", async () => {
+    await openGames();
+    const row = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button")[0];
+    fireEvent.click(row);
+    const sessions = await screen.findByRole("list", { name: "Sessions" });
+    const live = () => screen.getByRole("region", { name: "Sessions chart" }).querySelector("[aria-live]")!.textContent!;
+    let charted = 0;
+    for (const button of within(sessions).getAllByRole("button")) {
+      fireEvent.click(button);
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      const peak = button.textContent!.match(/peak (\d+°C)/)![1];
+      if (!button.closest(".gm-sessions")!.querySelector("svg.chart")) continue;
+      expect(live()).toMatch(new RegExp(`Graphics card ${peak}`));
+      charted++;
+    }
+    expect(charted).toBeGreaterThan(1);
+  });
+
   it("shows no tuning for games without measurements", async () => {
     const client = new DemoClient();
     client.games = async () => [];
@@ -55,28 +97,31 @@ describe("Games", () => {
     expect(screen.queryByText(/settings to try/i)).toBeNull();
   });
 
-  it("says every game ran cool when none came near the limit, and points to settings to try", async () => {
+  it("marks a cool game with no limit chip, and its settings to try", async () => {
     const client = new DemoClient();
     const start = Date.now() - 2 * 864e5;
     client.history = async () => Array.from({ length: 12 }, (_, i) => ({ t: start + i * 5 * 6e4, cpu: 55, gpu: 60, busy: true, game: "Cyberpunk 2077" }));
     await openGames(client);
-    const lead = await screen.findByRole("region", { name: "Every game ran cool this week" });
-    expect(within(lead).getByText(/peaked at 60°C in Cyberpunk 2077/)).toBeTruthy();
-    expect(within(lead).getByText(/from 78 to 96 fps/)).toBeTruthy();
-    fireEvent.click(within(lead).getByRole("button", { name: "See settings for Cyberpunk 2077" }));
+    const first = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button")[0];
+    expect(first.textContent).toMatch(/Cyberpunk 2077/);
+    expect(within(first).queryByText(/^(Near|Over) the limit$/)).toBeNull();
+    expect(within(first).getByText("settings to try")).toBeTruthy();
+    fireEvent.click(first);
     expect(await screen.findByRole("heading", { level: 1, name: "Cyberpunk 2077" })).toBeTruthy();
   });
 
-  it("leads with the game that came closest to the limit", async () => {
+  it("flags the game that went over the limit in the list, with its figures when opened", async () => {
     const client = new DemoClient();
     const start = Date.now() - 2 * 864e5;
     const at = (i: number, gpu: number, game: string) => ({ t: start + i * 5 * 6e4, cpu: 55, gpu, busy: true, game });
     client.history = async () => [...Array.from({ length: 12 }, (_, i) => at(i, 60, "Quiet Game")), ...Array.from({ length: 12 }, (_, i) => at(100 + i, i === 6 ? 200 : 70, "Loud Game"))];
     await openGames(client);
-    const lead = await screen.findByRole("region", { name: "Loud Game ran over the safe limit" });
-    expect(within(lead).getByText(/slowed itself down/)).toBeTruthy();
-    fireEvent.click(within(lead).getByRole("button", { name: "See Loud Game" }));
+    const loud = within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Loud Game"))!;
+    expect(within(loud).getByText("Over the limit")).toBeTruthy();
+    fireEvent.click(loud);
     expect(await screen.findByRole("heading", { level: 1, name: "Loud Game" })).toBeTruthy();
+    const figures = screen.getByRole("group", { name: "Key figures" });
+    expect(within(figures).getByText("Hottest moment").parentElement!.textContent).toMatch(/over the limit\./);
   });
 
   it("says no games are recorded yet on a PC without history", async () => {

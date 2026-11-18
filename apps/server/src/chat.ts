@@ -1,16 +1,18 @@
-// Rig's chat. Claude reads the PC's latest readings and settings, looks up
-// manuals and maker support pages on the web when a question is about a
-// specific part, and may propose fixes, but only from Rig's fix catalog. A
+// Rig's chat. Claude reads the PC's latest readings and settings, searches
+// the part's manual when Rig has read it (and maker support pages on the web
+// otherwise) when a question is about a specific part, and may propose fixes, but only from Rig's fix catalog. A
 // proposal is shown to the person as a card; nothing changes until they say
 // yes in the app on that PC.
 
 import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
-  describeProbes, describeRecording, isActive, limitsOf, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, titleFor, toRequest, validateCall,
-  type ActionCall, type ChatEvent, type ChatRequest, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
+  describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, titleFor, toRequest, validateCall,
+  type ActionCall, type Manual, type ChatEvent, type ChatRequest, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
+import type { PageMatch } from "./db";
+import { excerpt, shortTitle } from "./manuals";
 
 export const MODEL = "claude-opus-5-5";
 const MAX_ROUNDS = 6;
@@ -36,6 +38,10 @@ export interface ChatContext {
   /** Files a recording for the PC. Returns the one already waiting or running when there is one. Missing when Rig hasn't seen this PC. */
   startRecording?: (req: RecordingRequest) => Promise<{ info: RecordingInfo; created: boolean }>;
   readRecording?: (id: string) => Promise<Recording | null>;
+  /** The PC's manuals, without their text. */
+  manuals?: Manual[];
+  /** Full-text search over the PC's read manuals, best pages first. `part` is a part key or kind. */
+  searchManuals?: (query: string, part?: string) => Promise<PageMatch[]>;
 }
 
 /** The one method of the SDK client the chat uses, so tests can stand in for it. */
@@ -48,7 +54,7 @@ const SYSTEM = `You are Rig, a friendly PC helper inside the Rig app. The person
 How to answer:
 - Lead with the answer in plain words. Most answers are two to five short sentences. No headings or tables. Use a short paragraph per idea, separated by a blank line.
 - Use the PC's own readings and settings first. Name real numbers ("the CPU is at 88°C, its limit is 100°C").
-- When the question is about a specific part (a fan header, a BIOS setting, a driver, a warranty, an error code), search the maker's support pages or the part's manual, read the page, and base the answer on it. Prefer the maker's own site over forums.
+- When the question is about a specific part (a fan header, a BIOS setting, a driver, a warranty, an error code), use the part's manual when Rig has read it (see Manuals); otherwise search the maker's support pages, read the page, and base the answer on it. Prefer the maker's own site over forums.
 - If you are unsure or the readings don't show something, say so instead of guessing.
 
 Fixes:
@@ -57,6 +63,12 @@ Fixes:
 - Never say a change was made. Say what the card will do and that they can review it.
 - For things outside the list (cleaning dust, BIOS settings, fan curves, drivers, reseating a part), give the steps with the show_steps tool, short and in order, and mention any risk.
 - Don't help with anything that would harm the PC, void a warranty without saying so, or get around a game's anti-cheat.
+
+Manuals:
+- The PC block lists the manuals Rig has for this PC: the part each is for, its title, page count, whether it has been read (indexed) and the pages with useful diagrams.
+- When a question is about a part whose manual has been read, call search_manuals first, with the words the manual would use (a header name like F_PANEL or CPU_FAN, a setting, a connector), and base the answer on the pages it returns. Say which page the answer is on, like "page 23 of your board manual", and point to a diagram page when one fits ("the board layout on page 12").
+- If the pages don't answer it, say so and then search the web as usual.
+- When the part has no manual yet, or it hasn't been read, answer from the maker's site as usual and mention once that they can add the manual on the part's Manual tab in My PC so Rig can quote it.
 
 Recordings:
 - The PC block holds the latest readings, recent Windows events and the list of recordings. That is often not enough for problems that happen at a moment or over time: crashes, black screens, freezes, stutter, random restarts, noise or heat that comes and goes. When you'd otherwise be guessing, call start_recording instead of guessing. Don't record when the block already answers the question, and don't start one while another is waiting or running.
@@ -187,6 +199,18 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
       required: ["label", "text"],
     },
   },
+  {
+    name: "search_manuals",
+    description: "Search the manuals Rig has read for this PC. Returns the best pages (at most 4), each with the manual's title, the page number and the page's text. Use the manual's own words: header and connector names (F_PANEL, CPU_FAN, JRGB1, M2_1), setting names, or a short plain question.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What to look for." },
+        part: { type: "string", description: "Only this part's manual: the part key or kind from the manuals list, like \"motherboard\". Leave out to search them all." },
+      },
+      required: ["query"],
+    },
+  },
   { type: "web_search_20260209", name: "web_search", max_uses: 4 },
   { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4, max_content_tokens: 20000 },
 ];
@@ -212,6 +236,7 @@ export function describePC(ctx: ChatContext): string {
     },
     now: localTime(ctx.now ?? new Date(), ctx.timeZone),
     windowsEvents: ctx.events?.slice(0, 20).map((e) => ({ at: at(e.t), kind: e.kind, source: e.source, id: e.id, level: e.level, message: e.message.slice(0, 160) })),
+    manuals: ctx.manuals?.map((m) => ({ id: m.id, part: m.part, kind: m.kind, title: m.title, pageCount: m.pageCount, indexed: m.indexed, diagrams: m.diagrams.map((d) => `${d.label}, page ${d.page}`) })),
     recordings: ctx.recordings?.slice(0, 6).map((r) => ({ id: r.id, state: r.state, reason: r.reason, question: r.question || undefined, minutes: r.minutes, started: at(r.startedAt), ends: at(r.endsAt), found: r.headline, problem: r.error })),
     customLogs: ctx.probes && describeProbes(ctx.probes).map((p) => ({ ...p, ends: at(Date.parse((p as { ends: string }).ends)) })),
   };
@@ -390,6 +415,19 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
         } else if (u.name === "add_custom_log" || u.name === "propose_script" || u.name === "remove_custom_log") {
           const content = await customLog(u.name, input, ctx, now, added, emit);
           results.push({ type: "tool_result", tool_use_id: u.id, content, ...(content.startsWith("Error: ") ? { is_error: true } : {}) });
+        } else if (u.name === "search_manuals") {
+          const query = typeof input.query === "string" ? input.query.trim().slice(0, 200) : "";
+          if (!query) { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: "query is required" }); continue; }
+          const read = (ctx.manuals ?? []).filter((m) => m.indexed);
+          if (!read.length || !ctx.searchManuals) { results.push({ type: "tool_result", tool_use_id: u.id, content: "Rig hasn't read any manuals for this PC yet. Answer from the maker's site, and mention they can add the manual on the part's Manual tab in My PC." }); continue; }
+          const part = typeof input.part === "string" && read.some((m) => m.part === input.part || m.kind === input.part) ? input.part : undefined;
+          const pages = await ctx.searchManuals(query, part);
+          if (!pages.length) { results.push({ type: "tool_result", tool_use_id: u.id, content: `Nothing in ${part ? "that manual" : "the manuals"} matched "${query}". Try other words the manual might use, or answer from the maker's site.` }); continue; }
+          for (const p of pages) {
+            const url = manualLink(p.manualId, p.page);
+            if (!sources.has(url)) sources.set(url, { label: `${shortTitle(p)}, page ${p.page}`, kind: "Manual", url });
+          }
+          results.push({ type: "tool_result", tool_use_id: u.id, content: pages.map((p) => `${p.title}, page ${p.page} (part: ${p.part}):\n${excerpt(p.text, query)}`).join("\n\n---\n\n") });
         } else {
           results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: `Unknown tool ${u.name}` });
         }
@@ -397,7 +435,9 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
       messages.push({ role: "user", content: results });
     }
 
-    const list = [{ label: `${ctx.view.name}'s readings`, kind: "Your PC" as const }, ...[...sources.values()].slice(0, 5)];
+    // Manual pages first: they're the person's own documents.
+    const found = [...sources.values()].sort((a, b) => Number(b.kind === "Manual" && !!b.url?.startsWith("rig:")) - Number(a.kind === "Manual" && !!a.url?.startsWith("rig:")));
+    const list = [{ label: `${ctx.view.name}'s readings`, kind: "Your PC" as const }, ...found.slice(0, 5)];
     await emit({ type: "sources", sources: list });
   } catch (e) {
     if (signal?.aborted) return;

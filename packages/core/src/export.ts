@@ -3,6 +3,7 @@
 // the file has the same shape wherever it comes from.
 
 import type { Account, Change } from "./client";
+import type { Manual } from "./manuals";
 import type { Game, HistoryPoint, PC } from "./model";
 import type { PCEvent, Recording } from "./recordings";
 import type { Inventory, SystemFacts } from "./telemetry";
@@ -28,6 +29,8 @@ export interface ExportMachine {
   events: PCEvent[];
   /** Recordings with all their readings, newest first. */
   recordings: Recording[];
+  /** The PC's manuals: what each is and where it came from, without the page text. Missing from exports made before Rig kept manuals. */
+  manuals?: Manual[];
 }
 
 export interface DataExport {
@@ -43,7 +46,7 @@ export interface DataExport {
 
 export interface ExportInput {
   account: DataExport["account"];
-  machines: (Omit<ExportMachine, "name" | "identity" | "syncedAt" | "events" | "recordings"> & { identity?: Identity; syncedAt?: string | null; events?: PCEvent[]; recordings?: Recording[] })[];
+  machines: (Omit<ExportMachine, "name" | "identity" | "syncedAt" | "events" | "recordings" | "manuals"> & { identity?: Identity; syncedAt?: string | null; events?: PCEvent[]; recordings?: Recording[]; manuals?: Manual[] })[];
   chatUsage?: DataExport["chatUsage"];
   notes?: string[];
   now?: Date;
@@ -64,6 +67,7 @@ export function makeExport(input: ExportInput): DataExport {
     history: [...m.history].sort((a, b) => a.t - b.t),
     events: m.events ?? [],
     recordings: [...(m.recordings ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    manuals: [...(m.manuals ?? [])].sort((a, b) => b.addedAt.localeCompare(a.addedAt)),
   })).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return {
     format: EXPORT_FORMAT,

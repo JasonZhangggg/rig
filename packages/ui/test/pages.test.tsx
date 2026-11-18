@@ -26,35 +26,47 @@ beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = (
 afterEach(() => cleanup());
 
 describe("Changes", () => {
-  it("leads with what's in place, then the fix waiting for review, then the timeline", async () => {
+  it("lists the fixes waiting for review above the timeline with its counts", async () => {
     await show("changes");
-    const lead = await screen.findByRole("region", { name: "1 change in place on Atlas" });
-    expect(within(lead).getByText("In place").nextElementSibling!.textContent).toBe("1");
-    expect(within(lead).getByText(/The latest, 5 days ago: Turned off NVIDIA Broadcast at startup/)).toBeTruthy();
-
-    const waiting = screen.getByRole("region", { name: "Waiting for you" });
+    const waiting = await screen.findByRole("region", { name: /^Waiting for review/ });
     expect(within(waiting).getByText(/runs at 60 Hz but can do 165 Hz/)).toBeTruthy();
     expect(within(waiting).queryByText("60 Hz")).toBeNull();
-    fireEvent.click(within(waiting).getByRole("button", { name: /^Details: / }));
+    fireEvent.click(within(waiting).getAllByRole("button", { name: /^Details:/ })[0]);
     await within(waiting).findByText("60 Hz");
+
+    const counts = screen.getByRole("group", { name: "Show only" });
+    expect(within(counts).getByRole("button", { name: /In place/ }).textContent).toBe("1In place");
+    expect(within(counts).queryByRole("button", { name: /Undone/ })).toBeNull();
 
     const day = screen.getByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
     expect(within(day).getByText("Turned off NVIDIA Broadcast at startup")).toBeTruthy();
     expect(within(day).queryByText("Starts with Windows")).toBeNull();
     fireEvent.click(within(day).getByRole("button", { name: "Details: Turned off NVIDIA Broadcast at startup" }));
     expect(within(day).getByText("Starts with Windows")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
 
-    fireEvent.click(within(waiting).getByRole("button", { name: /^Review:/ }));
+    fireEvent.click(within(waiting).getAllByRole("button", { name: /^Review:/ })[0]);
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
-  it("says when every change is undone", async () => {
+  it("starts with the timeline when nothing waits for review", async () => {
+    const client = new DemoClient();
+    const watch = client.watch.bind(client);
+    client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, issues: (pc.issues ?? []).filter((i) => !i.fix?.length) }));
+    await show("changes", client);
+    await screen.findByRole("heading", { name: "Recent changes" });
+    expect(screen.queryByRole("region", { name: /^Waiting for review/ })).toBeNull();
+  });
+
+  it("filters the list from the counts", async () => {
     await show("changes");
     const day = await screen.findByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
     fireEvent.click(within(day).getByRole("button", { name: "Undo" }));
-    expect(await screen.findByRole("region", { name: "Every change on Atlas is undone" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Redo" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Redo" })).toBeTruthy();
+    const counts = screen.getByRole("group", { name: "Show only" });
+    fireEvent.click(within(counts).getByRole("button", { name: /Undone/ }));
+    expect(screen.getByRole("heading", { name: "Undone" })).toBeTruthy();
+    fireEvent.click(within(counts).getByRole("button", { name: /All/ }));
+    expect(screen.getByRole("heading", { name: "Recent changes" })).toBeTruthy();
   });
 
   it("says what will show up when nothing has changed yet", async () => {
@@ -77,19 +89,23 @@ describe("Changes", () => {
 });
 
 describe("Upgrades", () => {
-  it("leads with Rig's pick and why, with the room each part has beside its idea", async () => {
-    await show("upgrades");
-    const pick = await screen.findByRole("region", { name: "Another case fan" });
-    expect(within(pick).getByText("Rig's pick for Atlas")).toBeTruthy();
+  it("sits on My PC: Rig's pick and the other ideas, each opening its part at an Upgrade tab", async () => {
+    await show("pc");
+    const card = await screen.findByRole("region", { name: "Upgrades" });
+    const pick = await within(card).findByRole("button", { name: /Rig's pick.*Another case fan/ });
     expect(within(pick).getByText(/Graphics card runs hotter than it used to/)).toBeTruthy();
-
-    const others = screen.getByRole("region", { name: "Other ideas" });
-    expect(within(others).getByRole("img", { name: "2 of 4 slots used" })).toBeTruthy();
+    const others = within(card).getByRole("list", { name: "Other ideas" });
     expect(within(others).getByText("Add another NVMe SSD")).toBeTruthy();
-    expect(within(others).getByText(/726 GB free/)).toBeTruthy();
-    expect(screen.queryByText("Where there's room")).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Ask what to buy" }).length).toBe(3);
-    expect(screen.getByText("Have a part in mind?")).toBeTruthy();
+
+    fireEvent.click(within(others).getByRole("button", { name: /Add another NVMe SSD/ }));
+    expect(screen.getByRole("tab", { name: "Upgrade" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/726 GB free/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ask what to buy" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /All parts/ }));
+    fireEvent.click(within(screen.getByRole("list", { name: "Other ideas" })).getByRole("button", { name: /16 GB/ }));
+    expect(screen.getByRole("img", { name: "2 of 4 slots used" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /Memory slot order in your manual, p\. 7/ })).toBeTruthy();
   });
 
   it("picks the idea that answers something Rig flagged on the PC", () => {
@@ -105,20 +121,20 @@ describe("Upgrades", () => {
     expect(bestPick(list, { ...pc, issues: [], alerts: [alert] } as unknown as PC, [])).toMatchObject({ idea: { part: "Cooling" }, why: "Graphics card runs hotter than it used to.", pressing: true });
   });
 
-  it("says what will show up when there's nothing to suggest", async () => {
+  it("says so when there's nothing to suggest, and offers to ask", async () => {
     const client = new DemoClient();
     client.upgrades = async () => [];
-    await show("upgrades", client);
-    expect(await screen.findByText("Nothing to suggest right now")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Ask what helps most" })).toBeTruthy();
+    await show("pc", client);
+    const card = await screen.findByRole("region", { name: "Upgrades" });
+    expect(await within(card).findByText("Nothing to suggest for Atlas right now.")).toBeTruthy();
+    expect(within(card).getByRole("button", { name: "Have a part in mind? Ask if it fits" })).toBeTruthy();
   });
 });
 
 describe("Games", () => {
-  it("leads with what matters, then the library, with recent sessions on request", async () => {
+  it("leads with the library, with recent sessions on request", async () => {
     await show("games");
     const list = await screen.findByRole("list", { name: "Games" });
-    expect(screen.getByRole("region", { name: /safe limit|ran cool/ })).toBeTruthy();
     expect(within(list).getAllByRole("button").length).toBeGreaterThanOrEqual(2);
 
     expect(screen.queryByRole("list", { name: "Recent sessions" })).toBeNull();
@@ -132,36 +148,55 @@ describe("Games", () => {
 });
 
 describe("History", () => {
-  it("leads with the answer, then folds each part's range and what happened until asked", async () => {
-    await show("history");
-    const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(summary.textContent).toMatch(/safe limit this week|look good this week|fine this week/);
-    expect(summary.textContent).toMatch(/The hottest moment was \d+°C on .+, (during|while)/);
-    expect(screen.queryByText("Safe limit 89°C")).toBeNull();
+  const readout = () => screen.getByRole("img", { name: "Temperature history" }).parentElement!.querySelector("[aria-live]")!.textContent!;
 
-    fireEvent.click(screen.getByRole("button", { name: "Lowest, typical and highest" }));
+  it("leads with the figures and the chart, then shows what happened and each part's range, each pinning the chart", async () => {
+    await show("history");
+    const figures = await screen.findByRole("group", { name: "Key figures" });
+    expect(readout()).toBe("");
+
+    const hottest = within(figures).getByRole("button", { name: /^Hottest moment/ });
+    expect(hottest.textContent).toMatch(/(under|over|at) the limit/);
+    fireEvent.click(hottest);
+    expect(hottest.getAttribute("aria-pressed")).toBe("true");
+    expect(readout()).toContain(hottest.querySelector(".fig-n")!.textContent!);
+    fireEvent.click(hottest);
+    expect(readout()).toBe("");
+
+    const events = screen.getByRole("list", { name: "What happened" });
+    const row = within(events).getAllByRole("button", { pressed: false })[0];
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    expect(readout()).toMatch(/Processor \d+°C, Graphics card \d+°C/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ranges" }));
+    expect(screen.queryByRole("list", { name: "What happened" })).toBeNull();
     const ranges = screen.getByRole("region", { name: "Lowest, typical and highest" });
     expect(within(ranges).getByText("Processor")).toBeTruthy();
     expect(within(ranges).getByText("Graphics card")).toBeTruthy();
     expect(ranges.textContent).not.toMatch(/NaN|undefined/);
+    const high = within(ranges).getByRole("button", { name: /^Graphics card highest/ });
+    fireEvent.click(high);
+    expect(readout()).toContain(`Graphics card ${high.textContent}`);
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    expect(screen.queryByRole("list", { name: "What happened" })).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: "What happened" }));
-    const events = await screen.findByRole("list", { name: "What happened" });
-    const before = within(events).getAllByRole("listitem").length;
+    await screen.findByRole("img", { name: "Temperature history" });
+    expect(readout()).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "What happened" }));
+    const month = await screen.findByRole("list", { name: "What happened" });
+    const before = within(month).getAllByRole("listitem").length;
     fireEvent.click(screen.getByRole("button", { name: /^Show all \d+$/ }));
     expect(within(screen.getByRole("list", { name: "What happened" })).getAllByRole("listitem").length).toBeGreaterThan(before);
   });
 
-  it("says temperatures look good when nothing came near the limit, and what was running at the hottest moment", async () => {
+  it("says what was running at the hottest moment", async () => {
     const client = new DemoClient();
     const t = Date.now();
     client.history = async () => Array.from({ length: 60 }, (_, i) => ({ t: t - (60 - i) * 6e4, cpu: 40 + (i === 30 ? 12 : 0), gpu: 38, busy: false, game: null }));
     await show("history", client);
-    const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(summary.textContent).toMatch(/^Temperatures look good this week, well under the safe limit\./);
-    expect(summary.textContent).toMatch(/while nothing heavy was running\.$/);
+    const figures = await screen.findByRole("group", { name: "Key figures" });
+    expect(within(figures).getByRole("button", { name: /^Hottest moment/ }).textContent).toMatch(/while nothing heavy was running\./);
+    expect(screen.queryByRole("button", { name: /when busy/ })).toBeNull();
   });
 
   it("explains what will appear before there's any history", async () => {
@@ -190,6 +225,7 @@ describe("My PC", () => {
     const { partsSummary } = await import("../src/pages/PCPage");
     expect(partsSummary([], "Desk PC", true)).toBe("Rig hasn't read Desk PC's parts yet. They show up here once the Rig app on Desk PC sends its first reading.");
     const hot = { type: "Graphics card", name: "RTX", warn: true, temp: 90, specs: [], manual: [], modelSource: "generic" as const };
-    expect(partsSummary([hot], "Desk PC", true)).toBe("Your graphics card needs a look.");
+    expect(partsSummary([hot], "Desk PC", true)).toBe("Graphics card has a warning. Open it for details.");
+    expect(partsSummary([{ ...hot, limit: 88 }], "Desk PC", true)).toBe("Graphics card is at 90°C, 2° over its 88°C limit.");
   });
 });

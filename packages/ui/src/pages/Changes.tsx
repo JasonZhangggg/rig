@@ -2,10 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
 import { DiffTable, Icon, StatusChip } from "../components/common";
 import { useApp } from "../state";
-import { HowChangesWork, Lead } from "./changes/Lead";
+import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { bySeverity, issueGo } from "./shared";
-
-type Filter = "all" | "applied" | "undone";
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -32,26 +30,23 @@ export function Changes() {
   const { data, pc } = useApp();
   const [filter, setFilter] = useState<Filter>("all");
   const any = data.changes.length > 0;
-  const mixed = new Set(data.changes.map((c) => c.status)).size > 1;
   const list = data.changes.filter((c) => filter === "all" || c.status === filter);
   const fixes = bySeverity((pc.issues ?? []).filter((i) => i.fix?.length));
-  useEffect(() => { if (!mixed) setFilter("all"); }, [mixed]);
+  const rows = usePreviews(fixes);
+  // A filter that would leave the list empty, like Undone after the last undo is redone, falls back to everything.
+  useEffect(() => { if (filter !== "all" && !list.length) setFilter("all"); }, [filter, list.length]);
   return (
     <div className="page pg-focus">
       <div className="page-head">
-        <div><h1>Changes</h1><p className="sub">Everything Rig or you changed on {pc.name}, with what it was before.</p></div>
+        <div><h1>Changes</h1><p className="sub">Everything changed on {pc.name}, with the old values saved.</p></div>
       </div>
-      {any ? <Lead changes={data.changes} pc={pc.name} /> : <NoChanges quiet={fixes.length > 0} />}
-      {fixes.length > 0 && <UpNext fixes={fixes} />}
+      {fixes.length > 0 && <Waiting fixes={fixes} rows={rows} />}
+      {!any && <NoChanges quiet={fixes.length > 0} />}
       {any && (
         <section className="card ch-log" aria-labelledby="ch-log-h">
           <div className="card-head">
-            <h2 id="ch-log-h">Recent changes</h2>
-            {mixed && (
-              <div className="seg" role="group" aria-label="Filter">
-                {(["all", "applied", "undone"] as const).map((f) => <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)}</button>)}
-              </div>
-            )}
+            <h2 id="ch-log-h">{filter === "applied" ? "In place" : filter === "undone" ? "Undone" : "Recent changes"}</h2>
+            <Counts changes={data.changes} filter={filter} onFilter={setFilter} />
           </div>
           {byDay(list).map((day) => <Day key={day[0].at} changes={day} />)}
         </section>
@@ -59,6 +54,20 @@ export function Changes() {
       <HowChangesWork />
     </div>
   );
+}
+
+/** What each waiting fix would change, fetched once per set of fixes. */
+function usePreviews(fixes: Issue[]) {
+  const { pc, client } = useApp();
+  const [rows, setRows] = useState<Record<string, DiffRow[]>>({});
+  // The PC object is replaced on every live reading, so the preview keys on the fixes themselves.
+  const ids = fixes.map((i) => i.id).join(" ");
+  useEffect(() => {
+    let live = true;
+    for (const i of fixes) client.preview(pc.id, i.fix!).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
+    return () => { live = false; };
+  }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  return rows;
 }
 
 function Day({ changes }: { changes: Change[] }) {
@@ -72,23 +81,15 @@ function Day({ changes }: { changes: Change[] }) {
 }
 
 /** Fixes Rig found but hasn't made. Each opens the review sheet; the before and after wait behind Details. */
-function UpNext({ fixes }: { fixes: Issue[] }) {
-  const { pc, set, go, ask, review, client } = useApp();
-  const [rows, setRows] = useState<Record<string, DiffRow[]>>({});
-  // The PC object is replaced on every live reading, so the preview keys on the fixes themselves.
-  const ids = fixes.map((i) => i.id).join(" ");
-  useEffect(() => {
-    let live = true;
-    for (const i of fixes) client.preview(pc.id, i.fix!).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
-    return () => { live = false; };
-  }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
+function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow[]> }) {
+  const { pc, set, go, ask, review } = useApp();
   return (
     <section className="card ch-next" aria-labelledby="ch-next-h">
-      <div className="card-head"><h2 id="ch-next-h">Waiting for you</h2><span className="faint">{fixes.length === 1 ? "1 change to review" : `${fixes.length} changes to review`}</span></div>
+      <div className="card-head"><h2 id="ch-next-h">Waiting for review <span className="faint num">{fixes.length}</span></h2></div>
       <ul className="ch-next-list">
         {fixes.map((i) => (
-          <Row key={i.id} title={i.title} meta="Found by Rig. Nothing changes until you review it."
-            action={<button className="btn sm primary" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>}>
+          <Row key={i.id} title={i.title} meta="Nothing changes until you say yes."
+            action={<button className="btn sm" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>}>
             <p className="muted">{i.body}</p>
             {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
           </Row>

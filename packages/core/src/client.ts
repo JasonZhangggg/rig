@@ -5,6 +5,7 @@
 import type { ActionCall } from "./actions";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
+import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
 
@@ -130,6 +131,22 @@ export interface RigClient {
   stopRecording(machineId: string, id: string): Promise<void>;
   /** Desktop: reads the background recorder again now, after a custom log was approved, paused or turned off. */
   refreshBackground?(): Promise<unknown>;
+
+  /** The PC's manuals, newest first. */
+  manuals(machineId: string): Promise<Manual[]>;
+  /** Looks up the maker's manual for a part and adds it, unread. Null when Rig couldn't find one. Needs the server (signed in), except in the demo. */
+  findManual?(machineId: string, target: ManualTarget): Promise<Manual | null>;
+  /** Adds a PDF the person picked. Its file stays on this device (the screens keep a copy); read it next with saveManualPages. */
+  addManualFile(machineId: string, target: ManualTarget, file: { name: string; bytes: number }): Promise<Manual>;
+  /** The PDF of a found manual, downloaded through Rig's server. Throws for an added file (only the device it was added on has it). */
+  manualFile(machineId: string, manualId: string): Promise<ArrayBuffer>;
+  /** Saves the text read from each page and the diagram pages found, so search and the chat can use them. */
+  saveManualPages(machineId: string, manualId: string, pages: ManualPage[], diagrams: ManualDiagram[]): Promise<Manual>;
+  /** Searches the PC's manuals (or one of them). Best matches first, at most `limit` (default 20). */
+  searchManuals(machineId: string, query: string, opts?: { manualId?: string; limit?: number }): Promise<ManualHit[]>;
+  /** The saved text of one page, for showing next to the drawn page. Null when it wasn't read. */
+  manualPage(machineId: string, manualId: string, page: number): Promise<ManualPage | null>;
+  removeManual(machineId: string, manualId: string): Promise<void>;
 
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];

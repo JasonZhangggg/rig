@@ -4,7 +4,7 @@
 import type { ActionCall } from "./actions";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
-export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "web" | "signin" | "settings";
+export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "manuals" | "web" | "signin" | "settings";
 
 /** One row of a before and after table: [setting, now, after]. */
 export type DiffRow = [string, string, string];
@@ -16,6 +16,10 @@ export interface Part {
   type: string;
   sub?: string;
   modelSource: "library" | "generic";
+  /** Who made it, where the inventory says ("MSI", "ASUS"). Used to look up its manual. */
+  maker?: string;
+  /** The model as the maker writes it ("MAG B650 TOMAHAWK WIFI"). */
+  model?: string;
   dims?: string;
   temp?: number;
   /** Highest temperature seen today. */

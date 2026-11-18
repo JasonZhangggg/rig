@@ -9,21 +9,26 @@ import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { manualRoutes } from "./routes-manuals";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
 import type { Env } from "./env";
+import type { Fetch } from "./manuals";
 import { connect, type Connection } from "./sql";
 
 type User = { id: string; name: string; email: string };
 type Vars = { user: User; store: Store; conn?: Connection; auth?: Auth };
-type C = Context<{ Bindings: Env; Variables: Vars }>;
+export type C = Context<{ Bindings: Env; Variables: Vars }>;
+export type AppHono = Hono<{ Bindings: Env; Variables: Vars }>;
 
 export interface AppDeps {
   /** The Claude client. Tests pass a stand-in. */
   claude?: (env: Env) => Streamer;
   /** Opens the database for one request. Tests pass an in-memory Postgres. */
   database?: (env: Env) => Connection;
+  /** Fetches maker sites (manual PDFs). Tests pass a stand-in. */
+  fetch?: Fetch;
   now?: () => Date;
 }
 
@@ -46,7 +51,7 @@ export function createApp(deps: AppDeps = {}) {
     return a;
   };
 
-  const app = new Hono<{ Bindings: Env; Variables: Vars }>();
+  const app: AppHono = new Hono<{ Bindings: Env; Variables: Vars }>();
 
   // The desktop app calls from its own origin with a bearer token. The website is same-origin.
   app.use("/api/*", cors({
@@ -64,7 +69,11 @@ export function createApp(deps: AppDeps = {}) {
     try { ctx = c.executionCtx; } catch { /* no Workers context, as in tests */ }
     if (ctx) ctx.waitUntil(conn.close()); else await conn.close();
   });
-  app.use("/api/*", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ message: "That upload is too big." }, 413) }));
+  // A manual's page text can be several megabytes; everything else is small.
+  const tooBig = (c: C) => c.json({ message: "That upload is too big." }, 413);
+  const smallBody = bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooBig });
+  const pagesBody = bodyLimit({ maxSize: 8 * 1024 * 1024, onError: tooBig });
+  app.use("/api/*", (c, next) => (c.req.method === "PUT" && /^\/api\/machines\/[^/]+\/manuals\/[^/]+\/pages$/.test(c.req.path) ? pagesBody : smallBody)(c, next));
 
   app.on(["GET", "POST"], "/api/auth/*", (c) => authFor(c).handler(c.req.raw));
 
@@ -192,6 +201,8 @@ export function createApp(deps: AppDeps = {}) {
     return ok ? c.body(null, 204) : c.json({ message: "That recording isn't on this PC." }, 404);
   });
 
+  manualRoutes(app, { validId, machine, notFound, now, claude, fetch: deps.fetch ?? ((input, init) => fetch(input, init)), dailyLimit });
+
   app.post("/api/chat", async (c) => {
     const body = await c.req.json().catch(() => null) as ChatRequest | null;
     const user = c.get("user");
@@ -212,13 +223,15 @@ export function createApp(deps: AppDeps = {}) {
       const ctx: ChatContext = {
         ...base, now: now(), timeZone: typeof body.tz === "string" && body.tz.length <= 64 ? body.tz : undefined,
         events: row?.events, recordings: row ? await store.recordings(user.id, row.id) : [],
+        manuals: row ? await store.manuals(user.id, row.id) : [],
         ...(body.view && Array.isArray(body.probes) ? { probes: cleanProbes(body.probes) } : {}),
         ...(row ? {
           startRecording: (req) => later((s) => s.requestRecording(user.id, row.id, req, now())),
           readRecording: (id) => later((s) => s.recording(user.id, row.id, id)),
+          searchManuals: (query, part) => later((s) => s.searchManuals(user.id, row.id, query, { part, limit: 4 })),
         } : {}),
       };
-      const limit = Number(c.env.CHAT_DAILY_LIMIT ?? 40) || 40;
+      const limit = dailyLimit(c);
       if (!(await store.useChat(user.id, limit, now()))) return { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.` };
       return { ctx };
     })();
@@ -251,6 +264,8 @@ function cleanProbes(list: unknown[]): ProbeStatus[] {
     };
   });
 }
+
+const dailyLimit = (c: C) => Number(c.env.CHAT_DAILY_LIMIT ?? 40) || 40;
 
 const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 

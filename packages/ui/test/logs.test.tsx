@@ -8,7 +8,7 @@ vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
 const { LineChart } = await import("../src/chart");
-const { highlights, summaryLine } = await import("../src/pages/logs/summary");
+const { highlights } = await import("../src/pages/logs/summary");
 const { cleanEvents } = await import("@rig/core");
 
 async function open(route: string) {
@@ -19,37 +19,90 @@ describe("Logs", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });
   afterEach(() => cleanup());
 
-  it("is in the sidebar under Help, leads with a summary and the events that matter, and keeps every event behind All events", async () => {
+  it("is in the sidebar, counts what went wrong and filters the events by a count", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     expect(screen.getByRole("link", { name: /Logs/ }).getAttribute("href")).toBe("#logs");
     await open("logs");
-    const summary = await screen.findByRole("region", { name: "Summary" });
-    await waitFor(() => expect(summary.textContent).toMatch(/In the last 30 days, the graphics driver reset twice, Atlas shut off unexpectedly once and Discord crashed once\./));
-    expect(summary.textContent).toMatch(/3 minor things/);
+    const counts = await screen.findByRole("group", { name: "Show only" });
+    const count = (name: RegExp) => within(counts).getByRole("button", { name });
+    expect(count(/Driver resets/).textContent).toBe("2Driver resets");
+    expect(count(/Unexpected shutdown/).textContent).toMatch(/^1Unexpected shutdown/);
+    expect(count(/Discord crash/).textContent).toMatch(/^1Discord crash/);
+    expect(count(/Minor/).textContent).toMatch(/^3Minor/);
+    expect(count(/All/).textContent).toMatch(/^7All/);
+    expect(count(/All/).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText("Reading the event log…")).toBeNull();
 
-    const worth = screen.getByRole("region", { name: "Worth knowing" });
-    const items = within(worth).getAllByRole("listitem");
-    expect(items).toHaveLength(3);
-    expect(items[0].textContent).toMatch(/Graphics driver reset/);
-    expect(items[0].textContent).toMatch(/2 times, last/);
-    within(worth).getByText("Atlas turned off without shutting down");
-    within(worth).getByText("Discord crashed");
-    expect(worth.textContent).not.toMatch(/event 4101|nvlddmkm|0xc0000005/);
+    // Every event is listed straight away, one line each.
+    const list = screen.getByRole("region", { name: /Events/ });
+    expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(7);
+    within(list).getByText("Discord.exe crashed");
 
-    expect(screen.queryByText("Discord.exe crashed")).toBeNull();
-    const toggle = screen.getByRole("button", { name: /All events/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    screen.getByText("Discord.exe crashed");
-    screen.getByText("Application Error · event 1000");
-    fireEvent.click(within(screen.getByRole("group", { name: "Kind of event" })).getByRole("button", { name: /Shutdowns/ }));
-    expect(screen.queryByText("Discord.exe crashed")).toBeNull();
-    screen.getByText("The PC turned off without shutting down");
+    fireEvent.click(count(/Driver resets/));
+    expect(count(/Driver resets/).getAttribute("aria-pressed")).toBe("true");
+    expect(count(/All/).getAttribute("aria-pressed")).toBe("false");
+    expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(2);
+    expect(within(list).queryByText("Discord.exe crashed")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Graphics driver reset" })).toBeNull();
+
+    fireEvent.click(count(/Minor/));
+    expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(3);
+    fireEvent.click(within(list).getByRole("button", { name: "Remove filter: Minor" }));
+    expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(7);
+    expect(count(/All/).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("shows a finished recording as what it found, and opens it from the event it caught", async () => {
+  it("filters the events to a day from the strip, with what happened on hover", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const strip = await screen.findByRole("group", { name: "Last 30 days" });
+    const days = within(strip).getAllByRole("button");
+    expect(days).toHaveLength(30);
+    const day = within(strip).getByRole("button", { name: /1 event: The PC turned off without shutting down/ });
+
+    fireEvent.mouseEnter(day);
+    expect(within(strip).getByRole("tooltip").textContent).toMatch(/The PC turned off without shutting down/);
+    fireEvent.mouseLeave(day);
+    expect(within(strip).queryByRole("tooltip")).toBeNull();
+
+    const list = screen.getByRole("region", { name: /Events/ });
+    fireEvent.click(day);
+    expect(day.getAttribute("aria-pressed")).toBe("true");
+    expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(1);
+    expect(within(list).queryByText("Discord.exe crashed")).toBeNull();
+    const chip = within(list).getByRole("button", { name: /^Remove filter: / });
+    fireEvent.click(day);
+    expect(day.getAttribute("aria-pressed")).toBe("false");
+    expect(chip.isConnected).toBe(false);
+    expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(7);
+
+    // A count and a day together.
+    fireEvent.click(day);
+    fireEvent.click(within(screen.getByRole("group", { name: "Show only" })).getByRole("button", { name: /Discord crash/ }));
+    within(list).getByText(/None of these on/);
+  });
+
+  it("opens an event in place to what Windows wrote, and asks about it", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const row = await screen.findByRole("button", { name: /Discord\.exe crashed/, expanded: false });
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    const body = document.getElementById(row.getAttribute("aria-controls")!)!;
+    expect(body.hasAttribute("inert")).toBe(true);
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(body.hasAttribute("inert")).toBe(false);
+    within(body).getByText("Application Error · event 1000");
+    within(body).getByText(/discord_voice\.node/);
+    fireEvent.click(within(body).getByRole("button", { name: "Ask about this event" }));
+    await waitFor(() => expect(location.hash).toBe("#chat"));
+    await screen.findByText(/Windows logged "Discord\.exe crashed" on Atlas/);
+  });
+
+  it("shows a finished recording as what it found, and opens it from the events it caught", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     await open("logs");
@@ -57,7 +110,7 @@ describe("Logs", () => {
     const row = within(recs).getByRole("button", { name: /Watch temperatures, load and Windows events while you play/ });
     expect(row.textContent).toMatch(/Found: The graphics driver stopped and recovered/);
     expect(row.textContent).toMatch(/Finished/);
-    fireEvent.click(await screen.findByRole("button", { name: /A recording caught this/ }));
+    fireEvent.click(row);
     await screen.findByText("What Rig found");
   });
 
@@ -104,10 +157,10 @@ describe("Logs", () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     await open("logs");
-    await screen.findByText(/Nothing went wrong on Pebble in the last 30 days/);
+    await screen.findByText(/Windows logged no problems on Pebble in the last 30 days/);
     screen.getByText(/No recordings yet/);
-    expect(screen.queryByRole("region", { name: "Worth knowing" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /All events/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Show only" })).toBeNull();
+    expect(screen.queryByRole("region", { name: /Events/ })).toBeNull();
     screen.getByRole("button", { name: "Start recording" });
   });
 
@@ -148,7 +201,7 @@ describe("Logs", () => {
     expect(times[0]).not.toBe(times[1]);
   });
 
-  it("groups repeats and words the summary from the events alone", () => {
+  it("groups repeats and names each group for its count", () => {
     const t = Date.now();
     const ev = (n: number, source: string, id: number, level: "critical" | "error" | "warning", message = "") => ({ t: t - n * 36e5, log: "System" as const, source, id, level, message });
     const events = cleanEvents([
@@ -159,8 +212,7 @@ describe("Logs", () => {
       ev(5, "Microsoft-Windows-WHEA-Logger", 19, "warning"),
     ]);
     const groups = highlights(events, "Box");
-    expect(groups.map((g) => [g.title, g.events.length])).toEqual([["Windows crashed (blue screen)", 1], ["game crashed", 3]]);
-    expect(summaryLine(events, "Box")).toEqual({ main: "In the last 30 days, Windows crashed once and game crashed 3 times.", rest: "Windows also noted 1 minor thing." });
-    expect(summaryLine(events.slice(4), "Box").main).toBe("Nothing serious happened on Box in the last 30 days.");
+    expect(groups.map((g) => [g.title, g.short, g.events.length])).toEqual([["Windows crashed (blue screen)", "Blue screen", 1], ["game crashed", "game crashes", 3]]);
+    expect(highlights(events.slice(4), "Box")).toEqual([]);
   });
 });

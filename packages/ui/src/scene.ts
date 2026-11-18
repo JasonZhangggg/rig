@@ -46,6 +46,8 @@ export interface PCScene {
   setExploded(v: boolean): void;
   setHeat(v: boolean): void;
   select(id: string | null): void;
+  /** Lights a part up without selecting it, as when the pointer is over its row in a list. */
+  hover(id: string | null): void;
   resetView(): void;
   /** Wheel zoom on or off, so a page can scroll past a small preview. */
   setZoomable(v: boolean): void;
@@ -941,6 +943,7 @@ export function createScene(
     for (const [id, l] of Object.entries(state.labels)) {
       l.el.classList.toggle("is-selected", state.selected === id);
       l.pin.classList.toggle("is-selected", state.selected === id);
+      l.pin.classList.toggle("is-hovered", state.hovered === id && state.selected !== id);
     }
     labelsDirty = true;
   }
@@ -1150,6 +1153,13 @@ export function createScene(
     setExploded(v) { state.exploded = v; applyHighlights(); frame(v, false); },
     setHeat(v) { state.heat = v; applyHighlights(); },
     select,
+    hover(id) {
+      const next = id && parts()[id] ? id : null;
+      if (next === state.hovered) return;
+      state.hovered = next;
+      applyHighlights();
+      wake();
+    },
     resetView() { frame(state.exploded, false); },
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; },

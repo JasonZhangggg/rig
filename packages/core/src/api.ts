@@ -3,6 +3,7 @@
 
 import type { Change, ChatEvent, ChatMessage } from "./client";
 import type { Game, HistoryPoint, PC } from "./model";
+import type { ManualDiagram, ManualPage, ManualTarget } from "./manuals";
 import type { PCEvent, RecordingRequest } from "./recordings";
 import type { ProbeStatus } from "./probes";
 import type { Inventory, SystemFacts } from "./telemetry";
@@ -63,6 +64,13 @@ export const paths = {
   recordings: (id: string) => `/machines/${encodeURIComponent(id)}/recordings`,
   recording: (id: string, rid: string) => `/machines/${encodeURIComponent(id)}/recordings/${encodeURIComponent(rid)}`,
   recordingStop: (id: string, rid: string) => `/machines/${encodeURIComponent(id)}/recordings/${encodeURIComponent(rid)}/stop`,
+  manuals: (id: string) => `/machines/${encodeURIComponent(id)}/manuals`,
+  manualFind: (id: string) => `/machines/${encodeURIComponent(id)}/manuals/find`,
+  manualSearch: (id: string, q: string, manualId?: string, limit?: number) => `/machines/${encodeURIComponent(id)}/manuals/search?q=${encodeURIComponent(q)}${manualId ? `&manual=${encodeURIComponent(manualId)}` : ""}${limit ? `&limit=${limit}` : ""}`,
+  manual: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}`,
+  manualPdf: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pdf`,
+  manualPages: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pages`,
+  manualPage: (id: string, mid: string, n: number) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pages/${n}`,
   chat: "/chat",
   config: "/config",
   // Better Auth
@@ -76,6 +84,20 @@ export const paths = {
   deviceApprove: "/auth/device/approve",
   deviceDeny: "/auth/device/deny",
 } as const;
+
+/**
+ * Manuals on the server (all need an account, and the PC must be on it):
+ * - GET    manuals(id)                -> Manual[]
+ * - POST   manualFind(id)             body ManualTarget -> { manual: Manual | null } (counts against the daily chat allowance)
+ * - POST   manuals(id)                body AddManualRequest -> Manual (a file the person added; no PDF is sent)
+ * - GET    manualPdf(id, mid)         -> the PDF bytes, fetched from the maker's address on the manual (404 for an added file)
+ * - PUT    manualPages(id, mid)       body SaveManualPagesRequest -> Manual
+ * - GET    manualPage(id, mid, n)     -> ManualPage (404 when not read)
+ * - GET    manualSearch(id, q, mid?)  -> ManualHit[]
+ * - DELETE manual(id, mid)            -> 204
+ */
+export interface AddManualRequest { target: ManualTarget; name: string; bytes: number }
+export interface SaveManualPagesRequest { pages: ManualPage[]; diagrams: ManualDiagram[] }
 
 /** Body of DELETE /api/me. The person types this word to confirm. */
 export interface DeleteAccountRequest { confirm: typeof DELETE_WORD }

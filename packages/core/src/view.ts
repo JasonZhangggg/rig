@@ -13,6 +13,8 @@ export type DayMax = Record<string, number>;
 
 export const defaultAccent = "#EA5A72";
 
+const chipMaker: Record<Inventory["gpus"][number]["vendor"], string | undefined> = { nvidia: "NVIDIA", amd: "AMD", intel: "Intel", other: undefined };
+
 const round = (v: number | null | undefined) => (v == null ? undefined : Math.round(v));
 const gb = (mb: number) => Math.round(mb / 1024);
 const ghz = (mhz: number | null | undefined) => (mhz == null ? undefined : `${(mhz / 1000).toFixed(2)} GHz`);
@@ -53,6 +55,8 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     const gt = gpuTemp(snap);
     parts.gpu = {
       name: dgpu.name, type: "Graphics card", modelSource: "generic",
+      // Windows names the chip, not the exact card; the card's own maker isn't known yet.
+      maker: chipMaker[dgpu.vendor], model: dgpu.name.replace(/^(NVIDIA|AMD|Intel)(\(R\))?\s+/i, ""),
       temp: round(gt?.value), tempMax: gt ? round(Math.max(dayMax[gt.id] ?? 0, gt.value ?? 0)) : undefined, limit: gpuLimit(dgpu.vendor),
       load: round(findSensor(snap, "gpu", "load", /core|d3d 3d/i)?.value), clock: ghz(findSensor(snap, "gpu", "clock", /core/i)?.value),
       fan: round(findSensor(snap, "gpu", "fan")?.value), warn: warnPart.has("gpu"),
@@ -66,6 +70,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const boardTemp = findSensor(snap, "board", "temperature", /system|motherboard|board/i) ?? findSensor(snap, "board", "temperature");
   const boardPart: Part = {
     name: `${inv.board.manufacturer} ${inv.board.product}`.trim(), type: "Motherboard", modelSource: "generic",
+    maker: inv.board.manufacturer || undefined, model: inv.board.product || undefined,
     temp: round(boardTemp?.value), tempMax: boardTemp ? round(Math.max(dayMax[boardTemp.id] ?? 0, boardTemp.value ?? 0)) : undefined,
     specs: [["BIOS", inv.board.biosVersion + (inv.board.biosDate ? ` (${inv.board.biosDate})` : "")]],
     manual: [],
@@ -123,7 +128,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   };
 
   if (laptop) {
-    parts.chassis = { name: `${inv.machine.manufacturer} ${inv.machine.model}`.trim(), type: "Laptop", modelSource: "generic", specs: [["Maker", inv.machine.manufacturer], ["Model", inv.machine.model]], manual: [] };
+    parts.chassis = { name: `${inv.machine.manufacturer} ${inv.machine.model}`.trim(), type: "Laptop", modelSource: "generic", maker: inv.machine.manufacturer || undefined, model: inv.machine.model || undefined, specs: [["Maker", inv.machine.manufacturer], ["Model", inv.machine.model]], manual: [] };
     const b = inv.battery;
     if (b) {
       const wear = b.designWh && b.fullWh ? Math.round((b.fullWh / b.designWh) * 100) : undefined;

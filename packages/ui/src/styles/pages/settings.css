@@ -4,12 +4,12 @@
 .set-nav-label { margin: 14px 12px 4px; color: var(--text-3); font-size: 12.5px; font-weight: 500; }
 .set-list { display: flex; flex-direction: column; gap: 36px; }
 
-/* A section: its title and one line on the page, its rows on one card. */
+/* A section: its title and one line, then its rows under a hairline. */
 .set-section { display: grid; gap: 12px; scroll-margin-top: 22px; }
-.set-head { display: grid; gap: 3px; padding: 0 4px; }
+.set-head { display: grid; gap: 3px; }
 .set-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
 .set-intro { color: var(--text-3); font-size: 13px; font-weight: 500; line-height: 1.45; }
-.set-body { display: flex; flex-direction: column; padding: 4px 22px; }
+.set-body { display: flex; flex-direction: column; padding: 4px 0; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 0; border-top: 1px solid var(--line); }
 .set-body > :first-child,
 .set-fold-body > :first-child { border-top: 0; }
@@ -29,8 +29,8 @@
 .set-body > .notify-note { padding: 14px 0 4px; font-size: 13px; }
 .set-body > .notify-note + .set-row { border-top: 0; }
 
-/* Rarely needed sections, folded to one line each on one card at the bottom. */
-.set-folds { display: flex; flex-direction: column; padding: 0 22px; }
+/* Rarely needed sections, folded to one line each at the bottom. */
+.set-folds { display: flex; flex-direction: column; }
 .set-fold { scroll-margin-top: 22px; }
 .set-fold + .set-fold { border-top: 1px solid var(--line); }
 .set-fold h2 { font: inherit; }
