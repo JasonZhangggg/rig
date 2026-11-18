@@ -428,6 +428,6 @@ describe("the chat and manuals", () => {
   it("tells the model when no manual has been read yet", async () => {
     const t = await manualSetup([{ tool: { name: "search_manuals", input: { query: "F_PANEL" } } }, { text: "ok" }]);
     await readEvents(await t.call("/api/chat", { method: "POST", json: { machineId: t.id, messages: [{ from: "you", text: "Front panel?" }] }, cookie: t.cookie }));
-    expect(JSON.stringify(t.seen[1].messages.at(-1))).toContain("add the manual on the Manuals page");
+    expect(JSON.stringify(t.seen[1].messages.at(-1))).toContain("add the manual on the part's Manual tab in My PC");
   });
 });

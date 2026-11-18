@@ -64,8 +64,12 @@ const storage = {
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
 };
 
+/** Pages that moved into My PC: their old addresses still open it. */
+const movedToPC: Route[] = ["manuals", "upgrades"];
+
 function routeFromHash(): Route {
   const h = location.hash.replace("#", "") as Route;
+  if (movedToPC.includes(h)) { history.replaceState(null, "", "#pc"); return "pc"; }
   return routes.includes(h) ? h : "overview";
 }
 

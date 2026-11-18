@@ -126,3 +126,9 @@
   .rec-moments li { grid-template-columns: 26px minmax(0, 1fr); }
   .rec-moments li .ev-text { grid-column: 2; }
 }
+
+/* The Logs page's views: events, temperatures and games. */
+.lg-views { display: flex; gap: 22px; margin: -6px 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.lg-views a { margin-bottom: -1px; padding: 10px 0; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap; }
+.lg-views a:hover { color: var(--text); }
+.lg-views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }

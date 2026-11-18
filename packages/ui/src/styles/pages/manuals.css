@@ -1,13 +1,4 @@
-/* ---------- Manuals page ---------- */
-.mn-section { display: flex; flex-direction: column; gap: 12px; }
-.mn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--gap); align-items: start; }
-.mn-foot { font-size: 13px; }
-
-.mn-search { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; }
-.mn-search-box { position: relative; max-width: 640px; }
-.mn-search-box svg { position: absolute; left: 14px; top: 50%; width: 18px; height: 18px; translate: 0 -50%; color: var(--text-3); pointer-events: none; }
-.mn-search-box .input { width: 100%; padding-left: 40px; border-radius: var(--r-pill); }
-
+/* ---------- Manuals: on each part in My PC, and the viewer ---------- */
 .mn-hits { list-style: none; margin: 0 -8px; padding: 0; }
 .mn-hit { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
 .mn-hits li:first-child .mn-hit { border-top-color: transparent; }
@@ -44,7 +35,6 @@
 .mn-fields.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr); }
 .mn-fields .input { width: 100%; min-width: 0; height: 38px; font-size: 14px; }
 .mn-hint { font-size: 12.5px; }
-.mn-add { border: 1px dashed var(--line-strong); background: transparent; }
 
 .mn-part { display: flex; flex-direction: column; gap: 14px; }
 .mn-related { display: flex; flex-direction: column; gap: 8px; }
@@ -101,7 +91,6 @@ button.source:hover { border-color: var(--line-strong); color: var(--text); }
 .mv-text { max-width: 72ch; margin: 0 auto; padding: 24px 28px; border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (max-width: 860px) {
-  .mn-grid { grid-template-columns: minmax(0, 1fr); }
   .mn-fields.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .mn-fields.three .field:last-child { grid-column: 1 / -1; }
   .mv-scrim { padding: 0; }
@@ -123,3 +112,7 @@ button.source:hover { border-color: var(--line-strong); color: var(--text); }
   .mv-zoom { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .mn-progress .bar i { transition: none; } }
+
+/* On My PC, under the parts: manuals for things Rig can't see. */
+.mn-other { display: flex; flex-direction: column; gap: 10px; margin: 4px 22px 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.mn-other .linkish { align-self: flex-start; font-size: 13.5px; }

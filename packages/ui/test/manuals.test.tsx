@@ -1,5 +1,5 @@
-// Manuals: the page, finding and reading a manual, search, the viewer, the
-// part's Manual tab, and manual sources in the chat. pdf.js needs a real
+// Manuals: each part's Manual tab on My PC, finding and reading a manual,
+// search from Ctrl K, the viewer, and manual sources in the chat. pdf.js needs a real
 // browser, so reading and drawing are stubbed with the demo's own page text.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,6 +44,13 @@ async function show(route: string, client = demo()) {
   return client;
 }
 
+/** Opens a part on My PC at its Manual tab. */
+async function partTab(type: string, client = demo()) {
+  await show("pc", client);
+  fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${type}`) }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Manual" }));
+}
+
 const card = async (name: RegExp) => within(await screen.findByRole("article", { name }));
 const viewer = async () => within(await screen.findByRole("dialog", { name: /Manual|MAG B650|Zenbook/ }));
 
@@ -51,57 +58,74 @@ beforeEach(() => { location.hash = ""; localStorage.clear(); read.pages = []; })
 afterEach(() => { act(() => closeManual()); cleanup(); });
 
 describe("Manuals", () => {
-  it("has its own place in the navigation", async () => {
+  it("lives on each part in My PC, not on a page of its own", async () => {
     await show("overview");
-    const nav = screen.getAllByRole("link", { name: "Manuals" });
-    expect(nav.length).toBeGreaterThan(0);
-    fireEvent.click(nav[0]);
-    expect(await screen.findByRole("heading", { name: "Manuals for Atlas" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /^Manuals/ })).toBeNull();
+    await open("manuals");
+    expect(await screen.findByRole("heading", { name: "Atlas in 3D" })).toBeTruthy();
+    expect(location.hash).toBe("#pc");
   });
 
-  it("lists Atlas's board manual as ready, with its diagram pages", async () => {
-    await show("manuals");
+  it("shows Atlas's board manual as read, with its diagram pages, and lets it be replaced or removed", async () => {
+    await partTab("Motherboard");
     const board = await card(/^Motherboard:/);
-    expect(board.getByText("Ready")).toBeTruthy();
     expect(board.getByText("12 pages")).toBeTruthy();
     const chips = within(board.getByRole("list", { name: /Diagrams in the/ })).getAllByRole("button").map((b) => b.textContent);
     expect(chips).toEqual(expect.arrayContaining(["Board layout · p. 4", "Front panel header · p. 9"]));
+    expect(board.getByRole("button", { name: "Replace" })).toBeTruthy();
+    fireEvent.click(board.getByRole("button", { name: "Remove" }));
+    expect(board.getByText(/Its pages leave search and the chat/)).toBeTruthy();
   });
 
   it("asks for the graphics card's exact model, and offers a PDF when the maker has none", async () => {
-    await show("manuals");
+    await partTab("Graphics card");
     const gpu = await card(/^Graphics card:/);
     fireEvent.click(gpu.getByRole("button", { name: "Find manual" }));
     expect(gpu.getByText(/Windows only knows the chip/)).toBeTruthy();
     fireEvent.change(gpu.getByLabelText("Model"), { target: { value: "GAMING X TRIO 4080" } });
     fireEvent.click(gpu.getByRole("button", { name: "Find manual" }));
     expect(await gpu.findByText(/Rig couldn't find this manual on .+'s site\./)).toBeTruthy();
-    expect(gpu.getByText("Not found")).toBeTruthy();
     expect(gpu.getByRole("button", { name: "Add a PDF you have" })).toBeTruthy();
     expect(gpu.getByRole("button", { name: "Search again with a different model name" })).toBeTruthy();
   });
 
-  it("finds and reads Pebble's service guide, then marks it ready", async () => {
+  it("finds and reads Pebble's service guide from the laptop's Manual tab", async () => {
     localStorage.setItem("rig.pc", "demo-pebble");
     read.pages = renderSampleManual(sampleLaptopGuide("ASUS", "Zenbook 14 OLED UX3405MA")).pages;
-    await show("manuals");
-    expect(await screen.findByRole("heading", { name: "Manuals for Pebble" })).toBeTruthy();
+    await partTab("Laptop");
     const laptop = await card(/^Laptop:/);
     expect(laptop.getByText("Rig hasn't looked for this one yet.")).toBeTruthy();
     fireEvent.click(laptop.getByRole("button", { name: "Find manual" }));
-    expect(await laptop.findByText("Ready", {}, { timeout: 3000 })).toBeTruthy();
-    expect(laptop.getByText("6 pages")).toBeTruthy();
+    expect(await laptop.findByText("6 pages", {}, { timeout: 3000 })).toBeTruthy();
     expect(laptop.getByRole("button", { name: /Inside view · p\. \d/ })).toBeTruthy();
   });
 
-  it("searches every manual and opens the viewer at the page found", async () => {
-    await show("manuals");
-    await card(/^Motherboard:/);
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search all manuals" }), { target: { value: "F_PANEL" } });
-    const results = await screen.findAllByRole("button", { name: /Page \d+/ });
-    expect(results[0].textContent).toMatch(/Page 9/);
-    expect(results[0].querySelector("mark")?.textContent).toBe("F_PANEL");
-    fireEvent.click(results[0]);
+  it("asks which case it is before looking, since Windows can't see the case", async () => {
+    await partTab("Case");
+    expect(await screen.findByText(/Windows can't see which case this is/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Maker"), { target: { value: "Fractal Design" } });
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "North" } });
+    fireEvent.click(screen.getByRole("button", { name: "Find manual" }));
+    const found = await card(/^Case:/);
+    expect(await found.findByText(/Rig couldn't find this manual on Fractal Design's site\./)).toBeTruthy();
+  });
+
+  it("adds a manual for something that isn't a part, like the monitor, under the parts", async () => {
+    await show("pc");
+    const other = within(await screen.findByRole("region", { name: "Other manuals" }));
+    fireEvent.click(other.getByRole("button", { name: /Add a manual for something else/ }));
+    expect((other.getByLabelText("Kind") as HTMLSelectElement).value).toBe("monitor");
+    fireEvent.click(other.getByRole("button", { name: "Cancel" }));
+    expect(other.queryByLabelText("Kind")).toBeNull();
+  });
+
+  it("finds manual pages from Ctrl K and opens the viewer at the page found", async () => {
+    await show("overview");
+    fireEvent.click(screen.getByRole("button", { name: /Search or ask/ }));
+    const palette = within(screen.getByRole("dialog", { name: "Search" }));
+    fireEvent.change(palette.getByRole("textbox", { name: "Search" }), { target: { value: "F_PANEL" } });
+    const hit = await palette.findByRole("button", { name: /^Page 9 of the/ });
+    fireEvent.click(hit);
     const v = await viewer();
     expect((v.getByLabelText("Page number") as HTMLInputElement).value).toBe("9");
     expect(await v.findByRole("img", { name: /Page 9 of the/ })).toBeTruthy();
@@ -113,11 +137,12 @@ describe("Manuals", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("says when nothing matches", async () => {
-    await show("manuals");
-    await card(/^Motherboard:/);
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search all manuals" }), { target: { value: "thunderbolt docking" } });
-    expect(await screen.findByText(/Nothing in Atlas's manuals matches "thunderbolt docking"/)).toBeTruthy();
+  it("lists the diagram pages in Ctrl K by name", async () => {
+    await show("overview");
+    fireEvent.click(screen.getByRole("button", { name: /Search or ask/ }));
+    const palette = within(screen.getByRole("dialog", { name: "Search" }));
+    fireEvent.change(palette.getByRole("textbox", { name: "Search" }), { target: { value: "memory slot" } });
+    expect(await palette.findByRole("button", { name: /^Memory slot order.*page 7/ })).toBeTruthy();
   });
 
   it("shows the board's manual on the motherboard's Manual tab", async () => {

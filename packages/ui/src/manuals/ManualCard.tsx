@@ -107,8 +107,8 @@ export function ManualCard({ row, store, compact }: { row: Row; store: ManualSto
         <div className="mn-actions">
           {m.indexed || !fileElsewhere ? <button type="button" className="btn primary sm" onClick={() => openManual(m.id, m.diagrams[0]?.page)}>Open</button> : null}
           {!m.indexed && !fileElsewhere && <button type="button" className="btn sm" onClick={() => void store.read(m)}>Read it</button>}
-          {!compact && <PickPdf className="btn ghost sm" onPick={(f) => add(f, m.id)}>Replace</PickPdf>}
-          {!compact && <button type="button" className="btn ghost sm" onClick={() => setConfirm(true)}>Remove</button>}
+          <PickPdf className="btn ghost sm" onPick={(f) => add(f, m.id)}>Replace</PickPdf>
+          <button type="button" className="btn ghost sm" onClick={() => setConfirm(true)}>Remove</button>
         </div>
       </>
     );

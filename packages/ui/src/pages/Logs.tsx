@@ -6,6 +6,7 @@ import { Detail } from "./logs/Detail";
 import { Events } from "./logs/Events";
 import { NowRecording, Recordings } from "./logs/Recordings";
 import { caughtBy, highlights, summaryLine, whenWords } from "./logs/summary";
+import { LogsHead } from "./logs/Head";
 
 /** What the Windows logs say about this PC lately, the few events that matter, and the recordings Rig made to find out why. */
 export function Logs() {
@@ -27,9 +28,7 @@ export function Logs() {
   const active = data.recordings.find(isActive);
   return (
     <div className="page lg-page">
-      <div className="page-head">
-        <div><h1>Logs</h1><p className="sub">Read from the Windows event log on {pc.name}, in plain words. Rig only reads it.</p></div>
-      </div>
+      <LogsHead sub={`What Windows wrote about ${pc.name}, in plain words, and the recordings Rig made. Rig only reads the log.`} />
 
       {active && <NowRecording r={active} pcName={pc.name} />}
 

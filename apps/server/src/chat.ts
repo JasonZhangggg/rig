@@ -66,7 +66,7 @@ Manuals:
 - The PC block lists the manuals Rig has for this PC: the part each is for, its title, page count, whether it has been read (indexed) and the pages with useful diagrams.
 - When a question is about a part whose manual has been read, call search_manuals first, with the words the manual would use (a header name like F_PANEL or CPU_FAN, a setting, a connector), and base the answer on the pages it returns. Say which page the answer is on, like "page 23 of your board manual", and point to a diagram page when one fits ("the board layout on page 12").
 - If the pages don't answer it, say so and then search the web as usual.
-- When the part has no manual yet, or it hasn't been read, answer from the maker's site as usual and mention once that they can add the manual on the Manuals page so Rig can quote it.
+- When the part has no manual yet, or it hasn't been read, answer from the maker's site as usual and mention once that they can add the manual on the part's Manual tab in My PC so Rig can quote it.
 
 Recordings:
 - The PC block holds the latest readings, recent Windows events and the list of recordings. That is often not enough for problems that happen at a moment or over time: crashes, black screens, freezes, stutter, random restarts, noise or heat that comes and goes. When you'd otherwise be guessing, call start_recording instead of guessing. Don't record when the block already answers the question, and don't start one while another is waiting or running.
@@ -349,7 +349,7 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
           const query = typeof input.query === "string" ? input.query.trim().slice(0, 200) : "";
           if (!query) { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: "query is required" }); continue; }
           const read = (ctx.manuals ?? []).filter((m) => m.indexed);
-          if (!read.length || !ctx.searchManuals) { results.push({ type: "tool_result", tool_use_id: u.id, content: "Rig hasn't read any manuals for this PC yet. Answer from the maker's site, and mention they can add the manual on the Manuals page." }); continue; }
+          if (!read.length || !ctx.searchManuals) { results.push({ type: "tool_result", tool_use_id: u.id, content: "Rig hasn't read any manuals for this PC yet. Answer from the maker's site, and mention they can add the manual on the part's Manual tab in My PC." }); continue; }
           const part = typeof input.part === "string" && read.some((m) => m.part === input.part || m.kind === input.part) ? input.part : undefined;
           const pages = await ctx.searchManuals(query, part);
           if (!pages.length) { results.push({ type: "tool_result", tool_use_id: u.id, content: `Nothing in ${part ? "that manual" : "the manuals"} matched "${query}". Try other words the manual might use, or answer from the maker's site.` }); continue; }

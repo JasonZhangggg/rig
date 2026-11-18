@@ -19,7 +19,8 @@ export const shortType = (t: string) => t.replace(" and cooler", "");
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
   if (i.fix) { ctx.review(i.fix, { by: "you", why: i.title }); return; }
   if (i.ask) { ctx.ask(i.ask); return; }
-  if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
+  if (i.part && i.go === "upgrades") ctx.set({ selected: i.part, tab: "upgrade" });
+  else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
   ctx.go(i.go);
 }
 

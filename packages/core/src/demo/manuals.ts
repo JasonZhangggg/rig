@@ -88,7 +88,7 @@ export function sampleBoardManual(maker: string, model: string): SampleManual {
   // 1. Cover
   let p = next("Sample motherboard manual (demo)");
   p.text(48, 130, `${maker} ${model}`, { size: 14, bold: true, color: grey });
-  p.para(48, 160, 499, "Rig made this sample for its demo so you can try the Manuals page. It is not the maker's manual. The drawings, header names and numbers follow common conventions but are made up.", { size: 11, color: ink });
+  p.para(48, 160, 499, "Rig made this sample for its demo so you can try manuals in Rig. It is not the maker's manual. The drawings, header names and numbers follow common conventions but are made up.", { size: 11, color: ink });
   p.rect(48, 230, 499, 250, { fill: board, stroke: boardEdge, width: 0.8 });
   box(p, 220, 285, 110, 110, slot, "CPU");
   for (let i = 0; i < 4; i++) p.rect(360 + i * 16, 260, 9, 190, { fill: slot, stroke: boardEdge, width: 0.6 });

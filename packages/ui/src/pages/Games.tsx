@@ -5,6 +5,7 @@ import { Detail } from "./games/Detail";
 import { Library } from "./games/Library";
 import { Lead, RecentSessions } from "./games/Summary";
 import { partName } from "./games/words";
+import { LogsHead } from "./logs/Head";
 
 type GameRange = "7d" | "30d";
 const rangeWords: Record<GameRange, string> = { "7d": "this week", "30d": "this month" };
@@ -54,10 +55,7 @@ export function Games() {
   const recorded = !!points?.length;
   return (
     <div className="page pg-focus">
-      <div className="page-head">
-        <div><h1>Games</h1><p className="sub">What you played on {pc.name} and how warm the {part} ran while you did.</p></div>
-        {seg}
-      </div>
+      <LogsHead sub={`What you played on ${pc.name} and how warm the ${part} ran while you did.`} right={seg} />
       {library == null ? <p className="muted" role="status">Loading…</p> : library.games.length ? (
         <>
           <Lead library={library} when={when} tuning={tuning} onOpen={show} />

@@ -77,19 +77,23 @@ describe("Changes", () => {
 });
 
 describe("Upgrades", () => {
-  it("leads with Rig's pick and why, with the room each part has beside its idea", async () => {
-    await show("upgrades");
-    const pick = await screen.findByRole("region", { name: "Another case fan" });
-    expect(within(pick).getByText("Rig's pick for Atlas")).toBeTruthy();
+  it("sits on My PC: Rig's pick and the other ideas, each opening its part at an Upgrade tab", async () => {
+    await show("pc");
+    const card = await screen.findByRole("region", { name: "Upgrades" });
+    const pick = await within(card).findByRole("button", { name: /Rig's pick.*Another case fan/ });
     expect(within(pick).getByText(/Graphics card runs hotter than it used to/)).toBeTruthy();
-
-    const others = screen.getByRole("region", { name: "Other ideas" });
-    expect(within(others).getByRole("img", { name: "2 of 4 slots used" })).toBeTruthy();
+    const others = within(card).getByRole("list", { name: "Other ideas" });
     expect(within(others).getByText("Add another NVMe SSD")).toBeTruthy();
-    expect(within(others).getByText(/726 GB free/)).toBeTruthy();
-    expect(screen.queryByText("Where there's room")).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Ask what to buy" }).length).toBe(3);
-    expect(screen.getByText("Have a part in mind?")).toBeTruthy();
+
+    fireEvent.click(within(others).getByRole("button", { name: /Add another NVMe SSD/ }));
+    expect(screen.getByRole("tab", { name: "Upgrade" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/726 GB free/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ask what to buy" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /All parts/ }));
+    fireEvent.click(within(screen.getByRole("list", { name: "Other ideas" })).getByRole("button", { name: /16 GB/ }));
+    expect(screen.getByRole("img", { name: "2 of 4 slots used" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /Memory slot order in your manual, p\. 7/ })).toBeTruthy();
   });
 
   it("picks the idea that answers something Rig flagged on the PC", () => {
@@ -105,12 +109,13 @@ describe("Upgrades", () => {
     expect(bestPick(list, { ...pc, issues: [], alerts: [alert] } as unknown as PC, [])).toMatchObject({ idea: { part: "Cooling" }, why: "Graphics card runs hotter than it used to.", pressing: true });
   });
 
-  it("says what will show up when there's nothing to suggest", async () => {
+  it("says so when there's nothing to suggest, and offers to ask", async () => {
     const client = new DemoClient();
     client.upgrades = async () => [];
-    await show("upgrades", client);
-    expect(await screen.findByText("Nothing to suggest right now")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Ask what helps most" })).toBeTruthy();
+    await show("pc", client);
+    const card = await screen.findByRole("region", { name: "Upgrades" });
+    expect(await within(card).findByText("Nothing to suggest for Atlas right now.")).toBeTruthy();
+    expect(within(card).getByRole("button", { name: "Have a part in mind? Ask if it fits" })).toBeTruthy();
   });
 });
 

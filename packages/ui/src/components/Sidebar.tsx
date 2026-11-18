@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Route } from "@rig/core";
 import { useApp } from "../state";
 import { Icon } from "./common";
-import { navItems } from "./Shell";
+import { homeOf, navItems } from "./Shell";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
-const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "manuals", "history", "games", "upgrades"]], ["Fix problems", ["chat", "logs", "changes"]], ["", ["settings"]]];
+const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "logs"]], ["Fix problems", ["chat", "changes"]], ["", ["settings"]]];
 
 function useOutside(open: boolean, close: () => void) {
   const box = useRef<HTMLDivElement>(null);
@@ -132,7 +132,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
               <div key={g || ids[0]} className="fp-group">
                 {g && <div className="fp-label">{g}</div>}
                 {ids.map((r) => (
-                  <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={ui.route === r ? "page" : undefined}>
+                  <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={homeOf(ui.route) === r ? "page" : undefined}>
                     <Icon d={path(r)} /><span>{label(r)}</span>{count(r)}
                   </a>
                 ))}

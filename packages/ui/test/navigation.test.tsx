@@ -19,7 +19,9 @@ describe("navigation", () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     const nav = (name: string) => screen.getByRole("link", { name: new RegExp(`^${name}`) });
-    for (const name of ["Home", "My PC", "Temperatures", "Games", "Upgrades", "Ask", "Logs", "Changes", "Settings"]) expect(nav(name)).toBeTruthy();
+    for (const name of ["Home", "My PC", "Ask", "Logs", "Changes", "Settings"]) expect(nav(name)).toBeTruthy();
+    // Folded into other pages: upgrades and manuals on My PC, temperatures and games in Logs.
+    for (const name of ["Temperatures", "Games", "Upgrades", "Manuals"]) expect(screen.queryByRole("link", { name: new RegExp(`^${name}`) })).toBeNull();
     expect(screen.getByText("Fix problems")).toBeTruthy();
     expect(nav("Settings").getAttribute("href")).toBe("#settings");
     expect(screen.queryByRole("link", { name: /^Overview/ })).toBeNull();
@@ -33,6 +35,17 @@ describe("navigation", () => {
     fireEvent.change(palette.getByRole("textbox", { name: "Search" }), { target: { value: "temps" } });
     fireEvent.click(palette.getByRole("button", { name: /^Temperatures/ }));
     expect(location.hash).toBe("#history");
-    expect(await screen.findByRole("heading", { name: "Temperature history" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Logs" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Temperatures" }).getAttribute("aria-current")).toBe("page");
+    // The sidebar marks Logs, the page the view belongs to.
+    expect(screen.getByRole("link", { name: /^Logs/ }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("opens upgrades and manuals on My PC from their old addresses", async () => {
+    location.hash = "#upgrades";
+    render(<RigApp client={new DemoClient()} />);
+    expect(await screen.findByRole("heading", { name: /in 3D$/ })).toBeTruthy();
+    expect(location.hash).toBe("#pc");
+    expect(screen.getByRole("heading", { name: "Upgrades" })).toBeTruthy();
   });
 });

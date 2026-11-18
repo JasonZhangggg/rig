@@ -1,7 +1,7 @@
 // The manuals of the PC on screen and the work on them: finding one on the
 // maker's site, downloading it, reading its pages and saving what was read.
-// Kept in a small store per client and PC, so the Manuals page, the part
-// panel, Upgrades and the viewer share it and a read keeps going while the
+// Kept in a small store per client and PC, so the part
+// panels on My PC, Ctrl K and the viewer share it and a read keeps going while the
 // person moves around the app.
 
 import { useEffect, useSyncExternalStore } from "react";

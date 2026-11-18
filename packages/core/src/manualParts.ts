@@ -1,5 +1,5 @@
 // Which of a PC's parts are worth a manual, and the maker and model to look
-// each one up by. Pure, so the Manuals page and the server agree.
+// each one up by. Pure, so My PC and the server agree.
 
 import type { ManualKind, ManualTarget } from "./manuals";
 import { manualKinds } from "./manuals";

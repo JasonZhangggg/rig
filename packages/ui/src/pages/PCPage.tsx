@@ -3,9 +3,11 @@ import { formatTemp, type ActionCall, type Part, type TempUnit } from "@rig/core
 import { Sparkline } from "../chart";
 import { StageSlot, getStage } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
+import { OtherManuals } from "../manuals/OtherManuals";
 import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince } from "./shared";
+import { PartUpgrade, UpgradesCard, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
 
 /** The last few readings of a value, kept while the page is open. */
 function useTrail(key: string, value: number | undefined, tick: string | undefined, size = 40) {
@@ -40,9 +42,10 @@ export function PCPage() {
     return () => document.removeEventListener("keydown", esc);
   });
   const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
+  const ups = useUpgrades();
   return (
     <div className="page">
-      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Pick a part to see its details. Drag to turn, scroll to zoom.</p></div></div>
+      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Pick a part for its details, manual and upgrades. Drag to turn, scroll to zoom.</p></div></div>
       <div className="pc-view">
         <section className="card stage-card">
           <StageSlot id="pc-stage" />
@@ -59,7 +62,8 @@ export function PCPage() {
           </div>
         </section>
         <div className="pc-side">
-          <aside className="card detail"><Detail /></aside>
+          <aside className="card detail"><Detail ups={ups} /></aside>
+          <UpgradesCard ups={ups} />
           <QuickSwitches />
         </div>
       </div>
@@ -122,7 +126,7 @@ export function partsSummary(parts: Part[], name: string, online: boolean) {
   return "Pick one for its specs, manual and drivers.";
 }
 
-function Detail() {
+function Detail({ ups }: { ups: PCUpgrades }) {
   const { ui, pc, set } = useApp();
   const temp = useTemp();
   const parts = pc.parts ?? {};
@@ -147,12 +151,15 @@ function Detail() {
             ))}
           </ul>
         )}
+        <OtherManuals />
       </>
     );
   }
   const id = ui.selected;
   const part = parts[id];
+  const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
   const tabs: [string, string][] = [["live", "Live"], ["specs", "Specs"], ["manual", "Manual"]];
+  if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : "live";
   return (
@@ -169,7 +176,7 @@ function Detail() {
       <div className="tabs" role="tablist">
         {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set({ tab: t })}>{l}</button>)}
       </div>
-      <div className="detail-body"><DetailTab part={part} id={id} tab={tab} /></div>
+      <div className="detail-body">{tab === "upgrade" ? <PartUpgrade ideas={ideas} ups={ups} /> : <DetailTab part={part} id={id} tab={tab} />}</div>
     </>
   );
 }

@@ -5,6 +5,7 @@ import { Icon } from "../components/common";
 import { useApp, useHistory, useTemp } from "../state";
 import { Events } from "./history/Events";
 import { Ranges } from "./history/Ranges";
+import { LogsHead } from "./logs/Head";
 
 type Temp = (celsius: number | null | undefined, opts?: TempFormat) => string;
 /** A difference between two temperatures, like "6° warmer": scaled to the unit, not offset. */
@@ -68,12 +69,11 @@ export function History() {
 
   return (
     <div className="page hi-page">
-      <div className="page-head">
-        <div><h1>Temperature history</h1><p className="sub">{pc.name} logs temperatures every minute while Rig runs.</p></div>
+      <LogsHead sub={`${pc.name}'s temperatures, logged every minute while Rig runs.`} right={
         <div className="seg" role="group" aria-label="Range">
           {(["24h", "7d", "30d"] as const).map((r) => <button key={r} type="button" aria-pressed={ui.range === r} onClick={() => set({ range: r })}>{r === "24h" ? "Day" : r === "7d" ? "Week" : "Month"}</button>)}
         </div>
-      </div>
+      } />
       {said && (
         <section className="hi-lede" aria-label="Summary">
           <p className="hi-lede-text">{said.main} <span className="muted">{said.rest}</span></p>
