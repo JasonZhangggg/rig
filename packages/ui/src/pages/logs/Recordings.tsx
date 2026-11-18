@@ -19,7 +19,7 @@ function result(r: RecordingInfo, inUnit: (s: string) => string): string {
 export function NowRecording({ r, pcName }: { r: RecordingInfo; pcName: string }) {
   const { stopRecording, openRecording } = useApp();
   return (
-    <section className="card card-pad tone-dark rec-now">
+    <section className="card card-pad rec-now">
       <div className="rec-now-head">
         <div><span className="label">{r.state === "pending" ? `Waiting for ${pcName}` : "Recording now"}</span><h2 className="plain-h">{r.reason}</h2></div>
         <div className="gm-actions">
