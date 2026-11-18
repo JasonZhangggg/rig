@@ -30,7 +30,7 @@ describe("Changes", () => {
     await show("changes");
     const lead = await screen.findByRole("region", { name: /runs at 60 Hz but can do 165 Hz/ });
     expect(within(lead).getByText("Waiting for you")).toBeTruthy();
-    expect(within(lead).getByText(/Nothing changes until you review it\./)).toBeTruthy();
+    expect(within(lead).getByText(/look smoother at the higher rate/)).toBeTruthy();
     expect(within(lead).queryByText("60 Hz")).toBeNull();
     fireEvent.click(await within(lead).findByRole("button", { name: "What changes" }));
     await within(lead).findByText("60 Hz");
