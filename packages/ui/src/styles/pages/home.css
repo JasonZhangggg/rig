@@ -78,6 +78,8 @@
   --fade: linear-gradient(to bottom, #000 80%, transparent 98%), linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
   -webkit-mask-image: var(--fade); mask-image: var(--fade); -webkit-mask-composite: source-in; mask-composite: intersect;
 }
+/* In the phone's list the stage starts right under the buttons (dash.css), so the PC can use all of it. */
+.dash[data-cols="1"] .f-pc .stage-slot { --fit-inset: 10px 0 26px 0; }
 .dw.tone-dark .scene-pin .part-label { background: color-mix(in srgb, var(--surface-2) 92%, transparent); }
 /* On Home the parts' labels would crowd the PC and its name, and the temperatures already read large under it,
    so only a part you pick keeps its label. The 3D view shows them all. */
