@@ -18,22 +18,18 @@ jobs:
           $s = Get-AuthenticodeSignature .\PawnIO_setup.exe
           "Status: $($s.Status)"; "Signer: $($s.SignerCertificate.Subject)"; "Issuer: $($s.SignerCertificate.Issuer)"
           (Get-Item .\PawnIO_setup.exe).VersionInfo | Format-List *
-      - name: Help text
-        shell: pwsh
-        run: |
-          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-help" -Wait -PassThru -RedirectStandardOutput help.txt -RedirectStandardError helperr.txt
-          "exit $($p.ExitCode)"; Get-Content help.txt, helperr.txt
       - name: Silent install, check, silent uninstall
         shell: pwsh
+        timeout-minutes: 8
         run: |
+          function Run($a) { $p = Start-Process .\PawnIO_setup.exe -ArgumentList $a -PassThru; if (-not $p.WaitForExit(90000)) { $p.Kill(); "TIMEOUT: $a" } else { "exit $($p.ExitCode): $a" } }
           $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
           "before: $(Test-Path $key)"
-          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-install","-silent" -Wait -PassThru; "install exit $($p.ExitCode)"
+          Run @("-install","-silent")
           if (Test-Path $key) { Get-ItemProperty $key | Format-List * }
-          Get-Service PawnIO -ErrorAction SilentlyContinue | Format-List *
+          sc.exe query PawnIO
           sc.exe qc PawnIO
-          Test-Path '\\?\GLOBALROOT\Device\PawnIO'
-          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-install","-silent" -Wait -PassThru; "reinstall exit $($p.ExitCode)"
-          $p = Start-Process .\PawnIO_setup.exe -ArgumentList "-uninstall","-silent" -Wait -PassThru; "uninstall exit $($p.ExitCode)"
+          Run @("-install","-silent")
+          Run @("-uninstall","-silent")
           "after: $(Test-Path $key)"
-          Get-Service PawnIO -ErrorAction SilentlyContinue
+          sc.exe query PawnIO

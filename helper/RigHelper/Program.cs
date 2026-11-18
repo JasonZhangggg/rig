@@ -141,7 +141,7 @@ public class Handler(Sensors hw)
 {
     public JsonNode? Handle(string method, JsonNode? p) => method switch
     {
-        "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin() }),
+        "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin(), driver = Sensors.Driver() }),
         "inventory" => Json.From(Inventory.Read(hw)),
         "facts" => Json.From(Facts.Read()),
         "snapshot" => Json.From(hw.Snapshot()),

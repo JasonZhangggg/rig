@@ -8,7 +8,8 @@ using LibreHardwareMonitor.Hardware;
 namespace Rig.Helper;
 
 public record SensorDto(string Id, string Hw, string HwName, string Type, string Name, double? Value, double? Min, double? Max);
-public record SnapshotDto(long At, List<SensorDto> Sensors, string? Game, bool Elevated);
+public record DriverDto(bool Installed, string? Version);
+public record SnapshotDto(long At, List<SensorDto> Sensors, string? Game, bool Elevated, DriverDto Driver);
 
 public sealed class Sensors : IDisposable
 {
@@ -30,8 +31,12 @@ public sealed class Sensors : IDisposable
         {
             foreach (var h in pc.Hardware) Read(h, null, list);
         }
-        return new SnapshotDto(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), list, Foreground.Game(), Native.IsAdmin());
+        return new SnapshotDto(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), list, Foreground.Game(), Native.IsAdmin(), Driver());
     }
+
+    /// PawnIO is the driver LibreHardwareMonitor reads processor temperatures and board fans through.
+    public static DriverDto Driver() =>
+        LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled ? new(true, LibreHardwareMonitor.PawnIo.PawnIo.Version?.ToString()) : new(false, null);
 
     static void Read(IHardware h, IHardware? parent, List<SensorDto> list)
     {

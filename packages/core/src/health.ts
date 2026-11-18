@@ -35,6 +35,8 @@ export function findings({ inv, snap, facts }: HealthInput): Finding[] {
   // Permission for sensors
   if (snap && !snap.elevated) {
     add({ id: "needs-admin", category: "Temperatures", weight: 0, severity: "info", title: "Rig can't read every temperature yet", body: "Windows only shares processor and board temperatures with apps that have admin permission. Restart Rig and choose Yes when Windows asks.", action: "How this works", go: "chat", ask: "Why does Rig need admin permission to read temperatures?" });
+  } else if (snap?.driver && !snap.driver.installed) {
+    add({ id: "needs-driver", category: "Temperatures", weight: 0, severity: "info", title: "Rig can't read processor temperatures yet", body: "They come through PawnIO, a small signed driver that installs with Rig, and it isn't on this PC. Run Rig's installer again and choose Yes when Windows asks about PawnIO.", action: "How this works", go: "chat", ask: "What is PawnIO and why does Rig need it for processor temperatures?" });
   }
 
   // Temperatures
