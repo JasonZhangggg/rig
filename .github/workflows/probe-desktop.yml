@@ -1,0 +1,22 @@
+name: Probe pnpm desktop
+on: { push: { branches: [probe/pnpm-desktop] } }
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 8.0.x }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: First run builds the helper and fetches PawnIO
+        run: pnpm desktop --prepare
+      - name: Second run skips the helper build
+        shell: pwsh
+        run: |
+          $o = pnpm desktop --prepare | Out-String; $o
+          if ($o -notmatch "up to date") { throw "helper was rebuilt" }
+          if (-not (Test-Path apps/desktop/src-tauri/binaries/RigHelper-x86_64-pc-windows-msvc.exe)) { throw "no helper" }
+          if (-not (Test-Path apps/desktop/src-tauri/pawnio/PawnIO_setup.exe)) { throw "no PawnIO" }
