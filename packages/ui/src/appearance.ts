@@ -126,7 +126,7 @@ export const palettes: PalettePreset[] = [
   { id: "coral", name: "Coral", blurb: "Sea glass with warm coral.", colors: { good: "#A8DCCF", look: "#E8796A", expected: "#A6A29D" } },
   { id: "lilac", name: "Lilac", blurb: "Lilac with rose.", colors: { good: "#D2C5EE", look: "#DA6A90", expected: "#A6A2AC" } },
   { id: "butter", name: "Butter", blurb: "Butter yellow with tomato.", colors: { good: "#F0DC8E", look: "#E2694C", expected: "#A9A497" } },
-  { id: "quiet", name: "Quiet", blurb: "Greys, with amber only where something needs a look.", colors: { good: "#D9D6CF", look: "#EFA03A", expected: "#A7A39B" } },
+  { id: "quiet", name: "Quiet", blurb: "Greys, with amber only where something needs a look.", colors: { good: "#C2BCAE", look: "#EFA03A", expected: "#A7A39B" } },
   { id: "clear", name: "Clear", blurb: "Sky blue and orange that stay apart with color blindness.", colors: { good: "#56B4E9", look: "#E69F00", expected: "#9A9A9A" } },
 ];
 
