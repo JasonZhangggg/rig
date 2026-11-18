@@ -4,6 +4,7 @@
 // the view so the website shows it and reaches the other PCs on the account.
 
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
+import { searchPages } from "./manualSearch";
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { MachineSync } from "./api";
@@ -439,16 +440,81 @@ export class LocalClient implements RigClient {
     return next;
   }
 
-  // ----- Chat -----
-  // Manuals: filled in by the manuals work. These stubs keep every client compiling meanwhile.
-  async manuals(_id: string): Promise<Manual[]> { return []; }
-  async addManualFile(_id: string, _t: ManualTarget, _f: { name: string; bytes: number }): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
-  async manualFile(_id: string, _mid: string): Promise<ArrayBuffer> { throw new Error("Manuals aren't ready yet."); }
-  async saveManualPages(_id: string, _mid: string, _p: ManualPage[], _d: ManualDiagram[]): Promise<Manual> { throw new Error("Manuals aren't ready yet."); }
-  async searchManuals(_id: string, _q: string, _o?: { manualId?: string; limit?: number }): Promise<ManualHit[]> { return []; }
-  async manualPage(_id: string, _mid: string, _n: number): Promise<ManualPage | null> { return null; }
-  async removeManual(_id: string, _mid: string): Promise<void> {}
+  // ----- Manuals -----
+  // Signed in, manuals live on the account, so the website and the chat see
+  // them: every call goes to the server. Signed out, this PC keeps its own
+  // list and page text on disk and searches it here. Manuals saved while
+  // signed out stay on this PC; they aren't uploaded when you sign in later.
 
+  private async localManuals(): Promise<Manual[]> { return (await this.store.get<Manual[]>("manuals")) ?? []; }
+  private async putLocalManuals(list: Manual[]) { await this.store.set("manuals", list); }
+  private pagesKey(mid: string) { return `manualPages:${mid}`; }
+  private async localManual(id: string, mid: string): Promise<Manual> {
+    const m = this.isLocal(id) ? (await this.localManuals()).find((x) => x.id === mid) : undefined;
+    if (!m) throw new Error("That manual isn't on this PC.");
+    return m;
+  }
+
+  async manuals(id: string): Promise<Manual[]> {
+    if (await this.signedIn()) return this.cloud!.manuals(id);
+    return this.isLocal(id) ? (await this.localManuals()).sort((a, b) => b.addedAt.localeCompare(a.addedAt)) : [];
+  }
+
+  async findManual(id: string, target: ManualTarget): Promise<Manual | null> {
+    // Read through RigClient: the server's lookup is optional on the interface.
+    const cloud: RigClient | null = this.cloud;
+    if (cloud?.findManual && (await this.signedIn())) return cloud.findManual(id, target);
+    throw new Error("Sign in so Rig can look up manuals on the maker's site. You can still add a PDF you have.");
+  }
+
+  async addManualFile(id: string, target: ManualTarget, file: { name: string; bytes: number }): Promise<Manual> {
+    if (await this.signedIn()) return this.cloud!.addManualFile(id, target, file);
+    if (!this.isLocal(id)) throw new Error("Sign in to add manuals to your other PCs.");
+    const m: Manual = {
+      id: `local-${uid()}`, machineId: id, part: target.part, kind: target.kind, maker: target.maker, model: target.model,
+      title: file.name.replace(/\.pdf$/i, "").trim() || `${target.maker} ${target.model}`.trim(), source: "added", indexed: false, diagrams: [],
+      addedAt: new Date(this.o.now()).toISOString(), bytes: file.bytes,
+    };
+    await this.putLocalManuals([m, ...(await this.localManuals())]);
+    return m;
+  }
+
+  async manualFile(id: string, mid: string): Promise<ArrayBuffer> {
+    if (await this.signedIn()) return this.cloud!.manualFile(id, mid);
+    await this.localManual(id, mid);
+    throw new Error("This PDF was added from a file, so only the copy on this PC has it.");
+  }
+
+  async saveManualPages(id: string, mid: string, pages: ManualPage[], diagrams: ManualDiagram[]): Promise<Manual> {
+    if (await this.signedIn()) return this.cloud!.saveManualPages(id, mid, pages, diagrams);
+    const m = await this.localManual(id, mid);
+    const next: Manual = { ...m, pageCount: Math.max(m.pageCount ?? 0, pages.length), indexed: true, diagrams };
+    await this.store.set(this.pagesKey(mid), pages);
+    await this.putLocalManuals((await this.localManuals()).map((x) => (x.id === mid ? next : x)));
+    return next;
+  }
+
+  async searchManuals(id: string, query: string, opts?: { manualId?: string; limit?: number }): Promise<ManualHit[]> {
+    if (await this.signedIn()) return this.cloud!.searchManuals(id, query, opts);
+    if (!this.isLocal(id)) return [];
+    const docs = await Promise.all((await this.localManuals()).map(async (manual) => ({ manual, pages: (await this.store.get<ManualPage[]>(this.pagesKey(manual.id))) ?? [] })));
+    return searchPages(docs, query, opts);
+  }
+
+  async manualPage(id: string, mid: string, n: number): Promise<ManualPage | null> {
+    if (await this.signedIn()) return this.cloud!.manualPage(id, mid, n);
+    if (!this.isLocal(id)) return null;
+    return (await this.store.get<ManualPage[]>(this.pagesKey(mid)))?.find((p) => p.n === n) ?? null;
+  }
+
+  async removeManual(id: string, mid: string): Promise<void> {
+    if (await this.signedIn()) return this.cloud!.removeManual(id, mid);
+    if (!this.isLocal(id)) return;
+    await this.putLocalManuals((await this.localManuals()).filter((x) => x.id !== mid));
+    await this.store.set(this.pagesKey(mid), null);
+  }
+
+  // ----- Chat -----
   async chat(id: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal) {
     if (!this.cloud || !(await this.signedIn())) {
       onEvent({ type: "error", message: "Sign in to ask Rig. Answers come from Rig's servers, which read your parts' manuals." });
