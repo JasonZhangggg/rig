@@ -41,15 +41,17 @@ export function Recordings() {
   const [length, setLength] = useState(30);
   const [starting, setStarting] = useState(false);
   const active = data.recordings.some(isActive);
+  // The background recorder's logs have their own section below.
+  const recordings = data.recordings.filter((r) => !r.background);
 
   return (
     <section className="lg-section lg-recs" aria-labelledby="lg-recs-h">
       <h2 id="lg-recs-h" className="lg-h">Recordings</h2>
-      {data.recordings.length === 0 ? (
+      {recordings.length === 0 ? (
         <p className="muted lg-recs-empty">No recordings yet. When the logs can't explain a black screen or a stutter, Rig can record for a while to catch it.</p>
       ) : (
         <ul className="rec-list">
-          {data.recordings.map((r) => (
+          {recordings.map((r) => (
             <li key={r.id}>
               <button type="button" className="rec-row" onClick={() => openRecording(r.id)}>
                 <span className="rec-meta">{stateWord[r.state]} · {whenRan(r)} · {minutes(r.minutes)}</span>
@@ -70,6 +72,52 @@ export function Recordings() {
           <button type="button" className="btn sm" disabled={starting} onClick={() => { setStarting(true); void startRecording(length, "A recording you started from Logs.").finally(() => setStarting(false)); }}>Start recording</button>
           <span className="faint lg-start-note">Only reads</span>
         </div>
+      )}
+    </section>
+  );
+}
+
+/** What the background recorder kept while Rig was closed: its closer looks, each day, and any custom logs, each opening its own page. */
+export function BackgroundLogs() {
+  const { data, openRecording } = useApp();
+  const inUnit = useTempText();
+  const logs = data.recordings.filter((r) => r.background && !r.custom);
+  const custom = data.recordings.filter((r) => r.custom);
+  if (!logs.length && !custom.length) return null;
+  return (
+    <section className="lg-section lg-bg" aria-labelledby="lg-bg-h">
+      <h2 id="lg-bg-h" className="lg-h">Kept in the background</h2>
+      <p className="faint lg-bg-sub">Written by Rig's background recorder, even while Rig was closed, and kept only on this PC.</p>
+      {custom.length > 0 && (
+        <ul className="rec-list">
+          {custom.map((r) => {
+            const c = r.custom!;
+            return (
+              <li key={r.id}>
+                <button type="button" className="rec-row" onClick={() => openRecording(r.id)}>
+                  <span className="rec-meta">Custom log · {c.spec.by === "chat" ? "asked for by Rig's chat" : "set up by you"} {new Date(c.spec.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {c.state === "ended" ? "ended" : c.state === "paused" ? "paused" : c.state === "error" ? "not working" : "logging"}</span>
+                  <span className="rec-why">{c.spec.label}</span>
+                  <span className="rec-result">{r.error ?? r.headline}</span>
+                  <span className="rec-open">See what it logged<Icon d="M8 4l6 6-6 6" /></span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {logs.length > 0 && (
+        <ul className="rec-list">
+          {logs.map((r) => (
+            <li key={r.id}>
+              <button type="button" className="rec-row" onClick={() => openRecording(r.id)}>
+                <span className="rec-meta">{whenRan(r)}</span>
+                <span className="rec-why">{r.reason}</span>
+                {r.headline && <span className="rec-result"><span className="faint">Found: </span>{inUnit(r.headline)}</span>}
+                <span className="rec-open">See the readings<Icon d="M8 4l6 6-6 6" /></span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

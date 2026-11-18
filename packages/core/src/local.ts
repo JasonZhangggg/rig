@@ -14,7 +14,9 @@ import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessag
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
-import { checkRequest, cleanEvents, limitsOf, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
+import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
+import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
+import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -57,9 +59,14 @@ export interface LocalOptions {
   now?: () => number;
   /** Shows a notification outside the app's window when a recording finishes. */
   notify?: (n: { title: string; body: string }) => void;
+  /** Rig's background recorder service, which keeps a log while the app is closed. Missing where there's none. */
+  recorder?: RecorderLink | null;
+  /** How often to read what the background recorder added. */
+  backgroundEveryMs?: number;
 }
 
 const EVENTS_DAYS = 30;
+const BACKGROUND_PAGES = 30;
 const EVENTS_EVERY_MS = 5 * 60_000;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -94,12 +101,22 @@ export class LocalClient implements RigClient {
   /** Recordings the account hasn't got the latest version of yet. */
   private unsent = new Set<string>();
   private eventLog: { at: number; list: PCEvent[] } | null = null;
+  /** What the background recorder logged, read a little at a time. Kept on this PC only: sync never sends it. */
+  private bg = new BackgroundLog();
+  private bgCursor: RecorderCursor | null = null;
+  private bgAt = -Infinity;
+  private bgReading: Promise<void> | null = null;
+  private bgRecs: Recording[] = [];
+  /** What the custom logs wrote, and what the recorder says about them. Kept on this PC only too. */
+  private custom = new CustomLog();
+  private customCursor: RecorderCursor | null = null;
+  private probeStatus: ProbeStatus[] | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, ...opts };
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, ...opts };
     this.recorder = new Recorder({
       pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
-      onChange: () => { const list = this.recorder.list(); this.recListeners.forEach((cb) => cb(list)); },
+      onChange: () => this.emitRecordings(),
       onFinish: (r) => {
         this.o.notify({ title: "Rig finished recording", body: r.state === "failed" ? "It couldn't collect readings. Open Rig to see why." : "Open Logs in Rig to see what it found." });
         void this.sendRecording(r.id);
@@ -151,6 +168,7 @@ export class LocalClient implements RigClient {
       await this.record(now);
       await this.watchAlerts(now);
       await this.recorder.tick(this.snap);
+      void this.readBackground();
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -205,7 +223,7 @@ export class LocalClient implements RigClient {
       at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
       history: this.unsynced, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
       identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt }, identityAt: this.identity.at,
-      events: await this.events(this.id).catch(() => []),
+      events: await this.windowsEvents().catch(() => []),
     };
     const sent = payload.history.length;
     try {
@@ -266,7 +284,7 @@ export class LocalClient implements RigClient {
       machines: [{
         id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt },
         changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
-        events: await this.events(this.id), recordings: await this.recorder.all(),
+        events: await this.events(this.id), recordings: [...await this.recorder.all(), ...this.bgRecs],
       }],
       notes: ["Exported from the Rig app on this PC while signed out."],
       now: new Date(this.o.now()),
@@ -322,8 +340,9 @@ export class LocalClient implements RigClient {
   }
 
   // ----- Logs and recordings -----
-  async events(id: string): Promise<PCEvent[]> {
-    if (!this.isLocal(id)) return this.cloud?.events(id) ?? [];
+
+  /** What Windows' own event log holds. This is what the account gets; the background recorder's log stays here. */
+  private async windowsEvents(): Promise<PCEvent[]> {
     const now = this.o.now();
     if (!this.eventLog || now - this.eventLog.at > EVENTS_EVERY_MS) {
       const raw = await this.link.events?.(now - EVENTS_DAYS * 864e5) ?? [];
@@ -332,15 +351,111 @@ export class LocalClient implements RigClient {
     return this.eventLog.list;
   }
 
+  /** Windows' event log, plus what the background recorder caught: power events, and anything Windows has since dropped. */
+  async events(id: string): Promise<PCEvent[]> {
+    if (!this.isLocal(id)) return this.cloud?.events(id) ?? [];
+    await this.readBackground();
+    const fromWindows = await this.windowsEvents().catch((e) => { if (this.bg.events.length) return []; throw e; });
+    const { problems, power } = this.bg.cleanEvents();
+    return [...cleanEvents([...fromWindows, ...problems]), ...power].sort((a, b) => b.t - a.t);
+  }
+
+  /** Reads what the background recorder added since the last read, at most once a minute (on every call while its first read runs). */
+  private readBackground(force = false): Promise<void> {
+    const rec = this.o.recorder;
+    if (!rec) return Promise.resolve();
+    if (this.bgReading) return this.bgReading;
+    if (!force && this.o.now() - this.bgAt < this.o.backgroundEveryMs) return Promise.resolve();
+    this.bgReading = (async () => {
+      const now = this.o.now();
+      const from = now - BACKGROUND_DAYS * 864e5;
+      try {
+        let added = 0;
+        for (let i = 0; i < BACKGROUND_PAGES; i++) {
+          const page = await rec.read(from, this.bgCursor);
+          this.bg.ingest(page.records);
+          added += page.records.length;
+          this.bgCursor = page.cursor ?? this.bgCursor;
+          if (!page.more) break;
+        }
+        if (rec.readCustom) {
+          for (let i = 0; i < BACKGROUND_PAGES; i++) {
+            const page = await rec.readCustom(from, this.customCursor).catch(() => null);
+            if (!page) break;
+            this.custom.ingest(page.records);
+            added += page.records.length;
+            this.customCursor = page.cursor ?? this.customCursor;
+            if (!page.more) break;
+          }
+          const st = await rec.status().catch(() => null);
+          const list = st?.probes?.list ?? null;
+          const was = JSON.stringify(this.probeStatus);
+          this.probeStatus = list && list.filter((p) => !st?.mine || !p.owner || p.owner === st.mine);
+          if (JSON.stringify(this.probeStatus) !== was) added++;
+        }
+        if (added || this.bgAt === -Infinity) {
+          this.bg.trim(from);
+          this.custom.trim(from);
+          this.bgRecs = this.inv ? [...backgroundRecordings(this.bg, this.id, limitsOf(this.view()), now), ...customRecordings(this.custom, this.id, now, this.probeStatus ?? undefined)] : [];
+          this.emitRecordings();
+        }
+      } catch { /* no recorder here (not Windows), or its log can't be read right now */ }
+      this.bgAt = now;
+    })().finally(() => { this.bgReading = null; });
+    return this.bgReading;
+  }
+
+  /** Recordings started by the person or the chat, then the background recorder's, newest first; one that's running stays on top. */
+  private recordingList(): RecordingInfo[] {
+    const mine = this.recorder.list();
+    const bg = this.bgRecs.map(toInfo);
+    const at = (r: RecordingInfo) => r.startedAt ?? Date.parse(r.createdAt);
+    return [...mine.filter((r) => r.state === "pending" || r.state === "recording"), ...[...mine.filter((r) => r.state !== "pending" && r.state !== "recording"), ...bg].sort((a, b) => at(b) - at(a))];
+  }
+
+  private emitRecordings() { const list = this.recordingList(); this.recListeners.forEach((cb) => cb(list)); }
+
   watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) {
     if (!this.isLocal(id)) return this.cloud?.watchRecordings(id, cb) ?? (() => {});
     this.recListeners.add(cb);
-    void this.start().then(() => this.recListeners.has(cb) && cb(this.recorder.list()));
+    void this.start().then(() => this.recListeners.has(cb) && cb(this.recordingList()));
     return () => { this.recListeners.delete(cb); };
   }
 
+  /** The custom logs this PC's recorder runs for this Windows account, or null when it can't run any (no recorder, or it's off). */
+  private async customLogs(): Promise<ProbeStatus[] | null> {
+    const rec = this.o.recorder;
+    if (!rec?.probes) return null;
+    const st = await rec.status().catch(() => null);
+    if (!st?.supported || !st.service) return null;
+    const list = st.probes?.list ?? [];
+    return list.filter((p) => !st.mine || !p.owner || p.owner === st.mine);
+  }
+
+  /** Sets up or turns off a custom log the chat asked for. Scripts never come this way: the person approves them. Returns why it failed, if it did. */
+  private async applyProbe(e: Extract<ChatEvent, { type: "probe" }>): Promise<string | undefined> {
+    const rec = this.o.recorder;
+    if (!rec?.probes) return "This PC's background recorder can't keep custom logs.";
+    try {
+      if (e.op === "add") {
+        if (e.probe.source.kind === "script") return "A script runs only once you approve it.";
+        await rec.probes({ op: "add", probe: e.probe });
+      } else await rec.probes({ op: "remove", id: e.id });
+      // Show it in Logs and Settings without waiting for the next read.
+      this.bgAt = -Infinity;
+      void this.readBackground(true);
+      return undefined;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  /** Reads the recorder again now: after the person approves, pauses or turns off a custom log. */
+  refreshBackground() { this.bgAt = -Infinity; return this.readBackground(true); }
+
   async recording(id: string, rid: string): Promise<Recording | null> {
     if (!this.isLocal(id)) return this.cloud?.recording(id, rid) ?? null;
+    if (isBackground(rid)) { const r = this.bgRecs.find((x) => x.id === rid); return r ? structuredClone(r) : null; }
     return this.recorder.get(rid);
   }
 
@@ -521,16 +636,23 @@ export class LocalClient implements RigClient {
       onEvent({ type: "done" });
       return;
     }
-    const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts } : undefined;
+    const probes = this.isLocal(id) ? await this.customLogs() : null;
+    const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}) } : undefined;
     // Rig reads recordings on the server, so it needs the latest ones before it answers.
     if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
+    // Custom log changes are made here, on the PC, in the order they came; the answer's events wait for them.
+    let applying: Promise<void> = Promise.resolve();
+    const send = (f: () => void | Promise<void>) => { applying = applying.then(f).catch(() => {}); };
     await this.cloud.chat(id, history, (e) => {
       // A recording for this PC starts right away instead of waiting for the next sync.
       if (e.type === "recording" && live) {
         this.begin(e.request).catch(() => {});
-        onEvent({ ...e, queued: false });
-      } else onEvent(e);
+        send(() => onEvent({ ...e, queued: false }));
+      } else if (e.type === "probe" && live) {
+        send(async () => onEvent({ ...e, error: await this.applyProbe(e) }));
+      } else send(() => onEvent(e));
     }, signal, live);
+    await applying;
   }
 }
 

@@ -3,12 +3,18 @@ import { isActive, limitsOf, summarise, type HistoryPoint, type Recording, type 
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { useApp, useTemp, useTempText } from "../../state";
+import { CustomLogDetail } from "./CustomLog";
 import { EventRow } from "./Events";
 import { Progress, StateChip } from "./RecordingCard";
 import { clock, clockSec, gb, whenRan } from "./words";
 
-/** One recording: what Rig found, the readings with those moments marked, the busiest apps and the Windows events inside it. */
+/** A recording or a log from Logs. Custom logs have a page of their own, since what they write can be anything. */
 export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
+  return info.custom ? <CustomLogDetail info={info} onBack={onBack} /> : <RecordingDetail info={info} onBack={onBack} />;
+}
+
+/** One recording: what Rig found, the readings with those moments marked, the busiest apps and the Windows events inside it. */
+function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
   const { client, pc, ask, stopRecording, data } = useApp();
   const temp = useTemp();
   const inUnit = useTempText();
@@ -40,9 +46,9 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
       <div className="page-head">
         <div>
           <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />All logs</button>
-          <h1>{info.minutes}-minute recording</h1>
+          <h1>{info.background ? "Background log" : `${info.minutes}-minute recording`}</h1>
           <p className="sub">{info.reason}</p>
-          <p className="rec-meta-line">{whenRan(info)}. Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</p>
+          <p className="rec-meta-line">{whenRan(info)}. {info.background ? "Recorded by Rig in the background and kept only on this PC" : <>Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</>}</p>
         </div>
         <div className="gm-actions">
           <StateChip state={info.state} />
@@ -58,7 +64,8 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
         <>
           <section className="lg-lede" aria-label="What it found">
             <p className="lg-lede-text">{active && sum.moments.length === 0 ? "Nothing unusual so far." : inUnit(sum.headline)}</p>
-            <button type="button" className="btn primary sm" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>
+            {/* Rig's chat reads recordings on its server, and background logs stay on this PC. */}
+            {!info.background && <button type="button" className="btn primary sm" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>}
           </section>
 
           <section className="card card-pad rec-found-card">

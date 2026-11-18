@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { Manual, PartTarget } from "@rig/core";
 import { useApp } from "../state";
-import { openManual } from "./viewer";
+import { openManual } from "./viewerState";
 import type { ManualStore } from "./useManuals";
 import { busy, chipText, jobText, modelName, pagesText, partName, type Row } from "./words";
 

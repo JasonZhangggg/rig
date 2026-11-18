@@ -37,3 +37,67 @@ jobs:
         with:
           name: rig-windows-installer
           path: ${{ steps.build.outputs.installer }}
+      # The background recorder: record briefly in a plain process, then install
+      # Rig silently, check the RigRecorder service runs and writes its log, and
+      # uninstall it again and check the service is gone.
+      - name: Background recorder smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dir = Join-Path $env:RUNNER_TEMP "rec"
+          # Custom logs of several kinds, and a script approved for this account, as the app would leave them.
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          $text = "Write-Output ('hello ' + `$env:USERNAME)"
+          $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("powershell`nuser`n$text"))).ToLower()
+          $probe = { param($id, $every, $source, $extra) @{ id = $id; label = "CI $id"; by = "chat"; owner = $sid; createdAt = $now; expiresAt = $now + 3600000; every = $every; source = $source } + $extra }
+          $probes = @(
+            (& $probe "t-sensor" 2 @{ kind = "sensor"; match = "CPU" } @{}),
+            (& $probe "t-counter" 2 @{ kind = "counter"; path = "\Processor(_Total)\% Processor Time" } @{}),
+            (& $probe "t-wmi" 5 @{ kind = "wmi"; namespace = "root\cimv2"; query = "SELECT Caption, Version FROM Win32_OperatingSystem" } @{}),
+            (& $probe "t-registry" 5 @{ kind = "registry"; key = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion"; value = "ProductName" } @{}),
+            (& $probe "t-process" 2 @{ kind = "process"; name = "pwsh.exe" } @{}),
+            (& $probe "t-folder" 60 @{ kind = "folder"; path = $env:RUNNER_TEMP } @{}),
+            (& $probe "t-events" 0 @{ kind = "events"; channel = "System"; query = "*[System[(Level<=3)]]" } @{}),
+            (& $probe "t-script" 30 @{ kind = "script"; shell = "powershell"; text = $text; admin = $false; timeout = 30 } @{ hash = $hash; approvedAt = $now }),
+            (& $probe "t-tampered" 30 @{ kind = "script"; shell = "powershell"; text = "Write-Output changed"; admin = $false; timeout = 30 } @{ hash = $hash; approvedAt = $now })
+          )
+          @{ probes = $probes } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$dir/probes.json"
+          $p = Start-Process helper-out/RigHelper.exe -ArgumentList "--record-for", "45", "--data-dir", $dir -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Recording for 45 seconds failed: $($p.ExitCode)" }
+          $custom = Get-ChildItem "$dir/custom/$sid/*.jsonl" | Select-Object -First 1
+          if (-not $custom) { throw "No custom log written" }
+          Get-Content $custom | Select-Object -First 40
+          foreach ($id in "t-sensor", "t-counter", "t-wmi", "t-registry", "t-process", "t-script") {
+            if (-not (Select-String -Path $custom -Pattern "`"k`":`"p`".*`"id`":`"$id`".*`"v`":" -Quiet)) { throw "Custom log $id wrote no reading" }
+          }
+          if (-not (Select-String -Path $custom -SimpleMatch "hello $env:USERNAME" -Quiet)) { throw "The approved script's output isn't in the log" }
+          # A script whose text no longer matches its approval never runs.
+          if (Select-String -Path $custom -Pattern "`"id`":`"t-tampered`".*`"v`":" -Quiet) { throw "A script that changed after approval ran" }
+          if (Select-String -Path $custom -SimpleMatch "Write-Output changed" -Quiet) { throw "A changed script's text reached the log" }
+          $log = Get-ChildItem "$dir/logs/*.jsonl" | Select-Object -First 1
+          if (-not $log) { throw "No log written" }
+          Get-Content $log | Select-Object -First 5
+          foreach ($k in '"k":"start"', '"k":"sensors"', '"k":"s"', '"k":"stop"') {
+            if (-not (Select-String -Path $log -SimpleMatch $k -Quiet)) { throw "The log has no $k line" }
+          }
+
+          $p = Start-Process "${{ steps.build.outputs.installer }}" -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Install failed: $($p.ExitCode)" }
+          Start-Sleep 5
+          $svc = Get-Service RigRecorder -ErrorAction SilentlyContinue
+          if (-not $svc) { Get-Content "$env:ProgramData/Rig/Recorder/setup.log" -ErrorAction SilentlyContinue; throw "RigRecorder isn't installed" }
+          if ($svc.Status -ne "Running") { throw "RigRecorder is $($svc.Status)" }
+          Start-Sleep 40
+          Get-Content "$env:ProgramData/Rig/Recorder/status.json"
+          $logs = Get-ChildItem "$env:ProgramData/Rig/Recorder/logs/*.jsonl"
+          if (-not $logs) { throw "The service wrote no log" }
+          Get-Process RigRecorder | Format-Table Name, CPU, @{n="WorkingSetMB";e={[math]::Round($_.WorkingSet64/1MB,1)}}, @{n="PrivateMB";e={[math]::Round($_.PrivateMemorySize64/1MB,1)}}
+
+          $app = Join-Path $env:LOCALAPPDATA "Rig"
+          $p = Start-Process "$app/uninstall.exe" -ArgumentList "/S", "_?=$app" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Uninstall failed: $($p.ExitCode)" }
+          Start-Sleep 5
+          if (Get-Service RigRecorder -ErrorAction SilentlyContinue) { throw "RigRecorder is still installed after uninstall" }
+          if (Test-Path "$env:ProgramFiles/Rig/Recorder/RigRecorder.exe") { throw "The recorder's program is still there" }

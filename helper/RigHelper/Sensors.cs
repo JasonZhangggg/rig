@@ -12,14 +12,19 @@ public record SnapshotDto(long At, List<SensorDto> Sensors, string? Game, bool E
 
 public sealed class Sensors : IDisposable
 {
-    readonly Computer pc = new()
-    {
-        IsCpuEnabled = true, IsGpuEnabled = true, IsMemoryEnabled = true, IsMotherboardEnabled = true,
-        IsControllerEnabled = true, IsStorageEnabled = true, IsBatteryEnabled = true, IsPsuEnabled = true,
-    };
+    readonly Computer pc;
     readonly object gate = new();
 
-    public Sensors() { pc.Open(); }
+    /// storage: false leaves drives out, for the background recorder, so reading health data never wakes a sleeping hard drive.
+    public Sensors(bool storage = true)
+    {
+        pc = new Computer
+        {
+            IsCpuEnabled = true, IsGpuEnabled = true, IsMemoryEnabled = true, IsMotherboardEnabled = true,
+            IsControllerEnabled = true, IsStorageEnabled = storage, IsBatteryEnabled = true, IsPsuEnabled = true,
+        };
+        pc.Open();
+    }
 
     public IEnumerable<IHardware> Hardware { get { lock (gate) return pc.Hardware.ToList(); } }
 

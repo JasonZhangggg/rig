@@ -6,10 +6,10 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkRequest, describeCall, describeRecording,
-  isActive, limitsOf, manualLink, summarise, titleFor, toRequest, validateCall,
+  PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
+  describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, titleFor, toRequest, validateCall,
   type ActionCall, type Manual, type ChatEvent, type ChatRequest, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
-  type RecordingRequest, type Source, type SystemFacts,
+  type ProbeStatus, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
 import type { PageMatch } from "./db";
 import { excerpt, shortTitle } from "./manuals";
@@ -33,6 +33,8 @@ export interface ChatContext {
   now?: Date;
   /** The question came from the Rig app on this PC, so a recording starts right away instead of at its next sync. */
   live?: boolean;
+  /** The custom logs the PC's background recorder is keeping. Missing when the question didn't come from a PC that can keep them. */
+  probes?: ProbeStatus[];
   /** Files a recording for the PC. Returns the one already waiting or running when there is one. Missing when Rig hasn't seen this PC. */
   startRecording?: (req: RecordingRequest) => Promise<{ info: RecordingInfo; created: boolean }>;
   readRecording?: (id: string) => Promise<Recording | null>;
@@ -72,7 +74,13 @@ Recordings:
 - The PC block holds the latest readings, recent Windows events and the list of recordings. That is often not enough for problems that happen at a moment or over time: crashes, black screens, freezes, stutter, random restarts, noise or heat that comes and goes. When you'd otherwise be guessing, call start_recording instead of guessing. Don't record when the block already answers the question, and don't start one while another is waiting or running.
 - A recording only collects readings on the PC for a while. It changes nothing, so it needs no approval, and the person can stop it any time in Logs. Pick the shortest time likely to catch the problem: 15 to 30 minutes for something frequent, 60 to 120 for something rare.
 - After start_recording, say in plain words what you're recording and why, that nothing on the PC changes, that they should use the PC as usual and try to make the problem happen, and the exact time to check back from the tool result. Say what you already suspect, if anything, in one sentence.
-- When a recording has finished and the person asks what it found, or comes back to that problem, call read_recording and diagnose from it. Name the moments that matter with their times and readings, say what they point to and how sure you are, then what to do next (a propose_change card or show_steps when one fits). If it caught nothing, say so plainly and suggest what to try next.`;
+- When a recording has finished and the person asks what it found, or comes back to that problem, call read_recording and diagnose from it. Name the moments that matter with their times and readings, say what they point to and how sure you are, then what to do next (a propose_change card or show_steps when one fits). If it caught nothing, say so plainly and suggest what to try next.
+
+Custom logs:
+- When the PC block has customLogs, the PC's background recorder can keep a log of something specific for days, even while Rig is closed: any sensor, any performance counter, any Windows event log channel or XPath query, a read-only WMI query, a program's CPU and memory use, a file, a folder's size or a registry value, read on a schedule or only while a condition holds. Use add_custom_log for a problem that comes and goes over days, or that a recording's readings don't cover. It only reads, so it needs no approval; the person sees it in Logs and can turn it off in Settings.
+- Read no more often than the problem needs, and for no longer: a few days is usually enough. Use a condition (like "every 2 seconds while the graphics card is above 85°C") instead of reading fast all the time.
+- When nothing else can read what's needed, propose_script proposes a PowerShell or cmd script. Show what it does in plain words. It runs only after the person reads it and chooses Approve in Rig; one that runs as admin also needs Windows' own permission prompt. Never say a script is running or approved. Keep scripts short and read-only, and ask for admin only when the script can't work without it.
+- Use remove_custom_log when a log has done its job or the person asks. Tell the person what you set up, what it reads and when it ends, in a sentence or two.`;
 
 const callSchema = {
   type: "object",
@@ -135,6 +143,63 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "add_custom_log",
+    description: "Have the PC's background recorder keep a custom log of something specific, for up to 30 days, even while Rig is closed. It only reads. Shown to the person in Logs, labelled as asked for by Rig's chat. Only when the PC block has customLogs.",
+    input_schema: {
+      type: "object",
+      properties: {
+        label: { type: "string", description: "One plain sentence for the person on what it's for, like \"GPU hot spot while you play, to catch the shutdowns.\"" },
+        source: {
+          type: "object",
+          description: "What to read. kind and the fields for it: sensor {match: a sensor's name or id, like \"GPU Hot Spot\"}; counter {path, like \\PhysicalDisk(_Total)\\Avg. Disk sec/Transfer}; events {channel, query: an XPath query like *[System[(Level<=3)]]}; wmi {namespace, query: a WQL SELECT}; process {name, like game.exe}; file {path, read: info or tail}; folder {path}; registry {key, value}.",
+          properties: {
+            kind: { type: "string", enum: probeKinds.filter((k) => k !== "script") },
+            match: { type: "string" }, path: { type: "string" }, channel: { type: "string" }, query: { type: "string" }, namespace: { type: "string" },
+            name: { type: "string" }, read: { type: "string", enum: ["info", "tail"] }, key: { type: "string" }, value: { type: "string" },
+          },
+          required: ["kind"],
+        },
+        every_seconds: { type: "integer", minimum: 0, maximum: 86400, description: "Seconds between readings. 0 with a condition reads only while it holds. Event logs log each event and ignore this." },
+        fast_seconds: { type: "integer", minimum: 1, maximum: 3600, description: "Seconds between readings while the condition holds." },
+        when: {
+          type: "object",
+          description: "Read faster, or only, while this holds: either metric or another custom log's id, compared with a number.",
+          properties: {
+            metric: { type: "string", enum: probeMetrics }, probe: { type: "string" },
+            op: { type: "string", enum: [">", ">=", "<", "<="] }, value: { type: "number" }, for_seconds: { type: "integer", minimum: 0, maximum: 3600 },
+          },
+          required: ["op", "value"],
+        },
+        hours: { type: "number", minimum: 1, maximum: PROBE_LIMITS.maxDays * 24, description: `How long to keep logging. Default ${PROBE_LIMITS.defaultDays * 24}. At most 24 for a log read more often than every 5 seconds.` },
+      },
+      required: ["label", "source"],
+    },
+  },
+  {
+    name: "remove_custom_log",
+    description: "Turn off a custom log on the PC. What it wrote stays in Logs until the recorder's usual clean-up.",
+    input_schema: { type: "object", properties: { log_id: { type: "string", description: "The custom log's id from the PC block." } }, required: ["log_id"] },
+  },
+  {
+    name: "propose_script",
+    description: `Propose a script for the background recorder to run on a schedule and log what it prints, when no custom log kind can read what's needed. The person sees the exact text and decides; nothing runs until they choose Approve in Rig, and a script that runs as admin also needs Windows' permission prompt. A script runs as the person's Windows account unless admin is true. At most ${PROBE_LIMITS.maxScriptChars} characters, every ${PROBE_LIMITS.minScriptEvery} seconds or more, at most ${PROBE_LIMITS.maxScriptTimeout} seconds a run.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        label: { type: "string", description: "One plain sentence on what it's for." },
+        shell: { type: "string", enum: ["powershell", "cmd"] },
+        text: { type: "string", description: "The whole script. Keep it short and read-only; it should print what to log." },
+        admin: { type: "boolean", description: "Run as admin. Only when the script can't work without it." },
+        every_seconds: { type: "integer", minimum: 0, maximum: 86400, description: "Seconds between runs. Default 300. 0 with a condition runs only while it holds." },
+        fast_seconds: { type: "integer", minimum: PROBE_LIMITS.minScriptEvery, maximum: 3600 },
+        timeout_seconds: { type: "integer", minimum: 1, maximum: PROBE_LIMITS.maxScriptTimeout },
+        when: { type: "object", properties: { metric: { type: "string", enum: probeMetrics }, probe: { type: "string" }, op: { type: "string", enum: [">", ">=", "<", "<="] }, value: { type: "number" }, for_seconds: { type: "integer" } }, required: ["op", "value"] },
+        hours: { type: "number", minimum: 1, maximum: PROBE_LIMITS.maxDays * 24 },
+      },
+      required: ["label", "text"],
+    },
+  },
+  {
     name: "search_manuals",
     description: "Search the manuals Rig has read for this PC. Returns the best pages (at most 4), each with the manual's title, the page number and the page's text. Use the manual's own words: header and connector names (F_PANEL, CPU_FAN, JRGB1, M2_1), setting names, or a short plain question.",
     input_schema: {
@@ -173,6 +238,7 @@ export function describePC(ctx: ChatContext): string {
     windowsEvents: ctx.events?.slice(0, 20).map((e) => ({ at: at(e.t), kind: e.kind, source: e.source, id: e.id, level: e.level, message: e.message.slice(0, 160) })),
     manuals: ctx.manuals?.map((m) => ({ id: m.id, part: m.part, kind: m.kind, title: m.title, pageCount: m.pageCount, indexed: m.indexed, diagrams: m.diagrams.map((d) => `${d.label}, page ${d.page}`) })),
     recordings: ctx.recordings?.slice(0, 6).map((r) => ({ id: r.id, state: r.state, reason: r.reason, question: r.question || undefined, minutes: r.minutes, started: at(r.startedAt), ends: at(r.endsAt), found: r.headline, problem: r.error })),
+    customLogs: ctx.probes && describeProbes(ctx.probes).map((p) => ({ ...p, ends: at(Date.parse((p as { ends: string }).ends)) })),
   };
   return `The PC (read by Rig, ${view.online ? "live" : `last seen ${view.lastSync}`}):\n${JSON.stringify(data)}`;
 }
@@ -250,6 +316,7 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
   let proposed = false;
   let recorded = false;
   let wrote = false;
+  const added = { logs: 0, scripts: 0 };
   const now = ctx.now ?? new Date();
   const question = [...history].reverse().find((m) => m.from === "you")?.text ?? "";
 
@@ -345,6 +412,9 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
           const partial = isActive(rec) ? `Still recording${rec.endsAt ? ` until ${localTime(new Date(rec.endsAt), ctx.timeZone)}` : ""}; this is what the server has so far.\n` : "";
           sources.set(`recording:${rec.id}`, { label: `Recording, ${rec.minutes} minutes`, kind: "Your PC" });
           results.push({ type: "tool_result", tool_use_id: u.id, content: partial + describeRecording(rec, summarise(rec, limits), { timeZone: ctx.timeZone, limits }) });
+        } else if (u.name === "add_custom_log" || u.name === "propose_script" || u.name === "remove_custom_log") {
+          const content = await customLog(u.name, input, ctx, now, added, emit);
+          results.push({ type: "tool_result", tool_use_id: u.id, content, ...(content.startsWith("Error: ") ? { is_error: true } : {}) });
         } else if (u.name === "search_manuals") {
           const query = typeof input.query === "string" ? input.query.trim().slice(0, 200) : "";
           if (!query) { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: "query is required" }); continue; }
@@ -374,6 +444,48 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
     await emit({ type: "error", message: errorMessage(e) });
   }
   await emit({ type: "done" });
+}
+
+/** The custom log tools. The PC makes the change (or, for a script, shows it for approval) when the event reaches it. */
+export async function customLog(
+  name: "add_custom_log" | "propose_script" | "remove_custom_log", input: Record<string, unknown>, ctx: ChatContext, now: Date,
+  added: { logs: number; scripts: number }, emit: (e: ChatEvent) => void | Promise<void>,
+): Promise<string> {
+  if (!ctx.live || !ctx.probes) return "Error: Custom logs are set up from the Rig app on the PC, with its background recorder on. Tell the person to ask there, and to turn on \"Keep a log while Rig is closed\" in Settings if it's off.";
+  if (name === "remove_custom_log") {
+    const id = typeof input.log_id === "string" ? input.log_id : "";
+    const p = ctx.probes.find((x) => x.id === id);
+    if (!p) return `Error: No custom log with that id. Ids: ${ctx.probes.map((x) => x.id).join(", ") || "none"}`;
+    await emit({ type: "probe", op: "remove", id });
+    return `Sent to the PC: "${p.label}" turns off. What it wrote stays in Logs.`;
+  }
+  const script = name === "propose_script";
+  const scripts = ctx.probes.filter((p) => p.kind === "script").length + added.scripts;
+  if (ctx.probes.length + added.logs + added.scripts >= PROBE_LIMITS.maxProbes) return `Error: The PC already keeps ${PROBE_LIMITS.maxProbes} custom logs, the most it can. Remove one first.`;
+  if (script && scripts >= PROBE_LIMITS.maxScripts) return `Error: The PC already has ${PROBE_LIMITS.maxScripts} scripts, the most it can. Remove one first.`;
+  if (script && added.scripts) return "Error: One script per answer.";
+  const w = input.when as Record<string, unknown> | undefined;
+  const hours = input.hours == null ? PROBE_LIMITS.defaultDays * 24 : Number(input.hours);
+  const raw = {
+    label: input.label,
+    source: script
+      ? { kind: "script", shell: input.shell ?? "powershell", text: input.text, admin: input.admin === true, timeout: input.timeout_seconds }
+      : input.source,
+    every: input.every_seconds, fast: input.fast_seconds,
+    when: w && { metric: w.metric, probe: w.probe, op: w.op, value: w.value, forSec: w.for_seconds },
+    expiresAt: Number.isFinite(hours) ? now.getTime() + Math.round(hours * 3_600_000) : NaN,
+  };
+  const probe = checkProbe(raw, { id: `c-${uid().slice(0, 10).toLowerCase().replace(/[^a-z0-9]/g, "0")}`, by: "chat", now: now.getTime() });
+  if (typeof probe === "string") return `Error: ${probe}`;
+  const ends = localTime(new Date(probe.expiresAt), ctx.timeZone);
+  if (script) {
+    added.scripts++;
+    await emit({ type: "script", probe });
+    return `Shown to the person as a card with the exact script and Approve and Not now. Nothing runs until they approve it in Rig${probe.source.kind === "script" && probe.source.admin ? ", and Windows asks them for permission because it runs as admin" : ""}. If approved it runs ${probeWhen(probe)} until ${ends}. Say what it does in a sentence and that it runs only if they approve it.`;
+  }
+  added.logs++;
+  await emit({ type: "probe", op: "add", probe });
+  return `Sent to the PC: logging ${probeWhat(probe.source)} ${probeWhen(probe)} until ${ends} (id ${probe.id}). If the PC can't, the person sees why next to this answer. Tell them in a sentence what it reads, until when, and that it's in Logs.`;
 }
 
 export function errorMessage(e: unknown): string {

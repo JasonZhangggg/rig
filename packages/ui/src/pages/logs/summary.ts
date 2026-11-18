@@ -1,7 +1,7 @@
 import { eventTitle, type EventKind, type PCEvent } from "@rig/core";
 
-/** Events worth a person's attention: anything but routine Windows noise and the warnings Windows handled on its own. Driver resets are warnings but still show on screen. */
-export const serious = (e: PCEvent) => e.kind !== "other" && (e.level !== "warning" || e.kind === "driver");
+/** Events worth a person's attention: anything but routine Windows noise, power and sleep (normal use, not problems) and the warnings Windows handled on its own. Driver resets are warnings but still show on screen. */
+export const serious = (e: PCEvent) => e.kind !== "other" && e.kind !== "power" && (e.level !== "warning" || e.kind === "driver");
 
 export interface Highlight {
   key: string;

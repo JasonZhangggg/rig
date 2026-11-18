@@ -25,7 +25,7 @@ vi.mock("../src/manuals/pdf", () => ({
 }));
 
 const { RigApp } = await import("../src/App");
-const { closeManual } = await import("../src/manuals/viewer");
+const { closeManual } = await import("../src/manuals/viewerState");
 
 function demo() {
   const client = new DemoClient();

@@ -4,9 +4,10 @@ import { DiffTable } from "../components/common";
 import { useApp, useTempText } from "../state";
 import { RecordingCard } from "./logs/RecordingCard";
 import { ChatBar } from "./chat/ChatBar";
+import { ProbeNote, ScriptCard } from "./chat/ScriptCard";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
-import { openManualLink } from "../manuals/viewer";
+import { openManualLink } from "../manuals/viewerState";
 
 export function Chat() {
   const { data, pc, client, clearChat } = useApp();
@@ -64,7 +65,7 @@ function useStickToBottom(chat: ChatMessage[], answering: boolean) {
     if (!stick.current || !chat.length) return;
     const el = document.scrollingElement ?? document.documentElement;
     el.scrollTop = el.scrollHeight;
-  }, [chat.length, last?.text, last?.steps, last?.sources, last?.proposal, answering]);
+  }, [chat.length, last?.text, last?.steps, last?.sources, last?.proposal, last?.script, answering]);
 }
 
 function Message({ m }: { m: ChatMessage }) {
@@ -86,6 +87,8 @@ function Message({ m }: { m: ChatMessage }) {
         )}
         {m.proposal && <ProposalCard p={m.proposal} />}
         {m.recording && <RecordingCard request={m.recording} />}
+        {m.probe && <ProbeNote m={m} />}
+        {m.script && <ScriptCard m={m} />}
       </div>
     </div>
   );

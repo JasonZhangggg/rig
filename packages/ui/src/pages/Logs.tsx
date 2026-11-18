@@ -3,7 +3,7 @@ import { isActive, type PCEvent } from "@rig/core";
 import { useApp } from "../state";
 import { Detail } from "./logs/Detail";
 import { Counters, Events, MINOR, onDay, type EventPick } from "./logs/Events";
-import { NowRecording, Recordings } from "./logs/Recordings";
+import { BackgroundLogs, NowRecording, Recordings } from "./logs/Recordings";
 import { highlights, serious } from "./logs/summary";
 import { shortDay } from "./logs/words";
 import { LogsHead } from "./logs/Head";
@@ -36,7 +36,7 @@ export function Logs() {
 
   return (
     <div className="page lg-page">
-      <LogsHead sub={`What Windows logged on ${pc.name}. Rig only reads it.`} />
+      <LogsHead sub={`What Windows${data.recordings.some((r) => r.background) ? " and Rig's background recorder" : ""} logged on ${pc.name}. Rig only reads it.`} />
 
       {active && <NowRecording r={active} pcName={pc.name} />}
 
@@ -58,6 +58,8 @@ export function Logs() {
         )}
         <Recordings />
       </div>
+
+      <BackgroundLogs />
     </div>
   );
 }

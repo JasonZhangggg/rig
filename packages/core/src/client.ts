@@ -7,6 +7,7 @@ import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
+import type { ProbeSpec } from "./probes";
 
 export interface Proposal {
   id: string;
@@ -29,6 +30,10 @@ export interface ChatMessage {
   proposal?: Proposal;
   /** A recording Rig started with this answer. Its card follows the recording's live state. */
   recording?: RecordingRequest;
+  /** A custom log Rig set up or turned off with this answer, and whether that worked on the PC. */
+  probe?: { op: "add" | "remove"; id: string; label?: string; error?: string };
+  /** A script Rig proposed. It runs only once the person approves it, here in Rig. */
+  script?: { probe: ProbeSpec; status: "waiting" | "approved" | "declined"; error?: string };
   pending?: boolean;
   error?: boolean;
 }
@@ -62,6 +67,11 @@ export type ChatEvent =
   | { type: "proposal"; proposal: Proposal }
   /** Rig started a recording. `queued` means the PC picks it up the next time its app checks in. */
   | { type: "recording"; request: RecordingRequest; queued: boolean }
+  /** Rig set up or turned off a custom log on this PC. The Rig app on the PC applies it; `error` is set when that failed. */
+  | { type: "probe"; op: "add"; probe: ProbeSpec; error?: string }
+  | { type: "probe"; op: "remove"; id: string; error?: string }
+  /** Rig proposed a script for the background recorder. Nothing runs until the person approves it. */
+  | { type: "script"; probe: ProbeSpec }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -119,6 +129,8 @@ export interface RigClient {
   startRecording(machineId: string, req: { reason: string; minutes: number; question?: string }): Promise<RecordingInfo>;
   /** Stops a recording early. What it collected so far is kept. */
   stopRecording(machineId: string, id: string): Promise<void>;
+  /** Desktop: reads the background recorder again now, after a custom log was approved, paused or turned off. */
+  refreshBackground?(): Promise<unknown>;
 
   /** The PC's manuals, newest first. */
   manuals(machineId: string): Promise<Manual[]>;

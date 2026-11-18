@@ -5,13 +5,15 @@
 // the contract for that (helper, desktop, server and chat all share it) and
 // the pure code that turns a recording into the few moments that matter.
 
+import type { CustomInfo } from "./probes";
 import { cpuTemp, gpuTemp } from "./health";
 import { findSensor, type Snapshot } from "./telemetry";
 
 // ----- Windows events -----
 
-export type EventKind = "crash" | "driver" | "hardware" | "shutdown" | "disk" | "other";
-export type EventLevel = "critical" | "error" | "warning";
+export type EventKind = "crash" | "driver" | "hardware" | "shutdown" | "disk" | "power" | "other";
+/** "info" is only for power events (starts, shutdowns, sleep, wake), which Rig's background recorder keeps. */
+export type EventLevel = "critical" | "error" | "warning" | "info";
 
 /** One Windows event log entry as the helper reads it. */
 export interface RawEvent {
@@ -30,6 +32,9 @@ export interface PCEvent extends RawEvent { kind: EventKind }
 
 interface EventRule { kind: EventKind; source: RegExp; ids?: number[] }
 
+/** Events Rig's background recorder writes itself (source "Rig recorder"), by id. */
+export const RIG_EVENT = { sleep: 1, wake: 2, plugged: 3, battery: 4, unclean: 10 } as const;
+
 /** What each kind of event is called on screen, in the order the filters show them. */
 export const eventKinds: { kind: EventKind; label: string; one: string }[] = [
   { kind: "crash", label: "Crashes", one: "Crash" },
@@ -37,6 +42,7 @@ export const eventKinds: { kind: EventKind; label: string; one: string }[] = [
   { kind: "hardware", label: "Hardware errors", one: "Hardware error" },
   { kind: "shutdown", label: "Shutdowns", one: "Unexpected shutdown" },
   { kind: "disk", label: "Disk", one: "Disk problem" },
+  { kind: "power", label: "Power", one: "Power" },
   { kind: "other", label: "Other", one: "Windows error" },
 ];
 
@@ -51,6 +57,10 @@ const eventRules: EventRule[] = [
   { kind: "driver", source: /^(nvlddmkm|amdkmdag|amdwddmg|atikmdag|igfx\w*|dxgkrnl)$/i },
   { kind: "hardware", source: /whea/i },
   { kind: "disk", source: /^(disk|ntfs|volmgr|stornvme|storahci|nvme|volsnap|microsoft-windows-ntfs)$/i },
+  { kind: "power", source: /^microsoft-windows-kernel-general$/i, ids: [12, 13] },
+  { kind: "power", source: /^user32$/i, ids: [1074] },
+  { kind: "shutdown", source: /^rig recorder$/i, ids: [RIG_EVENT.unclean] },
+  { kind: "power", source: /^rig recorder$/i },
 ];
 
 export function classifyEvent(e: Pick<RawEvent, "source" | "id">): EventKind {
@@ -65,7 +75,7 @@ export function cleanEvents(raw: unknown, max = MAX_EVENTS): PCEvent[] {
   if (!Array.isArray(raw)) return [];
   const out: PCEvent[] = [];
   const seen = new Set<string>();
-  const levels: EventLevel[] = ["critical", "error", "warning"];
+  const levels: EventLevel[] = ["critical", "error", "warning", "info"];
   for (const e of [...raw].sort((a, b) => (b?.t ?? 0) - (a?.t ?? 0)) as Partial<RawEvent>[]) {
     if (!e || typeof e.t !== "number" || !Number.isFinite(e.t) || typeof e.source !== "string" || typeof e.id !== "number") continue;
     const key = `${e.source}|${e.id}|${Math.floor(e.t / 60_000)}`;
@@ -90,10 +100,24 @@ export function eventTitle(e: PCEvent): string {
     case "crash": return /bugcheck|systemerrorreporting/i.test(e.source) ? "Windows crashed (blue screen)" : app ? `${app} ${/hang/i.test(e.source) ? "stopped responding" : "crashed"}` : "An app crashed";
     case "driver": return "The graphics driver stopped and recovered";
     case "hardware": return e.level === "warning" ? "A hardware error was corrected" : "Hardware reported an error";
-    case "shutdown": return "The PC turned off without shutting down";
+    case "shutdown": return /^rig recorder$/i.test(e.source) ? "The PC stopped suddenly" : "The PC turned off without shutting down";
     case "disk": return "A drive reported a problem";
+    case "power": return powerTitle(e);
     default: return `${e.source} reported ${e.level === "warning" ? "a warning" : "an error"}`;
   }
+}
+
+function powerTitle(e: PCEvent): string {
+  if (/^rig recorder$/i.test(e.source)) {
+    const t: Record<number, string> = { [RIG_EVENT.sleep]: "The PC went to sleep", [RIG_EVENT.wake]: "The PC woke up", [RIG_EVENT.plugged]: "Plugged in", [RIG_EVENT.battery]: "Unplugged, running on battery" };
+    return t[e.id] ?? "Power changed";
+  }
+  if (e.id === 12) return "Windows started";
+  if (e.id === 13) return "Windows shut down";
+  // User32 1074: "The process C:\...\app.exe (PC) has initiated the restart of computer PC on behalf of user ..."
+  const app = /process\s+(.+?\.exe)\b/i.exec(e.message)?.[1].split("\\").pop();
+  const what = /power off|shutdown/i.test(e.message) ? "shut down the PC" : "restarted the PC";
+  return app ? `${app} ${what}` : `Something ${what}`;
 }
 
 // ----- Recordings -----
@@ -181,6 +205,10 @@ export interface RecordingInfo extends RecordingRequest {
   eventCount: number;
   /** One line on what it found, once finished. */
   headline?: string;
+  /** Made from Rig's background recorder on this PC, not started by anyone. Kept only on this PC. */
+  background?: boolean;
+  /** Made from a custom log: what it is and what it wrote. */
+  custom?: CustomInfo;
 }
 
 export interface Recording extends RecordingInfo {
@@ -405,7 +433,7 @@ export function summarise(r: Pick<Recording, "samples" | "events" | "intervalMs"
   }
 
   for (const e of r.events) {
-    if (e.kind === "other" && e.level !== "critical") continue;
+    if ((e.kind === "other" && e.level !== "critical") || e.kind === "power") continue;
     const s = nearest(samples, e.t, r.intervalMs * 2);
     const hot = hotRuns.find((h) => e.t >= h.from - r.intervalMs && e.t <= h.to + r.intervalMs * 2);
     const context = s ? around(s, limits) : samples.length ? "No readings right around it, so the PC was likely off or restarting." : "";

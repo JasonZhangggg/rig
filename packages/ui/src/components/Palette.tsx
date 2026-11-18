@@ -6,7 +6,7 @@ import { minutes, stateWord, whenRan } from "../pages/logs/words";
 import { navItems } from "./Shell";
 import { useManualSearch } from "../manuals/Search";
 import { useManuals } from "../manuals/useManuals";
-import { openManual } from "../manuals/viewer";
+import { openManual } from "../manuals/viewerState";
 import { partOf } from "../pages/upgrades/PCUpgrades";
 
 /** What a page is about, so a search in a person's own words finds it. */

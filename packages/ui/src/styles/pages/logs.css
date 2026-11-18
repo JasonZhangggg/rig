@@ -158,3 +158,10 @@
 .lg-views a { margin-bottom: -1px; padding: 10px 0; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap; }
 .lg-views a:hover { color: var(--text); }
 .lg-views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }
+
+.custom-scroll { overflow: auto; max-height: 560px; }
+.custom-rows td.pre { white-space: pre-wrap; font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.custom-rows .faint { margin: 0 0 8px; font-size: 13px; }
+
+.lg-bg { display: grid; gap: 10px; }
+.lg-bg-sub { margin: 0; font-size: 13px; }

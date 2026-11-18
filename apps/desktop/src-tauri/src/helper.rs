@@ -110,6 +110,9 @@ impl Helper {
 }
 
 #[cfg(windows)]
+pub use win::run_elevated_wait;
+
+#[cfg(windows)]
 mod win {
     use std::os::windows::io::AsRawHandle;
     use std::os::windows::process::CommandExt;
@@ -147,6 +150,33 @@ mod win {
             let pid = GetProcessId(info.hProcess);
             CloseHandle(info.hProcess);
             Some(pid)
+        }
+    }
+
+    /// Runs a program with admin rights through the Windows prompt and waits for it to finish.
+    /// Returns its exit code, or None when the person chose No (or the prompt couldn't be shown).
+    pub fn run_elevated_wait(exe: &str, args: &str, timeout: Duration) -> Option<u32> {
+        use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+        let verb = wide("runas");
+        let file = wide(exe);
+        let params = wide(args);
+        unsafe {
+            let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+            info.fMask = SEE_MASK_NOCLOSEPROCESS;
+            info.lpVerb = verb.as_ptr();
+            info.lpFile = file.as_ptr();
+            info.lpParameters = params.as_ptr();
+            info.nShow = SW_HIDE;
+            if ShellExecuteExW(&mut info) == 0 || info.hProcess.is_null() {
+                return None;
+            }
+            WaitForSingleObject(info.hProcess, timeout.as_millis().min(u32::MAX as u128) as u32);
+            let mut code: u32 = 0;
+            let got = GetExitCodeProcess(info.hProcess, &mut code);
+            CloseHandle(info.hProcess);
+            // Still running after the wait (259 is STILL_ACTIVE): report it as a failure rather than hang.
+            Some(if got == 0 || code == 259 { 1 } else { code })
         }
     }
 
