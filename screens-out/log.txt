@@ -1,8 +1,8 @@
 ok manuals-page
 ok search
 ok upgrades
-FAIL viewer: locator.fill: Timeout 30000ms exceeded.
-FAIL phone: page.reload: Timeout 30000ms exceeded.
+ok viewer
+ok phone
 ok laptop-find
-ok part-tab
+FAIL part-tab: locator.click: Timeout 30000ms exceeded.
 ok chat
