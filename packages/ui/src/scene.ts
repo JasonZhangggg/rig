@@ -867,8 +867,6 @@ export function createScene(
     return k < 0.5 ? a.lerp(b, k * 2) : b.lerp(c, (k - 0.5) * 2);
   }
 
-  /** How far the other parts fade while one is picked, and while one is only pointed at. */
-  const FADE_OTHERS = 0.22, FADE_OTHERS_HOVER = 0.45;
   function applyHighlights() {
     const all = parts();
     for (const e of state.entries) {
@@ -885,13 +883,15 @@ export function createScene(
             m.emissiveIntensity = 0.85;
           }
         }
+        const isSel = state.selected === e.partId;
+        const isHov = state.hovered === e.partId;
+        if ((isSel || isHov) && !m.userData.glow) {
+          m.emissive.set(theme().highlight);
+          m.emissiveIntensity = isSel ? 0.5 : 0.4;
+        }
         // Case panels go see-through in heat view so internals show
         let op = m.userData.baseOpacity;
         if (state.heat && (e.partId === "case" || e.partId === "chassis")) op = Math.min(op, 0.18);
-        // The picked (or pointed-at) part keeps its own color; everything else fades back, so it stands out without a tint.
-        const focus = state.hovered ?? state.selected;
-        // The case shell stays as it is: faded, its white panels turn a muddy gray over the parts inside.
-        if (focus && focus !== e.partId && e.partId !== "case" && e.partId !== "chassis") op *= state.selected ? FADE_OTHERS : FADE_OTHERS_HOVER;
         m.opacity = op;
         m.transparent = op < 1;
         m.depthWrite = op >= 0.5;
