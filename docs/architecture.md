@@ -22,9 +22,9 @@ The PC view the screens draw is built by one function, `buildPC` (`packages/core
 
 ## The server
 
-`apps/server` is one Cloudflare Worker (Hono) with a Postgres database (Neon in production, reached through Cloudflare Hyperdrive; queries go through Kysely, which Better Auth uses too). It serves the website's files and, under `/api`:
+`apps/server` is one Cloudflare Worker (Hono) with a Postgres database (Neon in production, reached through Cloudflare Hyperdrive with its query cache turned off; queries go through Kysely, which Better Auth uses too). Each request opens its own connection pool and closes it after the response. It serves the website's files and, under `/api`:
 
-- **Accounts** with [Better Auth](https://better-auth.com): email and password on the website, Google when it's configured, and the desktop sign-in. The desktop asks for a code (`/api/auth/device/code`) and opens `/app/?user_code=…`, where the person checks the code and approves. The app then gets a bearer token, kept in Windows Credential Manager.
+- **Accounts** with [Better Auth](https://better-auth.com): email and password on the website, Google when it's configured, and the desktop sign-in. Sign-in attempts are limited per caller, by the address Cloudflare puts in `cf-connecting-ip`; the counts are kept in the database so they hold across Worker instances. The desktop asks for a code (`/api/auth/device/code`) and opens `/app/?user_code=…`, where the person checks the code and approves. The app then gets a bearer token, kept in Windows Credential Manager.
 - **PCs**: the desktop uploads its view, settings, change log and new history points (`PUT /api/machines/:id/sync`). The website reads them back. A PC is keyed by account and machine id, and counts as online when it synced in the last 12 minutes. Name and color can be changed on either side; whichever changed last wins.
 - **Your data**: `GET /api/me/export` downloads the account's PCs with all their history, recordings, the list of their manuals (not the page text) and chat use as one JSON file (shaped by `makeExport` in `packages/core/src/export.ts`, the same file the desktop app makes for this PC when signed out). `DELETE /api/me` with `{ "confirm": "DELETE" }` removes the account, its PCs, history, recordings, manuals and their pages, chat use, desktop sign-in codes and sign-ins in one transaction.
 - **Chat** (`POST /api/chat`, streamed): Claude (`claude-opus-5-5`) gets the PC's readings and settings and the list of its manuals, searches the manuals Rig has read (see Manuals), can search the web for maker pages, and has two tools for changes. `propose_change` shows a fix card; the server checks it against the fix catalog and against what's actually on that PC (the power plan, startup app or display has to exist) before the person sees it. `show_steps` shows numbered steps for things only the person can do. One card per answer, and nothing changes until the person approves in the app on that PC. Each account gets a daily allowance of questions.
@@ -49,7 +49,17 @@ Talking to it stays private: the app makes a named pipe with a random name that 
 
 `RigHelper.exe --selftest out.json` reads everything once and writes it to a file. CI runs this on a Windows runner.
 
-CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver. Graphics cards, drives and batteries read without it. The installer doesn't add PawnIO yet (see open questions).
+CPU temperatures and motherboard fans need LibreHardwareMonitor's PawnIO driver. Graphics cards, drives and batteries read without it. The installer installs PawnIO (a pinned, signature-checked copy) and uninstalling Rig removes it only if Rig put it there.
+
+Each call to the helper has 20 seconds, one at a time. A call that runs out returns an error; three in a row and the app restarts the helper. A WMI query inside the helper gives up after 5 seconds.
+
+## Starting up, and the logs
+
+`LocalClient.start()` (`packages/core/src/local.ts`) reads the PC in named steps: saved data, parts, settings, saved history, then the first sensor reading. Settings are allowed to fail; the next tick tries again. A failed start is tried again on the next call. If the first read takes more than 45 seconds the screen says which step it's stuck on and offers Try again (`STALL_MS` in `packages/ui/src/state.tsx`).
+
+Which PC an id belongs to is only known once this PC's parts are read, so the desktop client waits for that before sending an id to this PC or to the account. The screen reopens the PC it showed last, and without that wait a saved id looked like another PC on the account.
+
+The desktop logs to `%LOCALAPPDATA%\app.rig.desktop\logs\Rig.log` with `tauri-plugin-log`: each startup step with its time, each helper call, each server call with status and time (ids and codes left out), sensor failures and the updater. Server calls give up after 30 seconds. [development.md](development.md#when-something-goes-wrong) says how to read it.
 
 ## My PC
 
