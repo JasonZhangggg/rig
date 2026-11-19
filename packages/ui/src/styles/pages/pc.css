@@ -185,6 +185,10 @@
 .shop-maker[aria-pressed="true"] { border-color: var(--text); background: var(--text); color: var(--surface); }
 .shop-maker[aria-pressed="true"] .faint { color: inherit; opacity: .7; }
 .shop-none, .shop-elsewhere { margin: 0; }
+.shop-source { margin: 0; font-size: 12.5px; }
+.shop-source-mark { font-weight: 700; color: var(--text-2); }
+.shop-live { margin: 0 0 10px; }
+.shop-live b { font: 600 17px/1 var(--font); }
 .shop-elsewhere { font-size: 14px; color: var(--text-2); }
 .shop-own { font-size: 13.5px; }
 .shop-own-form { display: grid; gap: 12px; font-size: 14px; }

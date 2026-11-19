@@ -19,6 +19,7 @@ One Cloudflare Worker serves the website and, under `/api`, accounts, sync and c
    - `BETTER_AUTH_SECRET`, a long random string (`openssl rand -base64 32`)
    - `ANTHROPIC_API_KEY`, for chat (without it, chat says it isn't set up)
    - Optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+   - Optional: `BESTBUY_API_KEY`, for real photos and prices on Upgrades (free key from developer.bestbuy.com; without it every price is demo)
 4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. Leave the address empty to use `https://rig.<your-subdomain>.workers.dev`, or give your own. It creates the tables, connects Hyperdrive with its query cache off, builds the website and deploys. Running it again updates everything.
 5. Add the repository variable `RIG_API_URL` = `<that address>/api`, so installers built by CI use this server. CI and releases stop with an error without it. To publish an installer, see [releasing.md](releasing.md).
 
@@ -36,6 +37,7 @@ Run these from `apps/server`.
 6. Secrets (each one asks for the value; nothing goes in the repo):
    - `npx wrangler secret put BETTER_AUTH_SECRET` with a long random string (`openssl rand -base64 32`)
    - `npx wrangler secret put ANTHROPIC_API_KEY`
+   - Best Buy, optional: `npx wrangler secret put BESTBUY_API_KEY`, for real photos and prices on Upgrades.
    - Google, optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. In Google Cloud, the OAuth client's redirect URI is `<WEB_ORIGIN>/api/auth/callback/google`.
 7. `pnpm --filter @rig/web build`, then `npx wrangler deploy`.
 8. So installers built by CI talk to this server: in GitHub, Settings, Secrets and variables, Actions, Variables, add `RIG_API_URL` = `<WEB_ORIGIN>/api`.
@@ -48,6 +50,8 @@ printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -base64 32)" > .dev.vars   # ad
 DATABASE_URL=postgres://rig:rig@localhost:5432/rig pnpm db:migrate
 pnpm --filter @rig/web build && npx wrangler dev                            # http://localhost:8787
 ```
+
+Add `BESTBUY_API_KEY=...` to `.dev.vars` too for real photos and prices on Upgrades; without it they're demo.
 
 This needs a local Postgres with a `rig` user and database (password `rig`), the address in `localConnectionString` in `wrangler.toml`. With Docker: `docker run -d -p 5432:5432 -e POSTGRES_USER=rig -e POSTGRES_PASSWORD=rig postgres:16`. The tests don't need any of this; they run Postgres in memory (PGlite).
 

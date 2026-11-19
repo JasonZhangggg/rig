@@ -15,6 +15,7 @@ import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
 import type { Env } from "./env";
+import { bestBuyFeed, type RetailFeed } from "./retail";
 import type { Fetch } from "./manuals";
 import { connect, type Connection } from "./sql";
 
@@ -31,6 +32,8 @@ export interface AppDeps {
   /** Fetches maker sites (manual PDFs). Tests pass a stand-in. */
   fetch?: Fetch;
   now?: () => Date;
+  /** Waits between batches of shop lookups. Tests pass one that doesn't. */
+  wait?: (ms: number) => Promise<void>;
 }
 
 const validId = (id: string) => /^[\w.-]{1,128}$/.test(id);
@@ -164,9 +167,29 @@ export function createApp(deps: AppDeps = {}) {
     return m ? c.json(m.inventory ? suggestUpgrades(m.inventory) : []) : notFound(c);
   });
 
+  // One feed per Worker instance, so its cache is shared by every request it serves.
+  let retail: { key: string; feed: RetailFeed } | null = null;
+  const feedFor = (env: Env) => {
+    const key = env.BESTBUY_API_KEY;
+    if (!key) return null;
+    if (retail?.key !== key) retail = { key, feed: bestBuyFeed(key, deps.fetch ?? ((input, init) => fetch(input, init)), deps.wait) };
+    return retail.feed;
+  };
+
   app.get("/api/machines/:id/shop", async (c) => {
     const m = await machine(c);
-    return m ? c.json(m.inventory ? shopFor(m.inventory) : null) : notFound(c);
+    if (!m) return notFound(c);
+    if (!m.inventory) return c.json(null);
+    const feed = feedFor(c.env);
+    if (!feed) return c.json(shopFor(m.inventory));
+    let got = feed.get(now());
+    if (got.refresh) {
+      let ctx: { waitUntil(p: Promise<unknown>): void } | undefined;
+      try { ctx = c.executionCtx; } catch { /* no Workers context, as in tests */ }
+      // On Workers the lookups finish after the answer; the next visit gets them.
+      if (ctx) ctx.waitUntil(got.refresh); else { await got.refresh; got = feed.get(now()); }
+    }
+    return c.json(shopFor(m.inventory, { from: feed.from, hits: got.hits }));
   });
 
   app.get("/api/machines/:id/events", async (c) => { const m = await machine(c); return m ? c.json(m.events) : notFound(c); });
