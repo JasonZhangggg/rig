@@ -32,7 +32,7 @@ function prettyName(host: string): string {
 /** Which part a sensor is filed under, as a key of PC.parts: the graphics card only for the card Rig shows, case and laptop fans under Fans. */
 function partOf(s: Sensor, laptop: boolean, gpuName: string | undefined): string | null {
   if (s.hw === "gpu") return s.hwName === gpuName ? "gpu" : null;
-  if (s.type === "fan" || s.hw === "cooler") return "fans";
+  if (s.type === "fan" || s.type === "control" || s.hw === "cooler") return "fans";
   switch (s.hw) {
     case "cpu": return "cpu";
     case "board": return laptop ? "board" : "motherboard";

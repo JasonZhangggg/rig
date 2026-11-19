@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  HOT_MARGIN, historySummary, livePoint, STEADY_MARGIN,
-  type BusySummary, type HistoryKey, type HistoryPoint, type HistorySummary, type PC, type Range, type Reading, type ReadingUnit, type TempFormat,
+  coreLoad, coresOf, HOT_MARGIN, historySummary, keyReadings, livePoint, STEADY_MARGIN,
+  type BusySummary, type Core, type HistoryKey, type HistoryPoint, type HistorySummary, type PC, type Range, type Reading, type ReadingUnit, type TempFormat,
 } from "@rig/core";
 import { calm, ChartNote, LineChart } from "../chart";
 import { Figure } from "../components/Figure";
@@ -72,15 +72,20 @@ const reduceMotion = () => document.documentElement.dataset.motion === "reduce" 
 /** How far back the live charts reach. */
 const LIVE_MS = 5 * 60_000;
 
+/** A live reading of the whole PC, with every sensor's value by id for the per-core lines. */
+type LivePoint = HistoryPoint & { vals: Record<string, number> };
+
 /** The PC's readings as they arrive while this page is open, the last few minutes of them, for the live charts. */
-function useLive(pc: PC): HistoryPoint[] {
-  const [pts, setPts] = useState<HistoryPoint[]>([]);
+function useLive(pc: PC): LivePoint[] {
+  const [pts, setPts] = useState<LivePoint[]>([]);
   const id = useRef(pc.id);
   useEffect(() => {
     if (id.current !== pc.id) { id.current = pc.id; setPts([]); }
     if (!pc.online || !pc.parts) return;
     const t = pc.seenAt ? Date.parse(pc.seenAt) : Date.now();
-    setPts((prev) => (prev.length && prev[prev.length - 1].t >= t ? prev : [...prev.filter((p) => p.t > t - LIVE_MS), livePoint(pc, t)]));
+    const vals: Record<string, number> = {};
+    for (const r of pc.readings ?? []) if (r.value != null) vals[r.id] = r.value;
+    setPts((prev) => (prev.length && prev[prev.length - 1].t >= t ? prev : [...prev.filter((p) => p.t > t - LIVE_MS), { ...livePoint(pc, t), vals }]));
   }, [pc]);
   return pts;
 }
@@ -100,6 +105,7 @@ export function History() {
   const paneRef = useRef<HTMLElement>(null);
   const has = !!pts && pts.length > 1;
   const now = livePoint(pc, Date.now());
+  const limited = !!pc.issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver");
 
   /** Shows a moment, or the busy periods, on the charts; the same one again lets go. */
   const toggle = (key: string, pin?: number) => {
@@ -168,6 +174,12 @@ export function History() {
               <h2 id="pf-h" className="pf-title">{part.name}</h2>
               <span className="muted">{part.model}</span>
             </div>
+            <KeyReadings part={part.id} readings={pc.readings ?? []} />
+            {limited && ["cpu", "motherboard", "fans"].includes(part.id) && (
+              <p className="callout pf-limited">{pc.issues?.some((i) => i.id === "needs-driver")
+                ? "Processor and per-core temperatures, board voltages and case fans come through PawnIO, a small driver that installs with Rig. It isn't on this PC yet, so some sensors are missing."
+                : "Windows only shares processor temperatures, board voltages and case fans with apps that have admin permission, so some sensors are missing."}</p>
+            )}
             {!live && has && part.metrics[0] && <Figures part={part} points={pts!} focus={focus} onToggle={toggle} />}
             {(live || has) && part.metrics.map((m) => (
               <div key={m.key} className="pf-chart">
@@ -188,7 +200,8 @@ export function History() {
             ))}
             {!live && pts == null && <ChartNote busy>Loading…</ChartNote>}
             {live && <p className="faint pf-live-note">The last few minutes, since you opened this page. Day, Week and Month show what Rig logged.</p>}
-            <Readings part={part} readings={(pc.readings ?? []).filter((r) => r.part === part.id)} />
+            {part.id === "cpu" && <Cores readings={pc.readings ?? []} recent={recent} />}
+            <Readings key={part.id} part={part} readings={(pc.readings ?? []).filter((r) => r.part === part.id)} />
           </section>
         </div>
       )}
@@ -238,7 +251,7 @@ function Spark({ points, m }: { points: HistoryPoint[]; m: Metric }) {
 
 const groups: [Reading["type"], string][] = [
   ["temperature", "Temperatures"], ["load", "Usage"], ["clock", "Speeds"], ["fan", "Fans"], ["power", "Power"],
-  ["voltage", "Voltages"], ["data", "Data"], ["level", "Levels"], ["control", "Fan control"],
+  ["voltage", "Voltages"], ["current", "Current"], ["throughput", "Transfer"], ["data", "Data"], ["level", "Levels"], ["control", "Fan control"],
 ];
 
 /** A sensor reading in its unit, as a hardware monitor shows it. */
@@ -251,21 +264,30 @@ function reading(temp: Temp, type: Reading["type"], v: number | null | undefined
     case "clock": return v >= 1000 ? `${(v / 1000).toFixed(2)} GHz` : `${Math.round(v)} MHz`;
     case "power": return `${v.toFixed(1)} W`;
     case "voltage": return `${v.toFixed(3)} V`;
-    case "data": return `${v.toFixed(1)} GB`;
+    case "data": return v >= 1000 ? `${(v / 1000).toFixed(1)} TB` : `${v.toFixed(1)} GB`;
+    case "throughput": return v >= 1e9 ? `${(v / 1e9).toFixed(2)} GB/s` : v >= 1e6 ? `${(v / 1e6).toFixed(1)} MB/s` : `${Math.round(v / 1e3)} KB/s`;
+    case "current": return `${v.toFixed(2)} A`;
   }
 }
 
 /** Every sensor on the part: now, lowest and highest, grouped by what it measures. */
 function Readings({ part, readings }: { part: PartLine; readings: Reading[] }) {
   const temp = useTemp();
+  // A part with a few sensors shows them all; one with dozens (a processor's cores) keeps them a click away.
+  const [open, setOpen] = useState(readings.length <= SHOWN_SENSORS);
   if (!readings.length) return <p className="muted pf-none">{part.name} reports no sensors.</p>;
   return (
     <div className="pf-readings">
       <div className="pf-chart-head">
-        <h3 className="label" id="pf-r-h">Sensors</h3>
-        <span className="faint">Lowest and highest since Rig started.</span>
+        <h3 className="label" id="pf-r-h">Sensors <span className="faint num">{readings.length}</span></h3>
+        {open && <span className="faint">Lowest and highest since Rig started.</span>}
       </div>
-      <table className="pf-table" aria-labelledby="pf-r-h">
+      {readings.length > SHOWN_SENSORS && (
+        <button type="button" className="btn sm pf-more" aria-expanded={open} aria-controls="pf-table" onClick={() => setOpen(!open)}>
+          {open ? "Hide sensors" : `Show all ${readings.length}, with lowest and highest`}
+        </button>
+      )}
+      {open && <table id="pf-table" className="pf-table" aria-labelledby="pf-r-h">
         <thead><tr><th scope="col">Sensor</th><th scope="col">Now</th><th scope="col">Lowest</th><th scope="col">Highest</th></tr></thead>
         {groups.map(([type, title]) => {
           const rows = readings.filter((r) => r.type === type);
@@ -283,7 +305,76 @@ function Readings({ part, readings }: { part: PartLine; readings: Reading[] }) {
             </tbody>
           );
         })}
-      </table>
+      </table>}
     </div>
   );
+}
+
+/** Up to this many sensors show without a click. */
+const SHOWN_SENSORS = 10;
+
+/** The few readings worth a glance on this part, now, with the highest since Rig started under each. */
+function KeyReadings({ part, readings }: { part: string; readings: Reading[] }) {
+  const temp = useTemp();
+  const keys = keyReadings(part, readings);
+  if (!keys.length) return null;
+  return (
+    <dl className="pf-keys" aria-label="Now">
+      {keys.map((k) => (
+        <div key={k.label}>
+          <dt>{k.label}</dt>
+          <dd className="num">{reading(temp, k.type, k.value)}</dd>
+          <dd className="faint">{k.note ? `${k.note.replace(/#/g, "")}, ` : ""}{k.max != null ? `highest ${reading(temp, k.type, k.max)}` : ""}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Each core side by side, as Task Manager shows logical processors: how busy it is, a line of the last few minutes, and its clock and temperature. */
+function Cores({ readings, recent }: { readings: Reading[]; recent: LivePoint[] }) {
+  const temp = useTemp();
+  const cores = coresOf(readings);
+  if (cores.length < 2) return null;
+  const perCoreTemp = cores.some((c) => c.temp);
+  const anyTemp = readings.some((r) => r.part === "cpu" && r.type === "temperature");
+  return (
+    <section className="pf-cores-wrap" aria-labelledby="pf-cores-h">
+      <div className="pf-chart-head">
+        <h3 className="label" id="pf-cores-h">Cores <span className="faint num">{cores.length}</span></h3>
+        <span className="faint">{anyTemp && !perCoreTemp ? "This processor reports one temperature per chiplet, not per core." : "Now, and the last few minutes."}</span>
+      </div>
+      <ul className="pf-cores">
+        {cores.map((c) => {
+          const load = coreLoad(c);
+          return (
+            <li key={c.label} className="pf-core">
+              <div className="pf-core-head"><b>{c.label}</b><span className="num">{load == null ? "–" : `${Math.round(load)}%`}</span></div>
+              <CoreLine core={c} recent={recent} />
+              <div className="pf-core-threads" aria-hidden="true">
+                {(c.threads.length ? c.threads : c.load ? [c.load] : []).map((t) => <i key={t.id}><b style={{ width: `${Math.max(0, Math.min(100, t.value ?? 0))}%` }} /></i>)}
+              </div>
+              <span className="faint num pf-core-facts">
+                {[c.clock?.value != null ? reading(temp, "clock", c.clock.value) : null, c.temp?.value != null ? reading(temp, "temperature", c.temp.value) : null, c.power?.value != null ? reading(temp, "power", c.power.value) : null].filter(Boolean).join(" · ")}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** One core's load over the live readings, on a fixed 0 to 100 scale so cores compare. */
+function CoreLine({ core, recent }: { core: Core; recent: LivePoint[] }) {
+  const ids = core.threads.length ? core.threads.map((t) => t.id) : core.load ? [core.load.id] : [];
+  const vs = recent.map((p) => {
+    const xs = ids.map((id) => p.vals[id]).filter((v): v is number => v != null);
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  });
+  const w = 100, h = 32, n = vs.length;
+  if (n < 2) return <span className="pf-core-line" aria-hidden="true" />;
+  let d = "";
+  vs.forEach((v, i) => { if (v != null) d += `${d ? "L" : "M"}${((i / (n - 1)) * w).toFixed(1)},${(h - (v / 100) * h).toFixed(1)}`; });
+  return <svg className="pf-core-line" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true"><path d={`${d}L${w},${h}L0,${h}Z`} className="fill" /><path d={d} vectorEffect="non-scaling-stroke" /></svg>;
 }

@@ -63,8 +63,9 @@ describe("History figures", () => {
     const f = await read();
     expect(f.busy + f.hottest).not.toMatch(/°C/);
     expect(c.headroom).not.toBeNull();
-    expect(f.headroom).toBe(Math.round(c.headroom! * 1.8));
-    if (c.change != null) expect(f.change).toBe(Math.round(c.change * 1.8));
+    // The °C figure is already rounded, so the °F one can land a degree either side of it times 1.8 (a temperature would be 32° off).
+    expect(Math.abs(f.headroom! - c.headroom! * 1.8)).toBeLessThanOrEqual(1.5);
+    if (c.change != null) expect(Math.abs(f.change! - c.change * 1.8)).toBeLessThanOrEqual(1.5);
   });
 });
 

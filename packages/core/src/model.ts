@@ -2,6 +2,7 @@
 // desktop, received from the server on the web, or taken from demo data.
 
 import type { ActionCall } from "./actions";
+import type { SensorType } from "./telemetry";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
 export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "manuals" | "web" | "signin" | "settings";
@@ -155,7 +156,7 @@ export interface Reading {
   /** The part it's about, as a key of PC.parts. */
   part: string;
   name: string;
-  type: "temperature" | "load" | "fan" | "clock" | "power" | "voltage" | "data" | "level" | "control";
+  type: SensorType;
   value: number | null;
   min?: number | null;
   max?: number | null;

@@ -226,15 +226,36 @@ describe("History", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Memory" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Memory, in use" })).toBeTruthy();
     expect(screen.queryByRole("img", { name: /temperature/ })).toBeNull();
-    const sensors = screen.getByRole("table", { name: "Sensors" });
+    const sensors = screen.getByRole("table", { name: /Sensors/ });
     expect(within(sensors).getByRole("rowheader", { name: "Memory Used" })).toBeTruthy();
+    expect(within(screen.getByLabelText("Now")).getByText("Available")).toBeTruthy();
     expect(within(sensors).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Now", "Lowest", "Highest"]);
     expect(sensors.textContent).not.toMatch(/NaN|undefined/);
 
     fireEvent.click(within(rail).getByRole("button", { name: /^Fans/ }));
     expect(screen.getByRole("img", { name: "Fans, fastest fan" })).toBeTruthy();
-    const fan = within(screen.getByRole("table", { name: "Sensors" })).getByRole("rowheader", { name: "Fan #1" }).parentElement!;
+    const fan = within(screen.getByRole("table", { name: /Sensors/ })).getByRole("rowheader", { name: "Fan #1" }).parentElement!;
     expect(fan.textContent).toMatch(/\d rpm.*\d rpm.*\d rpm/);
+  });
+
+  it("shows the processor's cores side by side, with every sensor a click away", async () => {
+    await show("history");
+    fireEvent.click(within(await screen.findByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    const now = screen.getByLabelText("Now");
+    expect(within(now).getByText("Package")).toBeTruthy();
+    expect(within(now).getByText("Power")).toBeTruthy();
+    const cores = screen.getByRole("region", { name: /^Cores/ });
+    expect(within(cores).getAllByRole("listitem")).toHaveLength(8);
+    expect(cores.textContent).toMatch(/one temperature per chiplet/);
+    expect(within(cores).getAllByRole("listitem")[0].textContent).toMatch(/^Core 1\d+%.*GHz/);
+
+    expect(screen.queryByRole("table", { name: /Sensors/ })).toBeNull();
+    const more = screen.getByRole("button", { name: /^Show all \d+, with lowest and highest$/ });
+    fireEvent.click(more);
+    const table = screen.getByRole("table", { name: /Sensors/ });
+    expect(within(table).getByRole("rowheader", { name: "CPU Core #3 Thread #2" })).toBeTruthy();
+    expect(within(table).getByRole("rowheader", { name: "Core (SVI2 TFN)" }).parentElement!.textContent).toMatch(/\d\.\d{3} V/);
+    expect(more.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("leads with the part's figures, and each figure or busy time pins the charts", async () => {
@@ -275,7 +296,7 @@ describe("History", () => {
     expect(screen.queryByRole("group", { name: "Key figures" })).toBeNull();
     expect(screen.queryByText("Busy times")).toBeNull();
     expect(screen.getAllByText("Live readings draw here as they come in.").length).toBe(2);
-    expect(screen.getByRole("table", { name: "Sensors" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Show all \d+, with lowest and highest$/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     expect(await screen.findByRole("group", { name: "Key figures" })).toBeTruthy();
   });
