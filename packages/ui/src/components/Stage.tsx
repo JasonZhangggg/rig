@@ -25,10 +25,10 @@ export function getStage() {
   if (!host) {
     const park = document.createElement("div");
     park.className = "stage-park";
+    park.inert = true;
     document.body.appendChild(park);
     const el = document.createElement("div");
     el.className = "stage";
-    el.setAttribute("aria-label", "3D view of your PC");
     park.appendChild(el);
     const h = { el, park, scene: null as unknown as PCScene, onSelect: (_id: string | null) => {} };
     h.scene = createScene(el, { onSelect: (id) => h.onSelect(id), onHover: setHovered });

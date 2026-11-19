@@ -60,7 +60,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
       {info.state === "pending" && <section className="card card-pad"><p className="muted">Waiting for the Rig app on {pc.name} to pick this up. It starts within about five minutes while the PC is on and signed in.</p></section>}
       {info.error && <div className="callout warn">{info.error}</div>}
 
-      {rec === undefined ? <p className="muted">Loading the recording…</p> : !rec || !sum ? <p className="muted">Rig couldn't load this recording.</p> : (
+      {rec === undefined ? <p className="muted">Loading the recording…</p> : !rec || !sum ? <p className="muted">Rig couldn't load this recording. Go back to Logs and open it again.</p> : (
         <>
           <section className="lg-lede" aria-label="What it found">
             <p className="lg-lede-text">{active && sum.moments.length === 0 ? "Nothing unusual so far." : inUnit(sum.headline)}</p>
@@ -98,7 +98,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
               {loads.some((p) => p.cpu != null || p.gpu != null) && (
                 <>
                   <h2>How hard each part worked</h2>
-                  <LineChart points={loads} series={series} h={180} unit="percent" marks={marks} label="Load during the recording" />
+                  <LineChart points={loads} series={series} h={180} unit="percent" marks={marks} label="Usage during the recording" />
                 </>
               )}
             </section>

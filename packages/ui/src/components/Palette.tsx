@@ -4,6 +4,7 @@ import { useApp, useTemp } from "../state";
 import { focusSection, settingsSections } from "../pages/settings/sections";
 import { minutes, stateWord, whenRan } from "../pages/logs/words";
 import { navItems } from "./Shell";
+import { arrowKeys, useModal } from "./modal";
 import { useManualSearch } from "../manuals/Search";
 import { useManuals } from "../manuals/useManuals";
 import { openManual } from "../manuals/viewerState";
@@ -14,7 +15,7 @@ import { shopCatOf } from "../pages/shared";
 const pageWords: Partial<Record<Route, [string, string]>> = {
   overview: ["Your dashboard: health, temperatures and things to look at", "home dashboard overview health summary tiles customize"],
   pc: ["Your PC in 3D with every part and how warm it runs", "my pc 3d parts specs components hardware temperature"],
-  history: ["In Logs: each part's temperature, use and sensors, live or over the month", "temperature history temps heat hot chart graph week month usage load cpu gpu memory ram fans sensors task manager hwmonitor live"],
+  history: ["In Logs: each part's temperature, usage and sensors, live or over the month", "temperature history temps heat hot chart graph week month usage load cpu gpu memory ram fans sensors task manager hwmonitor live"],
   games: ["In Logs: how your games ran and how warm they got", "games fps gaming performance tuning"],
   upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
   manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
@@ -57,6 +58,8 @@ export function Palette() {
   const [tab, setTab] = useState<"all" | Kind>("all");
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useModal(box, ui.palette);
   const close = () => { set({ palette: false }); setQ(""); setTab("all"); setActive(0); };
   const open = (route: Route, patch: Parameters<typeof set>[0] = {}) => { set(patch); go(route); close(); };
 
@@ -128,16 +131,16 @@ export function Palette() {
   let n = -1;
   const groups = (["pages", "parts", "manuals", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return (
-    <div className="palette-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+    <div className="palette-scrim" ref={box} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKey}>
         <div className="pal-search">
           <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M13.5 13.5 17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setActive(0); }} placeholder="Search parts, manuals, games and logs" aria-label="Search" />
           <kbd>Esc</kbd>
         </div>
-        <div className="pal-tabs" role="tablist">
+        <div className="pal-tabs" role="tablist" aria-label="Show" onKeyDown={arrowKeys("tab")}>
           {(["all", "parts", "manuals", "changes", "games", "upgrades", "logs"] as const).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => { setTab(t); setActive(0); input.current?.focus(); }}>
+            <button key={t} type="button" role="tab" aria-selected={tab === t} tabIndex={tab === t ? 0 : -1} onClick={() => { setTab(t); setActive(0); input.current?.focus(); }}>
               {t === "all" ? "All" : kindLabel[t]}<span>{t === "all" ? matched.length : counts[t] ?? 0}</span>
             </button>
           ))}

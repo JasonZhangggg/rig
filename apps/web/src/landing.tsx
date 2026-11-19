@@ -14,9 +14,9 @@ const download = import.meta.env.VITE_DOWNLOAD_URL as string | undefined;
 const features = [
   { t: "See inside, in 3D", d: "Your actual parts with live temperatures. Click a part for its specs, manual and drivers, or pull the case apart." },
   { t: "Health in plain words", d: "Temperatures, storage, startup apps, drivers and battery, with what matters and why." },
-  { t: "Fixes you approve", d: "Every change shows the value now and the value after. Nothing happens until you say yes, and Undo is one tap." },
+  { t: "Fixes you approve", d: "Every change shows the value now and the value after. Nothing happens until you say yes, and Undo is one click." },
   { t: "Answers from your manuals", d: "Ask why it's loud or what to upgrade. Rig answers from your parts' manuals and maker pages, and shows its sources." },
-  { t: "Smoother games", d: "Frame rates measured with PresentMon, the tool game studios use. Rig never touches the game, so anti-cheat is happy." },
+  { t: "How your games run", d: "See how warm each game runs and which sessions came close to the safe limit. Rig never touches the game, so anti-cheat has nothing to flag." },
   { t: "All your PCs, anywhere", d: "Check every PC from the web: the gaming rig, the laptop, the one at your parents' place." },
 ];
 
@@ -56,7 +56,7 @@ function Landing() {
           <div className="lp-hero-text">
             <p className="lp-label">Free, for gaming rigs and laptops</p>
             <h1 id="lp-title">Know what's going on inside your PC.</h1>
-            <p className="lp-sub">Rig watches your temperatures, explains problems in plain words and fixes settings for you, always with your yes and one-tap undo.</p>
+            <p className="lp-sub">Rig watches your temperatures, explains problems in plain words and fixes settings for you, always with your yes and one-click undo.</p>
             <div className="lp-cta">
               <a className="lp-btn" href="/app/?demo">Try the demo <Arrow /></a>
               {download && <a className="lp-link" href={download}>Download for Windows <Arrow /></a>}
@@ -101,7 +101,7 @@ function Landing() {
         </section>
 
         <section className="lp-end" aria-label="Try Rig">
-          <p>See it on a sample PC first. No sign in needed.</p>
+          <p>See it on a sample PC first. No sign-in needed.</p>
           <a className="lp-btn" href="/app/?demo">Try the demo <Arrow /></a>
         </section>
       </main>

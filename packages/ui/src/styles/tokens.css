@@ -14,7 +14,7 @@
   --line-strong: rgba(27, 27, 31, .18);
   --text: #1B1B1F;
   --text-2: #5E5D59;
-  --text-3: #6B6A66;
+  --text-3: #65645F;
   --graphite: #1B1B1F;
   --graphite-2: #26262B;
   --foam: #ECE8FA;
@@ -48,6 +48,7 @@
   --r: 28px;
   --r-sm: 14px;
   --r-pill: 999px;
+  --scrim: rgba(27, 27, 31, .36);
   --gap: 14px;
   --shadow-lg: 0 24px 60px rgba(27, 27, 31, .16), 0 2px 6px rgba(27, 27, 31, .06);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -61,7 +62,7 @@
   --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
   --line: rgba(255, 255, 255, .10);
   --sel: color-mix(in srgb, var(--text) 10%, transparent);
-  --ok: var(--good-on-dark); --warn: var(--look-on-dark); --focus: var(--good-on-dark);
+  --ok: var(--good-on-dark); --warn: var(--look-on-dark); --focus: var(--text);
   --s-a: var(--good); --s-mark-a: var(--good-on-dark); --s-b: var(--look); --s-c: var(--expected);
   --s-ink: #111111; --s-c-ink: var(--graphite);
   --s-track: rgba(255, 255, 255, .12); --s-dim: rgba(255, 255, 255, .08); --s-edge: transparent;

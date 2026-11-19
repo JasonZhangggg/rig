@@ -79,7 +79,7 @@ export function UpgradesTab() {
   const { prefs } = store;
   const [q, setQ] = useState("");
   if (!got) return <p className="muted" role="status">Looking at what fits {pc.name}…</p>;
-  if (!got.shop) return <p className="muted">{got.failed ? "Couldn't load parts just now." : `Rig hasn't read ${pc.name}'s parts yet. Parts that fit show up once it has.`}</p>;
+  if (!got.shop) return <p className="muted">{got.failed ? "Couldn't load parts just now. Check your internet connection, then open Upgrades again." : `Rig hasn't read ${pc.name}'s parts yet. Parts that fit show up once it has.`}</p>;
   const { facts, items, demo, retailFrom } = got.shop;
   const states = shopCategories.map((c) => categoryState(c.key, facts, prefs.psuW));
   const open = states.filter((s) => s.open);
@@ -211,7 +211,7 @@ function CategoryView({ cat, items, facts, store, demo, from, q, setQ, elsewhere
       {(cat === "psu" || cat === "gpu") && <PsuAsk facts={facts} store={store} />}
       <div className="shop-find">
         <input className="input shop-q" type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label={`Search ${kind}`}
-          placeholder={`Search ${kind}, like ${searchHint[cat]}`} />
+          placeholder={`Like ${searchHint[cat]}`} />
         {makerList.length > 1 && (
           <div className="shop-makers" role="group" aria-label="Maker">
             {makerList.map((m) => {
@@ -408,6 +408,7 @@ function PriceHistory({ points, demo }: { points: number[]; demo: boolean }) {
 }
 
 function ListView({ items, own, facts, store, demo, from }: { items: ShopItem[]; own: OwnPart[]; facts: HardwareFacts; store: Store; demo: boolean; from?: string }) {
+  const [clearing, setClearing] = useState(false);
   const { ask } = useApp();
   const psuW = store.prefs.psuW;
   if (!items.length && !own.length) {
@@ -476,7 +477,9 @@ function ListView({ items, own, facts, store, demo, from }: { items: ShopItem[];
         <p className="muted">{power}</p>
         <div className="shop-actions">
           <button type="button" className="btn primary sm" onClick={() => ask(`Check this upgrade list for ${facts.name}: ${text}. Will it all work together, and what order should I install it in?`)}>Ask Rig to check this list</button>
-          <button type="button" className="btn ghost sm" onClick={store.clear}>Clear the list</button>
+          {clearing
+            ? <><span className="muted">Remove all {items.length + own.length} parts{own.length ? ", including the ones you added" : ""}?</span><button type="button" className="btn sm" onClick={() => setClearing(false)} autoFocus>Keep them</button><button type="button" className="btn sm" onClick={() => { setClearing(false); store.clear(); }}>Clear list</button></>
+            : <button type="button" className="btn ghost sm" onClick={() => setClearing(true)}>Clear list</button>}
         </div>
       </div>
     </section>

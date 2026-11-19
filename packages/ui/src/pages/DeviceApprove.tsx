@@ -21,13 +21,13 @@ export function DeviceApprove({ client, account, code, onClose }: { client: RigC
             <>
               <h1>PC signed in</h1>
               <p className="muted">Rig on that PC is signed in as {account.email}. You can close this tab.</p>
-              <button className="btn primary" type="button" onClick={onClose}>See my PCs</button>
+              <button className="btn primary" type="button" onClick={onClose}>See your PCs</button>
             </>
           ) : state === "denied" ? (
             <>
               <h1>Sign-in denied</h1>
               <p className="muted">That PC stays signed out. There's nothing else to do.</p>
-              <button className="btn" type="button" onClick={onClose}>See my PCs</button>
+              <button className="btn" type="button" onClick={onClose}>See your PCs</button>
             </>
           ) : (
             <>

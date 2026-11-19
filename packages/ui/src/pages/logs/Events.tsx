@@ -97,7 +97,7 @@ function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number
   const shown = tip != null ? days[tip] : null;
 
   return (
-    <div className={`ev-strip${selected >= 0 ? " picked" : ""}`} role="group" aria-label="Last 30 days">
+    <div className={`ev-strip${selected >= 0 ? " picked" : ""}`} role="group" aria-label="Last 30 days" ref={(el) => { if (el && !el.dataset.scrolled) { el.dataset.scrolled = "1"; el.scrollLeft = el.scrollWidth; } }}>
       {days.map((d, i) => {
         const n = d.list.length;
         return (

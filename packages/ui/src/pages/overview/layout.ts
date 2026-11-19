@@ -89,7 +89,7 @@ export const KINDS: Record<Kind, KindMeta> = {
     options: [
       { key: "summary", label: "Show the summary", type: "toggle", value: true },
       { key: "breakdown", label: "Show what the score is made of", type: "toggle", value: false },
-      { key: "link", label: "Show the history link", type: "toggle", value: true },
+      { key: "link", label: "Show the performance link", type: "toggle", value: true },
     ],
   },
   todo: {

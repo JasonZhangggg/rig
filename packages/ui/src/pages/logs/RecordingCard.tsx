@@ -49,7 +49,7 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
         {live && <Progress r={live} />}
         {state === "pending" && <p className="muted">Waiting for the Rig app on {pc.name} to pick it up. That takes up to five minutes while the PC is on.</p>}
         {finished && <p className="rec-found">{live?.headline ? inUnit(live.headline) : "Rig has the readings."}</p>}
-        {state === "failed" && <p className="muted">{live?.error ?? "No readings came in."}</p>}
+        {state === "failed" && <p className="muted">{live?.error ?? "No readings came in. Start a new recording, and if it fails again, restart Rig."}</p>}
       </div>
       <div className="proposal-foot">
         <span className="faint">Only reads · changes nothing on {pc.name}</span>

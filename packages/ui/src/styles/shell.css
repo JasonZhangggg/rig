@@ -1,11 +1,12 @@
 .shell-fpanel { min-height: 100vh; background: var(--ground); padding: 14px; }
 .fp-frame {
   display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - 28px);
-  background: var(--band); border-radius: 30px; overflow: clip;
+  background: var(--band); border-radius: calc(var(--r) + 2px); overflow: clip;
   box-shadow: 0 30px 60px -44px rgba(27, 27, 31, .3);
   transition: grid-template-columns .28s cubic-bezier(.2, .8, .2, 1);
 }
 .shell-fpanel.mini .fp-frame { grid-template-columns: 84px minmax(0, 1fr); }
+#main:focus { outline: none; }
 .fp-main { min-width: 0; padding: 22px 26px 60px; background: var(--bg); }
 /* Pages other than Home sit on the sheet itself, so their sections need no boxes of their own. */
 .fp-main.flat { --bg: var(--surface); }
@@ -40,7 +41,7 @@
 .fp-search { color: var(--text-2); }
 .fp-search kbd { font: 600 11px var(--font); color: var(--text-3); background: var(--surface); border-radius: 6px; padding: 3px 6px; box-shadow: 0 0 0 1px var(--line); }
 
-.fp-setup { margin-top: auto; background: var(--surface); border-radius: 20px; padding: 16px; display: grid; gap: 6px; box-shadow: 0 0 0 1px var(--line), 0 10px 24px -18px rgba(0, 0, 0, .4); }
+.fp-setup { margin-top: auto; background: var(--surface); border-radius: calc(var(--r-sm) + 6px); padding: 16px; display: grid; gap: 6px; box-shadow: 0 0 0 1px var(--line), 0 10px 24px -18px rgba(0, 0, 0, .4); }
 .fp-setup-ico { width: 34px; height: 34px; border-radius: 11px; background: var(--surface-2); color: var(--text); display: grid; place-items: center; margin-bottom: 4px; }
 .fp-setup-ico svg { width: 18px; height: 18px; }
 .fp-setup b { font-size: 14.5px; font-weight: 800; }
@@ -83,6 +84,12 @@
   .shell-fpanel.mini .fp-frame { grid-template-columns: 1fr; border-radius: 0; }
   .fp-side { position: static; height: auto; border-bottom: 1px solid var(--line); }
   .fp-setup { margin-top: 8px; }
+  /* On a phone the menu is a few rows of pills, so the page starts on the first screen. */
+  .fp-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px; padding: 12px 16px; }
+  .fp-brand { flex-basis: 100%; margin-bottom: 4px; }
+  .fp-group { flex-direction: row; flex-wrap: wrap; gap: 4px; margin: 0; }
+  .fp-label, .fp-search kbd, .fp-collapse { display: none; }
+  .fp-item { height: 36px; padding-inline: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .fp-frame { transition: none; } }
 

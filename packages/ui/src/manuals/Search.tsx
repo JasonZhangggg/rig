@@ -14,7 +14,7 @@ export function useManualSearch(query: string, manualId?: string) {
     const t = setTimeout(() => {
       client.searchManuals(pc.id, q, { manualId, limit: 20 })
         .then((h) => { if (live) { setHits(h); setError(null); } })
-        .catch((e: unknown) => { if (live) { setHits([]); setError(e instanceof Error && e.message ? e.message : "Search didn't work just now."); } });
+        .catch((e: unknown) => { if (live) { setHits([]); setError(e instanceof Error && e.message ? e.message : "Search didn't work just now. Check your internet connection and search again."); } });
     }, 220);
     return () => { live = false; clearTimeout(t); };
   }, [client, pc.id, q, manualId]);

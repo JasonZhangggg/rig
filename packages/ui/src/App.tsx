@@ -3,7 +3,7 @@ import type { Account, RigClient } from "@rig/core";
 import { AppProvider, useApp, useAppearance, type AppHost } from "./state";
 import { applyAppearance } from "./appearance";
 import { getStage } from "./components/Stage";
-import { ReviewSheet, Toast } from "./components/Shell";
+import { ReviewSheet, Toast, navItems } from "./components/Shell";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
 import { sceneThemeFor } from "./themes";
@@ -110,6 +110,15 @@ function Root() {
     if (ui.route === "pc" && ui.selected) scene.select(ui.selected);
     else if (ui.route !== "pc") scene.select(null);
   }, [ui.route, pc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A new page gets its own tab title, and focus moves to it so a screen reader hears the change.
+  const firstRoute = useRef(true);
+  useEffect(() => {
+    const label = navItems.find(([r]) => r === ui.route)?.[1];
+    document.title = label && ui.route !== "overview" ? `${label} · Rig` : "Rig";
+    if (firstRoute.current) { firstRoute.current = false; return; }
+    document.getElementById("main")?.focus({ preventScroll: true });
+  }, [ui.route]);
 
   const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: PCPage, games: Games, history: History, logs: Logs, manuals: PCPage, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (

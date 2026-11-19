@@ -1,8 +1,11 @@
 :root {
-  --bg: #F2F0EC; --text: #1B1B1F; --text-2: #5E5D59; --text-3: #6B6A66;
+  --bg: #F2F0EC; --text: #1B1B1F; --text-2: #5E5D59; --text-3: #65645F;
   --line: rgba(27, 27, 31, .12); --line-strong: #1B1B1F;
   --btn: #1B1B1F; --btn-text: #FFFFFF;
   --pad: clamp(20px, 4vw, 64px);
+  /* What the 3D part labels use, matching the app's defaults. */
+  --surface: #FFFFFF; --graphite: #1B1B1F; --focus: #1B1B1F; --sel: color-mix(in srgb, var(--text) 8%, transparent);
+  --good: #E6D3A3; --good-mark: #7C6A3A; --look-text: #A4471C; --warn: #A4471C; --r-pill: 999px; --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   font-family: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text); background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -19,7 +22,7 @@ h1, h2, h3, p, ol, figure { margin: 0; }
 .lp-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 0; border-bottom: 1px solid var(--line); }
 .lp-top nav { display: flex; align-items: center; gap: 32px; font-weight: 600; font-size: 15px; }
 .lp-top nav a { text-decoration: none; color: var(--text-2); }
-.lp-top nav a:hover { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .lp-top nav a:hover { color: var(--text); } }
 .lp-top nav .lp-link { color: var(--text); }
 .lp-logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 19px; letter-spacing: -0.02em; text-decoration: none; }
 .lp-logo span { width: 30px; height: 30px; border-radius: 4px; background: var(--btn); color: var(--btn-text); display: grid; place-items: center; font-size: 16px; }
@@ -28,10 +31,10 @@ h1, h2, h3, p, ol, figure { margin: 0; }
 
 .lp-link { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; text-decoration: none; border-bottom: 1px solid currentColor; padding-bottom: 2px; }
 .lp-arrow { flex: none; transition: transform .2s cubic-bezier(.23, 1, .32, 1); }
-a:hover > .lp-arrow { transform: translateX(3px); }
+@media (hover: hover) and (pointer: fine) { a:hover > .lp-arrow { transform: translateX(3px); } }
 
 .lp-btn { display: inline-flex; align-items: center; gap: 12px; padding: 16px 24px; border-radius: 2px; background: var(--btn); color: var(--btn-text); font-weight: 650; font-size: 16px; text-decoration: none; }
-.lp-btn:hover { background: #000; }
+@media (hover: hover) and (pointer: fine) { .lp-btn:hover { background: #000; } }
 
 .lp-hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(24px, 4vw, 72px); align-items: center; padding: clamp(40px, 6vw, 96px) 0 clamp(40px, 5vw, 72px); border-bottom: 2px solid var(--line-strong); }
 .lp-hero-text { display: grid; gap: 28px; justify-items: start; }
@@ -43,6 +46,7 @@ a:hover > .lp-arrow { transform: translateX(3px); }
 .lp-canvas { position: relative; width: 100%; aspect-ratio: 1 / .86; overflow: hidden; }
 .lp-canvas > * { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; }
 .lp-stage figcaption { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 12.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+@media (max-width: 760px) { .lp-stage figcaption { position: static; margin-top: 12px; } }
 
 .lp-section { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 32px clamp(24px, 4vw, 72px); padding: clamp(48px, 6vw, 96px) 0; border-bottom: 1px solid var(--line); }
 .lp-section-head { display: grid; gap: 16px; align-content: start; }
@@ -65,7 +69,7 @@ a:hover > .lp-arrow { transform: translateX(3px); }
 
 .lp-foot { display: flex; gap: 24px; padding: 24px 0 32px; color: var(--text-2); font-size: 14px; }
 .lp-foot a { text-decoration: none; }
-.lp-foot a:hover { color: var(--text); text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .lp-foot a:hover { color: var(--text); text-decoration: underline; } }
 .lp-foot span { font-weight: 650; color: var(--text); margin-right: auto; }
 .lp-foot small { margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--text-3); }
 

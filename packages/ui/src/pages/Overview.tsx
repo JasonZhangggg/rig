@@ -141,7 +141,7 @@ export function Overview() {
   const done = () => { setEditing(false); setPanel(null); announce("Done customizing. Your layout is saved."); document.getElementById("f-customize")?.focus(); };
   const edit = (id?: string) => {
     setEditing(true);
-    announce(list ? "Customizing Home. Use the up and down buttons on a tile, or the arrow keys, to change the order." : "Customizing Home. Drag a tile or use the arrow keys to move it.");
+    announce(list ? "Customizing Home. Use the up and down buttons on a widget, or the arrow keys, to change the order." : "Customizing Home. Drag a widget or use the arrow keys to move it.");
     if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus({ preventScroll: true }));
   };
   const hide = (id: string) => {
@@ -234,7 +234,7 @@ export function Overview() {
           )}
           {editing && (
             <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
-              <p><b>Customizing Home</b><span>{list ? "Use the arrows on a tile to move it up or down." : "Drag tiles to move them. Pull an edge to resize."}</span></p>
+              <p><b>Customizing Home</b><span>{list ? "Use the arrows on a widget to move it up or down." : "Drag widgets to move them. Pull an edge to resize."}</span></p>
               <div className="dash-bar-tools">
                 <button type="button" ref={barAdd} className="dbtn" onClick={(e) => setPanel({ type: "add", at: e.currentTarget })}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
                 <button type="button" ref={barLayout} className="dbtn" onClick={(e) => setPanel({ type: "dash", at: e.currentTarget })}>Layout</button>

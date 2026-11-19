@@ -136,7 +136,7 @@ export function History() {
 
   return (
     <div className="page hi-page">
-      <LogsHead sub={`Each part's temperature and use on ${pc.name}, logged while Rig runs.`} right={
+      <LogsHead sub={`Each part's temperature and usage on ${pc.name}, logged while Rig runs.`} right={
         <div className="seg" role="group" aria-label="Range">
           <button type="button" aria-pressed={live} onClick={() => pick("live")}>Live</button>
           {(["24h", "7d", "30d"] as const).map((r) => <button key={r} type="button" aria-pressed={!live && ui.range === r} onClick={() => pick(r)}>{r === "24h" ? "Day" : r === "7d" ? "Week" : "Month"}</button>)}

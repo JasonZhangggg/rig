@@ -3,6 +3,7 @@ import type { Route } from "@rig/core";
 import { useApp } from "../state";
 import { Icon } from "./common";
 import { homeOf, navItems } from "./Shell";
+import { arrowKeys, focusFirstItem } from "./modal";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
@@ -28,7 +29,7 @@ function PCMenu({ onPick }: { onPick: () => void }) {
   const { data, pc, pickPC, toast, client } = useApp();
   const mine = data.pcs.filter((x) => x.parts);
   return (
-    <div className="sh-menu" role="menu">
+    <div className="sh-menu" role="menu" ref={focusFirstItem} onKeyDown={arrowKeys("menuitem")}>
       {mine.map((x) => (
         <button key={x.id} type="button" role="menuitem" aria-current={x.id === pc.id ? "true" : undefined} onClick={() => { pickPC(x.id); onPick(); }}>
           <span className="sh-dot" />
@@ -48,7 +49,7 @@ function useSetup() {
   const { pc, data, client, go, set } = useApp();
   const [skipped, setSkipped] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("rig.setupSkipped") ?? "[]"); } catch { return []; } });
   const steps: { id: string; title: string; body: string; cta: string; run: () => void; done: boolean }[] = [
-    { id: "sensors", title: "Allow temperature readings", body: pc.issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "How", run: () => go("chat"), done: !pc.issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
+    { id: "sensors", title: "Allow temperature readings", body: pc.issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "Ask how", run: () => go("chat"), done: !pc.issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
     { id: "name", title: `Name ${pc.kind === "laptop" ? "your laptop" : "your PC"}`, body: "Pick a name and a color. It marks this PC everywhere you see it.", cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: pc.name !== "My PC" },
     { id: "account", title: "Sign in to sync", body: "See this PC from any browser and keep its history if you reinstall.", cta: "Sign in", run: () => go("signin"), done: !!data.account || client.kind === "demo" },
   ];
@@ -92,7 +93,7 @@ function AccountBlock() {
         <Caret />
       </button>
       {open && (
-        <div className="sh-menu up" role="menu">
+        <div className="sh-menu up" role="menu" ref={focusFirstItem} onKeyDown={arrowKeys("menuitem")}>
           {a && <><div className="sh-menu-head" role="presentation"><b>{a.name}</b><span>{a.email}</span></div><hr /></>}
           {!a && <a href="#signin" role="menuitem" onClick={() => setOpen(false)}>Sign in</a>}
           {a && <a href="#web" role="menuitem" onClick={() => setOpen(false)}>All your PCs</a>}
@@ -119,7 +120,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
         <aside className="fp-side" aria-label="Main">
           <div className="fp-nav">
             <div className="fp-brand" ref={box}>
-              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Switch PC, now ${pc.name}`}>
+              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Rig, ${pc.name}, switch PC`}>
                 <span className="fp-logo">R<i /></span>
                 <span className="fp-brand-txt"><b>Rig</b><small>{pc.name} · {pc.nickname}</small></span>
               </button>
@@ -146,7 +147,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
           <AccountBlock />
         </aside>
         {/* Home is a dashboard of tiles on a warm ground. Every other page reads as one flat sheet. */}
-        <main className={`fp-main${ui.route === "overview" ? "" : " flat"}`} id="main">{children}</main>
+        <main className={`fp-main${ui.route === "overview" ? "" : " flat"}`} id="main" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

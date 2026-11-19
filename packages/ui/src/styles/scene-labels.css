@@ -1,6 +1,15 @@
 /* The 3D view's part labels. A pin sits on the part, a hairline leader runs out to the side, and the label
    hangs at its end, a little smaller and softer the farther its part is. scene.ts places each one with transforms. */
 .scene-labels { --lx: -1px; --ly: 2px; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.part-label {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-pill);
+  background: color-mix(in srgb, #FFFFFF 94%, transparent); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 12px rgba(0, 0, 0, .06); backdrop-filter: blur(6px); pointer-events: auto; cursor: pointer;
+}
+.part-label.is-selected { border-color: var(--graphite); background: var(--graphite); color: var(--primary-text, #FFFFFF); }
+.part-label .pl-temp { color: var(--text-2); }
+.part-label .pl-temp.warn { color: var(--warn); }
+.part-label.is-selected .pl-temp { color: inherit; opacity: .8; }
 .scene-pin { --fade: 1; position: absolute; top: 0; left: 0; }
 .pin-dot, .pin-lead { opacity: var(--fade); transition: opacity .25s var(--ease-out); }
 .scene-pin.is-off { display: none; }
@@ -43,8 +52,9 @@
 /* While one part is pointed at or picked, the other pins step back so the one that matters reads first,
    and a soft frame shows which shape in the PC that part is. */
 .scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) { --fade: .2 !important; }
-.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) .part-label { opacity: .4; }
-.scene-pin .part-label { transition: opacity .2s var(--ease-out), border-color .2s, background-color .2s; }
+.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) .part-label { color: var(--text-3); box-shadow: none; }
+.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) .part-label .pl-temp { color: var(--text-3); }
+.scene-pin .part-label { transition: color .2s var(--ease-out), border-color .2s, background-color .2s; }
 .scene-pin.is-hovered .part-label { border-color: var(--text-3); background: var(--surface); }
 .scene-pin.is-hovered .pin-lead { background: var(--text); }
 .part-box {

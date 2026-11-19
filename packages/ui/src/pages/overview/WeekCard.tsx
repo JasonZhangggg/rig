@@ -36,7 +36,7 @@ function Pill({ s, axis }: { s: EveningSession; axis: number }) {
     <span className={`pl-tl-pill ${s.kind}`} style={{ left: `${(s.start / axis) * 100}%`, width: `${(s.hours / axis) * 100}%` }} title={`${what}, ${hours(s.hours)} h${kindText[s.kind]}`}>
       <i aria-hidden="true">{s.game ? initials(s.game) || s.game[0] : <Task />}</i>
       <span className="sr-only">{what}{kindText[s.kind]}, </span>
-      <b>{hours(s.hours)}<span className="sr-only"> hours</span></b>
+      <b>{hours(s.hours)}<span className="sr-only"> hours</span>{s.kind === "hot" && <span className="warm-mark" aria-hidden="true"><svg viewBox="0 0 10 10" width="8" height="8"><path d="M5 1.5 9 8.5H1z" fill="currentColor" /></svg></span>}</b>
     </span>
   );
 }
@@ -46,7 +46,7 @@ function Bar({ s, axis }: { s: EveningSession; axis: number }) {
   const what = whatRan(s);
   return (
     <span className={`pl-tl-bar ${s.kind}`} style={{ left: `${(s.start / axis) * 100}%`, width: `${(s.hours / axis) * 100}%` }} title={`${what}, ${hours(s.hours)} h${kindText[s.kind]}`}>
-      <span className="pl-tl-label"><b>{hours(s.hours)} h</b> {what}<span className="sr-only">{kindText[s.kind]}</span></span>
+      <span className="pl-tl-label"><b>{hours(s.hours)} h</b> {what}{s.kind === "hot" && <span className="warm-mark" aria-hidden="true"><svg viewBox="0 0 10 10" width="8" height="8"><path d="M5 1.5 9 8.5H1z" fill="currentColor" /></svg></span>}<span className="sr-only">{kindText[s.kind]}</span></span>
     </span>
   );
 }

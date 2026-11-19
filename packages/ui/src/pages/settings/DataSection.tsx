@@ -29,7 +29,7 @@ export function DataSection() {
       saveFile(name, JSON.stringify(out, null, 2));
       toast(`Saved ${name}.`);
     } catch (e) {
-      setError(`Rig couldn't put the file together. ${e instanceof Error ? e.message : ""}`.trim());
+      setError(`Rig couldn't put the file together. ${e instanceof Error ? e.message : ""} Try Download again.`.replace(/\s+/g, " ").trim());
     } finally {
       setBusy(false);
     }

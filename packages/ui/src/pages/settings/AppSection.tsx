@@ -42,7 +42,7 @@ function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () =
       toast(op === "remove" ? "Turned off. What it wrote stays in Logs until the log's usual clean-up." : op === "pause" ? "Paused." : "Back on.");
       void client.refreshBackground?.();
     } catch (e) {
-      toast(`Couldn't change that. ${e instanceof Error ? e.message : String(e)}`.trim());
+      toast(`Couldn't change that. ${e instanceof Error ? e.message : String(e)} Try again, and choose Yes if Windows asks for permission.`.replace(/\s+/g, " ").trim());
     } finally {
       setBusy(null);
       refresh();
@@ -71,6 +71,7 @@ export function AppSection() {
   const [on, setOn] = useState<boolean | null>(null);
   const [status, setStatus] = useState<RecorderStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   useEffect(() => {
     let live = true;
     auto.get().then((v) => live && setOn(v)).catch(() => live && setOn(false));
@@ -86,19 +87,20 @@ export function AppSection() {
     setOn(next);
     try { await auto.set(next); } catch (e) {
       setOn(!next);
-      toast(`Couldn't change that. ${e instanceof Error ? e.message : ""}`.trim());
+      toast(`Couldn't change that. ${e instanceof Error ? e.message : ""} Try again, and choose Yes if Windows asks for permission.`.replace(/\s+/g, " ").trim());
     }
   };
 
   const recording = !!status?.service;
   const flipRecorder = async () => {
     if (!rec || busy) return;
+    setAsking(false);
     setBusy(true);
     try {
       await rec.set(!recording);
       toast(recording ? "The background recorder is off, and its log is deleted." : "The background recorder is on.");
     } catch (e) {
-      toast(`Couldn't change that. ${e instanceof Error ? e.message : String(e)}`.trim());
+      toast(`Couldn't change that. ${e instanceof Error ? e.message : String(e)} Try again, and choose Yes if Windows asks for permission.`.replace(/\s+/g, " ").trim());
     } finally {
       setBusy(false);
       void refresh();
@@ -111,12 +113,22 @@ export function AppSection() {
         <span><b>Start Rig with Windows</b><small>Rig opens when you sign in to Windows. Windows asks for permission each time, as it does when you open Rig.</small></span><i />
       </button>
       {rec && status?.supported && (
-        <button type="button" className="switch" role="switch" aria-checked={recording} disabled={busy} onClick={flipRecorder}>
+        <button type="button" className="switch" role="switch" aria-checked={recording} disabled={busy} onClick={() => (recording ? setAsking(true) : void flipRecorder())}>
           <span>
             <b>Keep a log while Rig is closed</b>
-            <small>A small background recorder writes down temperatures, load, crashes, restarts and power loss, so Logs can show what happened even when Rig wasn't open. It stays on this PC and changes nothing. {busy ? "Waiting for Windows…" : recorderLine(status)}</small>
+            <small>A small background recorder writes down temperatures, usage, crashes, restarts and power loss, so Logs can show what happened even when Rig wasn't open. It stays on this PC and changes nothing on it.{recording ? " Turning it off deletes what it wrote." : ""} {busy ? "Waiting for Windows…" : recorderLine(status)}</small>
           </span><i />
         </button>
+      )}
+      {asking && (
+        <div className="set-danger" role="group" aria-labelledby="rec-off-h">
+          <b id="rec-off-h">Turn off the background log?</b>
+          <p>This deletes everything it wrote on this PC while Rig was closed. You can't undo this.</p>
+          <div className="set-actions">
+            <button type="button" className="btn sm" onClick={() => setAsking(false)} autoFocus>Keep it on</button>
+            <button type="button" className="btn sm primary" onClick={() => void flipRecorder()}>Turn off and delete</button>
+          </div>
+        </div>
       )}
       {rec && status?.supported && <CustomLogs status={status} refresh={() => void refresh()} />}
     </div>

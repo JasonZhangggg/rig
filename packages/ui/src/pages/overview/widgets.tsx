@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { coveredIssues, shownAlerts, shownSummary, type Issue, type PC, type Stat } from "@rig/core";
 import { StageSlot } from "../../components/Stage";
+import { Warm } from "../../components/common";
 import { useAlertKindsOff, useApp, useTemp, useTempText, type Ctx } from "../../state";
 import { alertIssue, bySeverity, dustIssue, issueGo, partIcon, shortType } from "../shared";
 import type { OptValue, SizeName } from "./layout";
@@ -84,7 +85,7 @@ export function PCWidget({ style, opts, editing, views }: WidgetProps & { views:
           <div className="f-chips" role="group" aria-label="Temperatures">
             {reads.map(([id, p]) => (
               <button key={id} type="button" className={`f-chip${p.warn ? " hot" : ""}`} onClick={() => open(id)}>
-                <i aria-hidden="true">{partIcon[id] ?? <Chip />}</i><span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}</b>
+                <i aria-hidden="true">{partIcon[id] ?? <Chip />}</i><span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}{p.warn && <Warm />}</b>
               </button>
             ))}
           </div>
@@ -92,7 +93,7 @@ export function PCWidget({ style, opts, editing, views }: WidgetProps & { views:
           <div className="f-reads" role="group" aria-label="Temperatures">
             {reads.map(([id, p]) => (
               <button key={id} type="button" className={`f-read${p.warn ? " hot" : ""}`} onClick={() => open(id)}>
-                <span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}</b>
+                <span>{shortType(p.type)}</span><b>{temp(p.temp, { mark: "degree" })}{p.warn && <Warm />}</b>
               </button>
             ))}
           </div>
@@ -125,7 +126,7 @@ export function HealthWidget({ style, opts, box }: WidgetProps) {
     <div className="f-health-text">
       <h2>Health</h2>
       {on(opts, "summary") && <p>{known ? healthWhy(pc.breakdown, summary) : `Rig scores ${pc.name} once it has had a good look.`}</p>}
-      {on(opts, "link") && <a className="f-link" href="#history">See history<Go /></a>}
+      {on(opts, "link") && <a className="f-link" href="#history">See performance<Go /></a>}
     </div>
   );
   return (
@@ -315,7 +316,7 @@ export function LiveWidget({ style, opts, box }: WidgetProps) {
             return (
               <li key={s.label} className={s.warn ? "hot" : undefined}>
                 <span>{s.label}</span>
-                <b>{value(s)}</b>
+                <b>{value(s)}{s.warn && <Warm />}</b>
                 {style === "meters" && f != null && <i className="f-meter" aria-hidden="true"><i style={{ width: `${Math.min(100, f * 100)}%` }} /></i>}
                 {on(opts, "notes") && s.note && <small>{s.note}</small>}
               </li>

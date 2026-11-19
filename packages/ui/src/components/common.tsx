@@ -20,3 +20,8 @@ export function DiffTable({ rows }: { rows: DiffRow[] }) {
   );
 }
 
+
+/** The mark beside a reading that runs warm, so warm doesn't rest on color alone. */
+export const Warm = () => (
+  <span className="warm-mark"><svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path d="M5 1.5 9 8.5H1z" fill="currentColor" /></svg><span className="sr-only">, running warm</span></span>
+);
