@@ -41,6 +41,19 @@ describe("LocalClient", () => {
     expect(client.loadingStep()).toBeNull();
   });
 
+  it("logs each step of the first read, and the one that failed", async () => {
+    const lines: string[] = [];
+    let t = 0;
+    const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => t });
+    const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => Promise.reject(new Error("Settings are slow.")), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c) };
+    const client = new LocalClient(link, new MemoryStore(), null, { tickMs: 1e9, now: () => (t += 1000), log: (level, msg) => lines.push(`${level} ${msg}`) });
+    await client.start();
+    client.stop();
+    expect(lines.some((l) => /^info start: reading this PC's parts took \d+ ms$/.test(l))).toBe(true);
+    expect(lines).toContain("error start: reading this PC's settings failed after 0 ms: Settings are slow.");
+    expect(lines.at(-1)).toMatch(/^info start: done in \d+ ms$/);
+  });
+
   it("tries again after a start that failed", async () => {
     let fail = true;
     const { client, sim } = setup({ inventory: () => (fail ? Promise.reject(new Error("Rig's helper didn't answer in time.")) : sim.inventory()) });

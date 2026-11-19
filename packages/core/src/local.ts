@@ -10,7 +10,7 @@ import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from 
 import type { MachineSync } from "./api";
 import type { CloudClient } from "./cloud";
 import { makeExport, type DataExport } from "./export";
-import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Range, type RigClient } from "./client";
+import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
@@ -63,6 +63,8 @@ export interface LocalOptions {
   recorder?: RecorderLink | null;
   /** How often to read what the background recorder added. */
   backgroundEveryMs?: number;
+  /** Debug log: each step of the first read with its timing, and sensor or sync trouble. */
+  log?: Log;
 }
 
 const EVENTS_DAYS = 30;
@@ -115,7 +117,7 @@ export class LocalClient implements RigClient {
   private probeStatus: ProbeStatus[] | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, ...opts };
+    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, ...opts };
     this.recorder = new Recorder({
       pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
       onChange: () => this.emitRecordings(),
@@ -135,24 +137,24 @@ export class LocalClient implements RigClient {
   start(): Promise<void> {
     if (this.ready) return this.ready;
     const ready = this.ready = (async () => {
-      this.step = "opening Rig's saved data";
-      this.identity = await this.store.get<Identity>("identity") ?? {};
-      this.step = "reading this PC's parts";
-      this.inv = await this.link.inventory();
+      const began = performance.now();
+      this.o.log("info", "start: reading this PC");
+      this.identity = await this.stage("opening Rig's saved data", async () => await this.store.get<Identity>("identity") ?? {});
+      this.inv = await this.stage("reading this PC's parts", () => this.link.inventory());
       this.invAt = this.o.now();
       // Settings aren't needed to show the PC, so a slow read doesn't hold it up: the next tick tries again.
-      this.step = "reading this PC's settings";
-      this.facts = await this.link.facts().catch(() => null);
+      this.facts = await this.stage("reading this PC's settings", () => this.link.facts()).catch(() => null);
       if (this.facts) this.factsAt = this.o.now();
-      this.step = "opening Rig's saved history";
-      this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
-      this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
-      this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
-      this.unsent = new Set(await this.store.get<string[]>("recordingsUnsent") ?? []);
-      await this.recorder.load();
-      this.step = "taking the first sensor reading";
-      await this.tick();
+      await this.stage("opening Rig's saved history", async () => {
+        this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
+        this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
+        this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
+        this.unsent = new Set(await this.store.get<string[]>("recordingsUnsent") ?? []);
+        await this.recorder.load();
+      });
+      await this.stage("taking the first sensor reading", () => this.tick());
       this.step = null;
+      this.o.log("info", `start: done in ${Math.round(performance.now() - began)} ms${this.lastError ? `, but sensors failed: ${this.lastError}` : ""}`);
       this.timers.push(setInterval(() => void this.tick(), this.o.tickMs));
       if (this.cloud) {
         this.timers.push(setInterval(() => void this.sync(), this.o.syncEveryMs));
@@ -166,6 +168,21 @@ export class LocalClient implements RigClient {
 
   stop() { this.timers.forEach(clearInterval); this.timers = []; this.ready = null; }
 
+  /** One step of the first read: named for a stalled screen, and timed in the log. */
+  private async stage<T>(step: string, work: () => Promise<T>): Promise<T> {
+    this.step = step;
+    const t = performance.now();
+    const ms = () => Math.round(performance.now() - t);
+    try {
+      const v = await work();
+      this.o.log("info", `start: ${step} took ${ms()} ms`);
+      return v;
+    } catch (e) {
+      this.o.log("error", `start: ${step} failed after ${ms()} ms: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+  }
+
   /** One sensor read: updates the live view, today's highs and the history window. */
   async tick() {
     if (this.busy) return;
@@ -175,6 +192,7 @@ export class LocalClient implements RigClient {
       if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; }
       if (now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
+      if (this.lastError) this.o.log("info", "sensors: reading again");
       this.lastError = null;
       if (dayKey(now) !== this.day) { this.day = dayKey(now); this.dayMax = {}; }
       for (const s of this.snap.sensors) if (s.type === "temperature" && s.value != null) this.dayMax[s.id] = Math.max(this.dayMax[s.id] ?? 0, s.value);
@@ -183,7 +201,9 @@ export class LocalClient implements RigClient {
       await this.recorder.tick(this.snap);
       void this.readBackground();
     } catch (e) {
-      this.lastError = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg !== this.lastError) this.o.log("warn", `sensors: ${msg}`);
+      this.lastError = msg;
     } finally {
       this.busy = false;
     }
@@ -250,7 +270,9 @@ export class LocalClient implements RigClient {
         this.emit();
       }
       await this.syncRecordings(reply?.recordings);
-    } catch { /* try again on the next round */ }
+    } catch (e) {
+      this.o.log("warn", `sync: failed, trying again next round: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   /** Starts and stops what was asked for on the web, then uploads recordings the account is behind on. */
@@ -316,7 +338,9 @@ export class LocalClient implements RigClient {
     await this.start();
     this.step = "loading your other PCs";
     try {
-      const others = (await this.signedIn()) ? await this.cloud!.machines().catch(() => []) : [];
+      const others = (await this.signedIn())
+        ? await this.cloud!.machines().catch((e: unknown) => { this.o.log("warn", `account: couldn't load other PCs: ${e instanceof Error ? e.message : String(e)}`); return []; })
+        : [];
       return [this.view(), ...others.filter((p) => p.id !== this.id)];
     } finally {
       this.step = null;

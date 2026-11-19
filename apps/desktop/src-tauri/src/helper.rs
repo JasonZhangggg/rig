@@ -106,18 +106,47 @@ impl Helper {
 
     #[cfg(windows)]
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        let queued = std::time::Instant::now();
         let mut guard = self.conn.lock().await;
+        let waited = queued.elapsed();
         if guard.is_none() {
-            *guard = Some(Conn::new(win::launch().await?));
+            let t = std::time::Instant::now();
+            log::info!("helper: starting it (Windows asks for permission)");
+            match win::launch().await {
+                Ok(pipe) => {
+                    log::info!("helper: connected in {} ms", t.elapsed().as_millis());
+                    *guard = Some(Conn::new(pipe));
+                }
+                Err(e) => {
+                    log::error!("helper: couldn't start after {} ms: {e}", t.elapsed().as_millis());
+                    return Err(e);
+                }
+            }
         }
-        match guard.as_mut().unwrap().call(method, params).await {
+        let t = std::time::Instant::now();
+        let result = guard.as_mut().unwrap().call(method, params).await;
+        log_call(method, waited, t.elapsed(), &result);
+        match result {
             Ok(v) => Ok(v),
             Err(CallError::Remote(m)) => Err(m),
             Err(CallError::Broken(m)) => {
+                log::warn!("helper: connection dropped, it starts again on the next call");
                 *guard = None;
                 Err(m)
             }
         }
+    }
+}
+
+/// One line per helper call. Sensor reads run every two seconds, so only slow or failed ones are logged.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn log_call(method: &str, waited: Duration, took: Duration, result: &Result<Value, CallError>) {
+    let (w, t) = (waited.as_millis(), took.as_millis());
+    match result {
+        Ok(_) if method == "snapshot" && t < 1000 && w < 1000 => {}
+        Ok(_) => log::info!("helper: {method} took {t} ms (waited {w} ms for the previous call)"),
+        Err(CallError::Remote(m)) => log::warn!("helper: {method} failed after {t} ms (waited {w} ms): {m}"),
+        Err(CallError::Broken(m)) => log::error!("helper: {method} broke after {t} ms (waited {w} ms): {m}"),
     }
 }
 
@@ -213,15 +242,21 @@ mod win {
         let args = format!("--pipe {name} --parent {parent}");
 
         let pid = match run_elevated(&exe, &args) {
-            Some(pid) => pid,
+            Some(pid) => {
+                log::info!("helper: running with admin rights (process {pid})");
+                pid
+            }
             // Said No to the prompt: run without admin rights. Some sensors will be missing,
             // and Rig shows a card explaining how to turn them on.
-            None => std::process::Command::new(&exe)
-                .args(["--pipe", &name, "--parent", &parent, "--limited"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn()
-                .map_err(|e| format!("Rig couldn't start its helper. {e}"))?
-                .id(),
+            None => {
+                log::warn!("helper: no admin rights (No at the prompt, or it couldn't show), so it runs limited");
+                std::process::Command::new(&exe)
+                    .args(["--pipe", &name, "--parent", &parent, "--limited"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn()
+                    .map_err(|e| format!("Rig couldn't start its helper. {e}"))?
+                    .id()
+            }
         };
 
         tokio::time::timeout(Duration::from_secs(30), server.connect())

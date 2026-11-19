@@ -82,6 +82,9 @@ export interface Capabilities {
   applyChanges: boolean;
 }
 
+/** Where the app writes its debug log. The desktop app keeps a file; elsewhere it's the console. */
+export type Log = (level: "info" | "warn" | "error", message: string) => void;
+
 export interface RigClient {
   readonly kind: "desktop" | "web" | "demo";
   readonly caps: Capabilities;

@@ -11,6 +11,8 @@ mod store;
 
 use serde_json::Value;
 use tauri::{Manager, State};
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+use tauri_plugin_opener::OpenerExt;
 
 type R<T> = Result<T, String>;
 
@@ -86,9 +88,30 @@ async fn recorder_set(on: bool) -> R<()> {
     tauri::async_runtime::spawn_blocking(move || recorder::set(on)).await.map_err(|e| e.to_string())?
 }
 
+/// Opens the folder that holds Rig's log files.
+#[tauri::command]
+fn open_logs(app: tauri::AppHandle) -> R<()> {
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Rig.log in %LOCALAPPDATA%\app.rig.desktop\logs (Settings > About opens it), plus the terminal under `pnpm desktop`.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::LogDir { file_name: Some("Rig".into()) }),
+                    Target::new(TargetKind::Stdout),
+                ])
+                .level(log::LevelFilter::Info)
+                .max_file_size(2_000_000)
+                .rotation_strategy(RotationStrategy::KeepSome(3))
+                .timezone_strategy(TimezoneStrategy::UseLocal)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().app_name("Rig").build())
         .plugin(tauri_plugin_notification::init())
@@ -100,6 +123,7 @@ pub fn run() {
             if app.config().plugins.0.contains_key("updater") {
                 app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             }
+            log::info!("Rig {} starting", app.package_info().version);
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             app.manage(store::Store::open(&dir.join("rig.db"))?);
@@ -108,7 +132,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             helper_call, kv_get, kv_set, history_add, history_since, changes_list, change_put, token_get, token_set,
-            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script
+            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script, open_logs
         ])
         .run(tauri::generate_context!())
         .expect("Rig couldn't start");

@@ -10,7 +10,7 @@ import {
   type AddManualRequest, type ChatRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
 } from "./api";
 import type { DataExport } from "./export";
-import type { Account, Change, ChatEvent, ChatMessage, Range, RigClient } from "./client";
+import type { Account, Change, ChatEvent, ChatMessage, Log, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { PCEvent, Recording, RecordingInfo } from "./recordings";
 import type { ProbeStatus } from "./probes";
@@ -22,6 +22,8 @@ const REQUEST_TIMEOUT_MS = 30_000;
 /** The browser page (the website only). */
 const page = () => (globalThis as unknown as { location: { href: string } }).location;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** A request's path for the log, with ids and codes left out: "/machines/…/sync". */
+const logPath = (path: string) => "/" + path.split("?")[0].split("/").filter(Boolean).map((s, i, all) => (i === 0 || (i === all.length - 1 && /^[a-z-]+$/.test(s)) ? s : "…")).join("/");
 
 export interface CloudOptions {
   /** Where the API lives, like "/api" on the website or "https://…/api" in the desktop app. */
@@ -32,6 +34,8 @@ export interface CloudOptions {
   openUrl?: (url: string) => void;
   /** Website: the server has Google sign-in turned on. */
   google?: boolean;
+  /** Debug log: each request with its status and timing, never its contents. */
+  log?: Log;
 }
 
 export class CloudClient implements RigClient {
@@ -60,10 +64,16 @@ export class CloudClient implements RigClient {
     // A request the server never starts answering (a stalled connection, a filter holding it) gives up rather than holding Rig up.
     const stall = "signal" in init ? null : new AbortController();
     const timer = stall && setTimeout(() => stall.abort(), REQUEST_TIMEOUT_MS);
+    const t = performance.now();
+    const what = `server: ${init.method ?? "GET"} ${logPath(path)}`;
     try {
-      return await fetch(this.opts.base + path, { ...credentials, ...(stall && { signal: stall.signal }), ...init, headers });
+      const res = await fetch(this.opts.base + path, { ...credentials, ...(stall && { signal: stall.signal }), ...init, headers });
+      this.opts.log?.(res.ok ? "info" : "warn", `${what} ${res.status} in ${Math.round(performance.now() - t)} ms`);
+      return res;
     } catch (e) {
+      const ms = Math.round(performance.now() - t);
       if (init.signal?.aborted) throw e;
+      this.opts.log?.("warn", `${what} ${stall?.signal.aborted ? "gave up waiting" : "couldn't connect"} after ${ms} ms${e instanceof Error ? `: ${e.message}` : ""}`);
       throw new ApiError(0, unreachableText);
     } finally {
       if (timer) clearTimeout(timer);

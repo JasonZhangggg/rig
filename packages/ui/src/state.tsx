@@ -13,6 +13,8 @@ export interface AppHost {
   server?: string;
   /** Rig's background recorder, turned on and off in Settings. Windows only. */
   recorder?: Pick<RecorderLink, "status" | "set" | "probes" | "approveAdmin">;
+  /** Opens the folder with Rig's debug log. */
+  openLogs?: () => Promise<void>;
 }
 
 /** The review sheet shown before any change is made. */
