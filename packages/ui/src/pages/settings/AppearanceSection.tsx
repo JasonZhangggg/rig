@@ -18,7 +18,7 @@ export function AppearanceSection() {
   const { toast } = useApp();
   const [more, setMore] = useState(() => peekFocusSection() === "appearance");
   const named = <T extends { id: string; name: string }>(list: readonly T[], id: string) => list.find((x) => x.id === id)?.name ?? "";
-  const summary = `${named(chromes, look.chrome)} chrome, ${named(pageTones, look.page).toLowerCase()} page, ${named(cornerSets, look.corners).toLowerCase()} corners, ${named(densities, look.density).toLowerCase()} spacing`;
+  const summary = `${named(chromes, look.chrome)} menu, ${named(pageTones, look.page).toLowerCase()} page, ${named(cornerSets, look.corners).toLowerCase()} corners, ${named(densities, look.density).toLowerCase()} spacing`;
   return (
     <>
       <div className="set-block">
@@ -38,7 +38,7 @@ export function AppearanceSection() {
         <div className="look-more" id="look-more">
           <Sample />
           <div className="set-block">
-            <div className="set-text"><b id="look-chrome">Chrome</b><p className="muted">The dark color of the menu, buttons and dark tiles.</p></div>
+            <div className="set-text"><b id="look-chrome">Dark color</b><p className="muted">The dark color of the menu, buttons and dark tiles.</p></div>
             <div className="look-swatches" role="group" aria-labelledby="look-chrome">
               {chromes.map((c) => <Swatch key={c.id} name={c.name} color={c.graphite} on={look.chrome === c.id} onPick={() => setAppearance({ chrome: c.id })} />)}
             </div>

@@ -61,7 +61,7 @@
 .sources { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; line-height: 1.4; }
 .source { display: inline-flex; align-items: baseline; gap: 5px; color: var(--text-2); text-decoration: none; }
 a.source { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
-a.source:hover { color: var(--text); text-decoration-color: currentColor; }
+@media (hover: hover) and (pointer: fine) { a.source:hover { color: var(--text); text-decoration-color: currentColor; } }
 .source b { color: var(--text-3); font-weight: 500; }
 .source b::after { content: ":"; }
 .steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0 0 0 22px; line-height: 1.55; }
@@ -136,3 +136,6 @@ a.source:hover { color: var(--text); text-decoration-color: currentColor; }
 .script-text { margin: 0; max-height: 260px; overflow: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font: 12.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .script-error, .probe-note.warn { color: var(--warn); }
 .probe-note { margin: 0; font-size: 13.5px; color: var(--text-2); }
+
+/* Answers read best at about 65 characters a line. */
+.msg.claude .body > :is(p, ul, ol) { max-width: 68ch; }

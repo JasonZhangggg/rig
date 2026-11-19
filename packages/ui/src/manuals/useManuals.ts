@@ -62,7 +62,7 @@ export class ManualStore {
       const added = manuals.filter((m) => m.source === "added");
       const here = (await Promise.all(added.map(async (m) => ((await getCopy(m.id)) ? m.id : null)))).filter((x): x is string => !!x);
       this.patch((s) => ({ manuals, loadError: null, onDevice: [...new Set([...s.onDevice, ...here])] }));
-    }, (e) => this.patch({ loadError: message(e, "Rig couldn't load the manuals just now."), manuals: this.state.manuals ?? [] }))
+    }, (e) => this.patch({ loadError: message(e, "Rig couldn't load the manuals just now. Check your internet connection, then open Manuals again."), manuals: this.state.manuals ?? [] }))
       .finally(() => { this.loading = null; });
     return this.loading;
   }

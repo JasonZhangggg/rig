@@ -9,7 +9,7 @@ const lengths = [15, 30, 60];
 
 /** What a recording came to, in a sentence. */
 function result(r: RecordingInfo, inUnit: (s: string) => string): string {
-  if (r.state === "failed") return r.error ?? "No readings came in.";
+  if (r.state === "failed") return r.error ?? "No readings came in. Start a new recording, and if it fails again, restart Rig.";
   if (r.state === "pending") return "Waiting to start.";
   if (r.state === "recording") return "Recording now.";
   return r.headline ? inUnit(r.headline) : r.state === "cancelled" ? "Stopped early." : "Rig has the readings.";

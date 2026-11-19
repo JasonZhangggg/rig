@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useModal } from "../components/modal";
 import type { Manual, ManualPage } from "@rig/core";
 import { useApp } from "../state";
 import { getCopy, putCopy } from "./cache";
@@ -27,6 +28,8 @@ function Viewer({ manualId, page }: { manualId: string; page: number }) {
   const [attempt, setAttempt] = useState(0);
   const [zoom, setZoom] = useState(1);
   const close = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useModal(box, true);
 
   // The copy on this device first, then the server, then keep a copy.
   useEffect(() => {
@@ -76,7 +79,7 @@ function Viewer({ manualId, page }: { manualId: string; page: number }) {
   };
 
   return (
-    <div className="mv-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) closeManual(); }}>
+    <div className="mv-scrim" ref={box} onMouseDown={(e) => { if (e.target === e.currentTarget) closeManual(); }}>
       <div className="mv" role="dialog" aria-modal="true" aria-labelledby="mv-title">
         <header className="mv-head">
           <div className="mv-titles">

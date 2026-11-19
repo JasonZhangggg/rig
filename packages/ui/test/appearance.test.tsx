@@ -123,22 +123,22 @@ describe("Appearance in Settings", () => {
     expect(applied("--look")).toBe(brass.colors.look);
   });
 
-  it("keeps chrome, page, corners and density under More appearance options", async () => {
+  it("keeps the dark color, page, corners and density under More appearance options", async () => {
     render(<RigApp client={new DemoClient()} />);
     await openSettings();
-    expect(screen.queryByRole("group", { name: "Chrome" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Dark color" })).toBeNull();
     const more = screen.getByRole("button", { name: /^More appearance options/ });
-    expect(more.textContent).toMatch(/Graphite chrome, warm page, rounded corners, comfortable spacing/);
+    expect(more.textContent).toMatch(/Graphite menu, warm page, rounded corners, comfortable spacing/);
     fireEvent.click(more);
     expect(more.getAttribute("aria-expanded")).toBe("true");
-    for (const name of ["Chrome", "Page", "Corners", "Density"]) expect(screen.getByRole("group", { name })).toBeTruthy();
+    for (const name of ["Dark color", "Page", "Corners", "Density"]) expect(screen.getByRole("group", { name })).toBeTruthy();
   });
 
-  it("changes chrome, page, corners, density, text size and motion, and resets them all", async () => {
+  it("changes the dark color, page, corners, density, text size and motion, and resets them all", async () => {
     render(<RigApp client={new DemoClient()} />);
     await openSettings();
     fireEvent.click(screen.getByRole("button", { name: /^More appearance options/ }));
-    fireEvent.click(within(screen.getByRole("group", { name: "Chrome" })).getByRole("button", { name: "Ink" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Dark color" })).getByRole("button", { name: "Ink" }));
     fireEvent.click(within(screen.getByRole("group", { name: "Page" })).getByRole("button", { name: "Mist" }));
     fireEvent.click(within(screen.getByRole("group", { name: "Corners" })).getByRole("button", { name: "Square" }));
     fireEvent.click(within(screen.getByRole("group", { name: "Density" })).getByRole("button", { name: "Compact" }));

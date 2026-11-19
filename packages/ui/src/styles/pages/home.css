@@ -637,7 +637,7 @@
 }
 
 /* The phone's options sheet dims the page behind it; a press on the dimmed page closes the sheet. */
-.dpop-scrim { position: fixed; inset: 0; z-index: 69; background: rgba(17, 17, 17, .36); animation: dpop-scrim .2s ease-out; }
+.dpop-scrim { position: fixed; inset: 0; z-index: 69; background: var(--scrim); animation: dpop-scrim .2s ease-out; }
 @keyframes dpop-scrim { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .dpop-scrim { animation: none; }

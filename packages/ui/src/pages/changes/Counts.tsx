@@ -5,7 +5,7 @@ export type Filter = "all" | "applied" | "undone";
 /** A row of counts over the list: every change, those in place and those undone. Each one filters it. */
 export function Counts({ changes, filter, onFilter }: { changes: Change[]; filter: Filter; onFilter: (f: Filter) => void }) {
   const applied = changes.filter((c) => c.status === "applied").length;
-  const items: [Filter, string, number][] = [["all", "All", changes.length], ["applied", "In place", applied], ["undone", "Undone", changes.length - applied]];
+  const items: [Filter, string, number][] = [["all", "All", changes.length], ["applied", "Applied", applied], ["undone", "Undone", changes.length - applied]];
   return (
     <div className="counts" role="group" aria-label="Show only">
       {items.filter(([f, , n]) => n > 0 || f === filter).map(([f, label, n]) => (

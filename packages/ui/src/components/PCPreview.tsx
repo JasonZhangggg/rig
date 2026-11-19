@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { PC } from "@rig/core";
 import { createScene } from "../scene";
 import { sceneTheme } from "../themes";
+import "../styles/scene-labels.css";
 
 /** A standalone, slowly turning 3D PC, for the website. Falls back to nothing without WebGL. */
 export function PCPreview({ pc, className }: { pc: PC; className?: string }) {

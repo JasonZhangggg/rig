@@ -45,7 +45,7 @@ export function Changes() {
       {any && (
         <section className="card ch-log" aria-labelledby="ch-log-h">
           <div className="card-head">
-            <h2 id="ch-log-h">{filter === "applied" ? "In place" : filter === "undone" ? "Undone" : "Recent changes"}</h2>
+            <h2 id="ch-log-h">{filter === "applied" ? "Applied" : filter === "undone" ? "Undone" : "Recent changes"}</h2>
             <Counts changes={data.changes} filter={filter} onFilter={setFilter} />
           </div>
           {byDay(list).map((day) => <Day key={day[0].at} changes={day} />)}

@@ -4,8 +4,8 @@ import { getStage } from "../components/Stage";
 import { useApp, useAppearance, useHistory } from "../state";
 import { FansCard, type FansStyle } from "./overview/FansCard";
 import { Grid, type Mode } from "./overview/Grid";
-import { KINDS, cellsFor, defaultWidget, fullRows, phoneOrder, type Kind, type Tone, type Widget } from "./overview/layout";
-import { AddWidgets, DashOptions, ResetConfirm, WidgetOptions } from "./overview/Options";
+import { COLS, KINDS, SIZE_LABEL, cellsFor, defaultWidget, dragFlow, fullRows, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, sizeLabel, stepTarget, type Bp, type Dir, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
+import { AddWidgets, DashOptions, ResetConfirm, WidgetOptions, type Place } from "./overview/Options";
 import { Popover } from "./overview/Popover";
 import { TempsCard, type TempsStyle } from "./overview/TempsCard";
 import { dashboardKey, useDashboard } from "./overview/useDashboard";
@@ -141,7 +141,7 @@ export function Overview() {
   const done = () => { setEditing(false); setPanel(null); announce("Done customizing. Your layout is saved."); document.getElementById("f-customize")?.focus(); };
   const edit = (id?: string) => {
     setEditing(true);
-    announce(list ? "Customizing Home. Use the up and down buttons on a tile, or the arrow keys, to change the order." : "Customizing Home. Drag a tile or use the arrow keys to move it.");
+    announce(list ? "Customizing Home. Use the up and down buttons on a widget, or the arrow keys, to change the order." : "Customizing Home. Drag a widget or use the arrow keys to move it.");
     if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus({ preventScroll: true }));
   };
   const hide = (id: string) => {
@@ -181,6 +181,32 @@ export function Overview() {
     setPanel(next ? { ...panel, at: next } : null);
   });
   const current = panel?.type === "widget" ? shown.find((w) => w.id === panel.id) : undefined;
+
+  // On a grid, a widget's options also size and move it, so dragging is never the only way.
+  const placeOf = (w: Widget): Place | undefined => {
+    if (list) return undefined;
+    const bp: Bp = mode === "md" ? "md" : "lg", n = COLS[bp], now = cells[bp];
+    const me = now.find((c) => c.i === w.id);
+    if (!me) return undefined;
+    const title = titleOf(w);
+    return {
+      size: presetOf(w.kind, me.w, me.h, n) ?? "",
+      sizes: (Object.keys(KINDS[w.kind].sizes) as SizeName[]).map((k) => [k, SIZE_LABEL[k]]),
+      onSize: (k) => {
+        const [pw, ph] = presetCells(w.kind, k as SizeName, n);
+        board.setCells(bp, resizeFlow(now, w.id, pw, ph, n));
+        changed(`${title} is now ${SIZE_LABEL[k as SizeName]}.`);
+      },
+      onMove: (dir: Dir) => {
+        const to = stepTarget(now, w.id, dir, n);
+        const next = to && dragFlow(now, w.id, to.x, to.y, n);
+        if (!next) { announce(`${title} can't move further ${dir}.`); return; }
+        const order = orderOf(next), got = next.find((c) => c.i === w.id)!;
+        board.setCells(bp, next);
+        changed(`${title} moved to place ${order.indexOf(w.id) + 1} of ${order.length}.${got.w !== me.w ? ` It's now ${sizeLabel(w.kind, got.w, got.h, n)}.` : ""}`);
+      },
+    };
+  };
 
   return (
     <div className="page f-home" data-density={look.density}>
@@ -234,7 +260,7 @@ export function Overview() {
           )}
           {editing && (
             <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
-              <p><b>Customizing Home</b><span>{list ? "Use the arrows on a tile to move it up or down." : "Drag tiles to move them. Pull an edge to resize."}</span></p>
+              <p><b>Customizing Home</b><span>{list ? "Use the arrows on a widget to move it up or down." : "Drag widgets to move them and pull an edge to resize, or use a widget's options."}</span></p>
               <div className="dash-bar-tools">
                 <button type="button" ref={barAdd} className="dbtn" onClick={(e) => setPanel({ type: "add", at: e.currentTarget })}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
                 <button type="button" ref={barLayout} className="dbtn" onClick={(e) => setPanel({ type: "dash", at: e.currentTarget })}>Layout</button>
@@ -250,6 +276,7 @@ export function Overview() {
         <Popover anchor={panel.at} label={`${titleOf(current)} options`} onClose={close}>
           <WidgetOptions
             w={current}
+            place={placeOf(current)}
             onChange={(patch) => {
               const text = saidFor(current, patch, { pc });
               board.setWidget(current.id, patch);

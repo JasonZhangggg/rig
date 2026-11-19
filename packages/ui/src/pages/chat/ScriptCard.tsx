@@ -29,7 +29,7 @@ export function ScriptCard({ m }: { m: ChatMessage }) {
         {sc.status === "waiting" && (
           <>
             <button className="btn sm" type="button" onClick={() => declineScript(m.id)}>Not now</button>
-            <button className="btn primary sm" type="button" onClick={() => void approveScript(m.id)}>Approve</button>
+            <button className="btn primary sm" type="button" onClick={() => void approveScript(m.id)}>Approve script</button>
           </>
         )}
       </div>

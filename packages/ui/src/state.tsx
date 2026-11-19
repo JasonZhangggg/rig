@@ -228,7 +228,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   const toast = useCallback((msg: string, undo?: string) => {
     set({ toast: { msg, undo } });
     clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => set({ toast: null }), 6000);
+    timer.current = window.setTimeout(() => set({ toast: null }), undo ? 12000 : 6000);
   }, [set]);
 
   // Say so when a recording finishes while the person is somewhere else in the app.
@@ -280,7 +280,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           else if (e.type === "script") edit((m) => ({ ...m, script: { probe: e.probe, status: "waiting" } }));
           else if (e.type === "error") edit((m) => ({ ...m, error: true, text: m.text || e.message }));
         }, ab.signal)
-          .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""}`.trim() })))
+          .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""} Check your internet connection and send it again.`.replace(/\s+/g, " ").trim() })))
           .finally(() => { edit((m) => ({ ...m, pending: false })); setData((d) => ({ ...d, answering: false })); });
         requestAnimationFrame(() => document.querySelector(".composer")?.scrollIntoView({ block: "end" }));
       },
@@ -290,7 +290,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
       review: async (calls, meta) => {
         if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pc.name}.`); return; }
         let rows: DiffRow[];
-        try { rows = await client.preview(pcId, calls); } catch (e) { toast(`Couldn't read the current settings. ${e instanceof Error ? e.message : ""}`); return; }
+        try { rows = await client.preview(pcId, calls); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
         const title = meta.title ?? titleFor(calls);
         set({ review: { title, body: meta.body ?? "Here's exactly what will change. Nothing happens until you confirm.", rows, calls, cta: meta.cta ?? (calls.length === 1 ? "Make this change" : `Make ${calls.length} changes`), by: meta.by, why: meta.why, proposalId: meta.proposalId } });
       },
@@ -306,7 +306,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           set({ review: null });
           toast(r.calls.length === 1 ? "Done." : `${r.calls.length} changes made.`, change.id);
         } catch (e) {
-          set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Something went wrong. Nothing was changed." } });
+          set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Rig couldn't make this change, so nothing was changed. Try again, and if it keeps happening, restart Rig." } });
         }
       },
 
@@ -315,14 +315,14 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           const info = await client.startRecording(pcId, { minutes, reason });
           setData((d) => ({ ...d, recordings: [info, ...d.recordings.filter((r) => r.id !== info.id)] }));
           toast(info.state === "pending" ? `${pc.name} starts recording the next time its Rig app checks in.` : `Recording for ${minutes} minutes. Nothing on ${pc.name} changes.`);
-        } catch (e) { toast(e instanceof Error && e.message ? e.message : "Rig couldn't start recording."); }
+        } catch (e) { toast(e instanceof Error && e.message ? e.message : "Rig couldn't start recording. Try again, and if it keeps happening, restart Rig."); }
       },
 
       stopRecording: async (id) => {
         try {
           await client.stopRecording(pcId, id);
           if (!client.caps.local) toast(`${pc.name} stops recording the next time its Rig app checks in.`);
-        } catch (e) { toast(`Rig couldn't stop the recording. ${e instanceof Error ? e.message : ""}`.trim()); }
+        } catch (e) { toast(`Rig couldn't stop the recording. ${e instanceof Error ? e.message : ""} Try Stop again in a moment.`.replace(/\s+/g, " ").trim()); }
       },
 
       openRecording: (id) => { set({ recordingId: id }); if (id && location.hash !== "#logs") location.hash = "logs"; window.scrollTo(0, 0); },
@@ -357,7 +357,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           setData((d) => ({ ...d, changes: d.changes.map((x) => (x.id === id ? next : x)), chat: d.chat.map((m) => (m.proposal?.changeId === id ? { ...m, proposal: { ...m.proposal, status: next.status === "applied" ? "applied" : "waiting" } } : m)) }));
           toast(next.status === "undone" ? `Undone. ${c.title} is back to how it was.` : `Made again: ${c.title}.`);
         } catch (e) {
-          toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that. ${e instanceof Error ? e.message : ""}`);
+          toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }
       },
     };

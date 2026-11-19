@@ -31,7 +31,7 @@ export function ManualsTab() {
     <div className="mt">
       <section className="mt-search" aria-label="Search the manuals">
         <input className="input mt-q" type="search" value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder={ready ? `Search ${ready === 1 ? "the manual" : `all ${ready} manuals`}, like "front panel" or "M.2"` : "Search the manuals"} aria-label="Search the manuals" />
+          placeholder={ready ? 'Like "front panel" or "M.2"' : "Search the manuals"} aria-label="Search the manuals" />
         {q.trim().length >= 2 && (
           <div className="mt-results" role="region" aria-live="polite" aria-label="Pages that match">
             {error ? <p className="callout warn">{error}</p>
@@ -85,7 +85,7 @@ function Drivers() {
               </span>
               <span className="mt-drv-go">
                 {maker ? <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>
-                  : <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's newer</button>}
+                  : <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>}
               </span>
             </li>
           );

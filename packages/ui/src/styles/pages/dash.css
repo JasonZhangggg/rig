@@ -51,7 +51,7 @@
   transition: scale .3s var(--spring), box-shadow .22s var(--ease-out), background-color .22s;
 }
 .dw[data-frame="tile"] { --chip: var(--surface-2); padding: var(--pad); background: var(--surface); }
-.dw.tone-dark { --chip: var(--surface-2); --line-strong: rgba(255, 255, 255, .2); --look-text: var(--look); --good-text: var(--good); }
+.dw.tone-dark { --chip: var(--surface-2); --line-strong: rgba(255, 255, 255, .2); --look-text: var(--look-on-dark); --good-text: var(--good-on-dark); }
 .dw-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: clip; overflow-clip-margin: 10px; }
 .dw-body > * { flex: 1; min-height: 0; }
 .dash[data-cols="1"] .dw-body { overflow: visible; }
@@ -122,15 +122,17 @@
 .dw-rh { position: absolute; z-index: 6; touch-action: none; opacity: 0; transition: opacity .16s; }
 .dw-rh { --rh: color-mix(in srgb, var(--graphite) 55%, transparent); }
 .dw-rh::before { content: ""; position: absolute; transition: background .15s, border-color .15s, scale .15s var(--spring); }
-.dw-rh:hover, .dg.resizing .dw-rh { --rh: var(--graphite); }
+.dg.resizing .dw-rh { --rh: var(--graphite); }
+@media (hover: hover) and (pointer: fine) { .dw-rh:hover { --rh: var(--graphite); } }
 .dw-rh-se { right: -12px; bottom: -12px; width: 34px; height: 34px; cursor: nwse-resize; }
 .dw-rh-se::before { right: 9px; bottom: 9px; width: 14px; height: 14px; border-right: 3px solid var(--rh); border-bottom: 3px solid var(--rh); border-bottom-right-radius: 8px; }
 .dw-rh-e { top: 50%; right: -12px; width: 24px; height: 64px; margin-top: -32px; cursor: ew-resize; }
 .dw-rh-e::before { top: 18px; left: 10px; width: 4px; height: 28px; border-radius: 2px; background: var(--rh); }
 .dw-rh-s { left: 50%; bottom: -12px; width: 64px; height: 24px; margin-left: -32px; cursor: ns-resize; }
 .dw-rh-s::before { left: 18px; top: 10px; width: 28px; height: 4px; border-radius: 2px; background: var(--rh); }
-.dw-rh:hover::before, .dg.resizing .dw-rh::before { scale: 1.15; }
-.dg:has(> .tone-dark) .dw-rh { --rh: var(--good); }
+.dg.resizing .dw-rh::before { scale: 1.15; }
+@media (hover: hover) and (pointer: fine) { .dw-rh:hover::before { scale: 1.15; } }
+.dg:has(> .tone-dark) .dw-rh { --rh: var(--text-2); }
 .dash.editing .dw-rh { opacity: 1; }
 @media (hover: hover) and (pointer: fine) {
   .dash:not(.editing) .dg:hover > .dw-rh-se { opacity: .7; }
@@ -184,7 +186,7 @@
   box-shadow: var(--shadow-lg); color: var(--text); font-size: 14px; font-weight: 500; animation: dash-rise .24s var(--spring) both;
 }
 .dash-toast span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dash-toast button { flex: none; height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: var(--good); color: var(--graphite); font: 600 13.5px var(--font); cursor: pointer; }
+.dash-toast button { flex: none; height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: var(--graphite); color: var(--primary-text); font: 600 13.5px var(--font); cursor: pointer; }
 @keyframes dash-rise { from { opacity: 0; transform: translateY(14px) scale(.97); } }
 @media (prefers-reduced-motion: reduce) {
   .dash-bar, .dash-toast { animation: none; }
@@ -207,7 +209,7 @@
 .dbtn:disabled { opacity: .45; cursor: default; }
 .dbtn.primary { background: var(--text); color: var(--surface); }
 .dbtn.quiet { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
-.dbtn em { min-width: 22px; height: 22px; padding: 0 7px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--good); color: var(--graphite); font-size: 12px; font-style: normal; }
+.dbtn em { min-width: 22px; height: 22px; padding: 0 7px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--sel); color: var(--text); font-size: 12px; font-style: normal; }
 @media (hover: hover) and (pointer: fine) {
   .dbtn:not(:disabled):not(.primary):hover { background: color-mix(in srgb, var(--text) 12%, var(--surface-2)); }
 }
@@ -231,15 +233,15 @@
 .dpop-head h2 { font: 600 17px/1.2 var(--font); letter-spacing: -.01em; }
 .dpop-x { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-2); cursor: pointer; }
 .dpop-x svg { width: 18px; height: 18px; }
-.dpop-x:hover { background: var(--surface-2); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .dpop-x:hover { background: var(--surface-2); color: var(--text); } }
 .dpop-body { min-height: 0; overflow-y: auto; padding: 4px 22px 20px; scrollbar-width: thin; }
 .dsec { display: grid; gap: 14px; padding: 14px 0 16px; }
 .dsec + .dsec { border-top: 1px solid var(--line); }
 .dsec h3 { color: var(--text-3); font-size: 12.5px; font-weight: 600; }
 .dopt { display: grid; gap: 7px; }
 .dopt-label, .dset legend { color: var(--text); font-size: 14px; font-weight: 600; }
-.dseg { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 16px; background: var(--surface-2); }
-.dseg button { flex: 1 1 auto; min-height: 34px; padding: 0 12px; border: 0; border-radius: 13px; background: transparent; color: var(--text-2); font: 600 13px var(--font); white-space: nowrap; cursor: pointer; }
+.dseg { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: calc(var(--r-sm) + 2px); background: var(--surface-2); }
+.dseg button { flex: 1 1 auto; min-height: 34px; padding: 0 12px; border: 0; border-radius: calc(var(--r-sm) - 1px); background: transparent; color: var(--text-2); font: 600 13px var(--font); white-space: nowrap; cursor: pointer; }
 .dseg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(27, 27, 31, .14), 0 0 0 1px var(--line); }
 .dseg button:disabled { cursor: default; opacity: .5; }
 .dnote { color: var(--text-2); font-size: 14px; font-weight: 500; line-height: 1.5; }
@@ -275,3 +277,6 @@
 /* A resized tile follows the pointer cell by cell with no glide when motion is reduced. */
 @media (prefers-reduced-motion: reduce) { .dash-grid > .dg.resizing[data-hold] { transition: none; } }
 :root[data-motion="reduce"] .dash-grid > .dg.resizing[data-hold], .dash[data-still] .dash-grid > .dg.resizing[data-hold] { transition: none; }
+.dmove { flex-wrap: nowrap; }
+.dmove button { display: grid; place-items: center; padding: 0; }
+.dmove svg { width: 18px; height: 18px; }

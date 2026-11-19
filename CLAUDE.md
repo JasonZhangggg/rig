@@ -30,6 +30,7 @@ Before saying a change works, run the tests for the packages it touches and `pnp
 
 - `packages/core`: data shapes, `buildPC` (the PC view), health checks, alerts, the fix catalog (`actions.ts`), recordings, and the three clients behind the `RigClient` interface: `LocalClient` (desktop), `CloudClient` (website and the account), `DemoClient` (demo and UI tests).
 - `packages/ui`: every screen. `state.tsx` holds app state; `App.tsx` routes. The Logs screen's Performance view (`pages/History.tsx`) is the per-part charts and sensors; its sensor names and grouping are in `packages/core/src/sensors.ts`.
+- Interface conventions in `packages/ui`: headings use the type tokens in `styles/tokens.css` (`--t-page`, `--t-title`, `--t-figure`, `--t-label`); hover styles sit inside `@media (hover: hover) and (pointer: fine)`; dialogs use `useModal` and menus or tabs `arrowKeys` from `components/modal.ts`. On phones (760px and under) the sidebar hides behind a menu button and opens full screen (`components/Sidebar.tsx`).
 - `apps/desktop`: Tauri. `src-tauri/src/helper.rs` starts the helper and talks to it over a named pipe; `src/main.tsx` wires the client to the host.
 - `helper/RigHelper`: .NET 8 and LibreHardwareMonitor. Reads sensors, applies fixes, runs the background recorder and installs PawnIO.
 - `apps/server`: Hono on Cloudflare Workers, Postgres via Hyperdrive (query cache off), Better Auth. SQL migrations in `apps/server/migrations`.

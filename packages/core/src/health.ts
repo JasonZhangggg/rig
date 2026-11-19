@@ -58,7 +58,7 @@ export function findings({ inv, snap, facts }: HealthInput): Finding[] {
   // Storage
   for (const v of inv.volumes) {
     const free = pct(v.freeGb, v.sizeGb);
-    if (free < 10) add({ id: `vol-${v.letter}`, category: "Storage", weight: 25, severity: "warn", title: `Drive ${v.letter} is almost full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB. Windows slows down and updates can fail below 10% free.`, action: "Ask how to free space", go: "chat", ask: `Drive ${v.letter} only has ${Math.round(v.freeGb)} GB free. What can I safely remove?` });
+    if (free < 10) add({ id: `vol-${v.letter}`, category: "Storage", weight: 25, severity: "warn", title: `Drive ${v.letter} is nearly full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB. Windows slows down and updates can fail below 10% free.`, action: "Ask how to free space", go: "chat", ask: `Drive ${v.letter} only has ${Math.round(v.freeGb)} GB free. What can I safely remove?` });
     else if (free < 15) add({ id: `vol-${v.letter}`, category: "Storage", weight: 8, severity: "info", title: `Drive ${v.letter} is getting full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB.`, action: "Ask how to free space", go: "chat", ask: `How can I free up space on drive ${v.letter}?` });
   }
   for (const d of inv.disks) {

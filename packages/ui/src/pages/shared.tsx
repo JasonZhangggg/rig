@@ -37,7 +37,7 @@ export function dustIssue(pc: PC): Issue | null {
   const days = daysSince(pc.cleanedAt);
   if (days == null || days < CLEAN_EVERY || !pc.parts?.fans) return null;
   return {
-    id: "dust", severity: "info", part: "fans", go: "pc", action: "Open Cooling",
+    id: "dust", severity: "info", part: "fans", go: "pc", action: "See the fans",
     title: "Time to clean the dust out",
     body: `Last cleaned ${days} days ago. Dust makes fans work harder and parts run warmer.`,
   };

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useApp } from "../../state";
-import { KINDS, type Dashboard, type OptValue, type Spacing, type Tone, type Widget } from "./layout";
+import { KINDS, type Dashboard, type Dir, type OptValue, type Spacing, type Tone, type Widget } from "./layout";
 import { sourceItems } from "./widgets";
 
 function Seg<T extends string>({ label, value, options, onPick, disabled }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void; disabled?: boolean }) {
@@ -33,8 +33,18 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 
 const SERIES = ["idle", "typical", "peak"];
 
+/** Where a widget sits and how big it is, for anyone who can't or would rather not drag. Wide grids only. */
+export interface Place {
+  size: string;
+  sizes: [string, string][];
+  onSize: (size: string) => void;
+  onMove: (dir: Dir) => void;
+}
+
+const arrows: [Dir, string, string][] = [["left", "Move left", "M12 5 7 10l5 5"], ["up", "Move up", "M5 12l5-5 5 5"], ["down", "Move down", "M5 8l5 5 5-5"], ["right", "Move right", "M8 5l5 5-5 5"]];
+
 /** Every choice for one widget. Changes show on the tile straight away. */
-export function WidgetOptions({ w, onChange }: { w: Widget; onChange: (patch: Partial<Widget>) => void }) {
+export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (patch: Partial<Widget>) => void; place?: Place }) {
   const ctx = useApp();
   const meta = KINDS[w.kind];
   const setOpt = (key: string, v: OptValue) => onChange({ opts: { ...w.opts, [key]: v } });
@@ -43,6 +53,21 @@ export function WidgetOptions({ w, onChange }: { w: Widget; onChange: (patch: Pa
   const toggles = meta.options.filter((o) => o.type === "toggle");
   return (
     <>
+      {place && (
+        <Section title="Place">
+          <Seg label="Size" value={place.size} options={place.sizes} onPick={place.onSize} />
+          <div className="dopt">
+            <span className="dopt-label" id="dopt-move">Move</span>
+            <div className="dseg dmove" role="group" aria-labelledby="dopt-move">
+              {arrows.map(([dir, text, d]) => (
+                <button key={dir} type="button" aria-label={text} title={text} onClick={() => place.onMove(dir)}>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Section>
+      )}
       <Section title="Look">
         <Seg label="Style" value={w.style} options={meta.styles} onPick={(style) => onChange({ style })} />
         <Seg<Tone> label="Tone" value={w.tone} options={[["light", "Light"], ["dark", "Dark"]]} onPick={(tone) => onChange({ tone })} />

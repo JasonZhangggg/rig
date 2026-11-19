@@ -52,7 +52,7 @@ function DeleteAccount() {
       location.hash = client.kind === "web" ? "signin" : "overview";
       location.reload();
     } catch (e) {
-      setError(`Rig couldn't delete the account. ${e instanceof Error ? e.message : ""} Nothing was removed.`.replace(/\s+/g, " ").trim());
+      setError(`Rig couldn't delete the account, so nothing was removed. ${e instanceof Error ? e.message : ""} Check your internet connection and try again.`.replace(/\s+/g, " ").trim());
       setBusy(false);
     }
   };

@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Route } from "@rig/core";
 import { useApp } from "../state";
 import { DiffTable } from "./common";
+import { useModal } from "./modal";
 
 /** Every page, for the sidebar and Ctrl K. Upgrades, Manuals, Games and Temperatures are tabs of other pages now (see homeOf), so only Ctrl K lists them. */
 export const navItems: [Route, string, string][] = [
@@ -30,9 +31,11 @@ export function ReviewSheet() {
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [r, set]);
+  const box = useRef<HTMLDivElement>(null);
+  useModal(box, !!r);
   if (!r) return null;
   return (
-    <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget && !r.busy) set({ review: null }); }}>
+    <div className="scrim" ref={box} onClick={(e) => { if (e.target === e.currentTarget && !r.busy) set({ review: null }); }}>
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
         <div className="sheet-head">
           <span className="label">{pc.name}</span>
@@ -43,8 +46,8 @@ export function ReviewSheet() {
         {r.error ? <div className="callout warn" role="alert">{r.error}</div>
           : <p className="note faint" style={{ fontSize: 12.5 }}>Rig saves the current values first. You can undo this from Changes at any time.</p>}
         <div className="sheet-foot">
-          <button className="btn" type="button" disabled={r.busy} onClick={() => set({ review: null })}>Cancel</button>
-          <button className="btn primary" type="button" onClick={confirmReview} disabled={r.busy} autoFocus>{r.busy ? "Working…" : r.cta}</button>
+          <button className="btn" type="button" aria-disabled={r.busy} onClick={() => { if (!r.busy) set({ review: null }); }} autoFocus>Cancel</button>
+          <button className="btn primary" type="button" aria-disabled={r.busy} onClick={() => { if (!r.busy) confirmReview(); }}>{r.busy ? "Making the change…" : r.cta}</button>
         </div>
       </div>
     </div>
@@ -54,11 +57,14 @@ export function ReviewSheet() {
 export function Toast() {
   const { ui, toggleChange } = useApp();
   const t = ui.toast;
-  if (!t) return null;
   return (
-    <div className="toast" role="status">
-      <span>{t.msg}</span>
-      {t.undo && <button className="btn sm" type="button" onClick={() => toggleChange(t.undo!)}>Undo</button>}
+    <div className="toast-region" role="status">
+      {t && (
+        <div className="toast">
+          <span>{t.msg}</span>
+          {t.undo && <button className="btn sm" type="button" onClick={() => toggleChange(t.undo!)}>Undo</button>}
+        </div>
+      )}
     </div>
   );
 }

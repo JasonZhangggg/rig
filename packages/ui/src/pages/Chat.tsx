@@ -101,7 +101,7 @@ function ProposalCard({ p }: { p: Proposal }) {
     <div className="proposal">
       <div className="proposal-head">
         <h3>{p.title}</h3>
-        {p.status === "applied" ? <span className="chip ok">Done</span> : p.status === "declined" ? <span className="chip">Not now</span> : <span className="chip info">Waiting for you</span>}
+        {p.status === "applied" ? <span className="chip ok">Applied</span> : p.status === "declined" ? <span className="chip">Not now</span> : <span className="chip info">Waiting for you</span>}
       </div>
       <DiffTable rows={p.rows} />
       <div className="proposal-foot">

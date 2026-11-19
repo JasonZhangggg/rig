@@ -8,6 +8,8 @@ import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince, shopCatOf } from "./shared";
 import { PartUpgrade, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
 import { UpgradesTab } from "./upgrades/Shop";
+import { arrowKeys } from "../components/modal";
+import { Warm } from "../components/common";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
 const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals"]];
@@ -115,7 +117,7 @@ function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
         onPointerEnter={() => hoverPart(id)} onPointerLeave={() => hoverPart(null)} onFocus={() => hoverPart(id)} onBlur={() => hoverPart(null)}>
         <span className="part-txt"><span className="pt">{part.type}</span><span className="pn">{part.name}</span></span>
         {part.temp !== undefined && (
-          <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}</span>
+          <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}{part.warn && <Warm />}</span>
         )}
       </button>
     </li>
@@ -170,8 +172,8 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   return (
     <div className="part-detail">
       <Readings part={part} id={id} />
-      <div className="tabs" role="tablist">
-        {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set({ tab: t })}>{l}</button>)}
+      <div className="tabs" role="tablist" aria-label={`${part.name} details`} onKeyDown={arrowKeys("tab")}>
+        {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} tabIndex={tab === t ? 0 : -1} onClick={() => set({ tab: t })}>{l}</button>)}
       </div>
       <div className="detail-body">{tab === "upgrade" ? <><PartUpgrade ideas={ideas} ups={ups} />{shopCatOf[id] && <a className="btn sm part-shop" href="#upgrades" onClick={() => set({ shopCat: shopCatOf[id] })}>See parts that fit</a>}</> : <DetailTab part={part} id={id} tab={tab} />}</div>
     </div>

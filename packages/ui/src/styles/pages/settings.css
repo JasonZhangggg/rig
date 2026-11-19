@@ -7,7 +7,7 @@
 /* A section: its title and one line, then its rows under a hairline. */
 .set-section { display: grid; gap: 12px; scroll-margin-top: 22px; }
 .set-head { display: grid; gap: 3px; }
-.set-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
+.set-head h2 { font: var(--t-title); letter-spacing: -.015em; }
 .set-intro { color: var(--text-3); font-size: 13px; font-weight: 500; line-height: 1.45; }
 .set-body { display: flex; flex-direction: column; padding: 4px 0; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 0; border-top: 1px solid var(--line); }
@@ -131,12 +131,11 @@
 
 @media (max-width: 640px) {
   .set-list { gap: 28px; }
-  .set-body, .set-folds { padding-left: 18px; padding-right: 18px; }
   .set-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .set-row:has(.set-toggle) { flex-direction: row; align-items: center; }
   .look-sample,
   .look-custom-grid { grid-template-columns: minmax(0, 1fr); }
-  .look-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .look-presets { grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); }
   .look-preset { gap: 10px; }
   .look-preset-pv { grid-template-columns: 40px; height: 40px; }
   .look-preset-bars, .look-preset-text small { display: none; }
