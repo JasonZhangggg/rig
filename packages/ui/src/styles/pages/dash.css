@@ -33,8 +33,8 @@
 .dash-grid > .react-grid-placeholder { display: none; }
 .dash-spot {
   position: absolute; top: 0; left: 0; z-index: 0; width: 0; height: 0; border-radius: var(--dr); pointer-events: none; opacity: 0;
-  background: color-mix(in srgb, var(--good) 26%, transparent);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--good-mark) 42%, transparent);
+  background: var(--sel);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 22%, transparent);
   transition: transform .16s var(--ease-out), width .16s var(--ease-out), height .16s var(--ease-out), opacity .12s;
 }
 .dash-spot[data-on] { opacity: 1; }
