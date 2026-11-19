@@ -13,6 +13,8 @@ export interface AppHost {
   server?: string;
   /** Rig's background recorder, turned on and off in Settings. Windows only. */
   recorder?: Pick<RecorderLink, "status" | "set" | "probes" | "approveAdmin">;
+  /** Opens the folder with Rig's debug log. */
+  openLogs?: () => Promise<void>;
 }
 
 /** The review sheet shown before any change is made. */
@@ -145,7 +147,10 @@ export type Pending = "loading" | "empty" | "error";
 
 const noHost: AppHost = {};
 
-export function AppProvider({ client, host = noHost, children, fallback }: { client: RigClient; host?: AppHost; children: ReactNode; fallback: (state: Pending, retry: () => void) => ReactNode }) {
+/** How long the first read may take before Rig says it's stuck. It keeps waiting behind the message, and carries on if the read finishes. */
+export const STALL_MS = 45_000;
+
+export function AppProvider({ client, host = noHost, children, fallback, stallMs = STALL_MS }: { client: RigClient; host?: AppHost; children: ReactNode; fallback: (state: Pending, retry: () => void, reason: string | null) => ReactNode; stallMs?: number }) {
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
@@ -155,7 +160,8 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [] });
   const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
+  /** Why the first read failed or stalled, or null while it hasn't. */
+  const [failed, setFailed] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   const set = useCallback((patch: Partial<UI> | ((u: UI) => Partial<UI>)) => {
@@ -165,15 +171,23 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
   // Account and the list of PCs
   useEffect(() => {
     let live = true;
+    const stalled = setTimeout(() => {
+      if (!live) return;
+      const step = client.loadingStep?.();
+      setFailed(step ? `It's been stuck ${step} for a while.` : "It's taking longer than it should.");
+      setLoaded(true);
+    }, stallMs);
     Promise.all([client.account(), client.machines()]).then(([account, pcs]) => {
       if (!live) return;
       setData((d) => ({ ...d, account, pcs }));
       setUI((u) => ({ ...u, pcId: pcs.some((p) => p.id === u.pcId && p.parts) ? u.pcId : pcs.find((p) => p.parts)?.id ?? null }));
-      setFailed(false);
+      setFailed(null);
       setLoaded(true);
-    }).catch(() => { if (live) { setFailed(true); setLoaded(true); } });
-    return () => { live = false; };
-  }, [client, attempt]);
+    }).catch((e: unknown) => {
+      if (live) { setFailed(e instanceof Error && e.message ? e.message : "Something went wrong."); setLoaded(true); }
+    }).finally(() => clearTimeout(stalled));
+    return () => { live = false; clearTimeout(stalled); };
+  }, [client, attempt, stallMs]);
 
   // Live view of the chosen PC, its changes and a fresh chat
   useEffect(() => {
@@ -187,6 +201,12 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
     client.changes(id).then((changes) => setData((d) => ({ ...d, changes }))).catch(() => {});
     return () => { stop(); stopRecordings(); };
   }, [client, ui.pcId]);
+  // The chosen PC can be watched before the list arrives (it's the one opened last), so fill it from the list if its live view hasn't.
+  useEffect(() => {
+    if (data.pc || !ui.pcId) return;
+    const pc = data.pcs.find((p) => p.id === ui.pcId && p.parts);
+    if (pc) setData((d) => (d.pc ? d : { ...d, pc }));
+  }, [data.pc, data.pcs, ui.pcId]);
 
   useEffect(() => {
     const on = () => { set({ route: routeFromHash() }); if (routeFromHash() !== "chat") window.scrollTo(0, 0); };
@@ -344,8 +364,8 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
     return ctx;
   }, [client, host, ui, data, pcId, set, toast]);
 
-  const retry = () => { setLoaded(false); setFailed(false); setAttempt((n) => n + 1); };
-  if (!value) return <>{fallback(!loaded ? "loading" : failed ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry)}</>;
+  const retry = () => { setLoaded(false); setFailed(null); setAttempt((n) => n + 1); };
+  if (!value) return <>{fallback(!loaded ? "loading" : failed !== null ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry, failed)}</>;
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }
 

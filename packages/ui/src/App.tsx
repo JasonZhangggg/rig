@@ -64,19 +64,22 @@ export function RigApp({ client, requireAccount, host }: RigAppProps) {
       onSkip={requireAccount ? undefined : () => { location.hash = "overview"; }} />;
   }
   return (
-    <AppProvider client={client} host={host} fallback={(s, retry) => s === "error" && client.kind === "web"
-      ? <Splash text="Rig can't reach your PCs right now. Check your internet connection, then try again." retry={retry} />
+    <AppProvider client={client} host={host} fallback={(s, retry, reason) => s === "error"
+      ? client.kind === "web"
+        ? <Splash text="Rig can't reach your PCs right now. Check your internet connection, then try again." retry={retry} />
+        : <Splash text="Rig couldn't read this PC." detail={`${reason ?? ""} Try again, and if it keeps happening, restart your PC.`.trim()} retry={retry} />
       : <Splash text={s === "loading" ? "Reading your PC…" : client.kind === "web" ? "No PCs yet. Install Rig on a PC and sign in with this account, and it shows up here." : "Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it."} />}>
       <Root />
     </AppProvider>
   );
 }
 
-function Splash({ text, retry }: { text: string; retry?: () => void }) {
+function Splash({ text, detail, retry }: { text: string; detail?: string; retry?: () => void }) {
   return (
     <div className="splash" role={retry ? "alert" : "status"}>
       <span className="fp-logo">R<i /></span>
       <p>{text}</p>
+      {detail && <p className="splash-detail">{detail}</p>}
       {retry && <button className="btn" type="button" onClick={retry}>Try again</button>}
     </div>
   );

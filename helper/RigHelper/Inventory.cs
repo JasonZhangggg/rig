@@ -12,11 +12,15 @@ namespace Rig.Helper;
 
 public static class Inventory
 {
+    static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(5);
+
     static IEnumerable<ManagementBaseObject> Query(string wql, string scope = @"root\cimv2")
     {
         try
         {
-            using var s = new ManagementObjectSearcher(scope, wql);
+            // A slow WMI provider (the Storage one is the usual suspect) gives up instead of holding Rig on its loading screen.
+            var options = new System.Management.EnumerationOptions { Timeout = QueryTimeout, ReturnImmediately = true, Rewindable = false };
+            using var s = new ManagementObjectSearcher(new ManagementScope(scope), new ObjectQuery(wql), options);
             return s.Get().Cast<ManagementBaseObject>().ToList();
         }
         catch { return []; }

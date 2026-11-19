@@ -35,5 +35,5 @@ export const settingsSections: SettingsSectionDef[] = [
   { id: "app", title: "App", intro: "How the Rig app runs on this PC.", keywords: "app startup start with windows launch login autostart", show: ({ host }) => !!host.autostart, Body: AppSection },
   { id: "account", title: "Account", intro: "Who's signed in, and deleting the account.", keywords: "account sign in sign out email delete remove", Body: AccountSection },
   { id: "data", title: "Your data", intro: "A copy of everything Rig keeps for you.", folded: true, keywords: "data download export backup json history copy", show: ({ client }) => !!client.exportData, Body: DataSection },
-  { id: "about", title: "About", intro: "Which version of Rig this is.", folded: true, keywords: "about version release build number update server", Body: AboutSection },
+  { id: "about", title: "About", intro: "Which version of Rig this is, and its logs.", folded: true, keywords: "about version release build number update server logs log debug troubleshoot", Body: AboutSection },
 ];

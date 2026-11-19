@@ -23,6 +23,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 rand = "0.8"
 tauri-plugin-dialog = "2"
+tauri-plugin-log = "2"
+log = "0.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
@@ -46,3 +48,6 @@ windows-sys = { version = "0.59", features = [
 codegen-units = 1
 lto = true
 strip = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }

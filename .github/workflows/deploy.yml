@@ -57,6 +57,10 @@ jobs:
       - name: Create or update the database tables
         run: pnpm --filter @rig/server db:migrate
 
+      # Caching stays off. Hyperdrive would otherwise answer reads from a cache for up
+      # to a minute, and sign-in needs fresh rows: the rate limiter retries until its
+      # row reads back current, so a stale one held sign-in for a minute, and a code
+      # claimed on the website still read as unclaimed when it was approved.
       - name: Connect Hyperdrive to the database
         working-directory: apps/server
         run: |
@@ -64,10 +68,10 @@ jobs:
           find_id() { curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api" | jq -r '.result[] | select(.name == "rig") | .id' | head -1; }
           id=$(find_id)
           if [ -z "$id" ]; then
-            npx wrangler hyperdrive create rig --connection-string="$DATABASE_URL" > /dev/null
+            npx wrangler hyperdrive create rig --connection-string="$DATABASE_URL" --caching-disabled > /dev/null
             id=$(find_id)
           else
-            npx wrangler hyperdrive update "$id" --connection-string="$DATABASE_URL" > /dev/null
+            npx wrangler hyperdrive update "$id" --connection-string="$DATABASE_URL" --caching-disabled > /dev/null
           fi
           [ -n "$id" ] || { echo "::error::Couldn't create the Hyperdrive config"; exit 1; }
           sed -i "s/^id = \".*\"/id = \"$id\"/" wrangler.toml

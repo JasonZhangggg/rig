@@ -54,3 +54,6 @@ export const tauriAutostart = {
   get: () => invoke<boolean>("plugin:autostart|is_enabled"),
   set: (on: boolean) => invoke<void>(on ? "plugin:autostart|enable" : "plugin:autostart|disable"),
 };
+
+/** Opens the folder with Rig.log. */
+export const openLogs = () => invoke<void>("open_logs");

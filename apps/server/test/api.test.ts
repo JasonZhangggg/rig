@@ -43,6 +43,18 @@ describe("accounts", () => {
     expect(me.email).toBe("sam@example.com");
   });
 
+  it("limits sign-in tries per caller, not for everyone at once", async () => {
+    const { call } = await setup();
+    const tryFrom = (ip: string) => call("/api/auth/sign-in/email", {
+      method: "POST", json: { email: "nobody@example.com", password: "wrong password" },
+      headers: { origin: ORIGIN, "cf-connecting-ip": ip },
+    });
+    const statuses = [];
+    for (let i = 0; i < 4; i++) statuses.push((await tryFrom("203.0.113.1")).status);
+    expect(statuses).toEqual([401, 401, 401, 429]);
+    expect((await tryFrom("203.0.113.2")).status).toBe(401);
+  });
+
   it("lets the desktop app call from its own origin", async () => {
     const { call } = await setup();
     const res = await call("/api/me", { method: "OPTIONS", headers: { origin: "http://tauri.localhost", "access-control-request-method": "GET" } });

@@ -28,6 +28,8 @@ export function authOptions(env: Env, database: BetterAuthOptions["database"]): 
     session: { expiresIn: 60 * 60 * 24 * 90, updateAge: 60 * 60 * 24 },
     // Kept in the database so the limits hold across Worker instances.
     rateLimit: { enabled: true, storage: "database", window: 60, max: 60 },
+    // Cloudflare puts the caller's address here. Without it every caller shares one limit.
+    advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     telemetry: { enabled: false },
     plugins: [
       bearer(),
