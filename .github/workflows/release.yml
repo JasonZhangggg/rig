@@ -153,8 +153,8 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
+      # The tools from the branch this runs on, so a fixed upload step can send a release that's already tagged.
       - uses: actions/checkout@v4
-        with: { ref: "refs/tags/${{ env.TAG }}" }
       - uses: actions/download-artifact@v4
         with: { name: rig-release, path: release }
       - name: Check there's a signed update to send
