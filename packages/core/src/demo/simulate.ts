@@ -5,6 +5,12 @@ import type { Inventory, Sensor, Snapshot } from "../telemetry";
 import { activityAt, type Activity } from "./schedule";
 
 const wobble = (t: number, period: number, amp: number) => Math.sin(t / period) * amp;
+/**
+ * Sensor ids, worked out once per PC: a PC reports its sensors in the same order every time, and the demo
+ * reads every sensor thousands of times to make a month of history. The name is checked, so a different order only costs time.
+ */
+const ids = new WeakMap<Inventory, { hw: string; type: string; name: string; id: string }[]>();
+const slug = (hw: string, type: string, name: string) => `/${hw}/0/${type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
 /**
  * Readings for a demo PC at a moment. It follows the PC's weekly schedule
@@ -17,8 +23,15 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
   const dust = opts.dust ?? 0;
   const amd = /amd|ryzen/i.test(inv.cpu.name);
   const s: Sensor[] = [];
+  let known = ids.get(inv);
+  if (!known) ids.set(inv, known = []);
+  const idOf = (i: number, hw: string, type: string, name: string) => {
+    const k = known[i];
+    if (k && k.hw === hw && k.type === type && k.name === name) return k.id;
+    return (known[i] = { hw, type, name, id: slug(hw, type, name) }).id;
+  };
   const add = (hw: Sensor["hw"], hwName: string, type: Sensor["type"], name: string, value: number, max?: number) =>
-    s.push({ id: `/${hw}/0/${type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, hw, hwName, type, name, value: Math.round(value * 10) / 10, min: null, max: max ?? null });
+    s.push({ id: idOf(s.length, hw, type, name), hw, hwName, type, name, value: Math.round(value * 10) / 10, min: null, max: max ?? null });
   const pct = (v: number) => Math.max(0, Math.min(100, v));
 
   // The processor, named the way LibreHardwareMonitor names it: Ryzen reports one temperature per chiplet, Intel one per core.

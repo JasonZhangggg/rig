@@ -33,7 +33,7 @@ export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } fr
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -56,6 +56,8 @@ export class DemoClient implements RigClient {
   private pcs: Record<string, DemoPC>;
   private listeners = new Map<string, Set<(pc: PC) => void>>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** When the demo started: dust builds up over the month before it. */
+  private readonly born = Date.now();
   /** Manuals per PC, in memory. Atlas starts with its board manual found and read. */
   readonly shelf = new DemoManuals();
 
@@ -153,14 +155,22 @@ export class DemoClient implements RigClient {
     return this.points(p, now - rangeMs[range], now);
   }
 
+  /** Each window is worked out once and kept, since a closed window never changes: a month is thousands of them. */
   private points(p: DemoPC, since: number, now: number): HistoryPoint[] {
+    const kept = p.windows ??= new Map();
+    const first = Math.ceil(since / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS;
     const out: HistoryPoint[] = [];
-    for (let from = Math.ceil(since / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
-      const dust = p.dust * (1 - (now - from) / rangeMs["30d"]);
-      const w = new HistoryWindow(from);
-      for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));
-      out.push(w.point());
+    for (let from = first; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
+      let point = kept.get(from);
+      if (!point) {
+        const dust = p.dust * Math.max(0, 1 - (this.born - from) / rangeMs["30d"]);
+        const w = new HistoryWindow(from);
+        for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));
+        kept.set(from, point = w.point());
+      }
+      out.push(point);
     }
+    for (const from of kept.keys()) if (from < now - rangeMs["30d"] - HISTORY_WINDOW_MS) kept.delete(from);
     return out;
   }
 
