@@ -19,7 +19,7 @@ One Cloudflare Worker serves the website and, under `/api`, accounts, sync and c
    - `BETTER_AUTH_SECRET`, a long random string (`openssl rand -base64 32`)
    - `ANTHROPIC_API_KEY`, for chat (without it, chat says it isn't set up)
    - Optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
-4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. Leave the address empty to use `https://rig.<your-subdomain>.workers.dev`, or give your own. It creates the tables, connects Hyperdrive, builds the website and deploys. Running it again updates everything.
+4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. Leave the address empty to use `https://rig.<your-subdomain>.workers.dev`, or give your own. It creates the tables, connects Hyperdrive with its query cache off, builds the website and deploys. Running it again updates everything.
 5. Add the repository variable `RIG_API_URL` = `<that address>/api`, so installers built by CI use this server. CI and releases stop with an error without it. To publish an installer, see [releasing.md](releasing.md).
 
 Nothing secret goes in the repo or the logs; the workflow passes secrets straight to Cloudflare.
@@ -31,7 +31,7 @@ Run these from `apps/server`.
 1. `npx wrangler login`
 2. In Neon, copy the project's connection string. Use the direct one, not the pooled one, since Hyperdrive does the pooling.
 3. Create the tables: `DATABASE_URL='<connection string>' pnpm db:migrate`. It's safe to run again; it only applies what's new.
-4. `npx wrangler hyperdrive create rig --connection-string='<connection string>'` and copy the `id` it prints into `wrangler.toml`, under `[[hyperdrive]]`.
+4. `npx wrangler hyperdrive create rig --connection-string='<connection string>' --caching-disabled` and copy the `id` it prints into `wrangler.toml`, under `[[hyperdrive]]`. Keep caching off: with it on, reads can be a minute old, and sign-in waits on fresh rows.
 5. In `wrangler.toml`, set `WEB_ORIGIN` to the address people will open, like `https://rig.example.com` or `https://rig.<you>.workers.dev`.
 6. Secrets (each one asks for the value; nothing goes in the repo):
    - `npx wrangler secret put BETTER_AUTH_SECRET` with a long random string (`openssl rand -base64 32`)

@@ -10,22 +10,20 @@ Being built. What works today, and what still needs a Windows PC to try, is list
 
 ## Run it
 
-You need Node 22 and pnpm 10.
+On Windows, [docs/development.md](docs/development.md) covers setup, running the real app and reading its logs. In short, with Node, Rust, the .NET 8 SDK and pnpm installed:
 
 ```
 pnpm install
-pnpm dev:web        # website and demo at http://localhost:5173 (demo: /app/?demo)
+pnpm desktop        # the desktop app against the live server; builds the helper first
+pnpm dev:web        # website and demo at http://localhost:5173 (demo: /app/?demo), any OS
 pnpm dev:server     # the API at http://localhost:8787 (first time: see docs/deploy.md)
-pnpm desktop        # the desktop app against the live server; on Windows it builds the helper and fetches PawnIO first
-pnpm dev:desktop    # the desktop app (Tauri) on its own. On a Mac or Linux it runs on a simulated PC.
 pnpm test           # all tests
+pnpm typecheck      # types in every package
 ```
 
-`pnpm desktop` on Windows also needs Rust (with the Visual Studio C++ build tools) and the .NET 8 SDK. After a `git pull`, run `pnpm install` and `pnpm desktop` again; screen changes show up live while it runs.
+On a Mac or Linux, `pnpm desktop` runs the app on a simulated PC.
 
-Building the Windows installer needs Windows with Rust, .NET 8 and Node. CI does it for you: Actions tab, CI, Run workflow, then download `rig-windows-installer`.
-
-Releases: `pnpm version:set 0.2.0`, merge, then push the tag `v0.2.0`, and GitHub publishes the installer as a release. See [docs/releasing.md](docs/releasing.md).
+Building the Windows installer: Actions, CI, Run workflow, then download `rig-windows-installer`. Releasing and the auto-updater: [docs/releasing.md](docs/releasing.md). Putting the server online: [docs/deploy.md](docs/deploy.md). How it fits together: [docs/architecture.md](docs/architecture.md). Notes for Claude Code: [CLAUDE.md](CLAUDE.md).
 
 ## Layout
 
