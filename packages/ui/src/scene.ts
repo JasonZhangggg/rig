@@ -77,7 +77,9 @@ export function createScene(
   container: HTMLElement,
   { onSelect, onHover }: { onSelect?: (id: string | null) => void; onHover?: (id: string | null) => void } = {},
 ): PCScene {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  // Asking the driver for each shader's error log makes the page wait for the shader to finish compiling; only worth it while developing.
+  renderer.debug.checkShaderErrors = !!(import.meta as { env?: { DEV?: boolean } }).env?.DEV;
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -951,7 +953,7 @@ export function createScene(
     state.hovered = id;
     applyHighlights();
     onHover?.(id);
-    wake();
+    invalidate();
   }
 
   function select(id: string | null) {
@@ -1030,7 +1032,7 @@ export function createScene(
     if (layer.style.getPropertyValue("--lx") !== lx) layer.style.setProperty("--lx", lx);
     if (layer.style.getPropertyValue("--ly") !== ly) layer.style.setProperty("--ly", ly);
   }
-  document.fonts?.ready.then(() => { labelsDirty = true; });
+  document.fonts?.ready.then(() => { labelsDirty = true; invalidate(); });
 
   // The part's outline on screen: its 3D bounds projected, padded a little, and drawn as a frame.
   const _box = new THREE.Box3(), _part = new THREE.Box3(), _c = new THREE.Vector3();
@@ -1053,6 +1055,7 @@ export function createScene(
     if (focusBox.style.width !== bw) focusBox.style.width = bw;
     if (focusBox.style.height !== bh) focusBox.style.height = bh;
     if (focusBox.style.opacity !== "1") focusBox.style.opacity = "1";
+    invalidate();
   }
 
   // ---------- loop ----------
@@ -1067,36 +1070,55 @@ export function createScene(
     readFit();
     applyFit();
     labelsDirty = true;
+    invalidate();
   }
   const ro = new ResizeObserver(resize);
   ro.observe(container);
 
   let spin = false, spinT = 0, spinOff = 0, dragging = false;
-  controls.addEventListener("start", () => { dragging = true; spin = false; });
+  controls.addEventListener("start", () => { dragging = true; spin = false; invalidate(); });
+  controls.addEventListener("change", () => invalidate());
   controls.addEventListener("end", () => { dragging = false; });
   const clock = new THREE.Clock();
-  // Draws only while the stage is on screen and the tab is showing, and picks up again on the next change.
+  // Draws only while the stage is on screen and the tab is showing, and then only when something on it changes:
+  // the camera, a part's look, the explode. A quarter second more after each change lets the labels settle. Spinning fans
+  // pulses and Home's slow sway keep it drawing, at 30 frames a second while nothing else moves. With reduced motion, a still stage draws nothing.
   let raf = 0, onScreen = true, tabShown = !document.hidden, built = false, gone = false;
+  let settleUntil = 0, lastDraw = 0, relabel = false;
+  const SETTLE_MS = 250, AMBIENT_MS = 1000 / 30 - 1;
   const live = () => built && onScreen && tabShown && !gone;
+  /** Draws on the next frame, never inside the caller: several changes at once make one frame, and the page paints first. */
   function wake() {
     if (raf || !live()) return;
     clock.getDelta();
-    tick();
+    raf = requestAnimationFrame(tick);
+  }
+  function invalidate() {
+    settleUntil = performance.now() + SETTLE_MS;
+    wake();
+  }
+  /** New readings change only the labels' text, unless heat colors the parts: lay the labels out again without drawing. */
+  function labelsChanged() {
+    relabel = true;
+    wake();
   }
   const io = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
     onScreen = entries[entries.length - 1].isIntersecting;
-    wake();
+    invalidate();
   });
   io?.observe(container);
-  const onVisibility = () => { tabShown = !document.hidden; wake(); };
+  const onVisibility = () => { tabShown = !document.hidden; invalidate(); };
   document.addEventListener("visibilitychange", onVisibility);
   function tick() {
     raf = 0;
     if (!live()) return;
     raf = requestAnimationFrame(tick);
     const dt = Math.min(clock.getDelta(), 0.05);
+    const still = reducedMotion();
     const target = state.exploded ? 1 : 0;
-    if (state.explodeT !== target) {
+    const exploding = state.explodeT !== target;
+    const turning = !!camAnim;
+    if (exploding) {
       const step = reducedMotion() ? 1 : dt * 1.6;
       state.explodeT = target > state.explodeT ? Math.min(1, state.explodeT + step) : Math.max(0, state.explodeT - step);
       applyExplode(false);
@@ -1126,9 +1148,22 @@ export function createScene(
       const k = reducedMotion() ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
-    controls.update();
-    outlined.render(scene, camera);
-    layoutLabels();
+    const moved = controls.update();
+    const now = performance.now();
+    if (moved || dragging || exploding || turning) settleUntil = now + SETTLE_MS;
+    const ambient = !still && (state.rotors.length > 0 || state.pulses.length > 0 || (spin && !dragging));
+    if (now < settleUntil || (ambient && now - lastDraw >= AMBIENT_MS)) {
+      lastDraw = now;
+      relabel = false;
+      outlined.render(scene, camera);
+      layoutLabels();
+    } else if (relabel) {
+      relabel = false;
+      layoutLabels();
+    } else if (!ambient) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
   }
 
   return {
@@ -1136,24 +1171,24 @@ export function createScene(
       state.pc = pc; state.theme = t; state.selected = null;
       rebuild(); resize(); frame(state.exploded, true);
       built = true;
-      wake();
+      invalidate();
     },
-    update(pc) { state.pc = pc; refreshLabels(); applyHighlights(); },
-    setTheme(t) { state.theme = t; if (state.pc) rebuild(); },
-    setExploded(v) { state.exploded = v; applyHighlights(); frame(v, false); },
-    setHeat(v) { state.heat = v; applyHighlights(); },
+    update(pc) { state.pc = pc; refreshLabels(); applyHighlights(); if (state.heat) invalidate(); else labelsChanged(); },
+    setTheme(t) { state.theme = t; if (state.pc) rebuild(); invalidate(); },
+    setExploded(v) { state.exploded = v; applyHighlights(); frame(v, false); invalidate(); },
+    setHeat(v) { state.heat = v; applyHighlights(); invalidate(); },
     select,
     hover(id) {
       const next = id && parts()[id] ? id : null;
       if (next === state.hovered) return;
       state.hovered = next;
       applyHighlights();
-      wake();
+      invalidate();
     },
-    resetView() { frame(state.exploded, false); },
+    resetView() { frame(state.exploded, false); invalidate(); },
     setZoomable(v) { controls.enableZoom = v; },
-    setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
-    setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); },
+    setSpin(v) { spin = v; spinT = 0; spinOff = 0; invalidate(); },
+    setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); invalidate(); },
     dispose() {
       gone = true;
       cancelAnimationFrame(raf);
