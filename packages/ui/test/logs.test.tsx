@@ -123,7 +123,7 @@ describe("Logs", () => {
     expect((await screen.findAllByText(/Graphics card ran hot for \d+ minutes/)).length).toBeGreaterThan(0);
     screen.getByText(/Graphics card load fell from/);
     screen.getByRole("img", { name: "Temperatures during the recording" });
-    screen.getByRole("img", { name: "Load during the recording" });
+    screen.getByRole("img", { name: "Usage during the recording" });
     expect(screen.queryByText("Cyberpunk2077.exe", { selector: "td" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Readings, apps and Windows events" }));
     screen.getByText("Cyberpunk2077.exe", { selector: "td" });

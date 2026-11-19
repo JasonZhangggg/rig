@@ -107,8 +107,9 @@ function AccountBlock() {
 
 const phoneQuery = "(max-width: 760px)";
 function usePhone() {
-  const [phone, setPhone] = useState(() => matchMedia(phoneQuery).matches);
+  const [phone, setPhone] = useState(() => typeof matchMedia === "function" && matchMedia(phoneQuery).matches);
   useEffect(() => {
+    if (typeof matchMedia !== "function") return;
     const m = matchMedia(phoneQuery);
     const on = () => setPhone(m.matches);
     m.addEventListener("change", on);

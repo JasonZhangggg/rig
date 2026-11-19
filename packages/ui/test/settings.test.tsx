@@ -141,7 +141,7 @@ describe("Settings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete account…" }));
     fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), { target: { value: "DELETE" } });
     fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("Rig couldn't delete the account. The server didn't answer. Nothing was removed.");
+    expect((await screen.findByRole("alert")).textContent).toBe("Rig couldn't delete the account, so nothing was removed. The server didn't answer. Check your internet connection and try again.");
   });
 
   it("turns starting with Windows on in the desktop app", async () => {

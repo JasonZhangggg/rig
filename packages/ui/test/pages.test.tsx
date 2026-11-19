@@ -35,7 +35,7 @@ describe("Changes", () => {
     await within(waiting).findByText("60 Hz");
 
     const counts = screen.getByRole("group", { name: "Show only" });
-    expect(within(counts).getByRole("button", { name: /In place/ }).textContent).toBe("1In place");
+    expect(within(counts).getByRole("button", { name: /Applied/ }).textContent).toBe("1Applied");
     expect(within(counts).queryByRole("button", { name: /Undone/ })).toBeNull();
 
     const day = screen.getByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
@@ -344,7 +344,7 @@ describe("History", () => {
     expect(within(screen.getByRole("table", { name: "Processor, usage" })).getByRole("rowheader", { name: "CPU Core #3 Thread #2" })).toBeTruthy();
     const cores = screen.getByRole("region", { name: /^Cores/ });
     expect(within(cores).getAllByRole("listitem")).toHaveLength(8);
-    expect(cores.textContent).toMatch(/one temperature per chiplet/);
+    expect(cores.textContent).toMatch(/one temperature for each group of cores/);
     expect(within(cores).getAllByRole("listitem")[0].textContent).toMatch(/^Core 1\d+%.*GHz/);
 
     // One sensor on its own: it's marked in the table, and charts from the readings that come in.

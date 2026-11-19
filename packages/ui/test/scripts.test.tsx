@@ -52,7 +52,7 @@ describe("Scripts from the chat", () => {
     await ask();
     expect(screen.getByText(/runs as you/)).toBeTruthy();
     expect(edits).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve script" }));
     await waitFor(() => expect(edits).toEqual([{ op: "approve", probe: spec(false) }].map((x) => ({ ...x, probe: expect.objectContaining({ source: x.probe.source }) }))));
     expect(await screen.findByText("Approved")).toBeTruthy();
   });
@@ -61,7 +61,7 @@ describe("Scripts from the chat", () => {
     const { edits, approveAdmin } = setup(true);
     await ask();
     expect(screen.getByText(/Windows will ask for permission/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve script" }));
     await waitFor(() => expect(approveAdmin).toHaveBeenCalledTimes(1));
     expect(edits).toEqual([]);
   });
@@ -74,7 +74,7 @@ describe("Scripts from the chat", () => {
     expect(sw.textContent).toMatch(/Asked for by Rig's chat/);
     fireEvent.click(sw);
     await waitFor(() => expect(edits).toEqual([{ op: "pause", id: "c-old" }]));
-    fireEvent.click(screen.getByRole("button", { name: "Turn off" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(edits.at(-1)).toEqual({ op: "remove", id: "c-old" }));
   });
 });
