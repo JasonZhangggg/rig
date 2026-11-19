@@ -1,19 +1,29 @@
-name: Probe auth
+name: probe-auth
 on:
   push:
     branches: [probe/auth-cpu]
 jobs:
   probe:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Sign in with an email that has no account (hashes a password, writes nothing)
+      - name: Tail the worker while signing in
         run: |
           base="${{ vars.RIG_API_URL }}"
-          echo "base=$base"
-          curl -sS -o ok.txt -w "auth/ok %{http_code} %{time_total}s\n" "$base/auth/ok"; cat ok.txt; echo
-          for i in 1 2; do
-            curl -sS -D h.txt -o b.txt -w "sign-in %{http_code} %{time_total}s\n" -X POST "$base/auth/sign-in/email" \
+          npm i -g wrangler@4 > /dev/null 2>&1
+          (wrangler tail rig --format json > tail.json 2> tail.err &) 
+          sleep 15
+          for i in 1 2 3; do
+            curl -sS -o b.txt -w "sign-in $i %{http_code} %{time_total}s\n" -m 90 -X POST "$base/auth/sign-in/email" \
               -H "content-type: application/json" -H "origin: ${base%/api}" \
               --data '{"email":"nobody-probe@example.invalid","password":"not-a-real-password"}'
-            grep -i "^cf-ray\|^content-type" h.txt; head -c 600 b.txt; echo
+            head -c 300 b.txt; echo
           done
+          curl -sS -o b.txt -w "get-session %{http_code} %{time_total}s\n" -m 90 "$base/auth/get-session"; head -c 200 b.txt; echo
+          sleep 10
+          pkill -f "wrangler tail" || true
+          echo "--- tail.err"; tail -5 tail.err
+          echo "--- tail"
+          jq -c '{t: .eventTimestamp, url: .event.request.url, status: .event.response.status, outcome, cpu: .cpuTime, wall: .wallTime, exc: .exceptions, logs: [.logs[] | {level, message}]}' tail.json | cut -c1-1500
