@@ -3,7 +3,7 @@ import type { ActionCall } from "../actions";
 import { describeCall, titleFor } from "../actions";
 import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
-import type { Inventory, SystemFacts } from "../telemetry";
+import type { Inventory, Sensor, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
 import { shopFor } from "../shop";
@@ -33,7 +33,7 @@ export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } fr
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -44,6 +44,12 @@ const demoGames: Game[] = [
 ];
 
 /** A whole Rig backend in memory, for the website's demo and for development. */
+function see(seen: Record<string, [number, number]>, s: Sensor) {
+  if (s.value == null) return;
+  const [lo, hi] = seen[s.id] ?? [s.value, s.value];
+  seen[s.id] = [Math.min(lo, s.value), Math.max(hi, s.value)];
+}
+
 export class DemoClient implements RigClient {
   readonly kind = "demo" as const;
   readonly caps = { local: true, applyChanges: true };
@@ -87,6 +93,12 @@ export class DemoClient implements RigClient {
     const now = Date.now();
     const snap = simulate(p.inv, now, { dust: p.dust });
     for (const s of snap.sensors) if (s.type === "temperature" && s.value != null) p.dayMax[s.id] = Math.max(p.dayMax[s.id] ?? 0, s.value);
+    // Lowest and highest of each sensor since Rig started, as the hardware monitor keeps them. The demo "started" six hours ago.
+    if (!p.seen) {
+      p.seen = {};
+      for (let t = now - 6 * 36e5; t < now; t += HISTORY_WINDOW_MS / 2) for (const s of simulate(p.inv, t, { dust: p.dust }).sensors) see(p.seen, s);
+    }
+    for (const s of snap.sensors) { see(p.seen, s); [s.min, s.max] = p.seen[s.id] ?? [null, null]; }
     if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now) };
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;

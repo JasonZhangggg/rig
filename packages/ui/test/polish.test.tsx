@@ -35,7 +35,8 @@ describe("History figures", () => {
     await open("history");
     for (const range of ["Day", "Week", "Month"]) {
       fireEvent.click(screen.getByRole("button", { name: range }));
-      const card = (await screen.findByText("Graphics card when busy")).parentElement!;
+      expect(screen.getByRole("heading", { level: 2, name: "Graphics card" })).toBeTruthy();
+      const card = (await screen.findByText("When busy")).parentElement!;
       const figure = card.querySelector(".fig-n")!.textContent!;
       expect(figure, range).toMatch(/^\d+°C$/);
       expect(card.textContent, range).not.toMatch(/Steady/);
@@ -51,7 +52,7 @@ describe("History figures", () => {
       await screen.findByText(/Things to look at/i);
       await open("history");
       fireEvent.click(screen.getByRole("button", { name: "Month" }));
-      const busy = (await screen.findByText(/when busy$/)).parentElement!.textContent!;
+      const busy = (await screen.findByText("When busy")).parentElement!.textContent!;
       const hottest = (await screen.findByText("Hottest moment")).parentElement!.textContent!;
       cleanup();
       const n = (text: string, re: RegExp) => { const m = text.match(re); return m ? Number(m[1]) : null; };
@@ -62,9 +63,10 @@ describe("History figures", () => {
     const f = await read();
     expect(f.busy + f.hottest).not.toMatch(/°C/);
     expect(c.headroom).not.toBeNull();
-    expect(f.headroom).toBe(Math.round(c.headroom! * 1.8));
-    if (c.change != null) expect(f.change).toBe(Math.round(c.change * 1.8));
-  });
+    // The °C figure is already rounded, so the °F one can land a degree either side of it times 1.8 (a temperature would be 32° off).
+    expect(Math.abs(f.headroom! - c.headroom! * 1.8)).toBeLessThanOrEqual(1.5);
+    if (c.change != null) expect(Math.abs(f.change! - c.change * 1.8)).toBeLessThanOrEqual(1.5);
+  }, 20_000); // It renders the app twice, which can pass five seconds while the other packages test alongside.
 });
 
 describe("Greeting", () => {

@@ -36,7 +36,7 @@
 .fp-item[aria-current="page"] { background: var(--graphite); color: #FFFFFF; }
 .fp-item[aria-current="page"] svg { color: #FFFFFF; }
 .fp-count { min-width: 26px; height: 24px; padding: 0 8px; border-radius: var(--r-pill); font: 500 12px/24px var(--font); font-style: normal; text-align: center; background: var(--surface); color: var(--text-2); box-shadow: 0 0 0 1px var(--line); }
-.fp-item[aria-current="page"] .fp-count { background: var(--good); color: #111111; box-shadow: none; }
+.fp-item[aria-current="page"] .fp-count { background: rgba(255, 255, 255, .18); color: #FFFFFF; box-shadow: none; }
 .fp-search { color: var(--text-2); }
 .fp-search kbd { font: 600 11px var(--font); color: var(--text-3); background: var(--surface); border-radius: 6px; padding: 3px 6px; box-shadow: 0 0 0 1px var(--line); }
 

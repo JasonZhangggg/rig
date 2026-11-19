@@ -39,6 +39,8 @@ export interface MachineRow {
 type Row = Selectable<RigTables["machine"]>;
 
 const iso = (d: Date | string | null) => (d == null ? null : new Date(d).toISOString());
+/** A reading as a whole number, or null when it's missing or isn't a finite number. */
+const whole = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? null : Math.round(v));
 
 function fromRow(r: Row): MachineRow {
   return {
@@ -106,12 +108,15 @@ export class Store {
       const points = s.history.slice(-HISTORY_MAX).map((p) => ({
         user_id: userId, machine_id: id, t: Math.round(p.t), cpu: p.cpu ?? null, gpu: p.gpu ?? null, busy: !!p.busy,
         fan: p.fan == null ? null : Math.round(p.fan), game: p.game ? p.game.slice(0, GAME_NAME_MAX) : null,
+        cpu_load: whole(p.cpuLoad), gpu_load: whole(p.gpuLoad), mem: whole(p.mem), drive: whole(p.drive), board: whole(p.board),
       }));
       if (points.length) {
         await trx.insertInto("machine_history").values(points)
           .onConflict((oc) => oc.columns(["user_id", "machine_id", "t"]).doUpdateSet((eb) => ({
             cpu: eb.ref("excluded.cpu"), gpu: eb.ref("excluded.gpu"), busy: eb.ref("excluded.busy"),
             fan: eb.ref("excluded.fan"), game: eb.ref("excluded.game"),
+            cpu_load: eb.ref("excluded.cpu_load"), gpu_load: eb.ref("excluded.gpu_load"), mem: eb.ref("excluded.mem"),
+            drive: eb.ref("excluded.drive"), board: eb.ref("excluded.board"),
           }))).execute();
       }
       await trx.deleteFrom("machine_history").where("user_id", "=", userId).where("machine_id", "=", id)
@@ -318,9 +323,12 @@ export class Store {
   }
 
   async history(userId: string, id: string, sinceMs: number): Promise<HistoryPoint[]> {
-    const rows = await this.db.selectFrom("machine_history").select(["t", "cpu", "gpu", "busy", "fan", "game"])
+    const rows = await this.db.selectFrom("machine_history").select(["t", "cpu", "gpu", "busy", "fan", "game", "cpu_load", "gpu_load", "mem", "drive", "board"])
       .where("user_id", "=", userId).where("machine_id", "=", id).where("t", ">=", sinceMs).orderBy("t").execute();
-    return rows.map((r) => ({ t: Number(r.t), cpu: r.cpu, gpu: r.gpu, busy: r.busy, fan: r.fan, game: r.game }));
+    return rows.map((r) => ({
+      t: Number(r.t), cpu: r.cpu, gpu: r.gpu, busy: r.busy, fan: r.fan, game: r.game,
+      cpuLoad: r.cpu_load, gpuLoad: r.gpu_load, mem: r.mem, drive: r.drive, board: r.board,
+    }));
   }
 
   /** Counts one question and says whether it's within today's allowance. */

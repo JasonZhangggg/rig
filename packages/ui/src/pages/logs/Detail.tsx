@@ -98,7 +98,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
               {loads.some((p) => p.cpu != null || p.gpu != null) && (
                 <>
                   <h2>How hard each part worked</h2>
-                  <LineChart points={loads} series={series} h={180} percent marks={marks} label="Load during the recording" />
+                  <LineChart points={loads} series={series} h={180} unit="percent" marks={marks} label="Load during the recording" />
                 </>
               )}
             </section>

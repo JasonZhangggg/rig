@@ -2,7 +2,7 @@
 // readings. Runs on the desktop for the live view and on the server for the
 // web view, so both always agree.
 
-import type { FanReading, Issue, Part, PC, Stat, StorageSlice } from "./model";
+import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageSlice } from "./model";
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type SystemFacts } from "./telemetry";
 
@@ -27,6 +27,38 @@ function maxOf(snap: Snapshot | null, pick: (s: Sensor) => boolean): number | un
 function prettyName(host: string): string {
   // DESKTOP-4KF2J9 means nobody named it. Use something friendlier until they do.
   return /^(DESKTOP|LAPTOP)-[A-Z0-9]+$/i.test(host) ? "My PC" : host;
+}
+
+/** Which part a sensor is filed under, as a key of PC.parts: the graphics card only for the card Rig shows, case and laptop fans under Fans. */
+function partOf(s: Sensor, laptop: boolean, gpuName: string | undefined): string | null {
+  if (s.hw === "gpu") return s.hwName === gpuName ? "gpu" : null;
+  if (s.type === "fan" || s.type === "control" || s.hw === "cooler") return "fans";
+  switch (s.hw) {
+    case "cpu": return "cpu";
+    case "board": return laptop ? "board" : "motherboard";
+    case "memory": return "ram";
+    case "storage": return "ssd";
+    case "battery": return "battery";
+    case "psu": return "psu";
+    default: return null;
+  }
+}
+
+/**
+ * The PC's readings right now, in the shape of a history point, so a chart can draw a live line with
+ * the same code as the logged history. Temperatures and fan are the highest now; loads as they read.
+ */
+export function livePoint(pc: PC, t: number): HistoryPoint {
+  const p = pc.parts ?? {};
+  const fans = (pc.readings ?? []).filter((r) => r.type === "fan" && r.part === "fans" && r.value != null).map((r) => r.value!);
+  const drives = (pc.readings ?? []).filter((r) => r.type === "temperature" && r.part === "ssd" && r.value != null).map((r) => r.value!);
+  const n = (v: number | null | undefined) => (v == null ? null : Math.round(v));
+  return {
+    t, busy: false, game: null,
+    cpu: n(p.cpu?.temp), gpu: n(p.gpu?.temp), cpuLoad: n(p.cpu?.load), gpuLoad: n(p.gpu?.load), mem: n(p.ram?.load),
+    drive: drives.length ? Math.round(Math.max(...drives)) : n(p.ssd?.temp), board: n((p.motherboard ?? p.board)?.temp),
+    fan: fans.length ? Math.round(Math.max(...fans)) : null,
+  };
 }
 
 export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}): PC & { findings: Finding[] } {
@@ -157,6 +189,14 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const slices: StorageSlice[] = inv.volumes.map((v) => ({ label: v.label ? `${v.letter} ${v.label}` : v.letter, gb: Math.round(v.sizeGb - v.freeGb) }));
   slices.push({ label: "Free", gb: Math.round(freeGb) });
 
+  const drives = new Set(snap?.sensors.filter((x) => x.hw === "storage").map((x) => x.hwName));
+  const readings: Reading[] = (snap?.sensors ?? []).flatMap((x) => {
+    const part = partOf(x, laptop, dgpu?.name);
+    if (!part || !parts[part] || x.value == null) return [];
+    const top = Math.max(x.max ?? -Infinity, dayMax[x.id] ?? -Infinity, x.value);
+    return [{ id: x.id, part, name: x.hw === "storage" && drives.size > 1 ? `${x.hwName} ${x.name}` : x.name, type: x.type, value: x.value, min: x.min ?? null, max: top }];
+  });
+
   const { health, breakdown } = score(laptop, fs);
   const issues: Issue[] = fs.length ? fs : [{ id: "all-good", severity: "ok", title: "Nothing needs a look", body: "Temperatures, storage and settings all look normal.", action: "Ask Rig anything", go: "chat" }];
 
@@ -178,6 +218,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     parts,
     settings: facts ? { gameMode: facts.gameMode, visualEffects: facts.visualEffects, powerPlans: facts.powerPlans, startupOn: facts.startupApps.filter((a) => a.enabled).length } : undefined,
     cleanedAt: id.cleanedAt,
+    readings,
     findings: fs,
   };
 }

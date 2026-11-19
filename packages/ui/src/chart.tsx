@@ -1,6 +1,6 @@
 // Small SVG charts drawn with theme colors (CSS variables), no chart library.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { formatTemp, toUnit, type HistoryPoint } from "@rig/core";
+import { formatTemp, toUnit, type HistoryKey, type HistoryPoint, type ReadingUnit } from "@rig/core";
 import { useTempUnit } from "./state";
 
 /** The element's width in CSS pixels, so a chart draws at its real size and its text isn't stretched. */
@@ -24,13 +24,13 @@ const clock = (t: number, seconds = false) => new Date(t).toLocaleTimeString(und
 
 interface LineChartProps {
   points: HistoryPoint[];
-  /** Each line: the reading it draws, its color class, and its name in the readout (Processor or Graphics card by default). */
-  series: { key: "cpu" | "gpu"; cls: string; name?: string }[];
+  /** Each line: the reading it draws, its color class, and its name in the readout (the part's name by default). */
+  series: { key: HistoryKey; cls: string; name?: string }[];
   w?: number; h?: number;
   limit?: { v: number; label: string };
   bands?: boolean;
-  /** Load in percent rather than temperatures in Celsius. */
-  percent?: boolean;
+  /** What the lines measure: temperatures in Celsius (shown in the viewer's unit), percent, or fan speed. */
+  unit?: ReadingUnit;
   label?: string;
   /** Moments to point out: a numbered line, or a shaded stretch when it has an end. */
   marks?: { t: number; until?: number; n: number; strong?: boolean }[];
@@ -40,7 +40,9 @@ interface LineChartProps {
   onUnpin?: () => void;
 }
 
-const seriesName = (k: "cpu" | "gpu") => (k === "gpu" ? "Graphics card" : "Processor");
+const names: Record<HistoryKey, string> = {
+  cpu: "Processor", gpu: "Graphics card", fan: "Fastest fan", cpuLoad: "Processor", gpuLoad: "Graphics card", mem: "Memory", drive: "Drive", board: "Motherboard",
+};
 
 /** The index of the reading nearest to t, in points sorted by time. */
 function nearest(points: readonly HistoryPoint[], t: number) {
@@ -56,7 +58,7 @@ function nearest(points: readonly HistoryPoint[], t: number) {
  * Fewer, calmer points: readings grouped into about one per few pixels, each keeping the highest value of each line,
  * so minute-by-minute jitter doesn't draw as noise but every peak and every crossing of the limit stays.
  */
-export function calm(points: readonly HistoryPoint[], keys: readonly ("cpu" | "gpu")[], slots: number): HistoryPoint[] {
+export function calm(points: readonly HistoryPoint[], keys: readonly HistoryKey[], slots: number): HistoryPoint[] {
   if (points.length <= slots * 1.5) return points as HistoryPoint[];
   const t0 = points[0].t, size = (points[points.length - 1].t - t0) / slots || 1;
   const out: HistoryPoint[] = [];
@@ -96,20 +98,23 @@ export function LineChart(props: LineChartProps) {
   );
 }
 
-function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, percent = false, label = "Temperature history", marks = [], pin = null, onUnpin }: LineChartProps) {
+function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, unit: kind = "temp", label = "Temperature history", marks = [], pin = null, onUnpin }: LineChartProps) {
   const unit = useTempUnit();
   // The moment the readout shows: where the pointer or keys put it, else the pinned moment, else none.
   const [at, setAt] = useState<number | null>(pin);
   useEffect(() => setAt(pin), [pin]);
-  const cv = (c: number) => (percent ? c : toUnit(c, unit));
-  const step = percent ? 25 : unit === "f" ? 20 : 10;
+  const percent = kind === "percent", rpm = kind === "rpm";
+  const cv = (c: number) => (kind === "temp" ? toUnit(c, unit) : c);
   const pad = { l: 40, r: 16, t: 14, b: 28 };
   const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
   const points = calm(raw, series.map((s) => s.key), Math.max(40, Math.round(iw / 4)));
   const t0 = points[0].t, t1 = points[points.length - 1].t;
   const vals = points.flatMap((p) => series.map((s) => p[s.key])).filter((v): v is number => v != null).map(cv);
-  const yMin = percent ? 0 : Math.min(Math.floor(cv(30) / step) * step, Math.floor(Math.min(...vals) / step) * step);
-  const yMax = percent ? 104 : Math.max(limit ? cv(limit.v) + 5 : 0, Math.ceil(Math.max(...vals) / step) * step + 5);
+  const top = vals.length ? Math.max(...vals) : 0;
+  const step = percent ? 25 : rpm ? (top > 4000 ? 1000 : 500) : unit === "f" ? 20 : 10;
+  const yMin = percent || rpm ? 0 : Math.min(Math.floor(cv(30) / step) * step, Math.floor(Math.min(...vals) / step) * step);
+  const yMax = percent ? 104 : rpm ? Math.max(step * 2, Math.ceil(top / step) * step) + step / 10
+    : Math.max(limit ? cv(limit.v) + 5 : 0, Math.ceil(top / step) * step + 5);
   const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * iw;
   const y = (v: number) => pad.t + ih - ((v - yMin) / (yMax - yMin)) * ih;
   const gap = ((t1 - t0) / points.length) * 3;
@@ -150,7 +155,7 @@ function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, per
   }
   // A short stretch with few readings may hold no round times, so its start and end are labelled instead.
   if (ticks.length < 2) ticks.splice(0, ticks.length, { t: t0, label: clock(t0, span < 10 * 60_000) }, { t: t1, label: clock(t1, span < 10 * 60_000) });
-  const path = (k: "cpu" | "gpu") => {
+  const path = (k: HistoryKey) => {
     let d = "", prev: HistoryPoint | null = null;
     for (const p of points) {
       const v = p[k];
@@ -161,12 +166,12 @@ function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, per
     return d;
   };
 
-  const fmt = (v: number | null | undefined) => (v == null ? "–" : percent ? `${Math.round(v)}%` : formatTemp(v, unit));
+  const fmt = (v: number | null | undefined) => (v == null ? "–" : percent ? `${Math.round(v)}%` : rpm ? `${Math.round(v).toLocaleString("en-US")} rpm` : formatTemp(v, unit));
   const whenText = (t: number) => span < 10 * 60_000 ? clock(t, true) : span <= 1.5 * day ? clock(t)
     : new Date(t).toLocaleString(undefined, span > 10 * day ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" });
   const cur = at == null ? null : points[nearest(points, at)];
   const cx = cur ? x(cur.t) : 0;
-  const readout = cur ? `${whenText(cur.t)}: ${series.map((s) => `${s.name ?? seriesName(s.key)} ${fmt(cur[s.key])}`).join(", ")}` : "";
+  const readout = cur ? `${whenText(cur.t)}: ${series.map((s) => `${s.name ?? names[s.key]} ${fmt(cur[s.key])}`).join(", ")}` : "";
 
   /** The moment under the pointer, from where it sits across the plot. */
   const pointerT = (e: PointerEvent<SVGSVGElement>) => {
@@ -204,7 +209,7 @@ function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, per
         {grid.map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} className="chart-grid" />
-            <text x={pad.l - 8} y={y(v) + 4} className="chart-tick" textAnchor="end">{v}{percent ? "%" : "°"}</text>
+            <text x={pad.l - 8} y={y(v) + 4} className="chart-tick" textAnchor="end">{rpm ? (v >= 1000 ? `${v / 1000}k` : v) : v}{percent ? "%" : rpm ? "" : "°"}</text>
           </g>
         ))}
         {ticks.map((k) => <text key={k.t} x={x(k.t)} y={h - 8} className="chart-tick" textAnchor={k.t === t0 ? "start" : k.t === t1 ? "end" : "middle"}>{k.label}</text>)}
@@ -234,7 +239,7 @@ function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, per
           {series.map((s) => (
             <span key={s.key} className="chart-tip-row">
               <svg width={14} height={4} aria-hidden="true"><line x1={1} x2={13} y1={2} y2={2} className={`chart-line ${s.cls}`} /></svg>
-              {s.name ?? seriesName(s.key)}<b className="num">{fmt(cur[s.key])}</b>
+              {s.name ?? names[s.key]}<b className="num">{fmt(cur[s.key])}</b>
             </span>
           ))}
         </div>

@@ -92,14 +92,14 @@ describe("PCs", () => {
     expect(await (await call("/api/machines", { cookie: other })).json()).toEqual([]);
   });
 
-  it("keeps fan speed and game per point, and still takes points from older apps", async () => {
+  it("keeps fan speed, game and each part's readings per point, and still takes points from older apps", async () => {
     const { call, signUp } = await setup();
     const cookie = await signUp("kit@example.com");
     const t = Date.now();
     const s = await syncPayload({
       history: [
         { t: t - 1_200_000, cpu: 48, gpu: 40, busy: false },
-        { t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2140, game: "Cyberpunk 2077" },
+        { t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2140, game: "Cyberpunk 2077", cpuLoad: 64, gpuLoad: 97, mem: 41.4, drive: 47, board: 39 },
         { t, cpu: 52, gpu: 44, busy: false, fan: null, game: null },
       ],
     });
@@ -107,10 +107,11 @@ describe("PCs", () => {
     expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
 
     const hist = await (await call(`/api/machines/${id}/history?range=24h`, { cookie })).json();
+    const none = { cpuLoad: null, gpuLoad: null, mem: null, drive: null, board: null };
     expect(hist).toEqual([
-      { t: t - 1_200_000, cpu: 48, gpu: 40, busy: false, fan: null, game: null },
-      { t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2140, game: "Cyberpunk 2077" },
-      { t, cpu: 52, gpu: 44, busy: false, fan: null, game: null },
+      { t: t - 1_200_000, cpu: 48, gpu: 40, busy: false, fan: null, game: null, ...none },
+      { t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2140, game: "Cyberpunk 2077", cpuLoad: 64, gpuLoad: 97, mem: 41, drive: 47, board: 39 },
+      { t, cpu: 52, gpu: 44, busy: false, fan: null, game: null, ...none },
     ]);
 
     const resent = await syncPayload({ history: [{ t: t - 600_000, cpu: 66, gpu: 79, busy: true, fan: 2300, game: "Balatro" }] });
@@ -120,6 +121,8 @@ describe("PCs", () => {
 
     const bad = await syncPayload({ history: [{ t, cpu: 50, gpu: 40, busy: false, fan: "fast" as unknown as number }] });
     expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: bad, cookie })).status).toBe(400);
+    const badMem = await syncPayload({ history: [{ t, cpu: 50, gpu: 40, busy: false, mem: "most" as unknown as number }] });
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: badMem, cookie })).status).toBe(400);
   });
 
   it("keeps the newest name, whether it was changed on the website or the PC", async () => {

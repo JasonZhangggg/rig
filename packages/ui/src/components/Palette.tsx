@@ -14,7 +14,7 @@ import { shopCatOf } from "../pages/shared";
 const pageWords: Partial<Record<Route, [string, string]>> = {
   overview: ["Your dashboard: health, temperatures and things to look at", "home dashboard overview health summary tiles customize"],
   pc: ["Your PC in 3D with every part and how warm it runs", "my pc 3d parts specs components hardware temperature"],
-  history: ["In Logs: temperatures over the day, week or month", "temperature history temps heat hot chart graph week month"],
+  history: ["In Logs: each part's temperature, use and sensors, live or over the month", "temperature history temps heat hot chart graph week month usage load cpu gpu memory ram fans sensors task manager hwmonitor live"],
   games: ["In Logs: how your games ran and how warm they got", "games fps gaming performance tuning"],
   upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
   manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],

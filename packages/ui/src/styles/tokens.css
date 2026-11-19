@@ -21,6 +21,8 @@
   --primary: var(--graphite);
   --primary-text: #FFFFFF;
   --focus: var(--graphite);
+  /* Selection is neutral, as in most apps: a gray fill for a picked row or item, a raised white chip in a segmented control. Color is for data and status. */
+  --sel: color-mix(in srgb, var(--text) 8%, transparent);
 
   /* Data colors: pale gold is settled, rust needs a look, warm grey is what's normal. */
   --good: #E6D3A3; --good-mark: #7C6A3A; --good-text: #6A5A2E; --good-bg: #F3EDDD;
@@ -58,6 +60,7 @@
   --surface: var(--graphite); --surface-2: var(--graphite-2);
   --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C;
   --line: rgba(255, 255, 255, .10);
+  --sel: color-mix(in srgb, var(--text) 10%, transparent);
   --ok: var(--good-on-dark); --warn: var(--look-on-dark); --focus: var(--good-on-dark);
   --s-a: var(--good); --s-mark-a: var(--good-on-dark); --s-b: var(--look); --s-c: var(--expected);
   --s-ink: #111111; --s-c-ink: var(--graphite);

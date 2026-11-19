@@ -83,6 +83,8 @@ public sealed class Sensors : IDisposable
         SensorType.Data or SensorType.SmallData => "data",
         SensorType.Level => "level",
         SensorType.Control => "control",
+        SensorType.Throughput => "throughput",
+        SensorType.Current => "current",
         _ => null,
     };
 

@@ -25,7 +25,8 @@ export interface Inventory {
 }
 
 export type HardwareKind = "cpu" | "gpu" | "board" | "memory" | "storage" | "battery" | "psu" | "cooler" | "network" | "other";
-export type SensorType = "temperature" | "load" | "fan" | "clock" | "power" | "voltage" | "data" | "level" | "control";
+/** throughput is in bytes a second (a drive's read and write rates); current is in amps. Helpers before 0.1.4 send neither. */
+export type SensorType = "temperature" | "load" | "fan" | "clock" | "power" | "voltage" | "data" | "level" | "control" | "throughput" | "current";
 
 export interface Sensor {
   /** Unique within a PC, e.g. "/amdcpu/0/temperature/2". */

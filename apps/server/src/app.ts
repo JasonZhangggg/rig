@@ -327,5 +327,6 @@ function isSync(s: MachineSync | null): s is MachineSync {
 const optional = (v: unknown, type: "number" | "string") => v == null || typeof v === type;
 
 function isPoint(p: HistoryPoint | null): boolean {
-  return !!p && typeof p.t === "number" && optional(p.fan, "number") && optional(p.game, "string");
+  return !!p && typeof p.t === "number" && optional(p.fan, "number") && optional(p.game, "string")
+    && ([p.cpuLoad, p.gpuLoad, p.mem, p.drive, p.board] as const).every((v) => optional(v, "number"));
 }

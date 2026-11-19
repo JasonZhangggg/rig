@@ -30,6 +30,7 @@ export interface RigTables {
   machine_history: {
     user_id: string; machine_id: string; t: number; cpu: number | null; gpu: number | null; busy: boolean;
     fan: number | null; game: string | null;
+    cpu_load: number | null; gpu_load: number | null; mem: number | null; drive: number | null; board: number | null;
   };
   chat_usage: { user_id: string; day: string; count: number };
   manual_sources: {

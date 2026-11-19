@@ -49,16 +49,16 @@ describe("historySummary", () => {
   it("gives the processor at rest and no busy figure when nothing heavy ran", () => {
     const s = historySummary(windows(0, 8, { cpu: 41 }), "cpu", 95);
     expect(s.busy).toBeNull();
-    expect(s.idleCpu).toBe(41);
+    expect(s.idle).toBe(41);
   });
 
   it("says how far the hottest moment was from the limit, negative when over it", () => {
     const pts = [...windows(0, 2), { t: start + 3 * HOUR, cpu: 60, gpu: 89, busy: true }, ...windows(4, 5)];
-    expect(historySummary(pts, "gpu", 88).peak).toEqual({ t: start + 3 * HOUR, temp: 89, headroom: -1 });
-    expect(historySummary(pts, "cpu", 95).peak).toEqual({ t: start + 3 * HOUR, temp: 60, headroom: 35 });
+    expect(historySummary(pts, "gpu", 88).peak).toEqual({ t: start + 3 * HOUR, value: 89, headroom: -1 });
+    expect(historySummary(pts, "cpu", 95).peak).toEqual({ t: start + 3 * HOUR, value: 60, headroom: 35 });
   });
 
   it("is empty for no history", () => {
-    expect(historySummary([], "gpu", 88)).toEqual({ busy: null, idleCpu: null, peak: null });
+    expect(historySummary([], "gpu", 88)).toEqual({ busy: null, idle: null, peak: null });
   });
 });

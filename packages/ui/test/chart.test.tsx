@@ -45,7 +45,7 @@ describe("LineChart readout", () => {
 
   it("shows load in percent and holds a pinned moment, letting go on Escape", () => {
     let unpinned = false;
-    render(<LineChart points={points} series={series} percent pin={t0 + 10 * 6e4 + 1000} onUnpin={() => { unpinned = true; }} label="Load" />);
+    render(<LineChart points={points} series={series} unit="percent" pin={t0 + 10 * 6e4 + 1000} onUnpin={() => { unpinned = true; }} label="Load" />);
     expect(live()).toMatch(/: Processor 60%, Graphics card 70%$/);
     const chart = screen.getByRole("img", { name: "Load" });
     fireEvent.keyDown(chart, { key: "Escape" });
