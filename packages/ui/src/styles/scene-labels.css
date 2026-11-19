@@ -6,10 +6,10 @@
 .scene-pin.is-off { display: none; }
 .scene-pin > * { position: absolute; top: 0; left: 0; }
 .pin-dot {
-  width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%;
+  width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%;
   background: var(--good-mark); box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in srgb, var(--good) 45%, transparent);
 }
-.pin-lead { width: 1px; height: 1px; margin-top: -.5px; transform-origin: 0 50%; background: color-mix(in srgb, var(--text) 55%, transparent); }
+.pin-lead { width: 1px; height: 1.5px; margin-top: -.75px; transform-origin: 0 50%; background: color-mix(in srgb, var(--text) 70%, transparent); }
 .scene-pin .part-label {
   height: 26px; padding: 0 10px; transform-origin: 0 0; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
   background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: -.005em;
@@ -38,4 +38,21 @@
 .scene-pin .part-label:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .pin-dot, .pin-lead { transition: none; }
+}
+
+/* While one part is pointed at or picked, the other pins step back so the one that matters reads first,
+   and a soft frame shows which shape in the PC that part is. */
+.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) { --fade: .2 !important; }
+.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) .part-label { opacity: .4; }
+.scene-pin .part-label { transition: opacity .2s var(--ease-out), border-color .2s, background-color .2s; }
+.scene-pin.is-hovered .part-label { border-color: var(--good-mark); background: var(--surface); }
+.scene-pin.is-hovered .pin-lead { background: var(--text); }
+.part-box {
+  position: absolute; top: 0; left: 0; width: 0; height: 0; opacity: 0; pointer-events: none;
+  border: 1.5px solid var(--good-mark); border-radius: 12px;
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  transition: opacity .2s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-pin .part-label, .part-box { transition: none; }
 }

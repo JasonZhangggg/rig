@@ -26,7 +26,7 @@ describe("Rig app on demo data", () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     const pages: [string, RegExp][] = [
-      ["pc", /Quick switches/i],
+      ["pc", /Exploded view/i],
       ["chat", /Rig shows every change first/i],
       ["changes", /Changes/i],
       ["upgrades", /Upgrades|upgrade/i],
@@ -95,24 +95,19 @@ describe("Rig app on demo data", () => {
     const client = new DemoClient();
     const apply = vi.spyOn(client, "apply");
     render(<RigApp client={client} />);
-    await open("pc");
-    const sw = await screen.findByRole("switch", { name: /Game Mode/i });
-    const before = sw.getAttribute("aria-checked");
-    fireEvent.click(sw);
+    await open("changes");
+    const waiting = await screen.findByRole("region", { name: /^Waiting for review/ });
+    fireEvent.click(within(waiting).getAllByRole("button", { name: /^Review:/ })[0]);
 
     const sheet = await screen.findByRole("dialog");
     expect(apply).not.toHaveBeenCalled();
-    fireEvent.click(within(sheet).getByRole("button", { name: /Turn (on|off)/i }));
+    fireEvent.click(within(sheet).getByRole("button", { name: /Apply|Turn|Change|Set/i }));
     await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByRole("switch", { name: /Game Mode/i }).getAttribute("aria-checked")).not.toBe(before));
 
-    await open("changes");
     const main = await screen.findByRole("main");
     // Newest change first: the one just made.
     fireEvent.click((await within(main).findAllByRole("button", { name: /^Undo$/i }))[0]);
     await within(main).findByRole("button", { name: /^Redo$/i });
-    await open("pc");
-    await waitFor(() => expect(screen.getByRole("switch", { name: /Game Mode/i }).getAttribute("aria-checked")).toBe(before));
   });
 });
 
@@ -127,8 +122,8 @@ describe("Desktop sign-in on the website", () => {
     render(<RigApp client={client} requireAccount />);
     expect(await screen.findByText("W4XKLL2V")).toBeTruthy();
     expect(screen.getByText("jo@example.com")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in on that PC" }));
-    await screen.findByText("Your PC is signed in");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await screen.findByText("PC signed in");
     expect(approve).toHaveBeenCalledWith("W4XKLL2V", true);
   });
 });

@@ -36,12 +36,13 @@ export function Logs() {
 
   return (
     <div className="page lg-page">
-      <LogsHead sub={`What Windows${data.recordings.some((r) => r.background) ? " and Rig's background recorder" : ""} logged on ${pc.name}. Rig only reads it.`} />
+      <LogsHead sub={`What went wrong on ${pc.name} in the last 30 days, from the Windows event log.`} />
 
       {active && <NowRecording r={active} pcName={pc.name} />}
 
       {events == null && <p className="muted">Reading the event log…</p>}
       {events != null && !hasEvents && <p className="lg-none">Windows logged no problems on {pc.name} in the last 30 days.</p>}
+      {hasEvents && <Counters groups={groups} events={all} pick={picked || minor ? pick : null} onPick={setPick} />}
 
       <div className={`lg-grid${hasEvents ? "" : " solo"}`}>
         {hasEvents && (
@@ -51,8 +52,6 @@ export function Logs() {
               {pickLabel && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${pickLabel}`} onClick={() => setPick(null)}>{pickLabel}<span aria-hidden="true">×</span></button>}
               {day != null && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${shortDay(day)}`} onClick={() => setDay(null)}>{shortDay(day)}<span aria-hidden="true">×</span></button>}
             </div>
-            <Counters groups={groups} events={all} pick={picked || minor ? pick : null} onPick={setPick} />
-
             <Events strip={byPick} events={shown} day={day} onDay={setDay} emptyText={day == null ? "Nothing here." : `${pickLabel ? "None of these" : "Nothing logged"} on ${shortDay(day)}.`} />
           </section>
         )}

@@ -27,11 +27,11 @@ describe("Sign-in screen", () => {
   it("makes an account with the name given", async () => {
     const signInEmail = vi.fn(async () => jo);
     render(<SignIn client={{ kind: "web", signInEmail } as unknown as RigClient} onDone={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Make an account" }));
-    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Jo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create one" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jo" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jo@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse" } });
-    fireEvent.click(screen.getByRole("button", { name: "Make my account" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     await waitFor(() => expect(signInEmail).toHaveBeenCalledWith("jo@example.com", "correct horse", { name: "Jo" }));
   });
 

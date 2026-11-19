@@ -59,7 +59,7 @@ export function RigApp({ client, requireAccount, host }: RigAppProps) {
     }} />;
   }
   if ((requireAccount && !account) || signin) {
-    return <SignIn client={client} note={userCode ? "Sign in here to finish signing in the Rig app on your PC." : undefined}
+    return <SignIn client={client} note={userCode ? "Sign in to finish connecting Rig on your PC." : undefined}
       onDone={() => { location.hash = "overview"; location.reload(); }}
       onSkip={requireAccount ? undefined : () => { location.hash = "overview"; }} />;
   }
@@ -105,8 +105,7 @@ function Root() {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);
     scene.setHeat(onPC && ui.heat);
-    scene.setAirflow(ui.airflow);
-  }, [ui.route, ui.exploded, ui.heat, ui.airflow, scene]);
+  }, [ui.route, ui.exploded, ui.heat, scene]);
   useEffect(() => {
     if (ui.route === "pc" && ui.selected) scene.select(ui.selected);
     else if (ui.route !== "pc") scene.select(null);

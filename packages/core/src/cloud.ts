@@ -12,6 +12,7 @@ import {
 import type { DataExport } from "./export";
 import type { Account, Change, ChatEvent, ChatMessage, Log, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
+import type { Shop } from "./shop";
 import type { PCEvent, Recording, RecordingInfo } from "./recordings";
 import type { ProbeStatus } from "./probes";
 import type { SystemFacts } from "./telemetry";
@@ -184,6 +185,7 @@ export class CloudClient implements RigClient {
 
   history(id: string, range: Range) { return this.req<HistoryPoint[]>(paths.history(id, range)); }
   upgrades(id: string) { return this.req<Upgrade[]>(paths.upgrades(id)); }
+  shop(id: string) { return this.req<Shop | null>(paths.shop(id)); }
   games(id: string) { return this.req<Game[]>(paths.games(id)); }
   changes(id: string) { return this.req<Change[]>(paths.changes(id)); }
 

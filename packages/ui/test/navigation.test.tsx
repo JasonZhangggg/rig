@@ -41,11 +41,13 @@ describe("navigation", () => {
     expect(screen.getByRole("link", { name: /^Logs/ }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("opens upgrades and manuals on My PC from their old addresses", async () => {
+  it("opens Upgrades and Manuals as tabs of My PC, each at its own address", async () => {
     location.hash = "#upgrades";
     render(<RigApp client={new DemoClient()} />);
-    expect(await screen.findByRole("heading", { name: /in 3D$/ })).toBeTruthy();
-    expect(location.hash).toBe("#pc");
-    expect(screen.getByRole("heading", { name: "Upgrades" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
+    expect(location.hash).toBe("#upgrades");
+    const tabs = within(screen.getByRole("navigation", { name: "My PC" }));
+    expect(tabs.getByRole("link", { name: "Upgrades" }).getAttribute("aria-current")).toBe("page");
+    expect(tabs.getByRole("link", { name: "Manuals" }).getAttribute("href")).toBe("#manuals");
   });
 });

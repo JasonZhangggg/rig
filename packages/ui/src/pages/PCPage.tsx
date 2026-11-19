@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { formatTemp, type ActionCall, type Part, type TempUnit } from "@rig/core";
+import { formatTemp, type Part, type Route, type TempUnit } from "@rig/core";
 import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
-import { OtherManuals } from "../manuals/OtherManuals";
+import { ManualsTab } from "../manuals/ManualsTab";
 import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
-import { CLEAN_EVERY, daysSince } from "./shared";
-import { PartUpgrade, UpgradesCard, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
+import { CLEAN_EVERY, daysSince, shopCatOf } from "./shared";
+import { PartUpgrade, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
+import { UpgradesTab } from "./upgrades/Shop";
+
+/** The tabs of My PC, each its own address so a link opens the right one. */
+const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals"]];
 
 const driverPages: Record<string, string> = {
   NVIDIA: "https://www.nvidia.com/en-us/drivers/",
@@ -19,7 +23,7 @@ export function PCPage() {
   const [customize, setCustomize] = useState(false);
   const customizeBtn = useRef<HTMLButtonElement>(null);
   const closeCustomize = () => { setCustomize(false); customizeBtn.current?.focus(); };
-  // Escape closes the open panel: Customize first, then the part's details.
+  // Escape closes the open panel: Customize first, then the part.
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || ui.palette || ui.review) return;
@@ -29,32 +33,43 @@ export function PCPage() {
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   });
-  const toggle = (k: "exploded" | "heat" | "airflow") => set({ [k]: !ui[k] });
   const ups = useUpgrades();
+  const unit = useTempUnit();
+  const parts = pc.parts ?? {};
+  const view = pcViews.some(([r]) => r === ui.route) ? ui.route : "pc";
+  // A picked part takes over the page: its name is the title and its readings get the room the list had.
+  const picked = view === "pc" && ui.selected && parts[ui.selected] ? ui.selected : null;
+  const list = Object.entries(parts);
+  const sub = view === "upgrades" ? `What would help ${pc.name} most, and parts that fit it.`
+    : view === "manuals" ? `Manuals for ${pc.name}'s parts, and its drivers and BIOS.`
+    : partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit);
   return (
-    <div className="page">
-      <div className="page-head"><div><h1>{pc.name} in 3D</h1><p className="sub">Point at a part to find it, pick it for details. Drag to turn, scroll to zoom.</p></div></div>
-      <div className="pc-view">
-        <section className="card stage-card">
-          <StageSlot id="pc-stage" />
-          <div className="stage-top">
-            {pc.model?.label ? <span className="stage-src">{pc.model.label}</span> : <span />}
-            <button ref={customizeBtn} className="btn sm stage-btn" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
+    <div className={`page pc-page${picked ? " is-part" : ""}`}>
+      {picked ? <PartHead part={parts[picked]} /> : (
+        <>
+          <div className="page-head">
+            <div><h1>{pc.name}</h1><p className="sub">{sub}</p></div>
+            {view === "pc" && <button ref={customizeBtn} className="btn sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>}
           </div>
-          {customize && <Customize onDone={closeCustomize} />}
+          <nav className="lg-views pc-views" aria-label="My PC">
+            {pcViews.map(([r, label]) => <a key={r} href={`#${r}`} aria-current={view === r ? "page" : undefined}>{label}</a>)}
+          </nav>
+        </>
+      )}
+      {view === "upgrades" ? <UpgradesTab /> : view === "manuals" ? <ManualsTab /> : (
+      <div className="pc-view">
+        <section className="stage-card" aria-label="3D view">
+          <StageSlot id="pc-stage" />
+          {customize && !picked && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
-            <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => toggle("exploded")}>Exploded view</button>
-            <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => toggle("heat")}>Heat</button>
-            <button className="btn sm" type="button" aria-pressed={ui.airflow} onClick={() => toggle("airflow")}>Airflow</button>
+            <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>
+            <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => set({ heat: !ui.heat })}>Heat</button>
             <button className="btn ghost sm" type="button" onClick={() => getStage().scene.resetView()}>Reset view</button>
           </div>
         </section>
-        <div className="pc-side">
-          <aside className="card detail"><Detail ups={ups} /></aside>
-          <QuickSwitches />
-        </div>
+        <div className="pc-side">{picked ? <PartDetail id={picked} ups={ups} /> : <PartsList />}</div>
       </div>
-      <UpgradesCard ups={ups} />
+      )}
     </div>
   );
 }
@@ -75,32 +90,6 @@ function Customize({ onDone }: { onDone: () => void }) {
       <p className="faint customize-note">The accent marks this PC in your list of PCs.</p>
       <div className="customize-foot"><button className="btn primary sm" type="button" onClick={() => { if (name.trim() && name !== pc.name) update({ name: name.trim() }); onDone(); }}>Done</button></div>
     </div>
-  );
-}
-
-/** Windows settings that are one tap away, each shown for review before it changes. */
-function QuickSwitches() {
-  const { pc, client, review } = useApp();
-  const s = pc.settings;
-  const high = s?.powerPlans.find((p) => /high performance/i.test(p.name));
-  const balanced = s?.powerPlans.find((p) => /balanced/i.test(p.name));
-  const switches: { key: string; title: string; body: string; on: boolean; flip: ActionCall | null }[] = s ? [
-    { key: "game", title: "Game Mode", body: "Windows puts games first while they run", on: s.gameMode, flip: { kind: "windows.gameMode", enabled: !s.gameMode } },
-    { key: "power", title: "High performance", body: "Full speed all the time. Warmer at idle.", on: !!high?.active, flip: high && balanced ? { kind: "power.plan", guid: high.active ? balanced.guid : high.guid } : null },
-    { key: "fx", title: "Fewer animations", body: "Snappier windows on slower PCs", on: s.visualEffects === "performance", flip: { kind: "windows.visualEffects", mode: s.visualEffects === "performance" ? "auto" : "performance" } },
-  ] : [];
-  return (
-    <section className="card switches">
-      <div className="card-head"><h2>Quick switches</h2></div>
-      <div className="switch-list">
-        {switches.length ? switches.map((w) => (
-          <button key={w.key} type="button" className="switch" role="switch" aria-checked={w.on} disabled={!w.flip}
-            onClick={() => w.flip && review([w.flip], { by: "you", title: `Turn ${w.title} ${w.on ? "off" : "on"}`, cta: w.on ? "Turn off" : "Turn on" })}>
-            <span><b>{w.title}</b><small>{w.body}</small></span><i />
-          </button>
-        )) : <p className="muted">{client.caps.local ? "Reading Windows settings…" : `Switches work in the Rig app on ${pc.name}.`}</p>}
-      </div>
-    </section>
   );
 }
 
@@ -133,54 +122,59 @@ function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
   );
 }
 
-function Detail({ ups }: { ups: PCUpgrades }) {
-  const { ui, pc, set } = useApp();
-  const parts = pc.parts ?? {};
-  const unit = useTempUnit();
+/** Every part, one row each: what it is, its model under it and how warm it runs. Pointing at a row lights the part in 3D. */
+function PartsList() {
+  const { ui, pc } = useApp();
   const lit = useStageHover();
   // Leaving the page or opening a part takes the light off whatever row was pointed at.
   useEffect(() => () => hoverPart(null), [ui.selected]);
-  const select = (id: string | null) => getStage().scene.select(id);
-  if (!ui.selected || !parts[ui.selected]) {
-    const list = Object.entries(parts);
-    return (
-      <>
-        <div className="parts-head">
-          <div className="parts-title"><h2>Parts</h2>{list.length > 0 && <span className="faint num">{list.length}</span>}</div>
-          <p className="parts-sum">{partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit)}</p>
-        </div>
-        {list.length > 0 && (
-          <ul className="part-list" aria-label="Parts">
-            {list.map(([k, v]) => <PartRow key={k} id={k} part={v} lit={lit === k} />)}
-          </ul>
-        )}
-        <OtherManuals />
-      </>
-    );
-  }
-  const id = ui.selected;
-  const part = parts[id];
-  const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
-  const tabs: [string, string][] = [["live", "Live"], ["specs", "Specs"], ["manual", "Manual"]];
-  if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
-  if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
-  const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : "live";
+  const list = Object.entries(pc.parts ?? {});
   return (
-    <>
-      <div className="detail-head">
-        <button className="detail-back" type="button" onClick={() => select(null)}>
+    <section className="parts" aria-labelledby="parts-h">
+      <h2 id="parts-h" className="parts-h">Parts</h2>
+      {list.length > 0 && (
+        <ul className="part-list" aria-label="Parts">
+          {list.map(([k, v]) => <PartRow key={k} id={k} part={v} lit={lit === k} />)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The page title while a part is open: back to every part, then what the part is. */
+function PartHead({ part }: { part: Part }) {
+  return (
+    <div className="page-head part-head">
+      <div>
+        <button className="detail-back" type="button" onClick={() => getStage().scene.select(null)}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           All parts
         </button>
-        <div className="pt">{part.type}</div>
-        <h2>{part.name}</h2>
-        {part.sub && <div className="faint">{part.sub}</div>}
+        <p className="part-kind">{part.type}</p>
+        <h1>{part.name}</h1>
+        {part.sub && <p className="sub">{part.sub}</p>}
       </div>
+    </div>
+  );
+}
+
+/** A part's readings first, big enough to read at a glance, then its specs, manual, drivers and upgrade ideas. */
+function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
+  const { ui, pc, set } = useApp();
+  const part = pc.parts![id];
+  const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
+  const tabs: [string, string][] = [["specs", "Specs"], ["manual", "Manual"]];
+  if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
+  if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
+  const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : "specs";
+  return (
+    <div className="part-detail">
+      <Readings part={part} id={id} />
       <div className="tabs" role="tablist">
         {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set({ tab: t })}>{l}</button>)}
       </div>
-      <div className="detail-body">{tab === "upgrade" ? <PartUpgrade ideas={ideas} ups={ups} /> : <DetailTab part={part} id={id} tab={tab} />}</div>
-    </>
+      <div className="detail-body">{tab === "upgrade" ? <><PartUpgrade ideas={ideas} ups={ups} />{shopCatOf[id] && <a className="btn sm part-shop" href="#upgrades" onClick={() => set({ shopCat: shopCatOf[id] })}>See parts that fit</a>}</> : <DetailTab part={part} id={id} tab={tab} />}</div>
+    </div>
   );
 }
 
@@ -232,14 +226,9 @@ function SourceBadge({ part }: { part: Part }) {
 }
 
 function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
-  const { pc, ask } = useApp();
-  const temp = useTemp();
-  const unit = useTempUnit();
+  const { ask } = useApp();
   const inUnit = useTempText();
   const [q, setQ] = useState("");
-  if (tab === "specs") {
-    return <><table className="kv"><tbody>{part.specs.map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table><SourceBadge part={part} /></>;
-  }
   if (tab === "manual") {
     return (
       <>
@@ -267,6 +256,15 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
       </>
     );
   }
+  return <><table className="kv"><tbody>{part.specs.map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table><SourceBadge part={part} /></>;
+}
+
+/** What the part is doing now, as numbers you can read from across the room, and anything about it that needs you. */
+function Readings({ part, id }: { part: Part; id: string }) {
+  const { pc } = useApp();
+  const temp = useTemp();
+  const unit = useTempUnit();
+  const inUnit = useTempText();
   const tiles: JSX.Element[] = [];
   if (part.temp !== undefined) {
     tiles.push(
@@ -287,19 +285,16 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
   return (
     <>
-      {tiles.length
-        ? <div className="live-grid">{tiles}</div>
-        : <table className="kv"><tbody>{part.specs.slice(0, 3).map(([k, v]) => <tr key={k}><th>{k}</th><td>{inUnit(v)}</td></tr>)}</tbody></table>}
+      {tiles.length > 0 && <div className="live-grid">{tiles}</div>}
       {part.warn && (
-        <>
-          <div className="callout warn">{inUnit(pc.issues?.find((i) => i.part === id)?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</div>
+        <div className="callout warn part-warn">
+          <span>{inUnit(pc.issues?.find((i) => i.part === id)?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</span>
           <a className="btn sm" href="#chat">Ask what to do</a>
-        </>
+        </div>
       )}
       {part.soldered && <div className="callout">Soldered to the board, so it can't be upgraded.</div>}
       {id === "ssd" && <Space />}
       {id === "fans" && <DustClean />}
-      <SourceBadge part={part} />
     </>
   );
 }

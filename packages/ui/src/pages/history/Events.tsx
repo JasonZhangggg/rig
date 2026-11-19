@@ -42,15 +42,15 @@ export function Events({ points, range, pinned, onPin }: { points: HistoryPoint[
   const list = events(points, data.changes, pc, range);
   const shown = all ? list : list.slice(0, SHOWN);
   return (
-    <section className="hi-panel" aria-label="What happened">
+    <section className="hi-panel" aria-label="Busy times">
       {list.length === 0 ? <p className="muted">Nothing heavy ran and nothing was changed in this range.</p> : (
-        <ul className="hi-events" aria-label="What happened">
+        <ul className="hi-events" aria-label="Busy times">
           {shown.map((e) => {
             const key = e.kind === "busy" ? `b${e.t}` : `c${e.change.id}`;
             return e.kind === "busy" ? (
               <li key={key}>
                 <button type="button" className="hi-ev" aria-pressed={pinned === key} onClick={() => onPin(key, e.peak?.at ?? e.t)}>
-                  <span className={`hi-ev-ico${e.hot ? " look" : ""}`} aria-hidden="true"><Icon d="M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01" /></span>
+                  <span className={`hi-ev-ico${e.hot ? " look" : ""}`} aria-hidden="true"><Icon d="M3 10h3l2-5 4 10 2-5h3" /></span>
                   <span className="hi-ev-main"><b>{e.name}</b><span className="faint">{day(e.t)}, {timeRange(e.t, e.to)}, {hours((e.to - e.t) / 36e5)}</span></span>
                   {e.peak && <span className={`hi-ev-fig${e.hot ? " look" : ""}`}><b className="num">{temp(e.peak.temp)}</b><span>{e.hot ? "Ran hot, " : ""}{e.peak.part === "gpu" ? "graphics card" : "processor"}</span></span>}
                 </button>

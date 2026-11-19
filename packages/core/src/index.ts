@@ -13,6 +13,7 @@ export * from "./games";
 export * from "./alerts";
 export * from "./view";
 export * from "./upgrades";
+export * from "./shop";
 export * from "./api";
 export * from "./cloud";
 export * from "./local";

@@ -11,12 +11,12 @@ type Temp = (celsius: number | null | undefined, opts?: TempFormat) => string;
 /** A difference between two temperatures, like "6° warmer": scaled to the unit, not offset. */
 const diff = (temp: Temp, celsius: number) => temp(celsius, { delta: true, mark: "degree" });
 
-function busyNote(b: BusySummary | null, laptop: boolean, temp: Temp) {
+function busyNote(b: BusySummary | null, temp: Temp) {
   if (!b) return "Nothing heavy ran in this range.";
-  if (b.change == null) return `Typical during ${laptop ? "busy periods" : "games and heavy work"}.`;
-  if (b.change >= STEADY_MARGIN) return `${diff(temp, b.change)} warmer than earlier in this range.`;
-  if (b.change <= -STEADY_MARGIN) return `${diff(temp, -b.change)} cooler than earlier in this range.`;
-  return "About the same as earlier in this range.";
+  if (b.change == null) return "Typical when busy.";
+  if (b.change >= STEADY_MARGIN) return `${diff(temp, b.change)} warmer than before.`;
+  if (b.change <= -STEADY_MARGIN) return `${diff(temp, -b.change)} cooler than before.`;
+  return "Same as before.";
 }
 
 /** When the hottest moment was, what was running, and how close it came to the limit. */
@@ -61,7 +61,7 @@ export function History() {
 
   return (
     <div className="page hi-page">
-      <LogsHead sub={`${pc.name}'s temperatures, logged every minute while Rig runs.`} right={
+      <LogsHead sub={`How warm ${pc.name} ran, logged every minute while Rig runs.`} right={
         <div className="seg" role="group" aria-label="Range">
           {(["24h", "7d", "30d"] as const).map((r) => <button key={r} type="button" aria-pressed={ui.range === r} onClick={() => pick(r)}>{r === "24h" ? "Day" : r === "7d" ? "Week" : "Month"}</button>)}
         </div>
@@ -72,16 +72,16 @@ export function History() {
             <div className="figs" role="group" aria-label="Key figures">
               {peak && <Figure label="Hottest moment" figure={temp(peak.temp)} warn={peak.headroom <= 0} note={peakNote(peak, pts, ui.range, laptop, temp)}
                 pressed={focus?.key === "peak"} onClick={() => toggle("peak", peak.t)} />}
-              <Figure label={`${partName} when busy`} figure={temp(busy?.typical)} warn={warmer} note={busyNote(busy, laptop, temp)}
+              <Figure label={`${partName} when busy`} figure={temp(busy?.typical)} warn={warmer} note={busyNote(busy, temp)}
                 pressed={busy ? focus?.key === "busy" : undefined} onClick={() => toggle("busy")} />
-              <Figure label="Processor at rest" figure={temp(idleCpu)} note={idleCpu != null ? "Typical when nothing heavy runs." : "Nothing quiet was logged in this range."} />
+              <Figure label="Processor at rest" figure={temp(idleCpu)} note={idleCpu != null ? "Typical when idle." : "No idle time logged."} />
             </div>
           )}
           <div className="legend">
             {pc.parts?.gpu && <span><i className="lg-gpu" />Graphics card</span>}
             <span><i className={pc.parts?.gpu ? "lg-cpu" : "lg-gpu"} />Processor</span>
             <span><i className="lg-limit" />Safe limit</span>
-            <span><i className="hi-lg-band" />{laptop ? "Busy periods" : "Games and heavy work"}</span>
+            <span><i className="hi-lg-band" />Busy</span>
           </div>
           {pts == null ? <ChartNote busy>Loading…</ChartNote> : (
             <LineChart points={pts} series={pc.parts?.gpu ? [{ key: "cpu", cls: "cpu" }, { key: "gpu", cls: "gpu" }] : [{ key: "cpu", cls: "gpu" }]}
@@ -92,7 +92,7 @@ export function History() {
       {pts && has && (
         <section className="hi-detail" aria-label="Details">
           <div className="hi-tabs" role="group" aria-label="Details">
-            <button type="button" aria-pressed={view === "events"} onClick={() => setView("events")}>What happened</button>
+            <button type="button" aria-pressed={view === "events"} onClick={() => setView("events")}>Busy times</button>
             <button type="button" aria-pressed={view === "ranges"} onClick={() => setView("ranges")}>Ranges</button>
           </div>
           {view === "events"
@@ -109,7 +109,7 @@ export function History() {
           </div>
           <ul className="hi-empty-list" aria-label="What shows up here">
             <li><b>Every part, minute by minute</b><span className="muted">The processor{pc.parts?.gpu ? " and graphics card" : ""} on one chart, against the safe limit.</span></li>
-            <li><b>{laptop ? "Busy periods" : "Games and heavy work"}, shaded</b><span className="muted">So you can see what made it warm.</span></li>
+            <li><b>Busy times, shaded</b><span className="muted">So you can see what made it warm.</span></li>
             <li><b>Lowest, typical and highest</b><span className="muted">With the hottest moment and how close it came to the limit.</span></li>
           </ul>
         </section>

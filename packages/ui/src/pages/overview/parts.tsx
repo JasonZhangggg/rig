@@ -33,7 +33,7 @@ export function Legend({ items, total }: { items: [LegendMark, string][]; total?
 /** A pane's title and note, with its headline number large on the right when there is one. */
 export const CardHead = ({ title, note, figure }: { title: string; note?: string; figure?: { value: string; label: string; tone?: "look" } }) => (
   <div className="pl-head">
-    <div><h3>{title}</h3>{note && <span className="f-faint">{note}</span>}</div>
+    <div><h2>{title}</h2>{note && <span className="f-faint">{note}</span>}</div>
     {figure && <div className={`pl-figure${figure.tone ? ` ${figure.tone}` : ""}`}><b>{figure.value}</b><span>{figure.label}</span></div>}
   </div>
 );

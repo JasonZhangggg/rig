@@ -8,14 +8,16 @@ import { useManualSearch } from "../manuals/Search";
 import { useManuals } from "../manuals/useManuals";
 import { openManual } from "../manuals/viewerState";
 import { partOf } from "../pages/upgrades/PCUpgrades";
+import { shopCatOf } from "../pages/shared";
 
 /** What a page is about, so a search in a person's own words finds it. */
 const pageWords: Partial<Record<Route, [string, string]>> = {
   overview: ["Your dashboard: health, temperatures and things to look at", "home dashboard overview health summary tiles customize"],
-  pc: ["Your PC in 3D with every part, its manual and upgrades", "my pc 3d parts specs components hardware drivers manual manuals diagrams pdf upgrades"],
+  pc: ["Your PC in 3D with every part and how warm it runs", "my pc 3d parts specs components hardware temperature"],
   history: ["In Logs: temperatures over the day, week or month", "temperature history temps heat hot chart graph week month"],
   games: ["In Logs: how your games ran and how warm they got", "games fps gaming performance tuning"],
-  upgrades: ["On My PC: what fits and what would help most", "upgrades buy parts ram memory ssd storage fan"],
+  upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
+  manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
   chat: ["Ask Rig anything about your PC", "ask chat help question"],
   logs: ["Windows errors and Rig's recordings", "logs events crashes errors blue screen driver shutdown recordings record"],
   changes: ["What Rig or you changed, with undo", "changes undo fixes applied review"],
@@ -86,7 +88,7 @@ export function Palette() {
     }
     for (const c of data.changes) items.push({ id: `c-${c.id}`, kind: "changes", title: c.title, sub: `${new Date(c.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${c.by === "you" ? "You" : "Rig"}`, badge: { text: c.status === "applied" ? "Applied" : "Undone", tone: c.status === "applied" ? "ok" : "muted" }, run: () => open("changes") });
     for (const g of extra.games) items.push({ id: `g-${g.id}`, kind: "games", title: g.name, sub: [g.res, g.now && `${g.now.avg} FPS`].filter(Boolean).join(" · "), badge: g.now && g.tuned ? { text: `+${g.tuned.avg - g.now.avg} FPS possible`, tone: "info" } : undefined, run: () => open("games") });
-    for (const u of extra.upgrades) items.push({ id: `u-${u.title}`, kind: "upgrades", title: u.title, sub: [u.part, u.price].filter(Boolean).join(" · "), badge: u.fit === "fits" ? { text: "Fits", tone: "ok" } : u.fit === "check" ? { text: "Check first", tone: "warn" } : undefined, run: () => { const id = partOf(u, pc); open("pc", id ? { selected: id, tab: "upgrade" } : {}); } });
+    for (const u of extra.upgrades) items.push({ id: `u-${u.title}`, kind: "upgrades", title: u.title, sub: [u.part, u.price].filter(Boolean).join(" · "), badge: u.fit === "fits" ? { text: "Fits", tone: "ok" } : u.fit === "check" ? { text: "Check first", tone: "warn" } : undefined, run: () => { const id = partOf(u, pc); open("upgrades", { shopCat: id ? shopCatOf[id] ?? null : null }); } });
     for (const r of data.recordings) items.push({ id: `r-${r.id}`, kind: "logs", title: r.reason, sub: `Recording · ${whenRan(r)} · ${minutes(r.minutes)}`, keys: r.headline, badge: { text: stateWord[r.state], tone: recTone[r.state] }, run: () => { openRecording(r.id); close(); } });
     for (const m of manuals ?? []) {
       if (!m.indexed) continue;

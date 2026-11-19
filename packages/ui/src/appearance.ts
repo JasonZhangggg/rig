@@ -102,7 +102,7 @@ export interface Derived {
 }
 
 /** Colors the 3D PC draws with. */
-export interface SceneColors { heatCool: string; heatWarm: string; heatHot: string; airCool: string; airWarm: string; highlight: string }
+export interface SceneColors { heatCool: string; heatWarm: string; heatHot: string; highlight: string }
 
 export interface PalettePreset {
   id: string;
@@ -119,7 +119,7 @@ export const palettes: PalettePreset[] = [
     id: "brass", name: "Brass", blurb: "Pale gold and rust. The Rig look.",
     colors: { good: "#E6D3A3", look: "#D9804F", expected: "#A7A39B" },
     derived: { goodMark: "#7C6A3A", goodText: "#6A5A2E", goodBg: "#F3EDDD", goodOnDark: "#E6D3A3", lookText: "#A4471C", lookBg: "#F8E2D5", lookOnDark: "#D9804F" },
-    scene: { heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", airCool: "#D2C08F", airWarm: "#D9804F", highlight: "#E6D3A3" },
+    scene: { heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3" },
   },
   { id: "sage", name: "Sage", blurb: "Soft green with terracotta.", colors: { good: "#BFD6AE", look: "#D5734F", expected: "#A3A69C" } },
   { id: "cobalt", name: "Cobalt", blurb: "Clear blue with amber.", colors: { good: "#B5C8F0", look: "#E39A3B", expected: "#A2A5AD" } },
@@ -255,7 +255,7 @@ export function sceneColorsOf(a: Appearance): SceneColors {
   const p = paletteOf(a);
   return {
     heatCool: mix(p.colors.good, p.goodMark, 0.4), heatWarm: p.colors.look, heatHot: mix(p.colors.look, p.lookText, 0.55),
-    airCool: mix(p.colors.good, p.goodMark, 0.2), airWarm: p.colors.look, highlight: p.colors.good,
+    highlight: p.colors.good,
   };
 }
 

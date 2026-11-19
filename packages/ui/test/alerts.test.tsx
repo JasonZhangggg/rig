@@ -80,10 +80,10 @@ describe("alerts in Things to look at", () => {
     expect(await screen.findByText("My graphics card has been at 192°F for a while. What should I do?")).toBeTruthy();
   });
 
-  it("counts only the kinds left on in the Health summary", async () => {
+  it("counts only the kinds left on in Home's status line", async () => {
     render(<RigApp client={demoCounting([full, hot])} />);
     await (await todo()).findByText(hot.title);
-    const health = within(screen.getByText("Health").closest("section")!);
+    const health = within(screen.getByRole("heading", { level: 1 }).closest("header")!);
     expect(health.getByText(/2 things need a look\./)).toBeTruthy();
     await act(async () => { setAlertKind("too-hot", false); });
     await waitFor(() => expect(health.getByText(/One thing needs a look\./)).toBeTruthy());
