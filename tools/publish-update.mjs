@@ -39,7 +39,8 @@ function current() {
   return JSON.parse(fs.readFileSync(tmp, "utf8"));
 }
 
-const [version, installer, sigFile] = process.argv.slice(2);
+// wrangler runs from apps/server, so paths given relative to here are made absolute first.
+const [version, installer, sigFile] = process.argv.slice(2).map((a, i) => (i > 0 ? path.resolve(a) : a));
 if (!sigFile || !/^\d+\.\d+\.\d+$/.test(version)) {
   console.error("Usage: node tools/publish-update.mjs <version like 1.2.3> <installer.exe> <installer.exe.sig>");
   process.exit(2);
