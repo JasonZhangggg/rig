@@ -1,6 +1,6 @@
 # Rig
 
-A Windows PC helper: a Tauri desktop app with a C# helper that reads sensors with admin rights, a website that shows every PC on the account, and a Cloudflare Worker server. The website and the app share every screen. Start with [docs/architecture.md](docs/architecture.md); Windows setup and debugging are in [docs/development.md](docs/development.md).
+A Windows PC helper: a Tauri desktop app with a C# helper that reads sensors with admin rights, a website that shows every PC on the account, and a Cloudflare Worker server. The website and the app share every screen. Start with [docs/architecture.md](docs/architecture.md); Windows setup and debugging are in [docs/development.md](docs/development.md), and the Upgrades tab's features and price sources in [docs/upgrades.md](docs/upgrades.md).
 
 ## Commands
 

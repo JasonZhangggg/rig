@@ -23,7 +23,7 @@ pnpm typecheck      # types in every package
 
 On a Mac or Linux, `pnpm desktop` runs the app on a simulated PC.
 
-Building the Windows installer: Actions, CI, Run workflow, then download `rig-windows-installer`. Releasing and the auto-updater: [docs/releasing.md](docs/releasing.md). Putting the server online: [docs/deploy.md](docs/deploy.md). How it fits together: [docs/architecture.md](docs/architecture.md). Notes for Claude Code: [CLAUDE.md](CLAUDE.md).
+Building the Windows installer: Actions, CI, Run workflow, then download `rig-windows-installer`. Releasing and the auto-updater: [docs/releasing.md](docs/releasing.md). Putting the server online: [docs/deploy.md](docs/deploy.md). How it fits together: [docs/architecture.md](docs/architecture.md). The Upgrades tab: [docs/upgrades.md](docs/upgrades.md). Notes for Claude Code: [CLAUDE.md](CLAUDE.md).
 
 ## Layout
 
