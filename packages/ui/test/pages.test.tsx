@@ -139,6 +139,56 @@ describe("Upgrades", () => {
     expect(list.textContent).toMatch(/1 part, \$104/);
   });
 
+  it("searches a kind of part, filters by maker and points to matches in other kinds", async () => {
+    await show("upgrades");
+    fireEvent.click(await rail().findByRole("button", { name: /Memory/ }));
+    const list = () => within(screen.getByRole("list", { name: /Memory that could go in Atlas/ }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search memory" }), { target: { value: "64gb" } });
+    expect(list().getAllByRole("listitem")).toHaveLength(1);
+    expect(list().getByText("Corsair Vengeance 64 GB (2 × 32 GB)")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search memory" }), { target: { value: "" } });
+    const makers = within(screen.getByRole("group", { name: "Maker" }));
+    fireEvent.click(makers.getByRole("button", { name: /G\.Skill/ }));
+    expect(makers.getByRole("button", { name: /G\.Skill/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(list().getAllByRole("listitem").every((li) => /G\.Skill/.test(li.textContent ?? ""))).toBe(true);
+
+    // A search kept across kinds: "2 TB" matches drives, so the hint opens Storage with the search in place.
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search memory" }), { target: { value: "2 tb" } });
+    expect(screen.getByText('No memory matches "2 tb".')).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Storage \(\d\)/ }));
+    expect(screen.getByRole("heading", { level: 2, name: "Storage" })).toBeTruthy();
+    expect((screen.getByRole("searchbox", { name: "Search storage" }) as HTMLInputElement).value).toBe("2 tb");
+  });
+
+  it("adds a part Rig doesn't list to the list, marked as not checked", async () => {
+    await show("upgrades");
+    fireEvent.click(await rail().findByRole("button", { name: /Storage/ }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search storage" }), { target: { value: "Optane 905P" } });
+    fireEvent.click(screen.getByRole("button", { name: 'Add "Optane 905P" to your list anyway' }));
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Optane 905P");
+    fireEvent.change(screen.getByLabelText(/Price/), { target: { value: "$250" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to your list" }));
+    const listBtn = rail().getByRole("button", { name: /Your list/ });
+    expect(listBtn.textContent).toMatch(/1 part, \$250/);
+    fireEvent.click(listBtn);
+    const mine = within(screen.getByRole("list", { name: "Your list" }));
+    expect(mine.getByText("Not checked")).toBeTruthy();
+    expect(mine.getByText(/hasn't checked it/)).toBeTruthy();
+    fireEvent.click(mine.getByRole("button", { name: "Remove Optane 905P" }));
+    expect(listBtn.textContent).toMatch(/Nothing yet/);
+  });
+
+  it("shows where a photo goes and says the demo has none", async () => {
+    await show("upgrades");
+    fireEvent.click(await rail().findByRole("button", { name: /Memory/ }));
+    const kit = row(/Corsair Vengeance 32 GB/);
+    expect(kit.querySelector(".shop-photo svg")).toBeTruthy();
+    expect(kit.querySelector("img")).toBeNull();
+    fireEvent.click(within(kit).getByRole("button", { expanded: false }));
+    expect(within(kit).getByText("No photo yet. Photos come with a real shop feed.")).toBeTruthy();
+  });
+
   it("checks a graphics card against the power supply once it knows the wattage", async () => {
     await show("upgrades");
     fireEvent.click(await rail().findByRole("button", { name: /Graphics card/ }));
