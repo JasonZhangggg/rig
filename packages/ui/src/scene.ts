@@ -96,6 +96,10 @@ export function createScene(
   const layer = document.createElement("div");
   layer.className = "scene-labels";
   container.appendChild(layer);
+  // A soft frame around the part being pointed at or picked, so it's plain which shape a label means.
+  const focusBox = document.createElement("div");
+  focusBox.className = "part-box";
+  layer.appendChild(focusBox);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -388,6 +392,11 @@ export function createScene(
     el.dataset.part = partId;
     el.innerHTML = labelHTML(part);
     el.addEventListener("click", (e) => { e.stopPropagation(); select(partId); });
+    // Pointing at a label lights its part, frames it and quiets the other labels, as pointing at the part does.
+    el.addEventListener("pointerenter", () => hoverFromScene(partId));
+    el.addEventListener("pointerleave", () => hoverFromScene(null));
+    el.addEventListener("focus", () => hoverFromScene(partId));
+    el.addEventListener("blur", () => hoverFromScene(null));
     const pin = document.createElement("div");
     pin.className = "scene-pin";
     pin.dataset.part = partId;
@@ -930,7 +939,7 @@ export function createScene(
         const isHov = state.hovered === e.partId;
         if ((isSel || isHov) && !m.userData.glow) {
           m.emissive.set(theme().highlight);
-          m.emissiveIntensity = isSel ? 0.45 : 0.25;
+          m.emissiveIntensity = isSel ? 0.5 : 0.4;
         }
         // Case panels go see-through in heat view so internals show
         let op = m.userData.baseOpacity;
@@ -945,6 +954,7 @@ export function createScene(
       l.pin.classList.toggle("is-selected", state.selected === id);
       l.pin.classList.toggle("is-hovered", state.hovered === id && state.selected !== id);
     }
+    layer.classList.toggle("has-focus", !!(state.hovered || state.selected));
     labelsDirty = true;
   }
 
@@ -983,13 +993,18 @@ export function createScene(
   renderer.domElement.addEventListener("pointermove", (e) => {
     if (e.pointerType !== "mouse") return;
     const id = pick(e);
-    if (id !== state.hovered) {
-      state.hovered = id;
-      renderer.domElement.style.cursor = id ? "pointer" : "grab";
-      applyHighlights();
-      onHover?.(id);
-    }
+    renderer.domElement.style.cursor = id ? "pointer" : "grab";
+    hoverFromScene(id);
   });
+
+  /** The pointer is over a part, or its label, in the 3D view itself: light it and tell the page, so a list can light its row. */
+  function hoverFromScene(id: string | null) {
+    if (id === state.hovered) return;
+    state.hovered = id;
+    applyHighlights();
+    onHover?.(id);
+    wake();
+  }
 
   function select(id: string | null) {
     state.selected = id && parts()[id] ? id : null;
@@ -1008,6 +1023,7 @@ export function createScene(
   const px = (v: number) => Math.round(v * 10) / 10;
 
   function layoutLabels() {
+    if (stageW) placeFocusBox(stageW, stageH);
     const all = Object.entries(state.labels);
     if (!all.length || !stageW) return;
     if (labelsDirty) {
@@ -1064,6 +1080,29 @@ export function createScene(
     if (layer.style.getPropertyValue("--ly") !== ly) layer.style.setProperty("--ly", ly);
   }
   document.fonts?.ready.then(() => { labelsDirty = true; });
+
+  // The part's outline on screen: its 3D bounds projected, padded a little, and drawn as a frame.
+  const _box = new THREE.Box3(), _part = new THREE.Box3(), _c = new THREE.Vector3();
+  function placeFocusBox(w: number, h: number) {
+    const id = state.hovered ?? state.selected;
+    const mine = id && id !== "case" && id !== "chassis" ? state.entries.filter((e) => e.partId === id && e.obj.visible) : [];
+    if (!mine.length) { if (focusBox.style.opacity !== "0") focusBox.style.opacity = "0"; return; }
+    _box.makeEmpty();
+    for (const e of mine) _box.union(_part.setFromObject(e.obj));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      _c.set(k & 1 ? _box.max.x : _box.min.x, k & 2 ? _box.max.y : _box.min.y, k & 4 ? _box.max.z : _box.min.z).project(camera);
+      const sx = (_c.x + 1) / 2 * w, sy = (1 - _c.y) / 2 * h;
+      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
+    }
+    const pad = 6;
+    x0 = Math.max(2, x0 - pad); y0 = Math.max(2, y0 - pad); x1 = Math.min(w - 2, x1 + pad); y1 = Math.min(h - 2, y1 + pad);
+    put(focusBox, `translate(${px(x0)}px, ${px(y0)}px)`);
+    const bw = `${px(Math.max(0, x1 - x0))}px`, bh = `${px(Math.max(0, y1 - y0))}px`;
+    if (focusBox.style.width !== bw) focusBox.style.width = bw;
+    if (focusBox.style.height !== bh) focusBox.style.height = bh;
+    if (focusBox.style.opacity !== "1") focusBox.style.opacity = "1";
+  }
 
   // ---------- loop ----------
   function resize() {

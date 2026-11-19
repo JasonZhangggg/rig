@@ -24,8 +24,9 @@
 
 .f-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; padding-top: 4px; }
 .f-head-text { min-width: 0; }
-.f-head h1 { color: var(--text); font: 500 clamp(2rem, 2.6vw, 2.75rem)/1.05 var(--font); letter-spacing: -.03em; }
-.f-head p { margin-top: 10px; color: var(--text-2); font-size: 16px; font-weight: 500; line-height: 1.45; }
+.f-head h1 { color: var(--text); font: var(--t-page); letter-spacing: -.03em; }
+/* The verdict on the PC is what the page is for, so it reads in full ink, right under the greeting. */
+.f-head p { margin-top: 8px; color: var(--text); font-size: 17px; font-weight: 500; line-height: 1.45; }
 .f-head-tools { display: flex; align-items: center; gap: 8px; }
 .f-date { display: flex; align-items: center; gap: 11px; height: 52px; padding: 0 16px 0 6px; border-radius: var(--r-pill); background: var(--surface); }
 .f-date b { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; font: 500 18px/1 var(--font); letter-spacing: -.02em; }
@@ -60,8 +61,9 @@
 .f-pc-in { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 0 32px; }
 .f-pc-top { position: relative; z-index: 2; grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; }
 .f-pc-top > * { pointer-events: auto; }
-.f-kicker { color: var(--text-3); font-size: 13px; font-weight: 600; }
-.f-pc-name { margin-top: 6px; font: 500 clamp(2.5rem, 7cqi, 4.75rem)/.95 var(--font); letter-spacing: -.045em; }
+.f-kicker { color: var(--text-3); font: var(--t-label); }
+/* The PC's name titles its tile: a step over the other tiles' titles, well under the page's greeting. */
+.f-pc-name { margin-top: 2px; font: 600 clamp(1.375rem, 2.6cqi, 1.75rem)/1.15 var(--font); letter-spacing: -.025em; }
 .f-pc-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 20px; }
 .f-views { display: flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--chip); }
 .f-views button { height: 32px; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text-2); font: 600 13px var(--font); cursor: pointer; transition: background .15s, color .15s; }
@@ -89,7 +91,7 @@
 .f-specs { display: none; margin: 0; }
 .f-specs > div { display: grid; gap: 4px; padding: 14px 0; }
 .f-specs > div + div { border-top: 1px solid var(--line); }
-.f-specs dt { color: var(--text-3); font-size: 13px; font-weight: 600; }
+.f-specs dt { color: var(--text-3); font: var(--t-label); }
 .f-specs dd { margin: 0; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.35; }
 .f-pc.no-reads .f-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); column-gap: 20px; position: relative; z-index: 2; border-top: 1px solid var(--line); }
 .f-pc.no-reads .f-specs > div + div { border-top: 0; }
@@ -97,8 +99,9 @@
 .f-reads { position: relative; z-index: 2; grid-column: 1 / -1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-top: 1px solid var(--line); }
 .f-read { min-width: 0; display: grid; justify-items: start; gap: 8px; padding: 16px 20px 4px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .f-read:first-child { padding-left: 0; border-left: 0; }
-.f-read > span { color: var(--text-3); font-size: 13px; font-weight: 600; white-space: nowrap; transition: color .15s; }
-.f-read b { font: 500 clamp(2rem, 5cqi, 3.25rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.f-read > span { color: var(--text-3); font: var(--t-label); white-space: nowrap; transition: color .15s; }
+/* The live temperatures are the largest numbers on Home; every other tile's number is one step down (--t-figure). */
+.f-read b { font: 500 clamp(2rem, 4.2cqi, 2.75rem)/1 var(--font); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .f-read.hot b { color: var(--warn); }
 @media (hover: hover) and (pointer: fine) {
   .f-read:hover > span { color: var(--text); }
@@ -151,7 +154,7 @@
 .f-health { min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
 .f-health-main { display: flex; align-items: center; gap: 26px; }
 .f-health-text { flex: 1; min-width: 0; display: grid; justify-items: start; gap: 6px; }
-.f-health h2 { font: 500 18px/1.2 var(--font); letter-spacing: -.01em; }
+.f-health h2 { font: var(--t-title); letter-spacing: -.01em; }
 .f-health p { display: -webkit-box; overflow: hidden; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.45; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .f-health .f-link { margin-top: 2px; font-size: 13px; }
 .f-ring { position: relative; width: 116px; height: 116px; flex: none; }
@@ -159,7 +162,7 @@
 .f-ring .tr { fill: none; stroke: var(--s-track); stroke-width: 10; }
 .f-ring .vl { fill: none; stroke: var(--look); stroke-width: 10; stroke-linecap: round; }
 .f-ring > div { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; }
-.f-ring b { color: var(--look-text); font: 600 38px/1 var(--font); letter-spacing: -.04em; }
+.f-ring b { color: var(--look-text); font: 600 34px/1 var(--font); letter-spacing: -.04em; }
 .f-ring span { margin-top: 3px; color: var(--text-3); font-size: 12px; font-weight: 600; }
 .f-hnum { flex: none; display: grid; grid-template-columns: auto auto; align-items: baseline; gap: 4px 8px; min-width: 140px; }
 .f-hnum b { color: var(--look-text); font: 500 4.5rem/.9 var(--font); letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
@@ -185,18 +188,16 @@
 /* A bigger tile gets a bigger score, and a tall narrow one stacks the score over the words. */
 @container wbox (min-height: 1px) {
   .f-ring { width: clamp(84px, min(40cqi, 74cqh), 220px); height: auto; aspect-ratio: 1; }
-  .f-ring b { font-size: clamp(28px, min(10cqi, 20cqh), 64px); }
-  .f-hnum b { font-size: clamp(3rem, min(21cqi, 42cqh), 8.5rem); }
-  .f-health h2 { font-size: clamp(18px, 4.6cqi, 24px); }
+  .f-ring b { font-size: clamp(28px, min(9cqi, 18cqh), 44px); }
+  .f-hnum b { font-size: clamp(2.5rem, min(16cqi, 32cqh), 4.5rem); }
   .f-health[data-style="compact"] .f-ring { width: clamp(72px, min(18cqi, 36cqh), 128px); height: auto; }
   .f-health[data-style="compact"] .f-ring b { font-size: clamp(24px, min(5.5cqi, 11cqh), 40px); }
-  .f-health p { font-size: clamp(14px, 3.6cqi, 17px); }
 }
 @container wbox (orientation: portrait) and (min-height: 300px) {
   .f-health-main { flex-direction: column; align-items: flex-start; gap: 20px; }
-  .f-hnum b { font-size: clamp(3rem, 26cqi, 7.5rem); }
+  .f-hnum b { font-size: clamp(2.5rem, 20cqi, 4.5rem); }
   .f-ring { width: clamp(96px, min(58cqi, 44cqh), 200px); }
-  .f-ring b { font-size: clamp(30px, 17cqi, 60px); }
+  .f-ring b { font-size: clamp(30px, 13cqi, 44px); }
   .f-health-text { flex: none; }
 }
 @container tile (max-width: 240px) {
@@ -226,7 +227,7 @@
 /* ----- Things to look at: a rust bubble with the part marks what needs a look; a check marks what's only worth knowing. ----- */
 .f-todo { min-height: 0; display: flex; flex-direction: column; }
 .f-todo-head { display: flex; align-items: center; gap: 12px; }
-.f-todo-head h2, .f-asks h2 { font: 500 clamp(1.4rem, 1.6vw, 1.75rem)/1.1 var(--font); letter-spacing: -.025em; }
+.f-todo-head h2, .f-asks h2 { font: var(--t-title); letter-spacing: -.01em; }
 .f-count { min-width: 26px; height: 26px; padding: 0 8px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--look); color: var(--graphite); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .f-todo-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 14px -8px 0; padding: 0 8px; list-style: none; }
 /* The row that says how many more there are, when the tile shows only some. */
@@ -238,7 +239,6 @@
   .f-todo-list .f-todo-row { padding-block: 10px; }
   .f-todo[data-style="cards"] .f-todo-row { gap: 8px; padding: 12px; }
   .f-todo-foot { padding-top: 10px; }
-  .f-todo-foot p { display: none; }
 }
 @container wbox (max-width: 260px) {
   .f-todo-row { gap: 10px; }
@@ -277,8 +277,7 @@
 .f-todo-empty { display: flex; align-items: center; gap: 16px; margin-top: 14px; padding: 12px 0; }
 .f-todo-empty .f-todo-ico { width: 48px; height: 48px; background: var(--good); color: var(--graphite); }
 .f-todo-empty p { max-width: 32ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
-.f-todo-foot { flex: none; margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding-top: 20px; }
-.f-todo-foot p { color: var(--text-2); font-size: 14px; font-weight: 500; }
+.f-todo-foot { flex: none; margin-top: auto; display: flex; padding-top: 16px; }
 
 /* ----- Ask Rig ----- */
 .f-asks { min-height: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -299,7 +298,6 @@
   .f-asks[data-style="rows"] .f-asks-list button { flex: 0 1 clamp(44px, 20cqh, 112px); font-size: clamp(15px, min(2.4cqi, 4.4cqh), 22px); }
   .f-asks[data-style="chips"] .f-asks-list { align-content: center; gap: clamp(8px, 2.4cqh, 16px); }
   .f-asks[data-style="chips"] .f-asks-list button { padding: clamp(10px, 2.6cqh, 16px) clamp(16px, 2.2cqi, 24px); font-size: clamp(14px, min(2.2cqi, 4cqh), 19px); }
-  .f-asks h2 { font-size: clamp(1.4rem, min(3.4cqi, 6cqh), 2.25rem); }
 }
 @container wbox (max-height: 150px) {
   .f-asks { gap: 8px; }
@@ -313,16 +311,16 @@
 /* ----- Chart panes ----- */
 .f-pane { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 18px; }
 .pl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.pl-head h3 { color: var(--text); font: 500 18px/1.2 var(--font); letter-spacing: -.01em; }
-.f-faint { display: block; margin-top: 4px; color: var(--text-3); font-size: 13px; font-weight: 600; }
+.pl-head h2 { color: var(--text); font: var(--t-title); letter-spacing: -.01em; }
+.f-faint { display: block; margin-top: 4px; color: var(--text-3); font: var(--t-label); }
 .pl-figure { display: grid; justify-items: end; gap: 4px; text-align: right; }
-.pl-figure b { color: var(--text); font: 600 2.25rem/1 var(--font); letter-spacing: -.02em; white-space: nowrap; }
+.pl-figure b { color: var(--text); font: var(--t-figure); letter-spacing: -.03em; white-space: nowrap; }
 .pl-figure.look b { color: var(--warn); }
 .pl-figure span { color: var(--text-3); font-size: 13px; font-weight: 600; }
 /* A narrow tile puts the headline number under the title, on one line with its label. */
 @container wbox (max-width: 200px) {
   .pl-head { flex-wrap: wrap; gap: 6px 8px; }
-  .pl-head h3 { font-size: 16px; }
+  .pl-head h2 { font-size: 16px; }
   .pl-figure { display: flex; align-items: baseline; gap: 6px; text-align: left; }
   .pl-figure b { font-size: 1.6rem; }
   .pl-figure span { font-size: 12px; }
@@ -334,7 +332,7 @@
 
 .pl-stats { display: flex; gap: 12px 32px; flex-wrap: wrap; }
 .pl-stat { display: grid; grid-template-rows: 8px auto auto; gap: 5px; justify-items: start; }
-.pl-stat b { grid-row: 2; color: var(--text); font: 600 2.25rem/1 var(--font); letter-spacing: -.01em; }
+.pl-stat b { grid-row: 2; color: var(--text); font: var(--t-figure); letter-spacing: -.03em; }
 .pl-stat b small { margin-left: 2px; color: var(--text-2); font-size: .55em; }
 .pl-stat > span { grid-row: 3; color: var(--text-2); font-size: 13px; font-weight: 600; }
 .pl-tri { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; color: var(--s-c); }
@@ -517,23 +515,22 @@
 .f-store-ring b { color: var(--text); font: 600 clamp(1rem, 5cqi, 1.35rem)/1.1 var(--font); white-space: nowrap; }
 .f-store-ring span { color: var(--text-3); font-size: 12.5px; font-weight: 600; }
 .f-store-num { display: grid; gap: 6px; margin-top: auto; }
-.f-store-num b { color: var(--text); font: 500 clamp(2.5rem, 14cqi, 4rem)/.95 var(--font); letter-spacing: -.045em; }
+.f-store-num b { color: var(--text); font: 500 clamp(2rem, 10cqi, 2.75rem)/.95 var(--font); letter-spacing: -.04em; }
 .f-store-num span { color: var(--text-2); font-size: 14px; font-weight: 600; }
 .f-store-list { min-height: 0; display: grid; align-content: start; gap: 0; margin: 0; padding: 0; list-style: none; }
 .f-store[data-style="number"] .f-store-list { margin-top: auto; }
 /* A roomy tile sets the bar and its figure larger and puts the drives at the bottom, rather than leaving the lower half bare. */
 @container wbox (min-height: 1px) {
   .f-store-bar { height: clamp(14px, 7cqh, 44px); }
-  .f-store[data-style="bar"] .pl-figure b, .f-store[data-style="ring"] .pl-figure b { font-size: clamp(2.25rem, min(9cqi, 14cqh), 4.25rem); }
   .f-store[data-style="bar"] .f-store-list { margin-top: auto; }
   .f-store-ring { width: clamp(88px, min(34cqi, 52cqh), 220px); }
   .f-store-ring b { font-size: clamp(1rem, min(6cqi, 7cqh), 1.9rem); }
-  .f-store-num b { font-size: clamp(2.5rem, min(14cqi, 22cqh), 5.5rem); }
+  .f-store-num b { font-size: clamp(2rem, min(12cqi, 18cqh), 3.5rem); }
 }
 /* A tall bar tile also says how much is free, large, between the bar and the drives. */
 @container wbox (min-height: 330px) {
   .f-store[data-style="bar"] .f-store-free { display: grid; gap: 6px; margin-block: auto; }
-  .f-store-free b { color: var(--text); font: 500 clamp(2.25rem, min(12cqi, 12cqh), 4.5rem)/.95 var(--font); letter-spacing: -.04em; }
+  .f-store-free b { color: var(--text); font: 500 clamp(2rem, min(10cqi, 10cqh), 3.5rem)/.95 var(--font); letter-spacing: -.04em; }
   .f-store-free span { color: var(--text-2); font-size: 14px; font-weight: 600; }
   .f-store[data-style="bar"] .f-store-free + .f-store-list { margin-top: 0; }
 }
@@ -560,7 +557,7 @@
 .dw[data-size="s"] .f-live-list > li > small, .dw[data-size="s"] .f-live .f-faint { display: none; }
 .f-live-list > li { min-width: 0; display: grid; gap: 4px; align-content: end; padding-left: 16px; border-left: 1px solid var(--line); }
 .f-live-list > li > span { color: var(--text-3); font-size: 13px; font-weight: 600; }
-.f-live-list > li > b { color: var(--text); font: 500 2.25rem/1 var(--font); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.f-live-list > li > b { color: var(--text); font: var(--t-figure); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .f-live-list > li.hot > b { color: var(--warn); }
 .f-live-list > li > small { overflow: hidden; color: var(--text-2); font-size: 12.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
 .f-meter { display: block; height: 6px; margin: 4px 0 2px; border-radius: var(--r-pill); background: var(--s-track); overflow: hidden; }
@@ -618,7 +615,7 @@
 @container tile (max-width: 340px) {
   .pl-figure b, .pl-stat b { font-size: 1.75rem; }
   .pl-stats { gap: 10px 22px; }
-  .pl-head h3 { font-size: 16px; }
+  .pl-head h2 { font-size: 16px; }
   .f-live-list > li > b { font-size: 1.75rem; }
 }
 

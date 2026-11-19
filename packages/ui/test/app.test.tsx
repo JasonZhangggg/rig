@@ -95,8 +95,8 @@ describe("Desktop sign-in on the website", () => {
     render(<RigApp client={client} requireAccount />);
     expect(await screen.findByText("W4XKLL2V")).toBeTruthy();
     expect(screen.getByText("jo@example.com")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in on that PC" }));
-    await screen.findByText("Your PC is signed in");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await screen.findByText("PC signed in");
     expect(approve).toHaveBeenCalledWith("W4XKLL2V", true);
   });
 });

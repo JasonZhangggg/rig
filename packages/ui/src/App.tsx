@@ -59,7 +59,7 @@ export function RigApp({ client, requireAccount, host }: RigAppProps) {
     }} />;
   }
   if ((requireAccount && !account) || signin) {
-    return <SignIn client={client} note={userCode ? "Sign in here to finish signing in the Rig app on your PC." : undefined}
+    return <SignIn client={client} note={userCode ? "Sign in to finish connecting Rig on your PC." : undefined}
       onDone={() => { location.hash = "overview"; location.reload(); }}
       onSkip={requireAccount ? undefined : () => { location.hash = "overview"; }} />;
   }
