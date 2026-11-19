@@ -17,6 +17,8 @@ import type { ProbeStatus } from "./probes";
 import type { SystemFacts } from "./telemetry";
 
 const POLL_MS = 15_000;
+/** How long a request may wait for the server to start answering. Calls that pass their own signal aren't limited. */
+const REQUEST_TIMEOUT_MS = 30_000;
 /** The browser page (the website only). */
 const page = () => (globalThis as unknown as { location: { href: string } }).location;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -55,11 +57,16 @@ export class CloudClient implements RigClient {
     // `credentials` is a browser option; written this way so the server can share this file's types.
     const credentials = { credentials: this.opts.token ? "omit" : "include" } as RequestInit;
     const headers = { ...(await this.headers(init.body != null)), ...init.headers };
+    // A request the server never starts answering (a stalled connection, a filter holding it) gives up rather than holding Rig up.
+    const stall = "signal" in init ? null : new AbortController();
+    const timer = stall && setTimeout(() => stall.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(this.opts.base + path, { ...credentials, ...init, headers });
+      return await fetch(this.opts.base + path, { ...credentials, ...(stall && { signal: stall.signal }), ...init, headers });
     } catch (e) {
       if (init.signal?.aborted) throw e;
       throw new ApiError(0, unreachableText);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

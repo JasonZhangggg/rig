@@ -93,6 +93,8 @@ export class LocalClient implements RigClient {
   private listeners = new Set<(pc: PC) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
   private ready: Promise<void> | null = null;
+  /** What start() is waiting on, so a stalled first read can say where it's stuck. */
+  private step: string | null = null;
   private busy = false;
   private lastError: string | null = null;
   private o: Required<LocalOptions>;
@@ -131,24 +133,35 @@ export class LocalClient implements RigClient {
 
   /** Reads the PC and starts the sensor, history and sync timers. Safe to call more than once. */
   start(): Promise<void> {
-    this.ready ??= (async () => {
-      [this.inv, this.facts, this.identity] = await Promise.all([
-        this.link.inventory(), this.link.facts(), this.store.get<Identity>("identity").then((v) => v ?? {}),
-      ]);
-      this.factsAt = this.invAt = this.o.now();
+    if (this.ready) return this.ready;
+    const ready = this.ready = (async () => {
+      this.step = "opening Rig's saved data";
+      this.identity = await this.store.get<Identity>("identity") ?? {};
+      this.step = "reading this PC's parts";
+      this.inv = await this.link.inventory();
+      this.invAt = this.o.now();
+      // Settings aren't needed to show the PC, so a slow read doesn't hold it up: the next tick tries again.
+      this.step = "reading this PC's settings";
+      this.facts = await this.link.facts().catch(() => null);
+      if (this.facts) this.factsAt = this.o.now();
+      this.step = "opening Rig's saved history";
       this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
       this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
       this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
       this.unsent = new Set(await this.store.get<string[]>("recordingsUnsent") ?? []);
       await this.recorder.load();
+      this.step = "taking the first sensor reading";
       await this.tick();
+      this.step = null;
       this.timers.push(setInterval(() => void this.tick(), this.o.tickMs));
       if (this.cloud) {
         this.timers.push(setInterval(() => void this.sync(), this.o.syncEveryMs));
         void this.sync();
       }
     })();
-    return this.ready;
+    // A start that failed is tried again on the next call.
+    ready.catch(() => { if (this.ready === ready) this.ready = null; });
+    return ready;
   }
 
   stop() { this.timers.forEach(clearInterval); this.timers = []; this.ready = null; }
@@ -159,7 +172,7 @@ export class LocalClient implements RigClient {
     this.busy = true;
     try {
       const now = this.o.now();
-      if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts(); this.factsAt = now; }
+      if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; }
       if (now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
       this.lastError = null;
@@ -297,10 +310,17 @@ export class LocalClient implements RigClient {
   }
 
   // ----- PCs -----
+  loadingStep() { return this.step; }
+
   async machines(): Promise<PC[]> {
     await this.start();
-    const others = (await this.signedIn()) ? await this.cloud!.machines().catch(() => []) : [];
-    return [this.view(), ...others.filter((p) => p.id !== this.id)];
+    this.step = "loading your other PCs";
+    try {
+      const others = (await this.signedIn()) ? await this.cloud!.machines().catch(() => []) : [];
+      return [this.view(), ...others.filter((p) => p.id !== this.id)];
+    } finally {
+      this.step = null;
+    }
   }
 
   watch(id: string, cb: (pc: PC) => void) {

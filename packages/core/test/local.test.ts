@@ -23,6 +23,34 @@ describe("LocalClient", () => {
     expect(pc.parts?.cpu.temp).toBeGreaterThan(20);
   });
 
+  it("shows the PC when its settings can't be read", async () => {
+    const { client } = setup({ facts: () => Promise.reject(new Error("Settings are slow.")) });
+    const [pc] = await client.machines();
+    client.stop();
+    expect(pc.parts?.cpu.temp).toBeGreaterThan(20);
+  });
+
+  it("says which step the first read is waiting on", async () => {
+    let answer = () => {};
+    const { client, sim } = setup({ inventory: () => new Promise((r) => { answer = () => r(sim.inventory()); }) });
+    const pcs = client.machines();
+    await vi.waitFor(() => expect(client.loadingStep()).toBe("reading this PC's parts"));
+    answer();
+    await pcs;
+    client.stop();
+    expect(client.loadingStep()).toBeNull();
+  });
+
+  it("tries again after a start that failed", async () => {
+    let fail = true;
+    const { client, sim } = setup({ inventory: () => (fail ? Promise.reject(new Error("Rig's helper didn't answer in time.")) : sim.inventory()) });
+    await expect(client.machines()).rejects.toThrow("didn't answer in time");
+    fail = false;
+    const [pc] = await client.machines();
+    client.stop();
+    expect(pc.id).toBe(fixtures.atlas.inv.machine.id);
+  });
+
   it("previews, applies, undoes and redoes a change", async () => {
     const { client, sim } = setup();
     await client.start();

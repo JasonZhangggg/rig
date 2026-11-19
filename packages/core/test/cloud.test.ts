@@ -22,6 +22,17 @@ describe("CloudClient when the server is in trouble", () => {
     await expect(client().machines()).rejects.toThrow(unreachableText);
   });
 
+  it("gives up on a server that never starts answering", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => new Promise((_, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    }));
+    const done = expect(client().machines()).rejects.toThrow(unreachableText);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await done;
+    vi.useRealTimers();
+  });
+
   it("treats a signed-out account as no account, not an error", async () => {
     vi.stubGlobal("fetch", async () => Response.json({ message: "Sign in first." }, { status: 401 }));
     await expect(client().account()).resolves.toBeNull();

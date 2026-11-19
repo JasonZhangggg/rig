@@ -87,6 +87,8 @@ export interface RigClient {
   readonly caps: Capabilities;
 
   account(): Promise<Account | null>;
+  /** Desktop: what the first read of this PC is waiting on, while it's still going. */
+  loadingStep?(): string | null;
   signOut(): Promise<void>;
   /** Website: sign in with email, or make an account when `create` is given. */
   signInEmail?(email: string, password: string, create?: { name: string }): Promise<Account>;

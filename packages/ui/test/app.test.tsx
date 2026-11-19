@@ -12,6 +12,7 @@ vi.mock("../src/scene", () => ({
 vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
+const { AppProvider } = await import("../src/state");
 
 async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
@@ -37,6 +38,27 @@ describe("Rig app on demo data", () => {
       await open(route);
       expect((await screen.findAllByText(text)).length).toBeGreaterThan(0);
     }
+  });
+
+  it("says when reading the PC stalls, and carries on after Try again", async () => {
+    const client = new DemoClient();
+    const machines = vi.spyOn(client, "machines").mockReturnValue(new Promise(() => {}));
+    render(
+      <AppProvider client={client} stallMs={20} fallback={(s, retry, reason) => (
+        <div><p>{s}: {reason}</p><button type="button" onClick={retry}>Try again</button></div>
+      )}><p>Ready</p></AppProvider>,
+    );
+    expect(await screen.findByText(/^error: It's taking longer than it should/)).toBeTruthy();
+    machines.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Ready");
+  });
+
+  it("says why reading the PC failed", async () => {
+    const client = new DemoClient();
+    vi.spyOn(client, "machines").mockRejectedValue(new Error("Rig's helper didn't answer in time."));
+    render(<AppProvider client={client} fallback={(s, _retry, reason) => <p>{s}: {reason}</p>}><p>Ready</p></AppProvider>);
+    expect(await screen.findByText("error: Rig's helper didn't answer in time.")).toBeTruthy();
   });
 
   it("keeps the account at the bottom of the sidebar", async () => {
