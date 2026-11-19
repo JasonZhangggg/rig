@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPC, describeCall, findings, score, validateCall, type Inventory, type Snapshot, type SystemFacts } from "../src";
+import { buildPC, describeCall, HistoryWindow, livePoint, findings, score, validateCall, type Inventory, type Snapshot, type SystemFacts } from "../src";
 import { DemoClient, fixtures, simulate } from "../src/demo";
 
 const atlas = () => structuredClone(fixtures.atlas.inv);
@@ -127,3 +127,42 @@ describe("demo client", () => {
 // Keep the fixture type honest
 const _check: Inventory = fixtures.atlas.inv;
 void _check;
+
+describe("each part's readings", () => {
+  it("files every sensor under its part, with the lowest and highest the monitor kept", () => {
+    const snap = simulate(atlas(), at3am);
+    snap.sensors.find((s) => s.name === "GPU Core" && s.type === "temperature")!.min = 31;
+    const pc = buildPC(atlas(), snap, facts(), {}, { [snap.sensors.find((s) => s.name === "GPU Core")!.id]: 88 });
+    const by = (part: string) => pc.readings!.filter((r) => r.part === part).map((r) => r.name);
+    expect(by("gpu")).toEqual(expect.arrayContaining(["GPU Core", "GPU Hot Spot", "GPU Fan 1"]));
+    expect(by("ram")).toEqual(["Memory", "Memory Used"]);
+    expect(by("fans")).toEqual(["Fan #1", "Fan #2", "Fan #3", "Fan #4"]);
+    expect(by("motherboard")).toEqual(["System"]);
+    const core = pc.readings!.find((r) => r.part === "gpu" && r.name === "GPU Core" && r.type === "temperature")!;
+    expect(core).toMatchObject({ min: 31, max: 88 });
+    expect(Object.keys(pc.parts!)).toEqual(expect.arrayContaining([...new Set(pc.readings!.map((r) => r.part))]));
+  });
+
+  it("logs each part's use and temperature per window: loads averaged, temperatures at their highest", () => {
+    const inv = atlas();
+    const w = new HistoryWindow(0);
+    const quiet = simulate(inv, 0, { activity: { cpu: 0, gpu: 0, game: null } });
+    const flat = simulate(inv, 1, { game: "Cyberpunk 2077" });
+    w.add(quiet); w.add(flat);
+    const p = w.point();
+    const read = (s: typeof quiet, hw: string, type: string, name: RegExp) => s.sensors.find((x) => x.hw === hw && x.type === type && name.test(x.name))!.value!;
+    expect(p.cpuLoad).toBe(Math.round((read(quiet, "cpu", "load", /total/i) + read(flat, "cpu", "load", /total/i)) / 2));
+    expect(p.mem).toBe(Math.round((read(quiet, "memory", "load", /^memory$/i) + read(flat, "memory", "load", /^memory$/i)) / 2));
+    expect(p.drive).toBe(Math.round(read(flat, "storage", "temperature", /./)));
+    expect(p.board).toBe(Math.round(read(flat, "board", "temperature", /system/i)));
+    expect(new HistoryWindow(0).point()).toMatchObject({ cpuLoad: null, gpuLoad: null, mem: null, drive: null, board: null });
+  });
+
+  it("reads the PC as it is now in the shape of a history point, for the live charts", () => {
+    const pc = buildPC(atlas(), simulate(atlas(), at3am), facts());
+    const p = livePoint(pc, 5);
+    expect(p).toMatchObject({ t: 5, cpu: pc.parts!.cpu.temp, gpu: pc.parts!.gpu.temp, cpuLoad: pc.parts!.cpu.load, mem: pc.parts!.ram.load, board: pc.parts!.motherboard.temp });
+    expect(p.fan).toBe(Math.max(...pc.readings!.filter((r) => r.part === "fans").map((r) => Math.round(r.value!))));
+    expect(livePoint({ ...pc, parts: {}, readings: [] }, 5)).toMatchObject({ cpu: null, gpu: null, fan: null, mem: null });
+  });
+});

@@ -83,6 +83,8 @@ export interface PC {
   cleanedAt?: string;
   /** Problems that started while Rig was watching and are still going on, from alerts.ts. */
   alerts?: Alert[];
+  /** Every sensor the parts report, as they read at seenAt. */
+  readings?: Reading[];
 }
 
 /** The kinds of alert Rig raises. Each one can be turned off on a device. */
@@ -128,6 +130,35 @@ export interface HistoryPoint {
   fan?: number | null;
   /** The game in the foreground for most of the window. Null when none ran; missing on points recorded before Rig kept it. */
   game?: string | null;
+  // Each part's own readings. Missing on points recorded before Rig kept them, null when the part didn't report one.
+  /** How hard the processor worked, averaged over the window, in percent. */
+  cpuLoad?: number | null;
+  /** How hard the graphics card worked, averaged over the window, in percent. */
+  gpuLoad?: number | null;
+  /** Memory in use, averaged over the window, in percent. */
+  mem?: number | null;
+  /** The warmest drive, in °C. */
+  drive?: number | null;
+  /** The motherboard, in °C. */
+  board?: number | null;
+}
+
+/** The readings a HistoryPoint holds, each a line a chart can draw. */
+export type HistoryKey = "cpu" | "gpu" | "fan" | "cpuLoad" | "gpuLoad" | "mem" | "drive" | "board";
+
+/** What a reading measures, so it's shown with the right unit and scale. */
+export type ReadingUnit = "temp" | "percent" | "rpm";
+
+/** One sensor as it reads now, with the lowest and highest Rig has seen, filed under the part it belongs to. */
+export interface Reading {
+  id: string;
+  /** The part it's about, as a key of PC.parts. */
+  part: string;
+  name: string;
+  type: "temperature" | "load" | "fan" | "clock" | "power" | "voltage" | "data" | "level" | "control";
+  value: number | null;
+  min?: number | null;
+  max?: number | null;
 }
 
 export interface Upgrade { part: string; title: string; fit: "fits" | "check" | "no" | "later"; detail: string; gain: string; price: string }

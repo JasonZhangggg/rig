@@ -27,6 +27,9 @@ export class HistoryWindow {
   private cpu: number | null = null;
   private gpu: number | null = null;
   private fan: number | null = null;
+  private drive: number | null = null;
+  private board: number | null = null;
+  private loads = { cpuLoad: new Mean(), gpuLoad: new Mean(), mem: new Mean() };
   private busy = false;
   private games: string[] = [];
 
@@ -35,12 +38,31 @@ export class HistoryWindow {
   add(s: Snapshot) {
     this.cpu = max(this.cpu, cpuTemp(s)?.value ?? null);
     this.gpu = max(this.gpu, gpuTemp(s)?.value ?? null);
-    for (const x of s.sensors) if (x.type === "fan" && x.value != null && x.value > 0) this.fan = max(this.fan, x.value);
+    for (const x of s.sensors) {
+      if (x.value == null) continue;
+      if (x.type === "fan" && x.value > 0) this.fan = max(this.fan, x.value);
+      if (x.type === "temperature" && x.hw === "storage") this.drive = max(this.drive, x.value);
+    }
+    this.board = max(this.board, (findSensor(s, "board", "temperature", /system|motherboard|board/i) ?? findSensor(s, "board", "temperature"))?.value ?? null);
+    this.loads.cpuLoad.add(findSensor(s, "cpu", "load", /total/i)?.value);
+    this.loads.gpuLoad.add(findSensor(s, "gpu", "load", /core|d3d 3d/i)?.value);
+    this.loads.mem.add(findSensor(s, "memory", "load", /^memory$/i)?.value);
     this.busy ||= isBusy(s);
     if (s.game) this.games.push(s.game);
   }
 
   point(): HistoryPoint {
-    return { t: this.from, cpu: round(this.cpu), gpu: round(this.gpu), busy: this.busy, fan: round(this.fan), game: mostCommon(this.games) };
+    return {
+      t: this.from, cpu: round(this.cpu), gpu: round(this.gpu), busy: this.busy, fan: round(this.fan), game: mostCommon(this.games),
+      cpuLoad: this.loads.cpuLoad.value(), gpuLoad: this.loads.gpuLoad.value(), mem: this.loads.mem.value(), drive: round(this.drive), board: round(this.board),
+    };
   }
+}
+
+/** A running average of the readings that came in, rounded; null when none did. */
+class Mean {
+  private sum = 0;
+  private n = 0;
+  add(v: number | null | undefined) { if (v != null) { this.sum += v; this.n++; } }
+  value() { return this.n ? Math.round(this.sum / this.n) : null; }
 }

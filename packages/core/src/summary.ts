@@ -1,13 +1,10 @@
-// The three figures under the History chart: how warm the main part runs
-// when busy (and whether that changed across the range), the processor at
-// rest, and the hottest moment. Pure, so the desktop, the website and the
-// demo say the same thing about the same history.
+// The three figures over a part's chart in Logs: its highest moment, what it
+// reads when busy (and whether that changed across the range), and what it
+// reads at rest. Pure, so the desktop, the website and the demo say the same
+// thing about the same history.
 
 import { mostCommon } from "./history";
-import type { HistoryPoint } from "./model";
-
-/** The part the busy and hottest figures describe. */
-export type SummaryPart = "gpu" | "cpu";
+import type { HistoryKey, HistoryPoint } from "./model";
 
 /** A change across the range smaller than this many °C reads as steady. */
 export const STEADY_MARGIN = 3;
@@ -16,10 +13,10 @@ export const STEADY_MARGIN = 3;
 const MIN_READINGS = 3;
 
 export interface BusySummary {
-  /** The usual temperature while busy, in °C. */
+  /** The usual reading while busy. */
   typical: number;
   /**
-   * Later sessions minus earlier ones, in °C, comparing the same game (or the
+   * Later sessions minus earlier ones, comparing the same game (or the
    * same kind of heavy work) with itself. Null when there's nothing like for
    * like to compare, such as a single session.
    */
@@ -29,10 +26,10 @@ export interface BusySummary {
 export interface HistorySummary {
   /** Null when nothing heavy ran in the range. */
   busy: BusySummary | null;
-  /** The processor's usual temperature when nothing heavy ran, in °C. */
-  idleCpu: number | null;
-  /** The hottest reading of the part, and how far it was from the safe limit (negative when over). */
-  peak: { t: number; temp: number; headroom: number } | null;
+  /** The usual reading when nothing heavy ran. */
+  idle: number | null;
+  /** The highest reading, and how far it was under the safe limit (negative when over; null with no limit). */
+  peak: { t: number; value: number; headroom: number | null } | null;
 }
 
 function median(xs: number[]): number | null {
@@ -45,7 +42,7 @@ function median(xs: number[]): number | null {
 interface Session { start: number; key: string; temps: number[] }
 
 /** Busy stretches, split where the PC went quiet or stopped recording. */
-function sessions(points: readonly HistoryPoint[], part: SummaryPart): Session[] {
+function sessions(points: readonly HistoryPoint[], part: HistoryKey): Session[] {
   const gaps = points.slice(1).map((p, i) => p.t - points[i].t);
   const step = median(gaps) ?? 0;
   const out: Session[] = [];
@@ -87,16 +84,16 @@ function change(list: Session[]): number | null {
   return weight ? Math.round(sum / weight) : null;
 }
 
-/** What the History screen says under its chart, for one part and its safe limit. */
-export function historySummary(points: readonly HistoryPoint[], part: SummaryPart, limit: number): HistorySummary {
+/** What Logs says over one reading's chart, against the part's safe limit when it has one. */
+export function historySummary(points: readonly HistoryPoint[], key: HistoryKey, limit?: number): HistorySummary {
   const sorted = [...points].sort((a, b) => a.t - b.t);
-  const busyTemps = sorted.filter((p) => p.busy && p[part] != null).map((p) => p[part]!);
-  const idle = median(sorted.filter((p) => !p.busy && p.cpu != null).map((p) => p.cpu!));
+  const busy = sorted.filter((p) => p.busy && p[key] != null).map((p) => p[key]!);
+  const idle = median(sorted.filter((p) => !p.busy && p[key] != null).map((p) => p[key]!));
   let peak: HistoryPoint | null = null;
-  for (const p of sorted) if (p[part] != null && (!peak || p[part]! > peak[part]!)) peak = p;
+  for (const p of sorted) if (p[key] != null && (!peak || p[key]! > peak[key]!)) peak = p;
   return {
-    busy: busyTemps.length ? { typical: Math.round(median(busyTemps)!), change: change(sessions(sorted, part)) } : null,
-    idleCpu: idle == null ? null : Math.round(idle),
-    peak: peak ? { t: peak.t, temp: Math.round(peak[part]!), headroom: Math.round(limit - peak[part]!) } : null,
+    busy: busy.length ? { typical: Math.round(median(busy)!), change: change(sessions(sorted, key)) } : null,
+    idle: idle == null ? null : Math.round(idle),
+    peak: peak ? { t: peak.t, value: Math.round(peak[key]!), headroom: limit == null ? null : Math.round(limit - peak[key]!) } : null,
   };
 }

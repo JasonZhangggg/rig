@@ -20,8 +20,8 @@ describe("navigation", () => {
     await screen.findByText(/Things to look at/i);
     const nav = (name: string) => screen.getByRole("link", { name: new RegExp(`^${name}`) });
     for (const name of ["Home", "My PC", "Ask", "Logs", "Changes", "Settings"]) expect(nav(name)).toBeTruthy();
-    // Folded into other pages: upgrades and manuals on My PC, temperatures and games in Logs.
-    for (const name of ["Temperatures", "Games", "Upgrades", "Manuals"]) expect(screen.queryByRole("link", { name: new RegExp(`^${name}`) })).toBeNull();
+    // Folded into other pages: upgrades and manuals on My PC, performance and games in Logs.
+    for (const name of ["Performance", "Games", "Upgrades", "Manuals"]) expect(screen.queryByRole("link", { name: new RegExp(`^${name}`) })).toBeNull();
     expect(screen.getByText("Fix problems")).toBeTruthy();
     expect(nav("Settings").getAttribute("href")).toBe("#settings");
     expect(screen.queryByRole("link", { name: /^Overview/ })).toBeNull();
@@ -33,10 +33,10 @@ describe("navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: /Search or ask/ }));
     const palette = within(screen.getByRole("dialog", { name: "Search" }));
     fireEvent.change(palette.getByRole("textbox", { name: "Search" }), { target: { value: "temps" } });
-    fireEvent.click(palette.getByRole("button", { name: /^Temperatures/ }));
+    fireEvent.click(palette.getByRole("button", { name: /^Performance/ }));
     expect(location.hash).toBe("#history");
     expect(await screen.findByRole("heading", { name: "Logs" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Temperatures" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Performance" }).getAttribute("aria-current")).toBe("page");
     // The sidebar marks Logs, the page the view belongs to.
     expect(screen.getByRole("link", { name: /^Logs/ }).getAttribute("aria-current")).toBe("page");
   });

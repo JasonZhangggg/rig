@@ -211,11 +211,36 @@ describe("Games", () => {
 });
 
 describe("History", () => {
-  const readout = () => screen.getByRole("img", { name: "Temperature history" }).parentElement!.querySelector("[aria-live]")!.textContent!;
+  const readout = (name = "Graphics card, temperature") => screen.getByRole("img", { name }).parentElement!.querySelector("[aria-live]")!.textContent!;
 
-  it("leads with the figures and the chart, then shows what happened and each part's range, each pinning the chart", async () => {
+  it("gives each part its own entry, with its own charts and every sensor it reports", async () => {
+    await show("history");
+    const rail = await screen.findByRole("group", { name: "Parts" });
+    const names = within(rail).getAllByRole("button").map((b) => b.querySelector(".pf-part-name")!.textContent);
+    expect(names).toEqual(["Processor", "Graphics card", "Memory", "Storage", "Motherboard", "Fans"]);
+    expect(within(rail).getByRole("button", { name: /^Graphics card/ }).getAttribute("aria-pressed")).toBe("true");
+    await screen.findByRole("img", { name: "Graphics card, temperature" });
+    expect(screen.getByRole("img", { name: "Graphics card, usage" })).toBeTruthy();
+
+    fireEvent.click(within(rail).getByRole("button", { name: /^Memory/ }));
+    expect(screen.getByRole("heading", { level: 2, name: "Memory" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Memory, in use" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: /temperature/ })).toBeNull();
+    const sensors = screen.getByRole("table", { name: "Sensors" });
+    expect(within(sensors).getByRole("rowheader", { name: "Memory Used" })).toBeTruthy();
+    expect(within(sensors).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Now", "Lowest", "Highest"]);
+    expect(sensors.textContent).not.toMatch(/NaN|undefined/);
+
+    fireEvent.click(within(rail).getByRole("button", { name: /^Fans/ }));
+    expect(screen.getByRole("img", { name: "Fans, fastest fan" })).toBeTruthy();
+    const fan = within(screen.getByRole("table", { name: "Sensors" })).getByRole("rowheader", { name: "Fan #1" }).parentElement!;
+    expect(fan.textContent).toMatch(/\d rpm.*\d rpm.*\d rpm/);
+  });
+
+  it("leads with the part's figures, and each figure or busy time pins the charts", async () => {
     await show("history");
     const figures = await screen.findByRole("group", { name: "Key figures" });
+    await screen.findByRole("img", { name: "Graphics card, temperature" });
     expect(readout()).toBe("");
 
     const hottest = within(figures).getByRole("button", { name: /^Hottest moment/ });
@@ -223,6 +248,7 @@ describe("History", () => {
     fireEvent.click(hottest);
     expect(hottest.getAttribute("aria-pressed")).toBe("true");
     expect(readout()).toContain(hottest.querySelector(".fig-n")!.textContent!);
+    expect(readout("Graphics card, usage")).toMatch(/Graphics card \d+%/);
     fireEvent.click(hottest);
     expect(readout()).toBe("");
 
@@ -230,26 +256,28 @@ describe("History", () => {
     const row = within(events).getAllByRole("button", { pressed: false })[0];
     fireEvent.click(row);
     expect(row.getAttribute("aria-pressed")).toBe("true");
-    expect(readout()).toMatch(/Processor \d+°C, Graphics card \d+°C/);
-
-    fireEvent.click(screen.getByRole("button", { name: "Ranges" }));
-    expect(screen.queryByRole("list", { name: "Busy times" })).toBeNull();
-    const ranges = screen.getByRole("region", { name: "Lowest, typical and highest" });
-    expect(within(ranges).getByText("Processor")).toBeTruthy();
-    expect(within(ranges).getByText("Graphics card")).toBeTruthy();
-    expect(ranges.textContent).not.toMatch(/NaN|undefined/);
-    const high = within(ranges).getByRole("button", { name: /^Graphics card highest/ });
-    fireEvent.click(high);
-    expect(readout()).toContain(`Graphics card ${high.textContent}`);
+    expect(readout()).toMatch(/Graphics card \d+°C/);
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    await screen.findByRole("img", { name: "Temperature history" });
+    await screen.findByRole("img", { name: "Graphics card, temperature" });
     expect(readout()).toBe("");
-    fireEvent.click(screen.getByRole("button", { name: "Busy times" }));
     const month = await screen.findByRole("list", { name: "Busy times" });
     const before = within(month).getAllByRole("listitem").length;
     fireEvent.click(screen.getByRole("button", { name: /^Show all \d+$/ }));
     expect(within(screen.getByRole("list", { name: "Busy times" })).getAllByRole("listitem").length).toBeGreaterThan(before);
+  });
+
+  it("shows readings as they come in when Live is picked, and the logged range again after", async () => {
+    await show("history");
+    await screen.findByRole("group", { name: "Key figures" });
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("group", { name: "Key figures" })).toBeNull();
+    expect(screen.queryByText("Busy times")).toBeNull();
+    expect(screen.getAllByText("Live readings draw here as they come in.").length).toBe(2);
+    expect(screen.getByRole("table", { name: "Sensors" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    expect(await screen.findByRole("group", { name: "Key figures" })).toBeTruthy();
   });
 
   it("says what was running at the hottest moment", async () => {
@@ -259,7 +287,7 @@ describe("History", () => {
     await show("history", client);
     const figures = await screen.findByRole("group", { name: "Key figures" });
     expect(within(figures).getByRole("button", { name: /^Hottest moment/ }).textContent).toMatch(/while nothing heavy was running\./);
-    expect(screen.queryByRole("button", { name: /when busy/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^When busy/ })).toBeNull();
   });
 
   it("explains what will appear before there's any history", async () => {
