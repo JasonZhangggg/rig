@@ -82,11 +82,16 @@ export interface Capabilities {
   applyChanges: boolean;
 }
 
+/** Where the app writes its debug log. The desktop app keeps a file; elsewhere it's the console. */
+export type Log = (level: "info" | "warn" | "error", message: string) => void;
+
 export interface RigClient {
   readonly kind: "desktop" | "web" | "demo";
   readonly caps: Capabilities;
 
   account(): Promise<Account | null>;
+  /** Desktop: what the first read of this PC is waiting on, while it's still going. */
+  loadingStep?(): string | null;
   signOut(): Promise<void>;
   /** Website: sign in with email, or make an account when `create` is given. */
   signInEmail?(email: string, password: string, create?: { name: string }): Promise<Account>;

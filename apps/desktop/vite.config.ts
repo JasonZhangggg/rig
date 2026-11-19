@@ -15,7 +15,8 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [react()],
     clearScreen: false,
-    server: { port: 1420, strictPort: true },
+    // Cargo builds inside src-tauri while this runs, and Windows refuses to watch files it's writing (EBUSY).
+    server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
     envPrefix: ["VITE_", "TAURI_ENV_"],
     define: { __RIG_VERSION__: JSON.stringify(version) },
     build: { target: "es2022", chunkSizeWarningLimit: 1200 },

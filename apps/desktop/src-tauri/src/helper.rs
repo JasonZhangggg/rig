@@ -34,13 +34,20 @@ pub struct Conn<S> {
     reader: BufReader<ReadHalf<S>>,
     writer: WriteHalf<S>,
     next_id: u64,
+    /// Calls in a row that ran out of time. The helper is still working on them, so the
+    /// connection stays until this many: starting it again means another Windows prompt.
+    timeouts: u32,
 }
+
+/// Timed-out calls in a row before the helper counts as stuck and is started again.
+#[cfg_attr(not(windows), allow(dead_code))]
+const MAX_TIMEOUTS: u32 = 3;
 
 #[cfg_attr(not(windows), allow(dead_code))]
 impl<S: AsyncRead + AsyncWrite> Conn<S> {
     pub fn new(stream: S) -> Self {
         let (r, w) = tokio::io::split(stream);
-        Self { reader: BufReader::new(r), writer: w, next_id: 1 }
+        Self { reader: BufReader::new(r), writer: w, next_id: 1, timeouts: 0 }
     }
 
     pub async fn call(&mut self, method: &str, params: Value) -> Result<Value, CallError> {
@@ -64,10 +71,15 @@ impl<S: AsyncRead + AsyncWrite> Conn<S> {
             }
         };
         let msg = match tokio::time::timeout(CALL_TIMEOUT, io).await {
-            Err(_) => return Err(CallError::Broken("Rig's helper didn't answer in time.".into())),
+            Err(_) => {
+                self.timeouts += 1;
+                let msg = "Rig's helper didn't answer in time.".to_string();
+                return Err(if self.timeouts >= MAX_TIMEOUTS { CallError::Broken(msg) } else { CallError::Remote(msg) });
+            }
             Ok(Err(e)) => return Err(CallError::Broken(e.to_string())),
             Ok(Ok(m)) => m,
         };
+        self.timeouts = 0;
         if let Some(err) = msg.get("error") {
             let text = err.get("message").and_then(Value::as_str).unwrap_or("Rig's helper couldn't do that.");
             return Err(CallError::Remote(text.to_string()));
@@ -94,18 +106,47 @@ impl Helper {
 
     #[cfg(windows)]
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        let queued = std::time::Instant::now();
         let mut guard = self.conn.lock().await;
+        let waited = queued.elapsed();
         if guard.is_none() {
-            *guard = Some(Conn::new(win::launch().await?));
+            let t = std::time::Instant::now();
+            log::info!("helper: starting it (Windows asks for permission)");
+            match win::launch().await {
+                Ok(pipe) => {
+                    log::info!("helper: connected in {} ms", t.elapsed().as_millis());
+                    *guard = Some(Conn::new(pipe));
+                }
+                Err(e) => {
+                    log::error!("helper: couldn't start after {} ms: {e}", t.elapsed().as_millis());
+                    return Err(e);
+                }
+            }
         }
-        match guard.as_mut().unwrap().call(method, params).await {
+        let t = std::time::Instant::now();
+        let result = guard.as_mut().unwrap().call(method, params).await;
+        log_call(method, waited, t.elapsed(), &result);
+        match result {
             Ok(v) => Ok(v),
             Err(CallError::Remote(m)) => Err(m),
             Err(CallError::Broken(m)) => {
+                log::warn!("helper: connection dropped, it starts again on the next call");
                 *guard = None;
                 Err(m)
             }
         }
+    }
+}
+
+/// One line per helper call. Sensor reads run every two seconds, so only slow or failed ones are logged.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn log_call(method: &str, waited: Duration, took: Duration, result: &Result<Value, CallError>) {
+    let (w, t) = (waited.as_millis(), took.as_millis());
+    match result {
+        Ok(_) if method == "snapshot" && t < 1000 && w < 1000 => {}
+        Ok(_) => log::info!("helper: {method} took {t} ms (waited {w} ms for the previous call)"),
+        Err(CallError::Remote(m)) => log::warn!("helper: {method} failed after {t} ms (waited {w} ms): {m}"),
+        Err(CallError::Broken(m)) => log::error!("helper: {method} broke after {t} ms (waited {w} ms): {m}"),
     }
 }
 
@@ -201,15 +242,21 @@ mod win {
         let args = format!("--pipe {name} --parent {parent}");
 
         let pid = match run_elevated(&exe, &args) {
-            Some(pid) => pid,
+            Some(pid) => {
+                log::info!("helper: running with admin rights (process {pid})");
+                pid
+            }
             // Said No to the prompt: run without admin rights. Some sensors will be missing,
             // and Rig shows a card explaining how to turn them on.
-            None => std::process::Command::new(&exe)
-                .args(["--pipe", &name, "--parent", &parent, "--limited"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn()
-                .map_err(|e| format!("Rig couldn't start its helper. {e}"))?
-                .id(),
+            None => {
+                log::warn!("helper: no admin rights (No at the prompt, or it couldn't show), so it runs limited");
+                std::process::Command::new(&exe)
+                    .args(["--pipe", &name, "--parent", &parent, "--limited"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn()
+                    .map_err(|e| format!("Rig couldn't start its helper. {e}"))?
+                    .id()
+            }
         };
 
         tokio::time::timeout(Duration::from_secs(30), server.connect())
@@ -240,6 +287,10 @@ mod tests {
             let id = req["id"].clone();
             let reply = match req["method"].as_str() {
                 Some("hello") => json!({ "id": id, "result": { "version": "test", "elevated": true } }),
+                Some("slow") => {
+                    tokio::time::sleep(CALL_TIMEOUT + Duration::from_secs(5)).await;
+                    json!({ "id": id, "result": "late" })
+                }
                 Some("stale") => {
                     // Answers an old id first, then the real one.
                     w.write_all(format!("{}\n", json!({ "id": 999, "result": "old" })).as_bytes()).await.unwrap();
@@ -263,6 +314,18 @@ mod tests {
             Err(CallError::Remote(m)) => assert!(m.contains("fix list")),
             _ => panic!("expected a refusal"),
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_answer_keeps_the_helper_until_it_looks_stuck() {
+        let (a, b) = duplex(4096);
+        tokio::spawn(fake_helper(b));
+        let mut c = Conn::new(a);
+        assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
+        assert_eq!(c.call("hello", Value::Null).await.ok().unwrap()["elevated"], true);
+        assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
+        assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
+        assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Broken(_))));
     }
 
     #[tokio::test]

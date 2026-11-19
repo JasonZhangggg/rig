@@ -23,6 +23,66 @@ describe("LocalClient", () => {
     expect(pc.parts?.cpu.temp).toBeGreaterThan(20);
   });
 
+  it("shows the PC when its settings can't be read", async () => {
+    const { client } = setup({ facts: () => Promise.reject(new Error("Settings are slow.")) });
+    const [pc] = await client.machines();
+    client.stop();
+    expect(pc.parts?.cpu.temp).toBeGreaterThan(20);
+  });
+
+  it("says which step the first read is waiting on", async () => {
+    let answer = () => {};
+    const { client, sim } = setup({ inventory: () => new Promise((r) => { answer = () => r(sim.inventory()); }) });
+    const pcs = client.machines();
+    await vi.waitFor(() => expect(client.loadingStep()).toBe("reading this PC's parts"));
+    answer();
+    await pcs;
+    client.stop();
+    expect(client.loadingStep()).toBeNull();
+  });
+
+  it("logs each step of the first read, and the one that failed", async () => {
+    const lines: string[] = [];
+    let t = 0;
+    const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => t });
+    const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => Promise.reject(new Error("Settings are slow.")), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c) };
+    const client = new LocalClient(link, new MemoryStore(), null, { tickMs: 1e9, now: () => (t += 1000), log: (level, msg) => lines.push(`${level} ${msg}`) });
+    await client.start();
+    client.stop();
+    expect(lines.some((l) => /^info start: reading this PC's parts took \d+ ms$/.test(l))).toBe(true);
+    expect(lines).toContain("error start: reading this PC's settings failed after 0 ms: Settings are slow.");
+    expect(lines.at(-1)).toMatch(/^info start: done in \d+ ms$/);
+  });
+
+  it("shows this PC when it's opened by its saved id before its parts are read", async () => {
+    let answer = () => {};
+    const cloud = { signedIn: async () => false, watch: vi.fn(() => () => {}), watchRecordings: vi.fn(() => () => {}), changes: vi.fn(async () => []) } as unknown as CloudClient;
+    const { client, sim } = setup({ inventory: () => new Promise((r) => { answer = () => r(sim.inventory()); }) }, cloud);
+    const id = fixtures.atlas.inv.machine.id;
+    const seen: string[] = [];
+    const stop = client.watch(id, (pc) => seen.push(pc.id));
+    const stopRecordings = client.watchRecordings(id, () => {});
+    const changes = client.changes(id);
+    await vi.waitFor(() => expect(client.loadingStep()).toBe("reading this PC's parts"));
+    answer();
+    await vi.waitFor(() => expect(seen).toContain(id));
+    await changes;
+    stop(); stopRecordings(); client.stop();
+    expect(cloud.watch).not.toHaveBeenCalled();
+    expect(cloud.watchRecordings).not.toHaveBeenCalled();
+    expect(cloud.changes).not.toHaveBeenCalled();
+  });
+
+  it("tries again after a start that failed", async () => {
+    let fail = true;
+    const { client, sim } = setup({ inventory: () => (fail ? Promise.reject(new Error("Rig's helper didn't answer in time.")) : sim.inventory()) });
+    await expect(client.machines()).rejects.toThrow("didn't answer in time");
+    fail = false;
+    const [pc] = await client.machines();
+    client.stop();
+    expect(pc.id).toBe(fixtures.atlas.inv.machine.id);
+  });
+
   it("previews, applies, undoes and redoes a change", async () => {
     const { client, sim } = setup();
     await client.start();
