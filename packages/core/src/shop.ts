@@ -18,10 +18,30 @@ export const shopCategories: { key: ShopCategory; label: string; part: string }[
 
 export interface ShopOffer { shop: string; price: number; inStock: boolean }
 
+/** A real retailer's listing for a part, from a shop feed. Its photo and price replace the demo ones. */
+export interface Retail {
+  shop: string;
+  price: number;
+  inStock: boolean;
+  /** The product's page at the shop. */
+  url: string;
+  /** The shop's product photo, licensed by its feed for showing next to its price. */
+  image?: string;
+  /** When the server read it, ISO time. */
+  checkedAt: string;
+}
+
 export interface ShopItem {
   id: string;
   category: ShopCategory;
   name: string;
+  /** The brand, like "Corsair", for the maker filter. */
+  maker: string;
+  /**
+   * A product photo from the shop feed it came from, which licenses it for this use.
+   * The demo catalog has none, and Rig never takes photos from makers' or shops' sites.
+   */
+  image?: string;
   /** One line of what matters, like "DDR5-6000 CL30". */
   spec: string;
   specs: [string, string][];
@@ -31,6 +51,8 @@ export interface ShopItem {
   history: number[];
   /** Typical power draw, for processors and graphics cards. */
   watts?: number;
+  /** The real listing, when a shop feed is set up and found this part. */
+  retail?: Retail;
   is: {
     ddr?: 4 | 5; sodimm?: boolean; sticks?: number; stickGb?: number; speed?: number; partNumber?: string;
     m2?: boolean; sata?: boolean; tb?: number;
@@ -56,8 +78,10 @@ export interface HardwareFacts {
 }
 
 export interface Shop {
-  /** True while the catalog and prices are made up. */
+  /** True while any price shown is made up. */
   demo: boolean;
+  /** The shop feed real listings come from, like "Best Buy", when one is set up. */
+  retailFrom?: string;
   facts: HardwareFacts;
   items: ShopItem[];
 }
@@ -266,7 +290,7 @@ export function categoryState(key: ShopCategory, f: HardwareFacts, psuW?: number
 
 export const demoShops = ["Northwind", "Contoso Parts", "Fabrikam"];
 
-type Base = Omit<ShopItem, "offers" | "history"> & { price: number };
+type Base = Omit<ShopItem, "offers" | "history" | "maker"> & { price: number };
 
 const base: Base[] = [
   { id: "m-vengeance-32", category: "memory", name: "Corsair Vengeance 32 GB (2 × 16 GB)", spec: "DDR5-6000 CL30", price: 104, is: { ddr: 5, sticks: 2, stickGb: 16, speed: 6000, partNumber: "CMK32GX5M2B6000C30" }, specs: [["Type", "DDR5"], ["Speed", "6000 MT/s"], ["Latency", "CL30"], ["Sticks", "2 × 16 GB"], ["Part number", "CMK32GX5M2B6000C30"]] },
@@ -323,12 +347,92 @@ function demoItem(b: Base): ShopItem {
   // The cheapest shop changes from part to part.
   const turn = Math.floor(r() * 3);
   const shops = offers.map((o, i) => ({ ...o, shop: demoShops[(i + turn) % 3] })).sort((a, z) => a.price - z.price);
-  return { id: b.id, category: b.category, name: b.name, spec: b.spec, specs: b.specs, watts: b.watts, is: b.is, offers: shops, history };
+  return { id: b.id, category: b.category, name: b.name, maker: makerOf(b.name), spec: b.spec, specs: b.specs, watts: b.watts, is: b.is, offers: shops, history };
 }
 
 export const demoCatalog: ShopItem[] = base.map(demoItem);
 
+/** The brand at the start of a product name. A real feed gives the brand itself. */
+export function makerOf(name: string): string {
+  if (/^be quiet!/i.test(name)) return "be quiet!";
+  if (/^WD[_ ]/i.test(name)) return "WD";
+  if (/^G\.?Skill/i.test(name)) return "G.Skill";
+  return name.split(/\s+/)[0] ?? name;
+}
+
+const squash = (s: string) => s.toLowerCase().replace(/×/g, "x").replace(/[\s_()-]+/g, "");
+
+/**
+ * Whether a part matches what someone typed: every word has to appear in its
+ * name, maker, kind, spec line or specs. "32gb ddr5" matches "32 GB" and "DDR5-6000".
+ */
+export function matchesQuery(item: ShopItem, q: string): boolean {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const kind = shopCategories.find((c) => c.key === item.category)?.label ?? "";
+  const text = [item.name, item.maker, kind, item.spec, ...item.specs.map(([k, v]) => `${k} ${v}`), item.is.partNumber ?? ""].join(" ");
+  const plain = text.toLowerCase();
+  const tight = squash(text);
+  return words.every((w) => plain.includes(w) || tight.includes(squash(w)));
+}
+
+/** The makers among some parts, most parts first, then by name. */
+export function makersIn(items: ShopItem[]): { maker: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const i of items) n.set(i.maker, (n.get(i.maker) ?? 0) + 1);
+  return [...n].map(([maker, count]) => ({ maker, count })).sort((a, b) => b.count - a.count || a.maker.localeCompare(b.maker));
+}
+
 /** The parts that could go in this PC, with demo prices. */
-export function shopFor(inv: Inventory): Shop {
-  return { demo: true, facts: hardwareFacts(inv), items: demoCatalog };
+export function shopFor(inv: Inventory, retail?: { from: string; hits: Map<string, Retail> }): Shop {
+  if (!retail) return { demo: true, facts: hardwareFacts(inv), items: demoCatalog };
+  const items = demoCatalog.map((i) => { const r = retail.hits.get(i.id); return r ? { ...i, retail: r } : i; });
+  return { demo: items.some((i) => !i.retail), retailFrom: retail.from, facts: hardwareFacts(inv), items };
+}
+
+/** The price to show and add up: the real one when there is one, else the lowest demo price. */
+export const priceOf = (i: ShopItem) => i.retail?.price ?? i.offers[0].price;
+
+/** The photo to show: the item's own, else its listing's. */
+export const photoOf = (i: ShopItem) => i.image ?? i.retail?.image;
+
+/** Words that change which part a model number means: a 5070 Ti isn't a 5070. */
+const variants = ["ti", "xt", "xtx", "super", "x3d", "pro", "plus", "evo"];
+const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * How to look a part up in a shop's search, and what a result's name must hold
+ * to count as the same part. Sizes and model numbers have to match, so a 32 GB
+ * kit never borrows a 64 GB kit's photo or price.
+ */
+export function retailTerms(item: ShopItem): { search: string[]; must: string[]; not: string[] } {
+  const base = item.name.replace(/\(.*?\)/g, " ").replace(/,.*$/, "");
+  const sizes = [...base.matchAll(/(\d+(?:\.\d+)?)\s*(GB|TB|W|mm)\b/gi)].map((m) => `${m[1]}${m[2]}`.toLowerCase());
+  const makerWords = item.maker.split(/[^A-Za-z0-9]+/).map(flat).filter(Boolean);
+  const words = base.replace(/(\d+(?:\.\d+)?)\s*(GB|TB|W|mm)\b/gi, " ").split(/\s+/).map(flat)
+    .filter((w) => w && !makerWords.includes(w) && !/^(pwm|pst|m)$/.test(w));
+  // A model number takes the variant word after it: "5070 Ti" is "5070ti", "990 PRO" is "990pro".
+  const model: string[] = [];
+  for (let k = 0; k < words.length; k++) {
+    const w = words[k];
+    if (/\d/.test(w) && variants.includes(words[k + 1])) { model.push(w + words[k + 1]); k++; } else model.push(w);
+  }
+  // One-letter or one-digit words, like the 7 in "Ryzen 7", match anything, so they don't count.
+  const must = [...new Set([...model.filter((w) => w.length > 1), ...sizes, ...(item.is.ddr ? [`ddr${item.is.ddr}`] : [])])];
+  // A bare model number mustn't match its variants.
+  const not = model.filter((w) => /\d{3,}/.test(w) && !variants.some((v) => w.endsWith(v))).flatMap((w) => variants.map((v) => w + v));
+  const search = [...new Set([...makerWords, ...item.name.replace(/\(.*?\)/g, " ").split(/[^A-Za-z0-9]+/).map(flat)])]
+    .filter((w) => w.length > 1 && !/^(gb|tb|mm|pwm|pst|pack)$/.test(w) && !/^\d+$/.test(w) || /^\d{3,}$/.test(w));
+  return { search, must, not };
+}
+
+/** Whether a shop's product is the same part as ours, by the terms above. */
+export function sameRetailPart(item: ShopItem, name: string, manufacturer?: string): boolean {
+  const theirs = flat(`${manufacturer ?? ""} ${name}`);
+  const t = retailTerms(item);
+  // The first size named is the total: a "64GB (2 x 32GB)" kit also says 32GB.
+  const first = (s: string) => s.replace(/\(.*?\)/g, " ").match(/(\d+(?:\.\d+)?)\s*(GB|TB)\b/i)?.slice(1, 3).join("").toLowerCase();
+  const size = first(item.name);
+  return theirs.includes(flat(item.maker).slice(0, 4)) && t.must.every((w) => theirs.includes(w)) && !t.not.some((w) => theirs.includes(w))
+    && (!size || first(name) === size);
 }

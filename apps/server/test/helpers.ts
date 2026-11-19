@@ -41,10 +41,10 @@ export function fakeClaude(rounds: { text?: string; tool?: { name: string; input
   return { client: client as unknown as Streamer, seen };
 }
 
-export async function setup(env: Partial<Env> = {}, claude?: Streamer, fetch?: Fetch) {
+export async function setup(env: Partial<Env> = {}, claude?: Streamer, fetch?: Fetch, wait?: (ms: number) => Promise<void>) {
   const db = await testDb<RigTables & AuthTables>();
   const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", ...env };
-  const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }), fetch });
+  const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }), fetch, wait });
   const call = (path: string, init: RequestInit & { json?: unknown; cookie?: string; token?: string } = {}) => {
     const headers = new Headers(init.headers);
     if (init.json !== undefined) headers.set("content-type", "application/json");

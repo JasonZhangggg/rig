@@ -16,6 +16,8 @@ export interface Env {
   /** Google sign-in, both optional. Secret. */
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** Best Buy Products API key, for real photos and prices on Upgrades. Secret. Without it every price is demo. */
+  BESTBUY_API_KEY?: string;
   /** Questions each account can ask per day (default 40). */
   CHAT_DAILY_LIMIT?: string;
 }
