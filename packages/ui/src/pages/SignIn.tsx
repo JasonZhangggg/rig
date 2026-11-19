@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Account, RigClient } from "@rig/core";
 import { AsciiField } from "../components/AsciiField";
 
@@ -14,7 +14,7 @@ export function SignInArt() {
 }
 
 /** Sign-in for the website (email or Google) and the desktop app (a code approved in the browser). */
-export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; onDone: (a: Account) => void; onSkip?: () => void; note?: string }) {
+export function SignIn({ client, onDone, onSkip, note, art = <SignInArt /> }: { client: RigClient; onDone: (a: Account) => void; onSkip?: () => void; note?: string; art?: ReactNode }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,7 +43,7 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
 
   return (
     <div className="signin">
-      <SignInArt />
+      {art}
       <main className="signin-form">
         {client.signInWithBrowser ? (
           <div className="signin-box">
