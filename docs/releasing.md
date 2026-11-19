@@ -29,9 +29,31 @@ A tag with a hyphen, like `v0.2.0-beta.1`, is published as a pre-release.
 1. Checks the tag looks like `v1.2.3` and matches the version in every file (`node tools/version.mjs check v1.2.3`).
 2. Runs the same checks as CI: types, tests, the website and desktop builds, the Rust tests and the helper build ([`.github/actions/check`](../.github/actions/check/action.yml)).
 3. On Windows, builds the helper, runs its self-test, bundles it into the app and builds the installer with the server address from `RIG_API_URL`. CI's `windows` job uses the same steps ([`.github/actions/windows-installer`](../.github/actions/windows-installer/action.yml)).
-4. Publishes the release `Rig 0.2.0` with `Rig-Setup-0.2.0-x64.exe` and `SHA256SUMS.txt`. The notes start with how to install, then list the merged pull requests, sorted by label ([`.github/release.yml`](../.github/release.yml): `feature` or `enhancement` under New, `bug` or `fix` under Fixes, `skip-changelog` left out).
+4. Publishes the release `Rig 0.2.0` with `Rig-Setup-0.2.0-x64.exe`, its updater signature and `SHA256SUMS.txt`. The notes start with how to install, then list the merged pull requests, sorted by label ([`.github/release.yml`](../.github/release.yml): `feature` or `enhancement` under New, `bug` or `fix` under Fixes, `skip-changelog` left out).
+5. Sends a full release to installed copies (see Updates).
 
 The app shows its version in Settings, About, along with the server it signs in to. The website shows it at the bottom of the landing page. Both come from the root `package.json` at build time.
+
+## Updates
+
+Installed copies check for a newer release when Rig starts and every six hours, and ask before installing it ("Install now" or "Later"). They ask the Rig server (`/api/updates`), which serves installers from an R2 bucket called `rig-updates`, because files on a private repo's releases can't be downloaded without access. The Deploy workflow creates the bucket; the Release workflow's `update` job uploads each full release to it and deletes the installers of all but the latest three ([`tools/publish-update.mjs`](../tools/publish-update.mjs)). Pre-releases stay on GitHub only.
+
+Each update is signed with the updater key, and the app refuses one signed with any other key. Copies run from the code (`pnpm desktop`) never update themselves.
+
+### Setting up the updater key (once)
+
+1. Make the key pair, anywhere you have the repo and pnpm:
+   ```
+   pnpm --filter @rig/desktop tauri signer generate -w ~/.tauri/rig-updater.key
+   ```
+   A password is optional.
+2. Copy the public half into the repo and merge it into `main`: `cp ~/.tauri/rig-updater.key.pub apps/desktop/src-tauri/updater.pub`.
+3. Add the private half as the repository secret `TAURI_SIGNING_PRIVATE_KEY` (the whole contents of `~/.tauri/rig-updater.key`), and the password, if you set one, as `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+4. Keep a copy of the key file and its password somewhere safe, like a password manager. Without them, no new update can reach installed copies, and everyone has to reinstall by hand.
+
+Until both halves are there, releases still publish to GitHub, but the installer has no updater and the `update` job says so.
+
+The `CLOUDFLARE_API_TOKEN` secret needs Workers R2 Storage: Edit for the bucket. Storage stays far under R2's free 10 GB, and downloads cost nothing.
 
 ## The installer isn't signed yet
 
@@ -42,4 +64,3 @@ The repository is private, so only people with access to it can download the rel
 ## Later
 
 - Code signing: buy a code-signing certificate (or use Azure Trusted Signing), add it as a secret and sign the installer in the Windows job, so the warning goes away.
-- Auto-update: Tauri's updater needs a signing key pair (the private key as a secret) and a public place to host the update files and `latest.json`, since files on a private repo's releases can't be downloaded without access.

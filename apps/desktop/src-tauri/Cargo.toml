@@ -22,9 +22,11 @@ tokio = { version = "1", features = ["sync", "time", "io-util", "rt", "macros"] 
 rusqlite = { version = "0.32", features = ["bundled"] }
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 rand = "0.8"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 tokio = { version = "1", features = ["net"] }

@@ -73,6 +73,12 @@ jobs:
           sed -i "s/^id = \".*\"/id = \"$id\"/" wrangler.toml
           echo "Hyperdrive config: $id"
 
+      - name: Make the bucket the app updates from
+        working-directory: apps/server
+        run: |
+          if npx wrangler r2 bucket info rig-updates > /dev/null 2>&1; then echo "rig-updates is there"; exit 0; fi
+          npx wrangler r2 bucket create rig-updates || { echo "::error::Couldn't create the rig-updates R2 bucket. The CLOUDFLARE_API_TOKEN needs Workers R2 Storage: Edit, and R2 must be turned on in the Cloudflare dashboard (R2 Object Storage)."; exit 1; }
+
       - run: pnpm --filter @rig/web build
 
       - name: Deploy the Worker

@@ -5,6 +5,7 @@ import { SimulatedLink, fixtures } from "@rig/core/demo";
 import { RigApp } from "@rig/ui";
 import { inTauri, tauriAutostart, tauriLink, tauriRecorder, tauriStore, tauriToken } from "./tauri";
 import { notifyAlerts, notifyRecording } from "./notify";
+import { watchForUpdates } from "./update";
 
 // The Rig server. An installer build fails without VITE_RIG_API (see vite.config.ts); an empty one counts as missing.
 const api = (import.meta.env.VITE_RIG_API as string | undefined) || "http://localhost:8787/api";
@@ -20,6 +21,8 @@ async function pickLink(): Promise<HelperLink> {
     throw e;
   }
 }
+
+if (inTauri) watchForUpdates();
 
 const root = createRoot(document.getElementById("root")!);
 pickLink().then((link) => {

@@ -1,8 +1,8 @@
 //! Rig's desktop shell. The screens and all the logic live in TypeScript
 //! (packages/core and packages/ui); this side only does what a web page can't:
 //! start the elevated helper, keep data on disk, keep the sign-in token in
-//! the keychain, start with Windows when the person turns that on, and read
-//! the background recorder's log.
+//! the keychain, start with Windows when the person turns that on, read
+//! the background recorder's log, and install updates.
 
 mod helper;
 mod recorder;
@@ -92,7 +92,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().app_name("Rig").build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Only installer builds carry the updater's key and address (the windows-installer
+            // action adds them), so a copy run from the code never replaces itself with a release.
+            #[cfg(desktop)]
+            if app.config().plugins.0.contains_key("updater") {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             app.manage(store::Store::open(&dir.join("rig.db"))?);
