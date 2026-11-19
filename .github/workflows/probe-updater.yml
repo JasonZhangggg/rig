@@ -1,0 +1,38 @@
+name: Probe updater build
+on:
+  push:
+    branches: [probe/updater]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Throwaway updater key
+        shell: bash
+        run: |
+          pnpm --filter @rig/desktop exec tauri signer generate --ci -p "probe-pass" -w "$RUNNER_TEMP/probe.key" -f
+          cp "$RUNNER_TEMP/probe.key.pub" apps/desktop/src-tauri/updater.pub
+          { echo "PROBE_KEY<<EOF"; cat "$RUNNER_TEMP/probe.key"; echo; echo "EOF"; } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/windows-installer
+        id: build
+        with:
+          api-url: https://rig.jasonxyz.workers.dev/api
+          updater-key: ${{ env.PROBE_KEY }}
+          updater-key-password: probe-pass
+      - name: The installer has a signature and the app carries the updater config
+        shell: bash
+        env:
+          SIG: ${{ steps.build.outputs.signature }}
+        run: |
+          [ -n "$SIG" ] && [ -f "$SIG" ] || { echo "::error::No signature output"; exit 1; }
+          ls -l "$SIG"
+          grep -c "rig.jasonxyz.workers.dev/api/updates" apps/desktop/src-tauri/target/release/rig.exe
+      - name: A different key is refused
+        shell: bash
+        run: |
+          pnpm --filter @rig/desktop exec tauri signer generate --ci -p "" -w "$RUNNER_TEMP/other.key" -f
+          ! node tools/updater-sig.mjs "${{ steps.build.outputs.installer }}" "${{ steps.build.outputs.signature }}" "$RUNNER_TEMP/other.key.pub"
