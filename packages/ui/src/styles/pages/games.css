@@ -1,7 +1,10 @@
 .gm-list-head { flex-wrap: wrap; }
 .gm-list-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .gm-sort button { height: 28px; padding: 0 12px; font-size: 13px; }
-.gm-list { list-style: none; margin: 0 -12px; padding: 0 0 8px; }
+.gm-list { list-style: none; margin: 0; padding: 0 0 8px; }
+/* The line runs to the content edge; a row's hover fill reaches a little past it. */
+.gm-list li + li { border-top: 1px solid var(--line); }
+.gm-list .gm-row { width: calc(100% + 24px); margin-inline: -12px; border-top: 0; }
 .gm-row {
   width: 100%; display: grid; grid-template-columns: 40px minmax(0, 1.5fr) minmax(90px, 1fr) 190px 20px; align-items: center; gap: 18px;
   padding: 14px 12px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;

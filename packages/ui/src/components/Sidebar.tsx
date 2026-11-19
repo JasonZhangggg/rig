@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ClickEvent, type ReactNode } from "react";
 import type { Route } from "@rig/core";
 import { useApp } from "../state";
 import { Icon } from "./common";
 import { homeOf, navItems } from "./Shell";
-import { arrowKeys, focusFirstItem } from "./modal";
+import { arrowKeys, focusFirstItem, useModal } from "./modal";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
@@ -105,10 +105,65 @@ function AccountBlock() {
   );
 }
 
+const phoneQuery = "(max-width: 760px)";
+function usePhone() {
+  const [phone, setPhone] = useState(() => matchMedia(phoneQuery).matches);
+  useEffect(() => {
+    const m = matchMedia(phoneQuery);
+    const on = () => setPhone(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return phone;
+}
+
+/**
+ * On a phone the menu hides behind a button and opens over the whole screen. Opening it adds a step to the
+ * browser's history, so Back closes it; picking a page replaces that step, so Back then goes to the page before.
+ */
+function usePhoneMenu() {
+  const phone = usePhone();
+  const [open, setOpen] = useState(false);
+  const side = useRef<HTMLElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const picked = useRef(false);
+  const shown = phone && open;
+  useModal(side, shown);
+  useEffect(() => { if (!phone) setOpen(false); }, [phone]);
+  useEffect(() => {
+    if (!shown) return;
+    side.current?.querySelector<HTMLElement>(".fp-close")?.focus();
+    const back = () => setOpen(false);
+    // Escape closes an open PC or account menu first, then the whole menu.
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !side.current?.querySelector(".sh-menu")) close(); };
+    const root = document.documentElement;
+    root.style.overflow = "hidden";
+    window.addEventListener("popstate", back);
+    window.addEventListener("hashchange", back);
+    document.addEventListener("keydown", key);
+    return () => { window.removeEventListener("popstate", back); window.removeEventListener("hashchange", back); document.removeEventListener("keydown", key); root.style.overflow = "";
+      // Closing without picking a page puts focus back on the menu button; a new page takes focus itself.
+      if (!picked.current) button.current?.focus({ preventScroll: true });
+    };
+  }, [shown]);
+  const show = () => { picked.current = false; history.pushState({ rigMenu: true }, ""); setOpen(true); };
+  function close() { if (history.state?.rigMenu) history.back(); else setOpen(false); }
+  /** A page picked from the open menu takes the menu's place in history. */
+  const pick = (e: ClickEvent, r: Route) => {
+    if (!shown) return;
+    e.preventDefault();
+    picked.current = true;
+    setOpen(false);
+    location.replace(`#${r}`);
+  };
+  return { shown, side, button, show, close, pick };
+}
+
 export function Sidebar({ children }: { children: ReactNode }) {
   const { ui, pc, data, set } = useApp();
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
+  const phone = usePhoneMenu();
   const mini = ui.sideMini;
   const warn = (pc.issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
   const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count">{warn}</em>
@@ -117,7 +172,15 @@ export function Sidebar({ children }: { children: ReactNode }) {
   return (
     <div className={`shell-fpanel${mini ? " mini" : ""}`}>
       <div className="fp-frame">
-        <aside className="fp-side" aria-label="Main">
+        <header className="fp-top">
+          <span className="fp-logo" aria-hidden="true">R<i /></span>
+          <span className="fp-brand-txt"><b>{label(homeOf(ui.route))}</b><small>{pc.name} · {pc.nickname}</small></span>
+          <button type="button" className="fp-menu-btn" ref={phone.button} onClick={phone.show} aria-label="Open menu" aria-expanded={phone.shown}>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+            {warn + data.changes.length > 0 && <i className="fp-menu-dot" />}
+          </button>
+        </header>
+        <aside className={`fp-side${phone.shown ? " open" : ""}`} aria-label="Main" ref={phone.side} {...(phone.shown ? { role: "dialog", "aria-modal": true } : {})}>
           <div className="fp-nav">
             <div className="fp-brand" ref={box}>
               <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Rig, ${pc.name}, switch PC`}>
@@ -127,19 +190,22 @@ export function Sidebar({ children }: { children: ReactNode }) {
               <button type="button" className="fp-collapse" onClick={() => set({ sideMini: !mini })} aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}>
                 <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 4v12" stroke="currentColor" strokeWidth="1.5" /><path d={mini ? "M11.5 8.5 13 10l-1.5 1.5" : "M13 8.5 11.5 10l1.5 1.5"} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </button>
+              <button type="button" className="fp-close" onClick={phone.close} aria-label="Close menu">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+              </button>
               {open && <PCMenu onPick={() => setOpen(false)} />}
             </div>
             {groups.map(([g, ids]) => (
               <div key={g || ids[0]} className="fp-group">
                 {g && <div className="fp-label">{g}</div>}
                 {ids.map((r) => (
-                  <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={homeOf(ui.route) === r ? "page" : undefined}>
+                  <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={homeOf(ui.route) === r ? "page" : undefined} onClick={(e) => phone.pick(e, r)}>
                     <Icon d={path(r)} /><span>{label(r)}</span>{count(r)}
                   </a>
                 ))}
               </div>
             ))}
-            <button type="button" className="fp-item fp-search" onClick={() => set({ palette: true })} title={mini ? "Search or ask" : undefined}>
+            <button type="button" className="fp-item fp-search" onClick={() => { if (phone.shown) phone.close(); set({ palette: true }); }} title={mini ? "Search or ask" : undefined}>
               <Search /><span>Search or ask</span><kbd>Ctrl K</kbd>
             </button>
             <SetupCard />

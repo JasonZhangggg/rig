@@ -15,7 +15,7 @@ export function Tuning({ game }: { game: Game }) {
           <div className="bars">
             <div className="bar-row"><span className="muted">Now</span><Bar v={game.now.avg} /><span className="num">{game.now.avg} fps</span></div>
             {game.tuned && <div className="bar-row"><span>Tuned</span><Bar v={game.tuned.avg} tuned /><span className="num"><b>{game.tuned.avg}</b> fps</span></div>}
-            {game.tuned && <div className="bar-row"><span className="faint">1% low</span><span className="faint" style={{ fontSize: 12.5 }}>{game.now.low} → {game.tuned.low} fps, fewer stutters</span><span /></div>}
+            {game.tuned && <div className="bar-row"><span className="faint">Worst moments</span><span className="faint" style={{ fontSize: 12.5 }}>{game.now.low} → {game.tuned.low} fps, fewer stutters</span><span /></div>}
           </div>
         ) : <span />}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

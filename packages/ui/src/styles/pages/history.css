@@ -94,10 +94,12 @@
 .hi-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
 .hi-panel { align-self: stretch; display: flex; flex-direction: column; gap: 16px; }
 
-.hi-events { list-style: none; margin: 0 -10px; padding: 0; display: flex; flex-direction: column; }
+.hi-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .hi-events li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
 .hi-events li:first-child { border-top-color: transparent; }
-.hi-events li > .btn { margin-right: 10px; }
+.hi-events li > .btn { margin-right: 0; }
+/* The line runs to the content edge; a row's hover fill reaches a little past it. */
+.hi-events .hi-ev { margin-left: -10px; }
 .hi-ev {
   flex: 1; min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px;
   padding: 9px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;

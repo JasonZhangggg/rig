@@ -471,7 +471,7 @@ function Cores({ readings, recent }: { readings: Reading[]; recent: LivePoint[] 
     <section className="pf-cores-wrap" aria-labelledby="pf-cores-h">
       <div className="pf-chart-head">
         <h3 className="label" id="pf-cores-h">Cores <span className="faint num">{cores.length}</span></h3>
-        <span className="faint">{anyTemp && !perCoreTemp ? "This processor reports one temperature per chiplet, not per core." : "Now, and the last few minutes."}</span>
+        <span className="faint">{anyTemp && !perCoreTemp ? "This processor reports one temperature for each group of cores, not for each core." : "Now, and the last few minutes."}</span>
       </div>
       <ul className="pf-cores">
         {cores.map((c) => {

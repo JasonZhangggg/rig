@@ -7,7 +7,7 @@
 /* A section: its title and one line, then its rows under a hairline. */
 .set-section { display: grid; gap: 12px; scroll-margin-top: 22px; }
 .set-head { display: grid; gap: 3px; }
-.set-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
+.set-head h2 { font: var(--t-title); letter-spacing: -.015em; }
 .set-intro { color: var(--text-3); font-size: 13px; font-weight: 500; line-height: 1.45; }
 .set-body { display: flex; flex-direction: column; padding: 4px 0; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 0; border-top: 1px solid var(--line); }

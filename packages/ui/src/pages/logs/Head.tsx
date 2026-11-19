@@ -10,7 +10,7 @@ export const isLogView = (r: Route) => logViews.some(([v]) => v === r);
 export function LogsHead({ sub, right }: { sub: string; right?: ReactNode }) {
   const { ui } = useApp();
   return (
-    <>
+    <div className="lg-head">
       <div className="page-head">
         <div><h1>Logs</h1><p className="sub">{sub}</p></div>
         {right}
@@ -18,6 +18,6 @@ export function LogsHead({ sub, right }: { sub: string; right?: ReactNode }) {
       <nav className="lg-views" aria-label="Logs">
         {logViews.map(([r, label]) => <a key={r} href={`#${r}`} aria-current={ui.route === r ? "page" : undefined}>{label}</a>)}
       </nav>
-    </>
+    </div>
   );
 }

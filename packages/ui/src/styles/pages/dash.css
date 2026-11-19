@@ -277,3 +277,6 @@
 /* A resized tile follows the pointer cell by cell with no glide when motion is reduced. */
 @media (prefers-reduced-motion: reduce) { .dash-grid > .dg.resizing[data-hold] { transition: none; } }
 :root[data-motion="reduce"] .dash-grid > .dg.resizing[data-hold], .dash[data-still] .dash-grid > .dg.resizing[data-hold] { transition: none; }
+.dmove { flex-wrap: nowrap; }
+.dmove button { display: grid; place-items: center; padding: 0; }
+.dmove svg { width: 18px; height: 18px; }

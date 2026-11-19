@@ -44,9 +44,9 @@
 .card { min-width: 0; border-top: 1px solid var(--line); }
 .card-pad { padding: 20px 0 0; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 0 8px; }
-.card h2:not(.plain-h) { font: 600 1.05rem/1.15 var(--font); letter-spacing: -.02em; color: var(--text); }
+.card h2:not(.plain-h) { font: var(--t-title); letter-spacing: -.02em; color: var(--text); }
 .plain-h,
-.sheet h2 { color: var(--text); font-size: 1.2rem; font-weight: 600; letter-spacing: -.025em; }
+.sheet h2 { color: var(--text); font: var(--t-title); letter-spacing: -.02em; }
 .empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .callout { padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-size: .93em; }
 .callout.warn { background: var(--warn-bg); color: var(--text); }

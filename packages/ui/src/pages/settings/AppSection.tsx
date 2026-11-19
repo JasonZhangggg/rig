@@ -56,7 +56,7 @@ function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () =
           <button type="button" className="switch" role="switch" aria-checked={p.state !== "paused"} disabled={busy === p.id} onClick={() => void edit(p.id, p.state === "paused" ? "resume" : "pause")}>
             <span><b>{p.label}</b><small>{probeLine(p)}</small></span><i />
           </button>
-          <button type="button" className="btn sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Turn off</button>
+          <button type="button" className="btn sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Remove</button>
         </div>
       ))}
       {status.probes?.problems?.map((x) => <p key={x} className="faint">{x}</p>)}

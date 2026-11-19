@@ -12,7 +12,7 @@
 .lg-tile.quiet[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .lg-tile-label { font-size: 15px; font-weight: 600; line-height: 1.25; }
 .lg-tile-when { color: var(--text-3); font-size: 13px; font-weight: 500; }
-.lg-h { font-size: 1em; font-weight: 600; letter-spacing: -.01em; }
+.lg-h { font: var(--t-title); letter-spacing: -.01em; }
 
 /* Used by a recording's page: its one-line finding. */
 .lg-lede { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; max-width: 920px; }
@@ -160,12 +160,11 @@
 }
 
 /* The Logs page's views: events, temperatures and games. */
-.lg-views { display: flex; gap: 22px; margin: -6px 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; }
-/* The lead right under the views needs no second line above it. */
+.lg-head { display: grid; gap: 16px; }
+.lg-views { display: flex; gap: 22px; border-bottom: 1px solid var(--line); overflow-x: auto; }
 /* The views' underline already separates them from what follows, so the first block under it drops its own line. */
-.lg-views + * { margin-top: -22px; }
-.lg-views + .card,
-.lg-views + .lg-grid > .lg-section { border-top: 0; }
+.lg-head + .card,
+.lg-head + .lg-grid > .lg-section { border-top: 0; }
 .lg-views a { margin-bottom: -1px; padding: 10px 0; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .lg-views a:hover { color: var(--text); } }
 .lg-views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }
