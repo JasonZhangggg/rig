@@ -4,12 +4,12 @@
 // every price on screen says so. Photos come only from that feed.
 
 import { useEffect, useMemo, useState } from "react";
-import { categoryState, drawWith, fitOf, gainOf, makersIn, matchesQuery, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
+import { categoryState, drawWith, fitOf, gainOf, makersIn, matchesQuery, photoOf, priceOf, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
 import { useApp } from "../../state";
 import { issueGo, partIcon } from "../shared";
 import { useUpgrades } from "./PCUpgrades";
 
-const money = (n: number) => `$${n.toLocaleString("en-US")}`;
+const money = (n: number) => `$${n.toLocaleString("en-US", n % 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {})}`;
 
 const fitChip: Record<Fit["verdict"], JSX.Element> = {
   fits: <span className="chip ok">Fits</span>,
@@ -80,7 +80,7 @@ export function UpgradesTab() {
   const [q, setQ] = useState("");
   if (!got) return <p className="muted" role="status">Looking at what fits {pc.name}…</p>;
   if (!got.shop) return <p className="muted">{got.failed ? "Couldn't load parts just now." : `Rig hasn't read ${pc.name}'s parts yet. Parts that fit show up once it has.`}</p>;
-  const { facts, items, demo } = got.shop;
+  const { facts, items, demo, retailFrom } = got.shop;
   const states = shopCategories.map((c) => categoryState(c.key, facts, prefs.psuW));
   const open = states.filter((s) => s.open);
   // A laptop's cooler, fans and charger aren't upgrades, so only the parts people expect to swap are named.
@@ -90,7 +90,7 @@ export function UpgradesTab() {
   const listed = prefs.list.map((id) => items.find((i) => i.id === id)).filter((x): x is ShopItem => !!x);
   const own = prefs.own ?? [];
   const count = listed.length + own.length;
-  const total = listed.reduce((n, i) => n + i.offers[0].price, 0) + own.reduce((n, o) => n + (o.price ?? 0), 0);
+  const total = listed.reduce((n, i) => n + priceOf(i), 0) + own.reduce((n, o) => n + (o.price ?? 0), 0);
   // How many parts of each kind that can change match the search, for "also in" hints.
   const matches = q.trim() ? open.map((s) => ({ key: s.key, label: s.label, n: items.filter((i) => i.category === s.key && matchesQuery(i, q)).length })) : [];
   const pick = (k: string) => set({ shopCat: k });
@@ -117,8 +117,8 @@ export function UpgradesTab() {
         </nav>
         <div className="shop-main">
           {cat === "list"
-            ? <ListView items={listed} own={own} facts={facts} store={store} demo={demo} />
-            : cat && <CategoryView key={cat} cat={cat} items={items.filter((i) => i.category === cat)} facts={facts} store={store} demo={demo}
+            ? <ListView items={listed} own={own} facts={facts} store={store} demo={demo} from={retailFrom} />
+            : cat && <CategoryView key={cat} cat={cat} items={items.filter((i) => i.category === cat)} facts={facts} store={store} demo={demo} from={retailFrom}
                 q={q} setQ={setQ} elsewhere={matches.filter((m) => m.key !== cat && m.n > 0)} onElsewhere={pick} />}
         </div>
       </div>
@@ -157,21 +157,30 @@ function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () =
   );
 }
 
-function DemoNote() {
-  return <p className="shop-demo" role="note"><span className="chip info no-dot">Demo prices</span>Made-up prices from made-up shops, to show how this will work. Rig has no shop feed yet.</p>;
+function DemoNote({ from }: { from?: string }) {
+  return (
+    <p className="shop-demo" role="note"><span className="chip info no-dot">Demo prices</span>
+      {from ? `Prices marked demo are made up. Rig hasn't found those parts at ${from} yet.` : "Made-up prices from made-up shops, to show how this will work. Rig has no shop feed yet."}
+    </p>
+  );
+}
+
+/** Where real photos and prices come from, named wherever they show, as the feed's terms require. */
+function SourceNote({ from }: { from: string }) {
+  return <p className="shop-source faint" role="note">Photos and prices marked {from} come from <span className="shop-source-mark">{from}</span>.</p>;
 }
 
 type Store = ReturnType<typeof usePrefs>;
 
 interface CategoryProps {
-  cat: ShopCategory; items: ShopItem[]; facts: HardwareFacts; store: Store; demo: boolean;
+  cat: ShopCategory; items: ShopItem[]; facts: HardwareFacts; store: Store; demo: boolean; from?: string;
   q: string; setQ: (q: string) => void;
   /** Other kinds of part with parts that match the search. */
   elsewhere: { key: ShopCategory; label: string; n: number }[];
   onElsewhere: (k: ShopCategory) => void;
 }
 
-function CategoryView({ cat, items, facts, store, demo, q, setQ, elsewhere, onElsewhere }: CategoryProps) {
+function CategoryView({ cat, items, facts, store, demo, from, q, setQ, elsewhere, onElsewhere }: CategoryProps) {
   const psuW = store.prefs.psuW;
   const st = categoryState(cat, facts, psuW);
   const [onlyFits, setOnlyFits] = useState(true);
@@ -185,9 +194,9 @@ function CategoryView({ cat, items, facts, store, demo, q, setQ, elsewhere, onEl
   const rows = useMemo(() => {
     const r = found.filter((i) => !makers.length || makers.includes(i.maker)).map((i) => ({ i, fit: fitOf(i, facts, psuW) }));
     const shown = onlyFits ? r.filter((x) => x.fit.verdict !== "no") : r;
-    return shown.sort((a, b) => sort === "low" ? a.i.offers[0].price - b.i.offers[0].price
-      : sort === "high" ? b.i.offers[0].price - a.i.offers[0].price
-      : verdictRank[a.fit.verdict] - verdictRank[b.fit.verdict] || a.i.offers[0].price - b.i.offers[0].price);
+    return shown.sort((a, b) => sort === "low" ? priceOf(a.i) - priceOf(b.i)
+      : sort === "high" ? priceOf(b.i) - priceOf(a.i)
+      : verdictRank[a.fit.verdict] - verdictRank[b.fit.verdict] || priceOf(a.i) - priceOf(b.i));
   }, [found, makers, facts, psuW, onlyFits, sort]);
   const filtered = found.filter((i) => !makers.length || makers.includes(i.maker));
   const hidden = filtered.length - rows.length;
@@ -222,7 +231,7 @@ function CategoryView({ cat, items, facts, store, demo, q, setQ, elsewhere, onEl
           </select>
         </label>
       </div>
-      {demo && <DemoNote />}
+      {demo && items.some((i) => !i.retail) && <DemoNote from={from} />}
       <ul className="shop-list" aria-label={`${st.label} that could go in ${facts.name}`}>
         {rows.map(({ i, fit }) => (
           <ItemRow key={i.id} item={i} fit={fit} facts={facts} open={openId === i.id} onToggle={() => setOpenId(openId === i.id ? null : i.id)}
@@ -235,6 +244,7 @@ function CategoryView({ cat, items, facts, store, demo, q, setQ, elsewhere, onEl
         </p>
       )}
       {hidden > 0 && <button type="button" className="linkish shop-hidden" onClick={() => setOnlyFits(false)}>Show {hidden} that won't fit</button>}
+      {from && rows.some(({ i }) => i.retail) && <SourceNote from={from} />}
       {searching && elsewhere.length > 0 && (
         <p className="shop-elsewhere">Also matching "{q.trim()}":{" "}
           {elsewhere.map((m, i) => <span key={m.key}>{i > 0 && ", "}<button type="button" className="linkish" onClick={() => onElsewhere(m.key)}>{m.label} ({m.n})</button></span>)}
@@ -316,15 +326,17 @@ function ItemRow({ item, fit, facts, open, onToggle, inList, onList, demo }: { i
   // What a part would add means nothing when it can't go in.
   const gain = fit.verdict === "no" ? null : gainOf(item, facts);
   const low = item.offers[0];
+  const live = item.retail;
+  const photo = photoOf(item);
   const id = `shop-${item.id}`;
   return (
     <li className={`shop-item${open ? " is-open" : ""}`}>
       <div className="shop-row">
         <button type="button" className="shop-row-main" aria-expanded={open} aria-controls={id} onClick={onToggle}>
-          <PartPhoto cat={item.category} image={item.image} />
+          <PartPhoto cat={item.category} image={photo} />
           <span className="shop-name"><b>{item.name}</b><span className="muted">{gain ?? item.spec}</span></span>
           {fitChip[fit.verdict]}
-          <span className="shop-price"><b className="num">{money(low.price)}</b><span className="faint">{demo ? "demo price" : low.shop}</span></span>
+          <span className="shop-price"><b className="num">{money(priceOf(item))}</b><span className="faint">{live ? live.shop : demo ? "demo price" : low.shop}</span></span>
           <svg className="shop-chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
         <button type="button" className="btn sm shop-add" aria-pressed={inList} onClick={onList} disabled={fit.verdict === "no" && !inList} aria-label={inList ? `Remove ${item.name} from your list` : `Add ${item.name} to your list`}>{inList ? "On your list" : "Add"}</button>
@@ -333,8 +345,9 @@ function ItemRow({ item, fit, facts, open, onToggle, inList, onList, demo }: { i
         <div className="shop-detail" id={id}>
           <div className="shop-top">
             <figure className="shop-fig">
-              <PartPhoto cat={item.category} image={item.image} big />
-              {!item.image && <figcaption className="faint">No photo yet. Photos come with a real shop feed.</figcaption>}
+              <PartPhoto cat={item.category} image={photo} big />
+              {!photo ? <figcaption className="faint">No photo yet. Photos come with a real shop feed.</figcaption>
+                : live && !item.image ? <figcaption className="faint">Photo: {live.shop}</figcaption> : null}
             </figure>
             <div className="shop-fit">
               <p>{fit.why}</p>
@@ -344,11 +357,21 @@ function ItemRow({ item, fit, facts, open, onToggle, inList, onList, demo }: { i
           </div>
           <div className="shop-cols">
             <div>
-              <span className="label">Prices{demo ? " (demo)" : ""}</span>
-              <table className="kv shop-offers"><tbody>
-                {item.offers.map((o) => <tr key={o.shop}><th>{o.shop}</th><td className="num">{money(o.price)}</td><td className={o.inStock ? "faint" : "faint shop-out"}>{o.inStock ? "In stock" : "Out of stock"}</td></tr>)}
-              </tbody></table>
-              <PriceHistory points={item.history} demo={demo} />
+              {live ? (
+                <>
+                  <span className="label">Price</span>
+                  <p className="shop-live"><b className="num">{money(live.price)}</b> at {live.shop}, {live.inStock ? "in stock online" : "sold out online"}. <span className="faint">Checked {new Date(live.checkedAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}.</span></p>
+                  <a className="btn sm" href={live.url} target="_blank" rel="noreferrer">See it at {live.shop}</a>
+                </>
+              ) : (
+                <>
+                  <span className="label">Prices{demo ? " (demo)" : ""}</span>
+                  <table className="kv shop-offers"><tbody>
+                    {item.offers.map((o) => <tr key={o.shop}><th>{o.shop}</th><td className="num">{money(o.price)}</td><td className={o.inStock ? "faint" : "faint shop-out"}>{o.inStock ? "In stock" : "Out of stock"}</td></tr>)}
+                  </tbody></table>
+                  <PriceHistory points={item.history} demo={demo} />
+                </>
+              )}
             </div>
             <div>
               <span className="label">Specs</span>
@@ -384,7 +407,7 @@ function PriceHistory({ points, demo }: { points: number[]; demo: boolean }) {
   );
 }
 
-function ListView({ items, own, facts, store, demo }: { items: ShopItem[]; own: OwnPart[]; facts: HardwareFacts; store: Store; demo: boolean }) {
+function ListView({ items, own, facts, store, demo, from }: { items: ShopItem[]; own: OwnPart[]; facts: HardwareFacts; store: Store; demo: boolean; from?: string }) {
   const { ask } = useApp();
   const psuW = store.prefs.psuW;
   if (!items.length && !own.length) {
@@ -394,7 +417,7 @@ function ListView({ items, own, facts, store, demo }: { items: ShopItem[]; own: 
       </section>
     );
   }
-  const total = items.reduce((n, i) => n + i.offers[0].price, 0) + own.reduce((n, o) => n + (o.price ?? 0), 0);
+  const total = items.reduce((n, i) => n + priceOf(i), 0) + own.reduce((n, o) => n + (o.price ?? 0), 0);
   const unpriced = own.filter((o) => o.price == null).length;
   const count = items.length + own.length;
   // Power with every processor and graphics card on the list in place, and any power supply on it.
@@ -408,14 +431,14 @@ function ListView({ items, own, facts, store, demo }: { items: ShopItem[]; own: 
     : supply >= want ? `About ${draw} W at full load, well within ${newPsu ? "the new" : "your"} ${supply} W supply.`
     : supply >= draw ? `About ${draw} W at full load. ${newPsu ? "The new" : "Your"} ${supply} W supply is tight; Rig would want ${want} W.`
     : `About ${draw} W at full load, more than ${newPsu ? "the new" : "your"} ${supply} W supply gives.`;
-  const text = [...items.map((i) => `${i.name} (${money(i.offers[0].price)})`), ...own.map((o) => o.price ? `${o.name} (${money(o.price)})` : o.name)].join(", ");
+  const text = [...items.map((i) => `${i.name} (${money(priceOf(i))})`), ...own.map((o) => o.price ? `${o.name} (${money(o.price)})` : o.name)].join(", ");
   return (
     <section aria-labelledby="shop-list-h">
       <div className="shop-cat-head">
         <h2 id="shop-list-h">Your list</h2>
         <p className="muted">{count} {count === 1 ? "part" : "parts"} for {facts.name}.</p>
       </div>
-      {demo && <DemoNote />}
+      {demo && items.some((i) => !i.retail) && <DemoNote from={from} />}
       <ul className="shop-list shop-mylist" aria-label="Your list">
         {items.map((i) => {
           const fit = fitOf(i, facts, psuW);
@@ -423,10 +446,10 @@ function ListView({ items, own, facts, store, demo }: { items: ShopItem[]; own: 
             <li key={i.id} className="shop-item">
               <div className="shop-row">
                 <span className="shop-row-main is-static">
-                  <PartPhoto cat={i.category} image={i.image} />
+                  <PartPhoto cat={i.category} image={photoOf(i)} />
                   <span className="shop-name"><b>{i.name}</b><span className="muted">{fit.why}</span></span>
                   {fitChip[fit.verdict]}
-                  <span className="shop-price"><b className="num">{money(i.offers[0].price)}</b></span>
+                  <span className="shop-price"><b className="num">{money(priceOf(i))}</b>{i.retail && <span className="faint">{i.retail.shop}</span>}</span>
                 </span>
                 <button type="button" className="btn ghost sm" onClick={() => store.toggle(i.id)} aria-label={`Remove ${i.name}`}>Remove</button>
               </div>
@@ -447,8 +470,9 @@ function ListView({ items, own, facts, store, demo }: { items: ShopItem[]; own: 
           </li>
         ))}
       </ul>
+      {from && items.some((i) => i.retail) && <SourceNote from={from} />}
       <div className="shop-sum">
-        <div className="shop-total"><span className="label">Total{demo ? " (demo prices)" : ""}{unpriced ? `, without ${unpriced} ${unpriced === 1 ? "part" : "parts"} you didn't price` : ""}</span><b className="num">{money(total)}</b></div>
+        <div className="shop-total"><span className="label">Total{items.some((i) => !i.retail) ? " (with demo prices)" : ""}{unpriced ? `, without ${unpriced} ${unpriced === 1 ? "part" : "parts"} you didn't price` : ""}</span><b className="num">{money(total)}</b></div>
         <p className="muted">{power}</p>
         <div className="shop-actions">
           <button type="button" className="btn primary sm" onClick={() => ask(`Check this upgrade list for ${facts.name}: ${text}. Will it all work together, and what order should I install it in?`)}>Ask Rig to check this list</button>

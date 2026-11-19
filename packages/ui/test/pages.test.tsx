@@ -189,6 +189,28 @@ describe("Upgrades", () => {
     expect(within(kit).getByText("No photo yet. Photos come with a real shop feed.")).toBeTruthy();
   });
 
+  it("shows a real listing's photo and price, names where it's from, and keeps the rest marked demo", async () => {
+    const client = new DemoClient();
+    const demoShop = client.shop.bind(client);
+    client.shop = async (id: string) => {
+      const shop = (await demoShop(id))!;
+      const retail = { shop: "Best Buy", price: 107.99, inStock: true, url: "https://www.bestbuy.com/site/1.p", image: "https://pisces.bbystatic.com/image2/1.jpg", checkedAt: new Date().toISOString() };
+      return { ...shop, retailFrom: "Best Buy", items: shop.items.map((i) => (i.id === "m-vengeance-32" ? { ...i, retail } : i)) };
+    };
+    await show("upgrades", client);
+    fireEvent.click(await rail().findByRole("button", { name: /Memory/ }));
+    const kit = row(/Corsair Vengeance 32 GB/);
+    expect(within(kit).getByText("$107.99")).toBeTruthy();
+    expect(kit.querySelector("img")!.getAttribute("src")).toBe("https://pisces.bbystatic.com/image2/1.jpg");
+    expect(screen.getByText(/Photos and prices marked Best Buy come from/)).toBeTruthy();
+    expect(screen.getByText(/Prices marked demo are made up/)).toBeTruthy();
+    expect(within(row(/G\.Skill Flare X5/)).getByText("demo price")).toBeTruthy();
+    fireEvent.click(within(kit).getByRole("button", { expanded: false }));
+    expect(within(kit).getByRole("link", { name: "See it at Best Buy" }).getAttribute("href")).toBe("https://www.bestbuy.com/site/1.p");
+    expect(within(kit).getByText("Photo: Best Buy")).toBeTruthy();
+    expect(within(kit).queryByRole("img", { name: /Lowest price over 12 weeks/ })).toBeNull();
+  });
+
   it("checks a graphics card against the power supply once it knows the wattage", async () => {
     await show("upgrades");
     fireEvent.click(await rail().findByRole("button", { name: /Graphics card/ }));

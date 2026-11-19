@@ -48,6 +48,24 @@ None of these are wired up. Each needs an account, an agreement or both.
 
 Until then, every price in the app sits under a "Demo prices" label, and the demo shops have made-up names (Northwind, Contoso Parts, Fabrikam).
 
+## Real photos and prices: Best Buy
+
+Checked November 2026. Best Buy's Products API is the one feed Rig can use today:
+
+- **Sign-up:** a free key from developer.bestbuy.com with an email address. No sales or approval needed for the Products API.
+- **Limits:** 50,000 calls a day, 5 a second. Rig makes about 28 calls every 12 hours.
+- **Photos:** allowed next to Best Buy's listing, unchanged (resizing is fine), with Best Buy named as the source and its logo on the screen. Content may be kept up to 72 hours; Rig keeps it 12, in the server's memory.
+- **Key:** may not be shared, so it stays on the server as `BESTBUY_API_KEY` and the apps never see it.
+- **Open questions for Best Buy:** the licence is for apps "in connection with offers to sell or sales" of its products, and bars using its prices to benefit other retailers. Showing only Best Buy's listing with a link to buy it fits that; putting it beside other shops' prices needs Best Buy's written OK first.
+
+How it works: `apps/server/src/retail.ts` looks each catalog part up by maker and model, keeps a listing only when its name has the same model, size and memory type, and replaces that part's demo price and photo. Parts it can't match stay marked demo. Still to do once there's a key: add Best Buy's logo from its brand kit next to "Photos and prices marked Best Buy come from Best Buy", and check the matches against real listings.
+
+Ruled out for now:
+
+- **Amazon:** the Product Advertising API was switched off in May 2026. Its replacement, the Creators API, needs an Associates account with 10 sales in the last 30 days.
+- **Icecat (free product data with photos):** photos are only for brands that sponsor it, each brand can withdraw them, use has to promote the brand, and its licence bars using the data with AI, which Rig's chat does.
+- **Newegg, B&H and other affiliate networks:** need approval for an affiliate account first, and their feeds' photo terms vary.
+
 ## Where a full catalog and photos would come from
 
 The demo catalog has 28 parts. A real one needs thousands, kept current, and the same feeds that give prices give the catalog:

@@ -92,10 +92,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          BESTBUY_API_KEY: ${{ secrets.BESTBUY_API_KEY }}
         run: |
           secrets=$(mktemp)
           trap 'rm -f "$secrets"' EXIT
-          jq -n 'env | {BETTER_AUTH_SECRET, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET} | with_entries(select(.value != null and .value != ""))' > "$secrets"
+          jq -n 'env | {BETTER_AUTH_SECRET, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BESTBUY_API_KEY} | with_entries(select(.value != null and .value != ""))' > "$secrets"
           npx wrangler deploy --var "WEB_ORIGIN:${WEB_ORIGIN%/}" --secrets-file "$secrets"
 
       - name: Check it's up
