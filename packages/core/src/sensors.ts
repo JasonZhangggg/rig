@@ -114,3 +114,46 @@ export function keyReadings(part: string, readings: readonly Reading[]): KeyRead
     return [{ label, type, value: top.value!, max: top.max, note: how === "max" && hits.length > 1 ? top.name : undefined }];
   });
 }
+
+/** The kinds of sensor in the order a hardware monitor groups them, each with its heading. */
+export const sensorGroups: readonly (readonly [SensorType, string])[] = [
+  ["temperature", "Temperatures"], ["load", "Usage"], ["clock", "Speeds"], ["fan", "Fans"], ["power", "Power"],
+  ["voltage", "Voltages"], ["current", "Current"], ["throughput", "Transfer"], ["data", "Data"], ["level", "Levels"], ["control", "Fan control"],
+];
+
+/** The kinds of sensor a part reports, in sensorGroups order, with how many of each. */
+export function sensorKinds(readings: readonly Reading[]): { type: SensorType; title: string; count: number }[] {
+  return sensorGroups.map(([type, title]) => ({ type, title, count: readings.filter((r) => r.type === type).length })).filter((g) => g.count > 0);
+}
+
+/** Words a search can use for a part or a kind of sensor, besides the sensor's own name. */
+const partWords: Record<string, string> = {
+  cpu: "processor cpu", gpu: "graphics card gpu video", ram: "memory ram", ssd: "storage drive disk ssd nvme",
+  motherboard: "motherboard board mainboard", board: "motherboard board", fans: "fans cooling", battery: "battery",
+};
+const kindWords: Record<SensorType, string> = {
+  temperature: "temperatures temps heat", load: "usage load use busy utilization", clock: "speeds clocks frequency",
+  fan: "fans rpm", power: "power watts", voltage: "voltages volts", current: "current amps", throughput: "transfer rates speeds",
+  data: "data size", level: "levels life wear health", control: "fan control duty",
+};
+
+const isNum = (w: string) => /^\d+$/.test(w);
+const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * The readings a search like "core 3", "hot spot" or "gpu usage" finds: every word starts a word of the sensor's name,
+ * its part or its kind. A number has to match whole, right after the word before it, so "core 3" finds Core #3 and its
+ * threads but not Core #13, nor Core #1's third thread.
+ */
+export function findReadings(readings: readonly Reading[], query: string): Reading[] {
+  const q = words(query);
+  if (!q.length) return [];
+  const ok = (w: string, t: string | undefined) => t != null && (isNum(w) ? t === w : t.startsWith(w));
+  return readings.filter((r) => {
+    const name = words(r.name);
+    const about = [...words(partWords[r.part] ?? r.part), ...words(kindWords[r.type] ?? r.type)];
+    return q.every((w, i) => isNum(w) && i > 0
+      ? name.some((t, j) => ok(w, t) && ok(q[i - 1], name[j - 1]))
+      : name.some((t) => ok(w, t)) || about.some((t) => ok(w, t)));
+  });
+}

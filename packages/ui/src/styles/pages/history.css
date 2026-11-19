@@ -6,7 +6,9 @@
 
 /* Performance: the parts down the side, Task Manager style, and the picked part's charts and sensors beside them. */
 .pf-grid { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 28px; align-items: start; }
-.pf-rail { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 2px; margin-left: -10px; }
+.pf-side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pf-find { width: 100%; }
+.pf-rail { display: flex; flex-direction: column; gap: 2px; margin-left: -10px; }
 .pf-part {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name now" "spark spark"; align-items: baseline; gap: 4px 10px;
   padding: 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
@@ -44,7 +46,9 @@
 .pf-keys dd.num { font-size: 1.15rem; font-weight: 600; letter-spacing: -.015em; }
 .pf-keys dd.faint { font-size: 12px; overflow-wrap: anywhere; }
 .pf-limited { margin: 0; }
-.pf-more { align-self: flex-start; }
+.pf-kinds { align-self: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.pf-kinds .pf-count { margin-left: 4px; font-weight: 500; opacity: .6; }
+.pf-found-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* Each core side by side, like Task Manager's logical processors. */
 .pf-cores-wrap { display: flex; flex-direction: column; gap: 8px; }
@@ -103,7 +107,8 @@
 @media (max-width: 860px) {
   .figs { grid-template-columns: minmax(0, 1fr); }
   .pf-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .pf-rail { position: static; flex-direction: row; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .pf-side { position: static; }
+  .pf-rail { flex-direction: row; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scroll-snap-type: x proximity; scrollbar-width: none; }
   .pf-cores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pf-part { flex: 0 0 148px; scroll-snap-align: start; grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "now" "spark"; }
   .hi-empty { grid-template-columns: minmax(0, 1fr); padding: 22px 0 0; }

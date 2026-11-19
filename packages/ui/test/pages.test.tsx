@@ -226,19 +226,23 @@ describe("History", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Memory" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Memory, in use" })).toBeTruthy();
     expect(screen.queryByRole("img", { name: /temperature/ })).toBeNull();
-    const sensors = screen.getByRole("table", { name: /Sensors/ });
+    const kinds = screen.getByRole("group", { name: "Kind of sensor" });
+    expect(within(kinds).getAllByRole("button").map((b) => b.textContent)).toEqual(["Usage 2", "Data 2"]);
+    fireEvent.click(within(kinds).getByRole("button", { name: /^Data/ }));
+    const sensors = screen.getByRole("table", { name: "Memory, data" });
     expect(within(sensors).getByRole("rowheader", { name: "Memory Used" })).toBeTruthy();
+    expect(within(sensors).queryByRole("rowheader", { name: "Virtual Memory" })).toBeNull();
     expect(within(screen.getByLabelText("Now")).getByText("Available")).toBeTruthy();
     expect(within(sensors).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Now", "Lowest", "Highest"]);
     expect(sensors.textContent).not.toMatch(/NaN|undefined/);
 
     fireEvent.click(within(rail).getByRole("button", { name: /^Fans/ }));
     expect(screen.getByRole("img", { name: "Fans, fastest fan" })).toBeTruthy();
-    const fan = within(screen.getByRole("table", { name: /Sensors/ })).getByRole("rowheader", { name: "Fan #1" }).parentElement!;
+    const fan = within(screen.getByRole("table", { name: "Fans, fans" })).getByRole("rowheader", { name: "Fan #1" }).parentElement!;
     expect(fan.textContent).toMatch(/\d rpm.*\d rpm.*\d rpm/);
   });
 
-  it("shows the processor's cores side by side, with every sensor a click away", async () => {
+  it("shows the processor's cores side by side, and its sensors one kind at a time", async () => {
     await show("history");
     fireEvent.click(within(await screen.findByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
     const now = screen.getByLabelText("Now");
@@ -249,13 +253,41 @@ describe("History", () => {
     expect(cores.textContent).toMatch(/one temperature per chiplet/);
     expect(within(cores).getAllByRole("listitem")[0].textContent).toMatch(/^Core 1\d+%.*GHz/);
 
-    expect(screen.queryByRole("table", { name: /Sensors/ })).toBeNull();
-    const more = screen.getByRole("button", { name: /^Show all \d+, with lowest and highest$/ });
-    fireEvent.click(more);
-    const table = screen.getByRole("table", { name: /Sensors/ });
-    expect(within(table).getByRole("rowheader", { name: "CPU Core #3 Thread #2" })).toBeTruthy();
-    expect(within(table).getByRole("rowheader", { name: "Core (SVI2 TFN)" }).parentElement!.textContent).toMatch(/\d\.\d{3} V/);
-    expect(more.getAttribute("aria-expanded")).toBe("true");
+    const kinds = screen.getByRole("group", { name: "Kind of sensor" });
+    expect(within(kinds).getAllByRole("button").map((b) => b.textContent!.replace(/ \d+$/, ""))).toEqual(["Temperatures", "Usage", "Speeds", "Power", "Voltages"]);
+    expect(screen.getByRole("table", { name: "Processor, temperatures" }).textContent).not.toMatch(/Thread/);
+    fireEvent.click(within(kinds).getByRole("button", { name: /^Usage/ }));
+    expect(within(screen.getByRole("table", { name: "Processor, usage" })).getByRole("rowheader", { name: "CPU Core #3 Thread #2" })).toBeTruthy();
+    fireEvent.click(within(kinds).getByRole("button", { name: /^Voltages/ }));
+    expect(within(screen.getByRole("table", { name: "Processor, voltages" })).getByRole("rowheader", { name: "Core (SVI2 TFN)" }).parentElement!.textContent).toMatch(/\d\.\d{3} V/);
+
+    // The kind stays picked on the next part that has it.
+    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Motherboard/ }));
+    expect(screen.getByRole("table", { name: "Motherboard, voltages" })).toBeTruthy();
+  });
+
+  it("finds any reading on any part from the search", async () => {
+    await show("history");
+    const find = await screen.findByRole("searchbox", { name: "Find a reading" });
+    fireEvent.change(find, { target: { value: "core 3" } });
+    const table = screen.getByRole("table", { name: "Readings matching core 3" });
+    const rows = [...table.querySelectorAll("th[scope=row]")].map((r) => r.textContent);
+    expect(rows).toEqual(expect.arrayContaining(["Core #3", "CPU Core #3 Thread #1", "Core #3 (SMU)"]));
+    expect(rows.every((n) => /#3\b/.test(n!))).toBe(true);
+    expect(within(screen.getByRole("group", { name: "Parts" })).queryAllByRole("button", { pressed: true })).toHaveLength(0);
+
+    fireEvent.change(find, { target: { value: "hot spot" } });
+    expect(within(screen.getByRole("table", { name: /hot spot/ })).getByRole("rowheader", { name: "GPU Hot Spot" })).toBeTruthy();
+    fireEvent.change(find, { target: { value: "usage" } });
+    const usage = screen.getByRole("table", { name: /usage/ });
+    fireEvent.click(within(usage).getByRole("button", { name: "Open graphics card" }));
+    expect((find as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("table", { name: "Graphics card, usage" })).toBeTruthy();
+
+    fireEvent.change(find, { target: { value: "zzz" } });
+    expect(screen.getByRole("heading", { level: 2, name: "No readings" })).toBeTruthy();
+    fireEvent.keyDown(find, { key: "Escape" });
+    expect(screen.getByRole("heading", { level: 2, name: "Graphics card" })).toBeTruthy();
   });
 
   it("leads with the part's figures, and each figure or busy time pins the charts", async () => {
@@ -296,7 +328,7 @@ describe("History", () => {
     expect(screen.queryByRole("group", { name: "Key figures" })).toBeNull();
     expect(screen.queryByText("Busy times")).toBeNull();
     expect(screen.getAllByText("Live readings draw here as they come in.").length).toBe(2);
-    expect(screen.getByRole("button", { name: /^Show all \d+, with lowest and highest$/ })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Graphics card, temperatures" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     expect(await screen.findByRole("group", { name: "Key figures" })).toBeTruthy();
   });

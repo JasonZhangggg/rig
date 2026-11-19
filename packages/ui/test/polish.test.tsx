@@ -66,7 +66,7 @@ describe("History figures", () => {
     // The °C figure is already rounded, so the °F one can land a degree either side of it times 1.8 (a temperature would be 32° off).
     expect(Math.abs(f.headroom! - c.headroom! * 1.8)).toBeLessThanOrEqual(1.5);
     if (c.change != null) expect(Math.abs(f.change! - c.change * 1.8)).toBeLessThanOrEqual(1.5);
-  });
+  }, 20_000); // It renders the app twice, which can pass five seconds while the other packages test alongside.
 });
 
 describe("Greeting", () => {

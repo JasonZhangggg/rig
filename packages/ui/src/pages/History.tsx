@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  coreLoad, coresOf, HOT_MARGIN, historySummary, keyReadings, livePoint, STEADY_MARGIN,
-  type BusySummary, type Core, type HistoryKey, type HistoryPoint, type HistorySummary, type PC, type Range, type Reading, type ReadingUnit, type TempFormat,
+  coreLoad, coresOf, findReadings, HOT_MARGIN, historySummary, keyReadings, livePoint, sensorGroups, sensorKinds, STEADY_MARGIN,
+  type BusySummary, type SensorType, type Core, type HistoryKey, type HistoryPoint, type HistorySummary, type PC, type Range, type Reading, type ReadingUnit, type TempFormat,
 } from "@rig/core";
 import { calm, ChartNote, LineChart } from "../chart";
 import { Figure } from "../components/Figure";
@@ -102,6 +102,9 @@ export function History() {
   const [sel, setSel] = useState(pc.parts?.gpu ? "gpu" : lines[0]?.id);
   const part = lines.find((l) => l.id === sel) ?? lines[0];
   const [focus, setFocus] = useState<Focus | null>(null);
+  // The kind of sensor shown under the charts, kept as you move between parts when the next one has it too.
+  const [kind, setKind] = useState<SensorType | null>(null);
+  const [q, setQ] = useState("");
   const paneRef = useRef<HTMLElement>(null);
   const has = !!pts && pts.length > 1;
   const now = livePoint(pc, Date.now());
@@ -119,7 +122,8 @@ export function History() {
     setLive(false);
     set({ range: r });
   };
-  const choose = (id: string) => { setSel(id); setFocus(null); };
+  const choose = (id: string) => { setSel(id); setFocus(null); setQ(""); };
+  const searching = q.trim() !== "";
   const shown = live ? recent : pts ?? [];
 
   return (
@@ -148,6 +152,9 @@ export function History() {
 
       {part && (
         <div className="pf-grid">
+          <div className="pf-side">
+          <input className="input pf-find" type="search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }}
+            placeholder="Find a reading, like core 3" aria-label="Find a reading" aria-controls="pf-pane" />
           <div className="pf-rail" role="group" aria-label="Parts">
             {lines.map((l) => {
               const lead = l.metrics[0];
@@ -155,7 +162,7 @@ export function History() {
               const v = lead ? now[lead.key] : null;
               const hot = lead?.unit === "temp" && l.limit != null && v != null && v >= l.limit - HOT_MARGIN;
               return (
-                <button key={l.id} type="button" className="pf-part" aria-pressed={l.id === part.id} onClick={() => choose(l.id)}>
+                <button key={l.id} type="button" className="pf-part" aria-pressed={!searching && l.id === part.id} onClick={() => choose(l.id)}>
                   <span className="pf-part-name">{l.name}</span>
                   {lead && (
                     <span className="pf-part-now">
@@ -168,8 +175,12 @@ export function History() {
               );
             })}
           </div>
+          </div>
 
-          <section ref={paneRef} className={`pf-pane${focus?.key === "busy" ? " busy" : ""}`} aria-labelledby="pf-h">
+          {searching ? (
+            <Found query={q} readings={pc.readings ?? []} lines={lines} onOpen={(id, type) => { choose(id); setKind(type); }} />
+          ) : (
+          <section id="pf-pane" ref={paneRef} className={`pf-pane${focus?.key === "busy" ? " busy" : ""}`} aria-labelledby="pf-h">
             <div className="pf-head">
               <h2 id="pf-h" className="pf-title">{part.name}</h2>
               <span className="muted">{part.model}</span>
@@ -201,8 +212,9 @@ export function History() {
             {!live && pts == null && <ChartNote busy>Loading…</ChartNote>}
             {live && <p className="faint pf-live-note">The last few minutes, since you opened this page. Day, Week and Month show what Rig logged.</p>}
             {part.id === "cpu" && <Cores readings={pc.readings ?? []} recent={recent} />}
-            <Readings key={part.id} part={part} readings={(pc.readings ?? []).filter((r) => r.part === part.id)} />
+            <Readings part={part} readings={(pc.readings ?? []).filter((r) => r.part === part.id)} kind={kind} onKind={setKind} />
           </section>
+          )}
         </div>
       )}
 
@@ -249,11 +261,6 @@ function Spark({ points, m }: { points: HistoryPoint[]; m: Metric }) {
   return <svg className="pf-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true"><path d={d} vectorEffect="non-scaling-stroke" /></svg>;
 }
 
-const groups: [Reading["type"], string][] = [
-  ["temperature", "Temperatures"], ["load", "Usage"], ["clock", "Speeds"], ["fan", "Fans"], ["power", "Power"],
-  ["voltage", "Voltages"], ["current", "Current"], ["throughput", "Transfer"], ["data", "Data"], ["level", "Levels"], ["control", "Fan control"],
-];
-
 /** A sensor reading in its unit, as a hardware monitor shows it. */
 function reading(temp: Temp, type: Reading["type"], v: number | null | undefined) {
   if (v == null || !Number.isFinite(v)) return "–";
@@ -271,47 +278,74 @@ function reading(temp: Temp, type: Reading["type"], v: number | null | undefined
 }
 
 /** Every sensor on the part: now, lowest and highest, grouped by what it measures. */
-function Readings({ part, readings }: { part: PartLine; readings: Reading[] }) {
-  const temp = useTemp();
-  // A part with a few sensors shows them all; one with dozens (a processor's cores) keeps them a click away.
-  const [open, setOpen] = useState(readings.length <= SHOWN_SENSORS);
-  if (!readings.length) return <p className="muted pf-none">{part.name} reports no sensors.</p>;
+/** Every sensor the part reports, one kind at a time (temperatures, usage, speeds…), each with now, lowest and highest. */
+function Readings({ part, readings, kind, onKind }: { part: PartLine; readings: Reading[]; kind: SensorType | null; onKind: (k: SensorType) => void }) {
+  const kinds = sensorKinds(readings);
+  if (!kinds.length) return <p className="muted pf-none">{part.name} reports no sensors.</p>;
+  const k = kinds.find((g) => g.type === kind) ?? kinds[0];
   return (
-    <div className="pf-readings">
+    <section className="pf-readings" aria-labelledby="pf-r-h">
       <div className="pf-chart-head">
         <h3 className="label" id="pf-r-h">Sensors <span className="faint num">{readings.length}</span></h3>
-        {open && <span className="faint">Lowest and highest since Rig started.</span>}
+        <span className="faint">Lowest and highest since Rig started.</span>
       </div>
-      {readings.length > SHOWN_SENSORS && (
-        <button type="button" className="btn sm pf-more" aria-expanded={open} aria-controls="pf-table" onClick={() => setOpen(!open)}>
-          {open ? "Hide sensors" : `Show all ${readings.length}, with lowest and highest`}
-        </button>
+      {kinds.length > 1 && (
+        <div className="seg pf-kinds" role="group" aria-label="Kind of sensor">
+          {kinds.map((g) => (
+            <button key={g.type} type="button" aria-pressed={g.type === k.type} onClick={() => onKind(g.type)}>
+              {g.title} <span className="num pf-count">{g.count}</span>
+            </button>
+          ))}
+        </div>
       )}
-      {open && <table id="pf-table" className="pf-table" aria-labelledby="pf-r-h">
-        <thead><tr><th scope="col">Sensor</th><th scope="col">Now</th><th scope="col">Lowest</th><th scope="col">Highest</th></tr></thead>
-        {groups.map(([type, title]) => {
-          const rows = readings.filter((r) => r.type === type);
-          return rows.length > 0 && (
-            <tbody key={type}>
-              <tr className="pf-group"><th scope="rowgroup" colSpan={4}>{title}</th></tr>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <th scope="row">{r.name}</th>
-                  <td className="num">{reading(temp, r.type, r.value)}</td>
-                  <td className="num faint">{reading(temp, r.type, r.min)}</td>
-                  <td className="num faint">{reading(temp, r.type, r.max)}</td>
-                </tr>
-              ))}
-            </tbody>
-          );
-        })}
-      </table>}
-    </div>
+      <SensorTable label={`${part.name}, ${k.title.toLowerCase()}`} groups={[{ key: k.type, rows: readings.filter((r) => r.type === k.type) }]} />
+    </section>
   );
 }
 
-/** Up to this many sensors show without a click. */
-const SHOWN_SENSORS = 10;
+/** Sensors with now, lowest and highest, as HWMonitor lists them; a group can carry a heading row. */
+function SensorTable({ label, groups }: { label: string; groups: { key: string; head?: ReactNode; rows: Reading[] }[] }) {
+  const temp = useTemp();
+  return (
+    <table className="pf-table" aria-label={label}>
+      <thead><tr><th scope="col">Sensor</th><th scope="col">Now</th><th scope="col">Lowest</th><th scope="col">Highest</th></tr></thead>
+      {groups.map((g) => (
+        <tbody key={g.key}>
+          {g.head && <tr className="pf-group"><th scope="rowgroup" colSpan={4}>{g.head}</th></tr>}
+          {g.rows.map((r) => (
+            <tr key={r.id}>
+              <th scope="row">{r.name}</th>
+              <td className="num">{reading(temp, r.type, r.value)}</td>
+              <td className="num faint">{reading(temp, r.type, r.min)}</td>
+              <td className="num faint">{reading(temp, r.type, r.max)}</td>
+            </tr>
+          ))}
+        </tbody>
+      ))}
+    </table>
+  );
+}
+
+/** What a search finds across every part, grouped by part, each part a click from its own page. */
+function Found({ query, readings, lines, onOpen }: { query: string; readings: Reading[]; lines: PartLine[]; onOpen: (part: string, kind: SensorType) => void }) {
+  const found = findReadings(readings, query);
+  const order = (t: SensorType) => sensorGroups.findIndex(([g]) => g === t);
+  const groups = lines.map((l) => ({ line: l, rows: found.filter((r) => r.part === l.id).sort((a, b) => order(a.type) - order(b.type)) })).filter((g) => g.rows.length);
+  return (
+    <section id="pf-pane" className="pf-pane" aria-labelledby="pf-h">
+      <div className="pf-head">
+        <h2 id="pf-h" className="pf-title">{found.length ? `${found.length} ${found.length === 1 ? "reading" : "readings"}` : "No readings"}</h2>
+        <span className="muted">matching “{query.trim()}”</span>
+      </div>
+      {groups.length ? (
+        <SensorTable label={`Readings matching ${query.trim()}`} groups={groups.map(({ line, rows }) => ({
+          key: line.id, rows,
+          head: <span className="pf-found-head">{line.name}<button type="button" className="btn sm" onClick={() => onOpen(line.id, rows[0].type)}>Open {line.name.toLowerCase()}</button></span>,
+        }))} />
+      ) : <p className="muted pf-none">Try a part, like processor, a kind, like voltage, or a sensor, like core 3 or hot spot.</p>}
+    </section>
+  );
+}
 
 /** The few readings worth a glance on this part, now, with the highest since Rig started under each. */
 function KeyReadings({ part, readings }: { part: string; readings: Reading[] }) {

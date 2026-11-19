@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPC, coreLoad, coresOf, describeCall, HistoryWindow, keyReadings, livePoint, type Reading, findings, score, validateCall, type Inventory, type Snapshot, type SystemFacts } from "../src";
+import { buildPC, coreLoad, coresOf, describeCall, findReadings, sensorKinds, HistoryWindow, keyReadings, livePoint, type Reading, findings, score, validateCall, type Inventory, type Snapshot, type SystemFacts } from "../src";
 import { DemoClient, fixtures, simulate } from "../src/demo";
 
 const atlas = () => structuredClone(fixtures.atlas.inv);
@@ -210,5 +210,23 @@ describe("a part's sensors, as a hardware monitor shows them", () => {
     const hottest = keyReadings("cpu", [r("Core #1", "temperature", 60), r("Core #2", "temperature", 71)]);
     expect(hottest).toEqual([{ label: "Hottest core", type: "temperature", value: 71, max: 76, note: "Core #2" }]);
     expect(keyReadings("cpu", [])).toEqual([]);
+  });
+
+  it("splits a part's sensors by kind, and finds a reading from a few words", () => {
+    const pc = buildPC(atlas(), simulate(atlas(), at8pm), facts());
+    const cpu = pc.readings!.filter((x) => x.part === "cpu");
+    expect(sensorKinds(cpu).map((k) => k.title)).toEqual(["Temperatures", "Usage", "Speeds", "Power", "Voltages"]);
+    expect(sensorKinds(cpu).reduce((n, k) => n + k.count, 0)).toBe(cpu.length);
+    const names = (q: string) => findReadings(pc.readings!, q).map((x) => x.name);
+    expect(names("core 3")).toEqual(expect.arrayContaining(["CPU Core #3 Thread #1", "CPU Core #3 Thread #2", "Core #3", "Core #3 (SMU)"]));
+    expect(names("core 3").every((n) => /#3\b/.test(n))).toBe(true);
+    const many = [r("Core #1", "temperature", 50), r("Core #13", "temperature", 50), r("CPU Core #1 Thread #3", "load", 5)];
+    expect(findReadings(many, "core 1").map((x) => x.name)).toEqual(["Core #1", "CPU Core #1 Thread #3"]);
+    expect(findReadings(many, "core 3")).toEqual([]);
+    expect(names("hot spot")).toEqual(["GPU Hot Spot"]);
+    expect(findReadings(pc.readings!, "gpu temp").every((x) => x.part === "gpu" && x.type === "temperature")).toBe(true);
+    expect(findReadings(pc.readings!, "usage").every((x) => x.type === "load")).toBe(true);
+    expect(names("12v")).toEqual(["+12V"]);
+    expect(findReadings(pc.readings!, "  ")).toEqual([]);
   });
 });
