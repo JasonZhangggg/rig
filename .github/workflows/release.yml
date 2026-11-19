@@ -83,14 +83,18 @@ jobs:
         id: build
         with:
           api-url: ${{ vars.RIG_API_URL }}
+          updater-key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          updater-key-password: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - name: Give the installer a stable name
         shell: bash
         env:
           INSTALLER: ${{ steps.build.outputs.installer }}
+          SIGNATURE: ${{ steps.build.outputs.signature }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           mkdir -p release
           cp "$INSTALLER" "release/Rig-Setup-$VERSION-x64.exe"
+          [ -z "$SIGNATURE" ] || cp "$SIGNATURE" "release/Rig-Setup-$VERSION-x64.exe.sig"
           ls -l release
       - uses: actions/upload-artifact@v4
         with: { name: rig-release, path: release/, if-no-files-found: error, overwrite: true }
@@ -137,3 +141,34 @@ jobs:
             gh release create "$TAG" release/* --verify-tag --title "Rig $VERSION" --generate-notes --notes-file notes.md "${flags[@]}"
           fi
           gh release view "$TAG" --json url,isPrerelease,assets --jq '"\(.url) (pre-release: \(.isPrerelease)) " + ([.assets[].name] | join(", "))'
+
+  # Installed copies update from the server's R2 bucket, not from GitHub (the repo is private).
+  # Pre-releases stay on GitHub only.
+  update:
+    needs: [version, publish]
+    if: needs.version.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "refs/tags/${{ env.TAG }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: rig-release, path: release }
+      - name: Check there's a signed update to send
+        id: sig
+        run: |
+          if [ -f "release/Rig-Setup-$VERSION-x64.exe.sig" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"
+          else echo "::warning::No TAURI_SIGNING_PRIVATE_KEY secret, so installed copies won't get $VERSION. See docs/releasing.md."; fi
+      - uses: pnpm/action-setup@v4
+        if: steps.sig.outputs.ok
+      - uses: actions/setup-node@v4
+        if: steps.sig.outputs.ok
+        with: { node-version: 22, cache: pnpm }
+      - if: steps.sig.outputs.ok
+        run: pnpm install --frozen-lockfile
+      - name: Send it to installed copies, keeping the latest three
+        if: steps.sig.outputs.ok
+        run: node tools/publish-update.mjs "$VERSION" "release/Rig-Setup-$VERSION-x64.exe" "release/Rig-Setup-$VERSION-x64.exe.sig"

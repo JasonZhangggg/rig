@@ -7,10 +7,19 @@ inputs:
   api-url:
     description: The Rig server the installed app signs in to, ending in /api (the RIG_API_URL repository variable).
     required: true
+  updater-key:
+    description: The updater's private key (the TAURI_SIGNING_PRIVATE_KEY secret). With it and apps/desktop/src-tauri/updater.pub, the app updates itself and the installer is signed for updates. Without it, the app doesn't update.
+    required: false
+  updater-key-password:
+    description: The updater key's password, if it has one.
+    required: false
 outputs:
   installer:
     description: Path of the built installer (.exe).
     value: ${{ steps.find.outputs.installer }}
+  signature:
+    description: Path of the installer's updater signature (.sig), empty when the build has no updater.
+    value: ${{ steps.find.outputs.signature }}
 runs:
   using: composite
   steps:
@@ -64,11 +73,30 @@ runs:
         $s = Get-AuthenticodeSignature apps/desktop/src-tauri/pawnio/PawnIO_setup.exe
         if ($s.Status -ne "Valid" -or $s.SignerCertificate.Subject -notmatch "O=namazso") { throw "PawnIO's signature is $($s.Status), signed by $($s.SignerCertificate.Subject)" }
         "Signed by $($s.SignerCertificate.Subject)"
+    - name: Turn on updates when there's an updater key
+      shell: bash
+      env:
+        RIG_API_URL: ${{ inputs.api-url }}
+        KEY: ${{ inputs.updater-key }}
+      run: |
+        pub=apps/desktop/src-tauri/updater.pub
+        if [ -z "$KEY" ]; then echo "No updater key, so this build won't update itself."; exit 0; fi
+        [ -f "$pub" ] || { echo "::error::There's an updater key but no $pub. Commit the public key that goes with it (see docs/releasing.md)."; exit 1; }
+        conf="$RUNNER_TEMP/updater.conf.json"
+        jq -n --arg pubkey "$(tr -d '\r\n' < "$pub")" --arg url "$RIG_API_URL/updates/{{target}}/{{arch}}/{{current_version}}" \
+          '{bundle: {createUpdaterArtifacts: true}, plugins: {updater: {pubkey: $pubkey, endpoints: [$url], windows: {installMode: "passive"}}}}' > "$conf"
+        echo "UPDATER_CONFIG=$conf" >> "$GITHUB_ENV"
+        echo "This build updates from $RIG_API_URL/updates"
     - name: Build the installer
       shell: pwsh
-      run: pnpm --filter @rig/desktop tauri build
+      run: |
+        if ($env:UPDATER_CONFIG) { pnpm --filter @rig/desktop tauri build --config $env:UPDATER_CONFIG }
+        else { pnpm --filter @rig/desktop tauri build }
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       env:
         VITE_RIG_API: ${{ inputs.api-url }}
+        TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.updater-key }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.updater-key-password }}
 
     - name: Find the installer
       id: find
@@ -79,6 +107,11 @@ runs:
         [ ${#files[@]} -eq 1 ] || { echo "::error::Expected one installer in bundle/nsis, found ${#files[@]}"; exit 1; }
         echo "Built ${files[0]}"
         echo "installer=${files[0]}" >> "$GITHUB_OUTPUT"
+        if [ -n "$UPDATER_CONFIG" ]; then
+          # Installed copies refuse an update signed with any other key, so check before it goes anywhere.
+          node tools/updater-sig.mjs "${files[0]}" "${files[0]}.sig" apps/desktop/src-tauri/updater.pub
+          echo "signature=${files[0]}.sig" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Install, check PawnIO and the helper, then uninstall
       shell: pwsh

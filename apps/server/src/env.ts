@@ -5,6 +5,8 @@ export interface Env {
   /** A Postgres connection string, used when there's no Hyperdrive binding (tests, scripts). */
   DATABASE_URL?: string;
   ASSETS?: Fetcher;
+  /** Installers for the app's updater and releases.json (see routes-updates.ts). */
+  UPDATES?: R2Bucket;
   /** Where the website lives, like https://rig.example.com. Also Better Auth's base URL. */
   WEB_ORIGIN: string;
   /** Long random string that signs sessions. Secret. */

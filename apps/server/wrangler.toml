@@ -19,6 +19,12 @@ binding = "HYPERDRIVE"
 id = "00000000000000000000000000000000"
 localConnectionString = "postgres://rig:rig@localhost:5432/rig"
 
+# Installers for the desktop app's updater, the latest three (see src/routes-updates.ts).
+# The Deploy workflow creates the bucket; the Release workflow fills it.
+[[r2_buckets]]
+binding = "UPDATES"
+bucket_name = "rig-updates"
+
 [vars]
 # The address people open. Change this to the real one before deploying.
 WEB_ORIGIN = "http://localhost:8787"

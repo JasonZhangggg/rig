@@ -10,6 +10,7 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { manualRoutes } from "./routes-manuals";
+import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { answer, type ChatContext, type Streamer } from "./chat";
 import { present, Store } from "./db";
@@ -81,6 +82,8 @@ export function createApp(deps: AppDeps = {}) {
     google: !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET),
     chat: !!c.env.ANTHROPIC_API_KEY,
   }));
+
+  updateRoutes(app);
 
   // Everything below needs an account.
   const signedIn = async (c: C, next: () => Promise<void>) => {
