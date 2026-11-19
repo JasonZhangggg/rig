@@ -114,5 +114,3 @@ button.source:hover { border-color: var(--line-strong); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .mn-progress .bar i { transition: none; } }
 
 /* On My PC, under the parts: manuals for things Rig can't see. */
-.mn-other { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13.5px; }
-.mn-other .linkish { align-self: flex-start; font-size: 13.5px; }

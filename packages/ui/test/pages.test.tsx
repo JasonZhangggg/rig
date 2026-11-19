@@ -89,23 +89,78 @@ describe("Changes", () => {
 });
 
 describe("Upgrades", () => {
-  it("sits on My PC: Rig's pick and the other ideas, each opening its part at an Upgrade tab", async () => {
-    await show("pc");
-    const card = await screen.findByRole("region", { name: "Upgrades" });
-    const pick = await within(card).findByRole("button", { name: /Rig's pick.*Another case fan/ });
-    expect(within(pick).getByText(/Graphics card runs hotter than it used to/)).toBeTruthy();
-    const others = within(card).getByRole("list", { name: "Other ideas" });
-    expect(within(others).getByText("Add another NVMe SSD")).toBeTruthy();
+  const rail = () => within(screen.getByRole("navigation", { name: "Kinds of part" }));
+  const row = (name: RegExp) => screen.getAllByRole("button", { name })[0].closest("li")!;
 
-    fireEvent.click(within(others).getByRole("button", { name: /Add another NVMe SSD/ }));
-    expect(screen.getByRole("tab", { name: "Upgrade" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText(/726 GB free/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Ask what to buy" })).toBeTruthy();
+  it("is a tab of My PC that leads with Rig's pick and opens the parts for it", async () => {
+    await show("upgrades");
+    expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Upgrades" }).getAttribute("aria-current")).toBe("page");
+    expect(await screen.findByText("Another case fan")).toBeTruthy();
+    expect(screen.getByText(/Graphics card runs hotter than it used to/)).toBeTruthy();
+    // A free fix comes before anything to buy.
+    expect(screen.getByText(/runs at 60 Hz but can do 165 Hz/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show parts that fit" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Case fans" })).toBeTruthy();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /All parts/ }));
-    fireEvent.click(within(screen.getByRole("list", { name: "Other ideas" })).getByRole("button", { name: /16 GB/ }));
-    expect(screen.getByRole("img", { name: "2 of 4 slots used" })).toBeTruthy();
-    expect(await screen.findByRole("button", { name: /Memory slot order in your manual, p\. 7/ })).toBeTruthy();
+  it("checks memory against Atlas: same kit fits, the wrong type is hidden until asked for", async () => {
+    await show("upgrades");
+    fireEvent.click(await rail().findByRole("button", { name: /Memory/ }));
+    expect(screen.getByText("Atlas has 2 × 16 GB DDR5 at 6000 MT/s. 2 of 4 slots free.")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/Demo prices/);
+    const kit = row(/Corsair Vengeance 32 GB/);
+    expect(within(kit).getByText("Fits")).toBeTruthy();
+    expect(within(kit).getByText("64 GB in all, up from 32 GB")).toBeTruthy();
+    expect(screen.queryByText(/Kingston Fury Beast/)).toBeNull();
+
+    fireEvent.click(within(kit).getByRole("button", { expanded: false }));
+    expect(within(kit).getByText("Same kit as yours, into the 2 free slots.")).toBeTruthy();
+    expect(within(kit).getByText(/Four sticks of DDR5 often run slower/)).toBeTruthy();
+    expect(within(kit).getByRole("img", { name: /Lowest price over 12 weeks \(demo\)/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 2 that won't fit" }));
+    expect(within(row(/Kingston Fury Beast/)).getByText("Won't fit")).toBeTruthy();
+  });
+
+  it("builds a list with a total and the power it needs", async () => {
+    await show("upgrades");
+    fireEvent.click(await rail().findByRole("button", { name: /Memory/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Corsair Vengeance 32 GB (2 × 16 GB) to your list" }));
+    fireEvent.click(rail().getByRole("button", { name: /Graphics card/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add NVIDIA GeForce RTX 5080 to your list" }));
+    const list = rail().getByRole("button", { name: /Your list/ });
+    expect(list.textContent).toMatch(/2 parts, \$1,103/);
+    fireEvent.click(list);
+    expect(screen.getByRole("heading", { level: 2, name: "Your list" })).toBeTruthy();
+    expect(screen.getByText("$1,103")).toBeTruthy();
+    expect(screen.getByText(/About 555 W at full load\. Tell Rig your power supply's wattage/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove NVIDIA GeForce RTX 5080" }));
+    expect(list.textContent).toMatch(/1 part, \$104/);
+  });
+
+  it("checks a graphics card against the power supply once it knows the wattage", async () => {
+    await show("upgrades");
+    fireEvent.click(await rail().findByRole("button", { name: /Graphics card/ }));
+    const chip = () => within(row(/RTX 5080/)).getByText(/Fits|Check first|Won't fit/).textContent;
+    expect(chip()).toBe("Check first");
+    fireEvent.change(screen.getByLabelText(/What wattage is yours/), { target: { value: "850" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByText(/Your power supply:/).textContent).toMatch(/850 W/);
+    expect(chip()).toBe("Fits");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(screen.getByLabelText(/What wattage is yours/), { target: { value: "500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: /Show \d+ that won't fit/ }));
+    expect(chip()).toBe("Won't fit");
+  });
+
+  it("on a laptop, offers only what can change", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    await show("upgrades");
+    expect(await rail().findByRole("button", { name: /Storage/ })).toBeTruthy();
+    expect(rail().queryByRole("button", { name: /Memory/ })).toBeNull();
+    expect(screen.getByText("Built into Pebble's board, so not upgradable: memory, graphics and processor.")).toBeTruthy();
   });
 
   it("picks the idea that answers something Rig flagged on the PC", () => {
@@ -121,13 +176,21 @@ describe("Upgrades", () => {
     expect(bestPick(list, { ...pc, issues: [], alerts: [alert] } as unknown as PC, [])).toMatchObject({ idea: { part: "Cooling" }, why: "Graphics card runs hotter than it used to.", pressing: true });
   });
 
-  it("says so when there's nothing to suggest, and offers to ask", async () => {
+  it("says so before Rig has read the parts", async () => {
     const client = new DemoClient();
-    client.upgrades = async () => [];
-    await show("pc", client);
-    const card = await screen.findByRole("region", { name: "Upgrades" });
-    expect(await within(card).findByText("Nothing to suggest for Atlas right now.")).toBeTruthy();
-    expect(within(card).getByRole("button", { name: "Have a part in mind? Ask if it fits" })).toBeTruthy();
+    client.shop = async () => null;
+    await show("upgrades", client);
+    expect(await screen.findByText("Rig hasn't read Atlas's parts yet. Parts that fit show up once it has.")).toBeTruthy();
+  });
+
+  it("opens a part's Upgrade tab, then the parts that fit it", async () => {
+    await show("pc");
+    fireEvent.click(await screen.findByRole("button", { name: /Storage/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "Upgrade" }));
+    expect(screen.getByText(/726 GB free/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "See parts that fit" }));
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(await screen.findByRole("heading", { level: 2, name: "Storage" })).toBeTruthy();
   });
 });
 

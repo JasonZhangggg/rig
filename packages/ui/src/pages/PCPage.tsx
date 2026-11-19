@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { formatTemp, type Part, type TempUnit } from "@rig/core";
+import { formatTemp, type Part, type Route, type TempUnit } from "@rig/core";
 import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
-import { OtherManuals } from "../manuals/OtherManuals";
+import { ManualsTab } from "../manuals/ManualsTab";
 import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
-import { CLEAN_EVERY, daysSince } from "./shared";
-import { PartUpgrade, UpgradesCard, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
+import { CLEAN_EVERY, daysSince, shopCatOf } from "./shared";
+import { PartUpgrade, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
+import { UpgradesTab } from "./upgrades/Shop";
+
+/** The tabs of My PC, each its own address so a link opens the right one. */
+const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals"]];
 
 const driverPages: Record<string, string> = {
   NVIDIA: "https://www.nvidia.com/en-us/drivers/",
@@ -32,17 +36,27 @@ export function PCPage() {
   const ups = useUpgrades();
   const unit = useTempUnit();
   const parts = pc.parts ?? {};
+  const view = pcViews.some(([r]) => r === ui.route) ? ui.route : "pc";
   // A picked part takes over the page: its name is the title and its readings get the room the list had.
-  const picked = ui.selected && parts[ui.selected] ? ui.selected : null;
+  const picked = view === "pc" && ui.selected && parts[ui.selected] ? ui.selected : null;
   const list = Object.entries(parts);
+  const sub = view === "upgrades" ? `What would help ${pc.name} most, and parts that fit it.`
+    : view === "manuals" ? `Manuals for ${pc.name}'s parts, and its drivers and BIOS.`
+    : partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit);
   return (
     <div className={`page pc-page${picked ? " is-part" : ""}`}>
       {picked ? <PartHead part={parts[picked]} /> : (
-        <div className="page-head">
-          <div><h1>{pc.name}</h1><p className="sub">{partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit)}</p></div>
-          <button ref={customizeBtn} className="btn sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>
-        </div>
+        <>
+          <div className="page-head">
+            <div><h1>{pc.name}</h1><p className="sub">{sub}</p></div>
+            {view === "pc" && <button ref={customizeBtn} className="btn sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>}
+          </div>
+          <nav className="lg-views pc-views" aria-label="My PC">
+            {pcViews.map(([r, label]) => <a key={r} href={`#${r}`} aria-current={view === r ? "page" : undefined}>{label}</a>)}
+          </nav>
+        </>
       )}
+      {view === "upgrades" ? <UpgradesTab /> : view === "manuals" ? <ManualsTab /> : (
       <div className="pc-view">
         <section className="stage-card" aria-label="3D view">
           <StageSlot id="pc-stage" />
@@ -55,7 +69,7 @@ export function PCPage() {
         </section>
         <div className="pc-side">{picked ? <PartDetail id={picked} ups={ups} /> : <PartsList />}</div>
       </div>
-      {!picked && <UpgradesCard ups={ups} />}
+      )}
     </div>
   );
 }
@@ -123,7 +137,6 @@ function PartsList() {
           {list.map(([k, v]) => <PartRow key={k} id={k} part={v} lit={lit === k} />)}
         </ul>
       )}
-      <OtherManuals />
     </section>
   );
 }
@@ -160,7 +173,7 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
       <div className="tabs" role="tablist">
         {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set({ tab: t })}>{l}</button>)}
       </div>
-      <div className="detail-body">{tab === "upgrade" ? <PartUpgrade ideas={ideas} ups={ups} /> : <DetailTab part={part} id={id} tab={tab} />}</div>
+      <div className="detail-body">{tab === "upgrade" ? <><PartUpgrade ideas={ideas} ups={ups} />{shopCatOf[id] && <a className="btn sm part-shop" href="#upgrades" onClick={() => set({ shopCat: shopCatOf[id] })}>See parts that fit</a>}</> : <DetailTab part={part} id={id} tab={tab} />}</div>
     </div>
   );
 }

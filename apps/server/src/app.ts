@@ -8,7 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { manualRoutes } from "./routes-manuals";
 import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
@@ -162,6 +162,11 @@ export function createApp(deps: AppDeps = {}) {
   app.get("/api/machines/:id/upgrades", async (c) => {
     const m = await machine(c);
     return m ? c.json(m.inventory ? suggestUpgrades(m.inventory) : []) : notFound(c);
+  });
+
+  app.get("/api/machines/:id/shop", async (c) => {
+    const m = await machine(c);
+    return m ? c.json(m.inventory ? shopFor(m.inventory) : null) : notFound(c);
   });
 
   app.get("/api/machines/:id/events", async (c) => { const m = await machine(c); return m ? c.json(m.events) : notFound(c); });

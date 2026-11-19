@@ -71,9 +71,12 @@ describe("PCs", () => {
     expect((await call(`/api/machines/${id}/history?range=1y`, { cookie })).status).toBe(400);
     const ups = await (await call(`/api/machines/${id}/upgrades`, { cookie })).json() as unknown[];
     expect(Array.isArray(ups)).toBe(true);
+    const shop = await (await call(`/api/machines/${id}/shop`, { cookie })).json() as { demo: boolean; items: unknown[] } | null;
+    expect(shop === null || (shop.demo === true && shop.items.length > 0)).toBe(true);
 
     const other = await signUp("eve@example.com");
     expect((await call(`/api/machines/${id}`, { cookie: other })).status).toBe(404);
+    expect((await call(`/api/machines/${id}/shop`, { cookie: other })).status).toBe(404);
     expect(await (await call("/api/machines", { cookie: other })).json()).toEqual([]);
   });
 

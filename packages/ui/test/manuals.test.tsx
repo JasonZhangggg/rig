@@ -58,12 +58,18 @@ beforeEach(() => { location.hash = ""; localStorage.clear(); read.pages = []; })
 afterEach(() => { act(() => closeManual()); cleanup(); });
 
 describe("Manuals", () => {
-  it("lives on each part in My PC, not on a page of its own", async () => {
+  it("is a tab of My PC with every part's manual, search and drivers", async () => {
     await show("overview");
     expect(screen.queryByRole("link", { name: /^Manuals/ })).toBeNull();
     await open("manuals");
     expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
-    expect(location.hash).toBe("#pc");
+    expect(location.hash).toBe("#manuals");
+    expect((await card(/^Motherboard:/)).getByText("12 pages")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search the manuals" }), { target: { value: "F_PANEL" } });
+    const hit = await screen.findByRole("button", { name: /Page 9/ });
+    fireEvent.click(hit);
+    expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
   });
 
   it("shows Atlas's board manual as read, with its diagram pages, and lets it be replaced or removed", async () => {
@@ -110,10 +116,10 @@ describe("Manuals", () => {
     expect(await found.findByText(/Rig couldn't find this manual on Fractal Design's site\./)).toBeTruthy();
   });
 
-  it("adds a manual for something that isn't a part, like the monitor, under the parts", async () => {
-    await show("pc");
-    const other = within(await screen.findByRole("region", { name: "Other manuals" }));
-    fireEvent.click(other.getByRole("button", { name: /Add a manual for something else/ }));
+  it("adds a manual for something that isn't a part, like the monitor, on the Manuals tab", async () => {
+    await show("manuals");
+    const other = within(await screen.findByRole("region", { name: "Manuals" }));
+    fireEvent.click(other.getByRole("button", { name: /Add a manual/ }));
     expect((other.getByLabelText("Kind") as HTMLSelectElement).value).toBe("monitor");
     fireEvent.click(other.getByRole("button", { name: "Cancel" }));
     expect(other.queryByLabelText("Kind")).toBeNull();

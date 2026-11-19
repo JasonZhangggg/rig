@@ -39,6 +39,8 @@ export interface UI {
   heat: boolean;
   selected: string | null;
   tab: string;
+  /** The kind of part open on My PC's Upgrades tab, or the person's list. */
+  shopCat: string | null;
   range: Range;
   review: Review | null;
   toast: ToastState | null;
@@ -66,12 +68,8 @@ const storage = {
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
 };
 
-/** Pages that moved into My PC: their old addresses still open it. */
-const movedToPC: Route[] = ["manuals", "upgrades"];
-
 function routeFromHash(): Route {
   const h = location.hash.replace("#", "") as Route;
-  if (movedToPC.includes(h)) { history.replaceState(null, "", "#pc"); return "pc"; }
   return routes.includes(h) ? h : "overview";
 }
 
@@ -151,7 +149,7 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
-    exploded: false, heat: false, selected: null, tab: "live", range: "7d",
+    exploded: false, heat: false, selected: null, tab: "live", shopCat: null, range: "7d",
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
