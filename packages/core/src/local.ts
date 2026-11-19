@@ -246,7 +246,15 @@ export class LocalClient implements RigClient {
   }
 
   private emit() { if (this.inv) { const pc = this.view(); this.listeners.forEach((cb) => cb(pc)); } }
-  private isLocal(id: string) { return id === this.id; }
+  /** Waits for this PC's parts first: until then its id isn't known, and a saved id would look like another PC's. */
+  private async isLocal(id: string) { await this.start().catch(() => {}); return id === this.id; }
+  /** Subscribes to this PC or the account's copy of another, once it's known which the id is. */
+  private follow(id: string, here: () => () => void, there: () => () => void) {
+    let stop: (() => void) | null = null;
+    let stopped = false;
+    void this.isLocal(id).then((local) => { if (!stopped) stop = local ? here() : there(); });
+    return () => { stopped = true; stop?.(); };
+  }
   private signedIn() { return this.cloud?.signedIn() ?? Promise.resolve(false); }
 
   /** Uploads this PC to the account so the website shows it. Quietly does nothing when signed out. */
@@ -348,14 +356,15 @@ export class LocalClient implements RigClient {
   }
 
   watch(id: string, cb: (pc: PC) => void) {
-    if (!this.isLocal(id)) return this.cloud?.watch(id, cb) ?? (() => {});
-    this.listeners.add(cb);
-    void this.start().then(() => this.listeners.has(cb) && cb(this.view()));
-    return () => { this.listeners.delete(cb); };
+    return this.follow(id, () => {
+      this.listeners.add(cb);
+      if (this.inv) cb(this.view());
+      return () => { this.listeners.delete(cb); };
+    }, () => this.cloud?.watch(id, cb) ?? (() => {}));
   }
 
   async rename(id: string, patch: Identity) {
-    if (!this.isLocal(id)) return this.cloud?.rename(id, patch);
+    if (!(await this.isLocal(id))) return this.cloud?.rename(id, patch);
     this.identity = { ...this.identity, ...patch, at: new Date(this.o.now()).toISOString() };
     await this.store.set("identity", this.identity);
     this.emit();
@@ -363,23 +372,23 @@ export class LocalClient implements RigClient {
   }
 
   async history(id: string, range: Range): Promise<HistoryPoint[]> {
-    if (!this.isLocal(id)) return this.cloud?.history(id, range) ?? [];
+    if (!(await this.isLocal(id))) return this.cloud?.history(id, range) ?? [];
     return this.store.history(this.o.now() - rangeMs[range]);
   }
 
   async upgrades(id: string) {
-    if (!this.isLocal(id)) return this.cloud?.upgrades(id) ?? [];
+    if (!(await this.isLocal(id))) return this.cloud?.upgrades(id) ?? [];
     await this.start();
     return suggestUpgrades(this.inv!);
   }
 
   async games(id: string): Promise<Game[]> {
-    if (!this.isLocal(id)) return this.cloud?.games(id) ?? [];
+    if (!(await this.isLocal(id))) return this.cloud?.games(id) ?? [];
     return (await this.store.get<Game[]>("games")) ?? [];
   }
 
   async changes(id: string): Promise<Change[]> {
-    if (!this.isLocal(id)) return this.cloud?.changes(id) ?? [];
+    if (!(await this.isLocal(id))) return this.cloud?.changes(id) ?? [];
     return (await this.store.changes()).sort((a, b) => b.at.localeCompare(a.at));
   }
 
@@ -397,7 +406,7 @@ export class LocalClient implements RigClient {
 
   /** Windows' event log, plus what the background recorder caught: power events, and anything Windows has since dropped. */
   async events(id: string): Promise<PCEvent[]> {
-    if (!this.isLocal(id)) return this.cloud?.events(id) ?? [];
+    if (!(await this.isLocal(id))) return this.cloud?.events(id) ?? [];
     await this.readBackground();
     const fromWindows = await this.windowsEvents().catch((e) => { if (this.bg.events.length) return []; throw e; });
     const { problems, power } = this.bg.cleanEvents();
@@ -460,10 +469,11 @@ export class LocalClient implements RigClient {
   private emitRecordings() { const list = this.recordingList(); this.recListeners.forEach((cb) => cb(list)); }
 
   watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) {
-    if (!this.isLocal(id)) return this.cloud?.watchRecordings(id, cb) ?? (() => {});
-    this.recListeners.add(cb);
-    void this.start().then(() => this.recListeners.has(cb) && cb(this.recordingList()));
-    return () => { this.recListeners.delete(cb); };
+    return this.follow(id, () => {
+      this.recListeners.add(cb);
+      if (this.inv) cb(this.recordingList());
+      return () => { this.recListeners.delete(cb); };
+    }, () => this.cloud?.watchRecordings(id, cb) ?? (() => {}));
   }
 
   /** The custom logs this PC's recorder runs for this Windows account, or null when it can't run any (no recorder, or it's off). */
@@ -498,13 +508,13 @@ export class LocalClient implements RigClient {
   refreshBackground() { this.bgAt = -Infinity; return this.readBackground(true); }
 
   async recording(id: string, rid: string): Promise<Recording | null> {
-    if (!this.isLocal(id)) return this.cloud?.recording(id, rid) ?? null;
+    if (!(await this.isLocal(id))) return this.cloud?.recording(id, rid) ?? null;
     if (isBackground(rid)) { const r = this.bgRecs.find((x) => x.id === rid); return r ? structuredClone(r) : null; }
     return this.recorder.get(rid);
   }
 
   async startRecording(id: string, req: { reason: string; minutes: number; question?: string }): Promise<RecordingInfo> {
-    if (!this.isLocal(id)) {
+    if (!(await this.isLocal(id))) {
       if (!this.cloud) throw new Error("Sign in to record on another PC.");
       return this.cloud.startRecording(id, req);
     }
@@ -521,13 +531,13 @@ export class LocalClient implements RigClient {
   }
 
   async stopRecording(id: string, rid: string): Promise<void> {
-    if (!this.isLocal(id)) return this.cloud?.stopRecording(id, rid);
+    if (!(await this.isLocal(id))) return this.cloud?.stopRecording(id, rid);
     await this.recorder.stop(rid);
   }
 
   // ----- Changes -----
-  private local(id: string) {
-    if (!this.isLocal(id)) throw new Error("Changes are made from the Rig app on that PC.");
+  private async local(id: string) {
+    if (!(await this.isLocal(id))) throw new Error("Changes are made from the Rig app on that PC.");
   }
 
   private async freshFacts() {
@@ -537,7 +547,7 @@ export class LocalClient implements RigClient {
   }
 
   async preview(id: string, calls: ActionCall[]): Promise<DiffRow[]> {
-    this.local(id);
+    await this.local(id);
     await this.start();
     for (const c of calls) { const bad = validateCall(c); if (bad) throw new Error(bad); }
     const facts = await this.freshFacts();
@@ -573,7 +583,7 @@ export class LocalClient implements RigClient {
   }
 
   private async change(id: string, changeId: string) {
-    this.local(id);
+    await this.local(id);
     const c = (await this.store.changes()).find((x) => x.id === changeId);
     if (!c) throw new Error("That change isn't in the log.");
     return c;
@@ -609,14 +619,14 @@ export class LocalClient implements RigClient {
   private async putLocalManuals(list: Manual[]) { await this.store.set("manuals", list); }
   private pagesKey(mid: string) { return `manualPages:${mid}`; }
   private async localManual(id: string, mid: string): Promise<Manual> {
-    const m = this.isLocal(id) ? (await this.localManuals()).find((x) => x.id === mid) : undefined;
+    const m = (await this.isLocal(id)) ? (await this.localManuals()).find((x) => x.id === mid) : undefined;
     if (!m) throw new Error("That manual isn't on this PC.");
     return m;
   }
 
   async manuals(id: string): Promise<Manual[]> {
     if (await this.signedIn()) return this.cloud!.manuals(id);
-    return this.isLocal(id) ? (await this.localManuals()).sort((a, b) => b.addedAt.localeCompare(a.addedAt)) : [];
+    return (await this.isLocal(id)) ? (await this.localManuals()).sort((a, b) => b.addedAt.localeCompare(a.addedAt)) : [];
   }
 
   async findManual(id: string, target: ManualTarget): Promise<Manual | null> {
@@ -628,7 +638,7 @@ export class LocalClient implements RigClient {
 
   async addManualFile(id: string, target: ManualTarget, file: { name: string; bytes: number }): Promise<Manual> {
     if (await this.signedIn()) return this.cloud!.addManualFile(id, target, file);
-    if (!this.isLocal(id)) throw new Error("Sign in to add manuals to your other PCs.");
+    if (!(await this.isLocal(id))) throw new Error("Sign in to add manuals to your other PCs.");
     const m: Manual = {
       id: `local-${uid()}`, machineId: id, part: target.part, kind: target.kind, maker: target.maker, model: target.model,
       title: file.name.replace(/\.pdf$/i, "").trim() || `${target.maker} ${target.model}`.trim(), source: "added", indexed: false, diagrams: [],
@@ -655,20 +665,20 @@ export class LocalClient implements RigClient {
 
   async searchManuals(id: string, query: string, opts?: { manualId?: string; limit?: number }): Promise<ManualHit[]> {
     if (await this.signedIn()) return this.cloud!.searchManuals(id, query, opts);
-    if (!this.isLocal(id)) return [];
+    if (!(await this.isLocal(id))) return [];
     const docs = await Promise.all((await this.localManuals()).map(async (manual) => ({ manual, pages: (await this.store.get<ManualPage[]>(this.pagesKey(manual.id))) ?? [] })));
     return searchPages(docs, query, opts);
   }
 
   async manualPage(id: string, mid: string, n: number): Promise<ManualPage | null> {
     if (await this.signedIn()) return this.cloud!.manualPage(id, mid, n);
-    if (!this.isLocal(id)) return null;
+    if (!(await this.isLocal(id))) return null;
     return (await this.store.get<ManualPage[]>(this.pagesKey(mid)))?.find((p) => p.n === n) ?? null;
   }
 
   async removeManual(id: string, mid: string): Promise<void> {
     if (await this.signedIn()) return this.cloud!.removeManual(id, mid);
-    if (!this.isLocal(id)) return;
+    if (!(await this.isLocal(id))) return;
     await this.putLocalManuals((await this.localManuals()).filter((x) => x.id !== mid));
     await this.store.set(this.pagesKey(mid), null);
   }
@@ -680,8 +690,9 @@ export class LocalClient implements RigClient {
       onEvent({ type: "done" });
       return;
     }
-    const probes = this.isLocal(id) ? await this.customLogs() : null;
-    const live = this.isLocal(id) && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}) } : undefined;
+    const here = await this.isLocal(id);
+    const probes = here ? await this.customLogs() : null;
+    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}) } : undefined;
     // Rig reads recordings on the server, so it needs the latest ones before it answers.
     if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
     // Custom log changes are made here, on the PC, in the order they came; the answer's events wait for them.

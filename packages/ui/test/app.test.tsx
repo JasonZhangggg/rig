@@ -54,6 +54,16 @@ describe("Rig app on demo data", () => {
     await screen.findByText("Ready");
   });
 
+  it("shows the PC it opened last once the list of PCs arrives", async () => {
+    const client = new DemoClient();
+    const [pc] = await client.machines();
+    localStorage.setItem("rig.pc", pc.id);
+    vi.spyOn(client, "watch").mockReturnValue(() => {});
+    render(<AppProvider client={client} fallback={(s) => <p>{s}</p>}><p>Ready</p></AppProvider>);
+    await screen.findByText("Ready");
+    localStorage.removeItem("rig.pc");
+  });
+
   it("says why reading the PC failed", async () => {
     const client = new DemoClient();
     vi.spyOn(client, "machines").mockRejectedValue(new Error("Rig's helper didn't answer in time."));

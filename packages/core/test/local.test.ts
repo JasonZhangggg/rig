@@ -54,6 +54,25 @@ describe("LocalClient", () => {
     expect(lines.at(-1)).toMatch(/^info start: done in \d+ ms$/);
   });
 
+  it("shows this PC when it's opened by its saved id before its parts are read", async () => {
+    let answer = () => {};
+    const cloud = { signedIn: async () => false, watch: vi.fn(() => () => {}), watchRecordings: vi.fn(() => () => {}), changes: vi.fn(async () => []) } as unknown as CloudClient;
+    const { client, sim } = setup({ inventory: () => new Promise((r) => { answer = () => r(sim.inventory()); }) }, cloud);
+    const id = fixtures.atlas.inv.machine.id;
+    const seen: string[] = [];
+    const stop = client.watch(id, (pc) => seen.push(pc.id));
+    const stopRecordings = client.watchRecordings(id, () => {});
+    const changes = client.changes(id);
+    await vi.waitFor(() => expect(client.loadingStep()).toBe("reading this PC's parts"));
+    answer();
+    await vi.waitFor(() => expect(seen).toContain(id));
+    await changes;
+    stop(); stopRecordings(); client.stop();
+    expect(cloud.watch).not.toHaveBeenCalled();
+    expect(cloud.watchRecordings).not.toHaveBeenCalled();
+    expect(cloud.changes).not.toHaveBeenCalled();
+  });
+
   it("tries again after a start that failed", async () => {
     let fail = true;
     const { client, sim } = setup({ inventory: () => (fail ? Promise.reject(new Error("Rig's helper didn't answer in time.")) : sim.inventory()) });

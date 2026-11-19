@@ -204,6 +204,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     client.changes(id).then((changes) => setData((d) => ({ ...d, changes }))).catch(() => {});
     return () => { stop(); stopRecordings(); };
   }, [client, ui.pcId]);
+  // The chosen PC can be watched before the list arrives (it's the one opened last), so fill it from the list if its live view hasn't.
+  useEffect(() => {
+    if (data.pc || !ui.pcId) return;
+    const pc = data.pcs.find((p) => p.id === ui.pcId && p.parts);
+    if (pc) setData((d) => (d.pc ? d : { ...d, pc }));
+  }, [data.pc, data.pcs, ui.pcId]);
 
   useEffect(() => {
     const on = () => { set({ route: routeFromHash() }); if (routeFromHash() !== "chat") window.scrollTo(0, 0); };
