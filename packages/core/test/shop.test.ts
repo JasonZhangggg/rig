@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categoryState, demoCatalog, fitOf, gainOf, hardwareFacts, shopFor, type Inventory } from "../src";
+import { categoryState, demoCatalog, fitOf, gainOf, hardwareFacts, makerOf, makersIn, matchesQuery, shopFor, type Inventory } from "../src";
 import { fixtures } from "../src/demo";
 
 const atlas = (): Inventory => structuredClone(fixtures.atlas.inv);
@@ -84,5 +84,40 @@ describe("what a part adds", () => {
   it("says a same-size laptop drive changes nothing", () => {
     expect(gainOf(item("s-t500-1"), hardwareFacts(pebble()))).toBe("1 TB, same as now");
     expect(gainOf(item("s-990pro-2"), hardwareFacts(pebble()))).toBe("2 TB in all, up from 1 TB");
+  });
+});
+
+describe("search", () => {
+  const find = (q: string) => demoCatalog.filter((i) => matchesQuery(i, q)).map((i) => i.id);
+
+  it("matches every word against the name, maker, kind and specs", () => {
+    expect(find("corsair 64")).toEqual(["m-vengeance-64"]);
+    expect(find("ddr4")).toEqual(["m-fury-ddr4"]);
+    expect(find("memory")).toEqual(expect.arrayContaining(demoCatalog.filter((i) => i.category === "memory").map((i) => i.id)));
+    expect(find("cmk32gx5m2b6000c30")).toEqual(["m-vengeance-32"]);
+  });
+
+  it("ignores spacing the way people type sizes", () => {
+    expect(find("2x48gb")).toEqual(["m-trident-96"]);
+    expect(find("9800x3d")).toEqual(["c-9800x3d"]);
+    expect(find("rtx 5070")).toHaveLength(2);
+  });
+
+  it("finds nothing for a part Rig doesn't list, and everything for an empty search", () => {
+    expect(find("optane")).toEqual([]);
+    expect(find("  ")).toHaveLength(demoCatalog.length);
+  });
+
+  it("names makers from the product name, with the brands that don't split on a space", () => {
+    expect(makerOf("be quiet! Pure Power 12 M 750 W")).toBe("be quiet!");
+    expect(makerOf("WD_Black SN850X 2 TB")).toBe("WD");
+    expect(makerOf("G.Skill Flare X5")).toBe("G.Skill");
+    const mem = makersIn(demoCatalog.filter((i) => i.category === "memory"));
+    expect(mem[0]).toEqual({ maker: "Corsair", count: 2 });
+    expect(mem.map((m) => m.maker)).toEqual(["Corsair", "G.Skill", "Crucial", "Kingston"]);
+  });
+
+  it("the demo catalog carries no photos", () => {
+    expect(demoCatalog.every((i) => i.image === undefined)).toBe(true);
   });
 });

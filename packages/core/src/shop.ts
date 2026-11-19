@@ -22,6 +22,13 @@ export interface ShopItem {
   id: string;
   category: ShopCategory;
   name: string;
+  /** The brand, like "Corsair", for the maker filter. */
+  maker: string;
+  /**
+   * A product photo from the shop feed it came from, which licenses it for this use.
+   * The demo catalog has none, and Rig never takes photos from makers' or shops' sites.
+   */
+  image?: string;
   /** One line of what matters, like "DDR5-6000 CL30". */
   spec: string;
   specs: [string, string][];
@@ -266,7 +273,7 @@ export function categoryState(key: ShopCategory, f: HardwareFacts, psuW?: number
 
 export const demoShops = ["Northwind", "Contoso Parts", "Fabrikam"];
 
-type Base = Omit<ShopItem, "offers" | "history"> & { price: number };
+type Base = Omit<ShopItem, "offers" | "history" | "maker"> & { price: number };
 
 const base: Base[] = [
   { id: "m-vengeance-32", category: "memory", name: "Corsair Vengeance 32 GB (2 × 16 GB)", spec: "DDR5-6000 CL30", price: 104, is: { ddr: 5, sticks: 2, stickGb: 16, speed: 6000, partNumber: "CMK32GX5M2B6000C30" }, specs: [["Type", "DDR5"], ["Speed", "6000 MT/s"], ["Latency", "CL30"], ["Sticks", "2 × 16 GB"], ["Part number", "CMK32GX5M2B6000C30"]] },
@@ -323,10 +330,41 @@ function demoItem(b: Base): ShopItem {
   // The cheapest shop changes from part to part.
   const turn = Math.floor(r() * 3);
   const shops = offers.map((o, i) => ({ ...o, shop: demoShops[(i + turn) % 3] })).sort((a, z) => a.price - z.price);
-  return { id: b.id, category: b.category, name: b.name, spec: b.spec, specs: b.specs, watts: b.watts, is: b.is, offers: shops, history };
+  return { id: b.id, category: b.category, name: b.name, maker: makerOf(b.name), spec: b.spec, specs: b.specs, watts: b.watts, is: b.is, offers: shops, history };
 }
 
 export const demoCatalog: ShopItem[] = base.map(demoItem);
+
+/** The brand at the start of a product name. A real feed gives the brand itself. */
+export function makerOf(name: string): string {
+  if (/^be quiet!/i.test(name)) return "be quiet!";
+  if (/^WD[_ ]/i.test(name)) return "WD";
+  if (/^G\.?Skill/i.test(name)) return "G.Skill";
+  return name.split(/\s+/)[0] ?? name;
+}
+
+const squash = (s: string) => s.toLowerCase().replace(/×/g, "x").replace(/[\s_()-]+/g, "");
+
+/**
+ * Whether a part matches what someone typed: every word has to appear in its
+ * name, maker, kind, spec line or specs. "32gb ddr5" matches "32 GB" and "DDR5-6000".
+ */
+export function matchesQuery(item: ShopItem, q: string): boolean {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const kind = shopCategories.find((c) => c.key === item.category)?.label ?? "";
+  const text = [item.name, item.maker, kind, item.spec, ...item.specs.map(([k, v]) => `${k} ${v}`), item.is.partNumber ?? ""].join(" ");
+  const plain = text.toLowerCase();
+  const tight = squash(text);
+  return words.every((w) => plain.includes(w) || tight.includes(squash(w)));
+}
+
+/** The makers among some parts, most parts first, then by name. */
+export function makersIn(items: ShopItem[]): { maker: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const i of items) n.set(i.maker, (n.get(i.maker) ?? 0) + 1);
+  return [...n].map(([maker, count]) => ({ maker, count })).sort((a, b) => b.count - a.count || a.maker.localeCompare(b.maker));
+}
 
 /** The parts that could go in this PC, with demo prices. */
 export function shopFor(inv: Inventory): Shop {

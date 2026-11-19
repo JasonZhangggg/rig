@@ -64,9 +64,9 @@ My PC has three tabs, each at its own address so a link or Ctrl K opens the righ
 Upgrades works like PCPartPicker, except the build is the PC you already own, so every check runs against the parts Rig read. The feature map, and where real prices would come from, is in [upgrades.md](upgrades.md).
 
 - **The rules are in `packages/core/src/shop.ts`.** `hardwareFacts` turns the inventory into what the checks need (socket, memory type and free slots, free M.2 slots, BIOS date, typical power draw). `fitOf` gives each part one of three answers, Fits, Check first or Won't fit, with the reason. Things Windows can't see, like card length against the case, are Check first, never a guess. Power supply wattage is asked once and kept per PC on that device.
-- **The catalog and every price are demo data.** `demoCatalog` has made-up shops (Northwind, Contoso Parts, Fabrikam), and every price on screen sits under a "Demo prices" label. No ratings are shown.
+- **The catalog and every price are demo data.** `demoCatalog` has made-up shops (Northwind, Contoso Parts, Fabrikam), and every price on screen sits under a "Demo prices" label. No ratings are shown. Parts have a slot for a photo (`image`), filled only from a shop feed that licenses it; the demo has none and shows the kind of part's icon.
 - **The server serves it** at `GET /api/machines/:id/shop`, built from the PC's last upload. Each client has `shop(machineId)`; the desktop asks the server.
-- **The screen** (`packages/ui/src/pages/upgrades/Shop.tsx`) leads with a free fix if Rig found one, then Rig's pick, then the kinds of part that can change. A laptop only offers storage. "Your list" totals the parts you added, with the change in power draw, and is kept per PC on that device.
+- **The screen** (`packages/ui/src/pages/upgrades/Shop.tsx`) leads with a free fix if Rig found one, then Rig's pick, then the kinds of part that can change. Each kind of part can be searched (`matchesQuery`) and filtered by maker, and a search names matches in other kinds. A laptop only offers storage. A part Rig doesn't list can go on the list with the person's own price, marked Not checked. "Your list" totals the parts you added, with the change in power draw, and is kept per PC on that device.
 
 ## Logs and recordings
 
