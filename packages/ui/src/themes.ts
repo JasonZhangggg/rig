@@ -11,7 +11,6 @@ export const sceneTheme: SceneTheme = {
   heatCool: "#BFAA78", heatWarm: "#D9804F", heatHot: "#B8552A", highlight: "#E6D3A3", accent: "#E6D3A3",
   hemi: 0.75, key: 1.8, rim: 0.6, exposure: 1.0, transparent: true, shadow: 0.22, edge: "#8F8D88", edgeOpacity: 0.35,
   glow: 0.4, glowBlend: "normal", interior: 1.5, pedestal: "#FFFFFF", pedestalRim: 0.35,
-  air: 0.7, airCool: "#D2C08F", airWarm: "#D9804F", airBlend: "normal",
 };
 
 /** The 3D look in the colors picked in Settings, Appearance. */
@@ -19,7 +18,7 @@ export function sceneThemeFor(a: Appearance): SceneTheme {
   const c = sceneColorsOf(a);
   return {
     ...sceneTheme, trim: chromeOf(a).graphite,
-    heatCool: c.heatCool, heatWarm: c.heatWarm, heatHot: c.heatHot, highlight: c.highlight, accent: c.highlight, airCool: c.airCool, airWarm: c.airWarm,
+    heatCool: c.heatCool, heatWarm: c.heatWarm, heatHot: c.heatHot, highlight: c.highlight, accent: c.highlight,
   };
 }
 

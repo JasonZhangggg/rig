@@ -102,8 +102,7 @@ function Root() {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);
     scene.setHeat(onPC && ui.heat);
-    scene.setAirflow(ui.airflow);
-  }, [ui.route, ui.exploded, ui.heat, ui.airflow, scene]);
+  }, [ui.route, ui.exploded, ui.heat, scene]);
   useEffect(() => {
     if (ui.route === "pc" && ui.selected) scene.select(ui.selected);
     else if (ui.route !== "pc") scene.select(null);

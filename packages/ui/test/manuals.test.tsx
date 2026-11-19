@@ -62,7 +62,7 @@ describe("Manuals", () => {
     await show("overview");
     expect(screen.queryByRole("link", { name: /^Manuals/ })).toBeNull();
     await open("manuals");
-    expect(await screen.findByRole("heading", { name: "Atlas in 3D" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
     expect(location.hash).toBe("#pc");
   });
 

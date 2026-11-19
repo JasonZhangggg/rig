@@ -163,14 +163,14 @@ describe("History", () => {
     fireEvent.click(hottest);
     expect(readout()).toBe("");
 
-    const events = screen.getByRole("list", { name: "What happened" });
+    const events = screen.getByRole("list", { name: "Busy times" });
     const row = within(events).getAllByRole("button", { pressed: false })[0];
     fireEvent.click(row);
     expect(row.getAttribute("aria-pressed")).toBe("true");
     expect(readout()).toMatch(/Processor \d+°C, Graphics card \d+°C/);
 
     fireEvent.click(screen.getByRole("button", { name: "Ranges" }));
-    expect(screen.queryByRole("list", { name: "What happened" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Busy times" })).toBeNull();
     const ranges = screen.getByRole("region", { name: "Lowest, typical and highest" });
     expect(within(ranges).getByText("Processor")).toBeTruthy();
     expect(within(ranges).getByText("Graphics card")).toBeTruthy();
@@ -182,11 +182,11 @@ describe("History", () => {
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
     await screen.findByRole("img", { name: "Temperature history" });
     expect(readout()).toBe("");
-    fireEvent.click(screen.getByRole("button", { name: "What happened" }));
-    const month = await screen.findByRole("list", { name: "What happened" });
+    fireEvent.click(screen.getByRole("button", { name: "Busy times" }));
+    const month = await screen.findByRole("list", { name: "Busy times" });
     const before = within(month).getAllByRole("listitem").length;
     fireEvent.click(screen.getByRole("button", { name: /^Show all \d+$/ }));
-    expect(within(screen.getByRole("list", { name: "What happened" })).getAllByRole("listitem").length).toBeGreaterThan(before);
+    expect(within(screen.getByRole("list", { name: "Busy times" })).getAllByRole("listitem").length).toBeGreaterThan(before);
   });
 
   it("says what was running at the hottest moment", async () => {
@@ -204,7 +204,7 @@ describe("History", () => {
     client.history = async () => [];
     await show("history", client);
     expect(await screen.findByText("Your history fills in as Rig runs")).toBeTruthy();
-    expect(screen.queryByText("What happened")).toBeNull();
+    expect(screen.queryByText("Busy times")).toBeNull();
   });
 });
 
@@ -212,11 +212,14 @@ describe("My PC", () => {
   it("sums up the parts in a sentence and opens a part's details from the list", async () => {
     await show("pc");
     const list = await screen.findByRole("list", { name: "Parts" });
+    expect(screen.getByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
     expect(screen.getByText("Nothing is running hot right now.")).toBeTruthy();
     expect(within(list).getAllByRole("button")).toHaveLength(8);
     fireEvent.click(within(list).getByRole("button", { name: /NVIDIA GeForce RTX 4070 SUPER/ }));
     expect(await screen.findByRole("heading", { name: "NVIDIA GeForce RTX 4070 SUPER" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Live" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Temperature")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Specs" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("region", { name: "Upgrades" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "All parts" }));
     expect(await screen.findByRole("list", { name: "Parts" })).toBeTruthy();
   });

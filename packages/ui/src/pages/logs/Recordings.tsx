@@ -48,16 +48,16 @@ export function Recordings() {
     <section className="lg-section lg-recs" aria-labelledby="lg-recs-h">
       <h2 id="lg-recs-h" className="lg-h">Recordings</h2>
       {recordings.length === 0 ? (
-        <p className="muted lg-recs-empty">No recordings yet. When the logs can't explain a black screen or a stutter, Rig can record for a while to catch it.</p>
+        <p className="muted lg-recs-empty">No recordings yet. When the log can't explain a black screen or a stutter, record a while to catch it.</p>
       ) : (
         <ul className="rec-list">
           {recordings.map((r) => (
             <li key={r.id}>
               <button type="button" className="rec-row" onClick={() => openRecording(r.id)}>
-                <span className="rec-meta">{stateWord[r.state]} · {whenRan(r)} · {minutes(r.minutes)}</span>
-                <span className="rec-why">{r.reason}</span>
                 <span className="rec-result">{(r.state === "done" || r.state === "cancelled") && <span className="faint">Found: </span>}{result(r, inUnit)}</span>
-                <span className="rec-open">See the timeline and readings<Icon d="M8 4l6 6-6 6" /></span>
+                <span className="rec-why">{r.reason}</span>
+                <span className="rec-meta">{stateWord[r.state]} · {whenRan(r)} · {minutes(r.minutes)}</span>
+                <Icon d="M8 4l6 6-6 6" />
               </button>
             </li>
           ))}
@@ -70,7 +70,6 @@ export function Recordings() {
             {lengths.map((m) => <button key={m} type="button" aria-pressed={length === m} onClick={() => setLength(m)}>{m === 60 ? "1 hour" : `${m} min`}</button>)}
           </div>
           <button type="button" className="btn sm" disabled={starting} onClick={() => { setStarting(true); void startRecording(length, "A recording you started from Logs.").finally(() => setStarting(false)); }}>Start recording</button>
-          <span className="faint lg-start-note">Only reads</span>
         </div>
       )}
     </section>
@@ -98,7 +97,7 @@ export function BackgroundLogs() {
                   <span className="rec-meta">Custom log · {c.spec.by === "chat" ? "asked for by Rig's chat" : "set up by you"} {new Date(c.spec.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {c.state === "ended" ? "ended" : c.state === "paused" ? "paused" : c.state === "error" ? "not working" : "logging"}</span>
                   <span className="rec-why">{c.spec.label}</span>
                   <span className="rec-result">{r.error ?? r.headline}</span>
-                  <span className="rec-open">See what it logged<Icon d="M8 4l6 6-6 6" /></span>
+                  <Icon d="M8 4l6 6-6 6" />
                 </button>
               </li>
             );
@@ -113,7 +112,7 @@ export function BackgroundLogs() {
                 <span className="rec-meta">{whenRan(r)}</span>
                 <span className="rec-why">{r.reason}</span>
                 {r.headline && <span className="rec-result"><span className="faint">Found: </span>{inUnit(r.headline)}</span>}
-                <span className="rec-open">See the readings<Icon d="M8 4l6 6-6 6" /></span>
+                <Icon d="M8 4l6 6-6 6" />
               </button>
             </li>
           ))}

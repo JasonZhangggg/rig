@@ -13,7 +13,6 @@ export function PCPreview({ pc, className }: { pc: PC; className?: string }) {
       scene.setPC(pc, sceneTheme);
       scene.setZoomable(false);
       scene.setSpin(true);
-      scene.setAirflow(true);
     } catch { /* no WebGL: the page reads fine without the picture */ }
     return () => scene?.dispose();
   }, [pc]);

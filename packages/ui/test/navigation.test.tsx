@@ -44,7 +44,7 @@ describe("navigation", () => {
   it("opens upgrades and manuals on My PC from their old addresses", async () => {
     location.hash = "#upgrades";
     render(<RigApp client={new DemoClient()} />);
-    expect(await screen.findByRole("heading", { name: /in 3D$/ })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
     expect(location.hash).toBe("#pc");
     expect(screen.getByRole("heading", { name: "Upgrades" })).toBeTruthy();
   });

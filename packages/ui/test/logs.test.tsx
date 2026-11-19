@@ -26,7 +26,7 @@ describe("Logs", () => {
     await open("logs");
     const counts = await screen.findByRole("group", { name: "Show only" });
     const count = (name: RegExp) => within(counts).getByRole("button", { name });
-    expect(count(/Driver resets/).textContent).toBe("2Driver resets");
+    expect(count(/Driver resets/).textContent).toBe("2Driver resetsLast yesterday");
     expect(count(/Unexpected shutdown/).textContent).toMatch(/^1Unexpected shutdown/);
     expect(count(/Discord crash/).textContent).toMatch(/^1Discord crash/);
     expect(count(/Minor/).textContent).toMatch(/^3Minor/);

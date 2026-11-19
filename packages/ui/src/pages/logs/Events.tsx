@@ -16,25 +16,29 @@ export const onDay = (e: PCEvent, day: number) => e.t >= day && e.t < nextDay(da
 export type EventPick = string | null;
 export const MINOR = "minor";
 
-/** One count per thing that went wrong, then the minor entries and all of them: a row of filters over the list. */
+/** The page at a glance: one big count per thing that went wrong and when it last happened, then the minor entries and all of them. Each is a filter over the list. */
 export function Counters({ groups, events, pick, onPick }: { groups: Highlight[]; events: PCEvent[]; pick: EventPick; onPick: (p: EventPick) => void }) {
   const minor = events.filter((e) => !serious(e));
   const items = [
-    ...groups.map((g) => ({ key: g.key as EventPick, n: g.events.length, label: g.short, tone: g.key.startsWith("app:") ? "" : " look" })),
-    ...(minor.length ? [{ key: MINOR as EventPick, n: minor.length, label: "Minor", tone: " quiet" }] : []),
-    { key: null as EventPick, n: events.length, label: "All", tone: " quiet" },
+    ...groups.map((g) => ({ key: g.key as EventPick, n: g.events.length, label: g.short, last: g.last, tone: g.key.startsWith("app:") ? "" : " look" })),
+    ...(minor.length ? [{ key: MINOR as EventPick, n: minor.length, label: "Minor", last: Math.max(...minor.map((e) => e.t)), tone: " quiet" }] : []),
+    { key: null as EventPick, n: events.length, label: "All", last: null, tone: " quiet" },
   ];
   return (
-    <div className="counts" role="group" aria-label="Show only">
+    <div className="lg-tiles" role="group" aria-label="Show only">
       {items.map((it) => (
-        <button key={it.key ?? "all"} type="button" className={`count${it.tone}`} aria-pressed={pick === it.key} onClick={() => onPick(pick === it.key ? null : it.key)}>
-          <span className="count-n num">{it.n}</span>
-          <span className="count-label">{it.label}</span>
+        <button key={it.key ?? "all"} type="button" className={`lg-tile${it.tone}`} aria-pressed={pick === it.key} onClick={() => onPick(pick === it.key ? null : it.key)}>
+          <span className="lg-tile-n num">{it.n}</span>
+          <span className="lg-tile-label">{it.label}</span>
+          {it.last != null && <span className="lg-tile-when">Last {lastWhen(it.last)}</span>}
         </button>
       ))}
     </div>
   );
 }
+
+/** "today", "yesterday" or "Nov 10": when a kind of event last happened. */
+const lastWhen = (t: number) => { const d = dayName(t); return d === "Today" || d === "Yesterday" ? d.toLowerCase() : shortDay(t); };
 
 /** One Windows event: when and what, opening in place to what Windows wrote. */
 export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {
@@ -48,9 +52,9 @@ export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {
   return (
     <li className={`ev-row${open ? " open" : ""}`}>
       <button type="button" className="ev-head" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
-        <span className="num faint">{seconds ? clockSec(e.t) : clock(e.t)}</span>
-        <span className={`chip ${serious(e) ? "warn" : ""}`}>{kindWord(e.kind)}</span>
+        <i className={`ev-dot${serious(e) ? " bad" : ""}`} aria-label={kindWord(e.kind)} role="img" />
         <span className="ev-title">{eventTitle(e)}</span>
+        <span className="num faint ev-time">{seconds ? clockSec(e.t) : clock(e.t)}</span>
         <Icon d="M8 4l6 6-6 6" />
       </button>
       <div id={id} ref={body} className="ev-more">

@@ -37,7 +37,6 @@ export interface UI {
   pcId: string | null;
   exploded: boolean;
   heat: boolean;
-  airflow: boolean;
   selected: string | null;
   tab: string;
   range: Range;
@@ -152,7 +151,7 @@ export function AppProvider({ client, host = noHost, children, fallback }: { cli
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
-    exploded: false, heat: false, airflow: true, selected: null, tab: "live", range: "7d",
+    exploded: false, heat: false, selected: null, tab: "live", range: "7d",
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));

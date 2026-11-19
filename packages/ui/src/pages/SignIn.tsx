@@ -36,8 +36,8 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
 
   const google = client.signInGoogle && (
     <>
-      <button className="btn" type="button" disabled={busy} onClick={() => run(() => client.signInGoogle!())}>Continue with Google</button>
       <div className="or">or</div>
+      <button className="btn" type="button" disabled={busy} onClick={() => run(() => client.signInGoogle!())}>Continue with Google</button>
     </>
   );
 
@@ -65,7 +65,6 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
           <form className="signin-box" onSubmit={(e) => { e.preventDefault(); run(() => client.signInEmail!(email, password, mode === "up" ? { name: name || email.split("@")[0] } : undefined)); }}>
             <h1>{mode === "in" ? "Sign in" : "Create an account"}</h1>
             {note && <p className="muted">{note}</p>}
-            {google}
             {mode === "up" && <div className="field"><label className="label" htmlFor="name">Name</label><input className="input" id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></div>}
             <div className="field"><label className="label" htmlFor="email">Email</label><input className="input" id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></div>
             <div className="field">
@@ -75,6 +74,7 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
             </div>
             {error && <div className="callout warn" role="alert">{error}</div>}
             <button className="btn primary" disabled={busy}>{busy ? (mode === "in" ? "Signing in…" : "Creating account…") : mode === "in" ? "Sign in" : "Create account"}</button>
+            {google}
             <p className="faint signin-small">
               {mode === "in" ? <>No account? <button type="button" className="linkish" onClick={() => setMode("up")}>Create one</button></> : <>Have an account? <button type="button" className="linkish" onClick={() => setMode("in")}>Sign in</button></>}
             </p>
