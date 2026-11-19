@@ -104,6 +104,8 @@ export function History() {
   const [focus, setFocus] = useState<Focus | null>(null);
   // The kind of sensor shown under the charts, kept as you move between parts when the next one has it too.
   const [kind, setKind] = useState<SensorType | null>(null);
+  // One sensor picked to chart on its own, like the hot spot or core 3; null charts the whole kind.
+  const [one, setOne] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const paneRef = useRef<HTMLElement>(null);
   const has = !!pts && pts.length > 1;
@@ -124,6 +126,12 @@ export function History() {
   };
   const choose = (id: string) => { setSel(id); setFocus(null); setQ(""); };
   const searching = q.trim() !== "";
+  const mine = (pc.readings ?? []).filter((r) => r.part === part?.id);
+  const views = part ? viewsOf(part, mine) : [];
+  const view = views.find((v) => v.type === kind) ?? views[0];
+  const sensor = mine.find((r) => r.id === one && r.type === view?.type) ?? null;
+  const metric = sensor ? undefined : part?.metrics.find((m) => metricKind[m.unit] === view?.type);
+  const ofKind = mine.filter((r) => r.type === view?.type);
   const shown = live ? recent : pts ?? [];
 
   return (
@@ -178,12 +186,16 @@ export function History() {
           </div>
 
           {searching ? (
-            <Found query={q} readings={pc.readings ?? []} lines={lines} onOpen={(id, type) => { choose(id); setKind(type); }} />
+            <Found query={q} readings={pc.readings ?? []} lines={lines} onOpen={(id, type) => { choose(id); setKind(type); setOne(null); }} />
           ) : (
           <section id="pf-pane" ref={paneRef} className={`pf-pane${focus?.key === "busy" ? " busy" : ""}`} aria-labelledby="pf-h">
             <div className="pf-head">
               <h2 id="pf-h" className="pf-title">{part.name}</h2>
               <span className="muted">{part.model}</span>
+              {views.length > 0 && (
+                <Picker views={views} readings={mine} kind={view.type} sensor={sensor}
+                  onPick={(k, id) => { setKind(k); setOne(id); setFocus(null); }} />
+              )}
             </div>
             <KeyReadings part={part.id} readings={pc.readings ?? []} />
             {limited && ["cpu", "motherboard", "fans"].includes(part.id) && (
@@ -191,28 +203,37 @@ export function History() {
                 ? "Processor and per-core temperatures, board voltages and case fans come through PawnIO, a small driver that installs with Rig. It isn't on this PC yet, so some sensors are missing."
                 : "Windows only shares processor temperatures, board voltages and case fans with apps that have admin permission, so some sensors are missing."}</p>
             )}
-            {!live && has && part.metrics[0] && <Figures part={part} points={pts!} focus={focus} onToggle={toggle} />}
-            {(live || has) && part.metrics.map((m) => (
-              <div key={m.key} className="pf-chart">
+            {!live && has && metric && <Figures part={part} metric={metric} points={pts!} focus={focus} onToggle={toggle} />}
+            {metric && (live || has) && (
+              <div className="pf-chart">
                 <div className="pf-chart-head">
-                  <h3 className="label">{m.title}</h3>
+                  <h3 className="label">{metric.title}</h3>
                   <div className="legend">
-                    {m.unit === "temp" && part.limit != null && <span><i className="lg-limit" />Safe limit</span>}
+                    {metric.unit === "temp" && part.limit != null && <span><i className="lg-limit" />Safe limit</span>}
                     {!live && <span><i className="hi-lg-band" />Busy</span>}
                   </div>
                 </div>
                 {live && recent.length < 2
                   ? <ChartNote>{pc.online ? "Live readings draw here as they come in." : `${pc.name} is offline, so there's nothing live to show.`}</ChartNote>
-                  : <LineChart points={shown} series={[{ key: m.key, cls: "gpu", name: m.unit === "rpm" ? m.title : part.name }]} unit={m.unit}
-                      h={m === part.metrics[0] ? 220 : 150} label={`${part.name}, ${m.title.toLowerCase()}`}
-                      limit={m.unit === "temp" && part.limit != null ? { v: part.limit, label: `${temp(part.limit)} limit` } : undefined}
+                  : <LineChart points={shown} series={[{ key: metric.key, cls: "gpu", name: metric.unit === "rpm" ? metric.title : part.name }]} unit={metric.unit}
+                      h={240} label={`${part.name}, ${metric.title.toLowerCase()}`}
+                      limit={metric.unit === "temp" && part.limit != null ? { v: part.limit, label: `${temp(part.limit)} limit` } : undefined}
                       bands={!live} pin={live ? null : focus?.pin ?? null} onUnpin={() => setFocus(null)} />}
               </div>
-            ))}
-            {!live && pts == null && <ChartNote busy>Loading…</ChartNote>}
-            {live && <p className="faint pf-live-note">The last few minutes, since you opened this page. Day, Week and Month show what Rig logged.</p>}
-            {part.id === "cpu" && <Cores readings={pc.readings ?? []} recent={recent} />}
-            <Readings part={part} readings={(pc.readings ?? []).filter((r) => r.part === part.id)} kind={kind} onKind={setKind} />
+            )}
+            {!metric && view && (
+              <div className="pf-chart">
+                <div className="pf-chart-head">
+                  <h3 className="label">{sensor ? sensor.name : `All ${view.title.toLowerCase()}`}</h3>
+                  <span className="faint">Since you opened this page</span>
+                </div>
+                <SensorChart readings={sensor ? [sensor] : ofKind} recent={recent} online={!!pc.online} label={`${part.name}, ${sensor ? sensor.name : view.title.toLowerCase()}`} />
+              </div>
+            )}
+            {metric && !live && pts == null && <ChartNote busy>Loading…</ChartNote>}
+            {metric && live && <p className="faint pf-live-note">The last few minutes, since you opened this page. Day, Week and Month show what Rig logged.</p>}
+            {part.id === "cpu" && view?.type === "load" && <Cores readings={mine} recent={recent} />}
+            {view && <Readings part={part} title={view.title} readings={ofKind} logged={!!metric} picked={sensor?.id ?? null} />}
           </section>
           )}
         </div>
@@ -229,10 +250,9 @@ export function History() {
 }
 
 /** The part's highest moment, what it reads when busy, and at rest, over the range. */
-function Figures({ part, points, focus, onToggle }: { part: PartLine; points: HistoryPoint[]; focus: Focus | null; onToggle: (key: string, pin?: number) => void }) {
+function Figures({ part, metric: m, points, focus, onToggle }: { part: PartLine; metric: Metric; points: HistoryPoint[]; focus: Focus | null; onToggle: (key: string, pin?: number) => void }) {
   const { ui, pc } = useApp();
   const temp = useTemp();
-  const m = part.metrics[0];
   const { busy, idle, peak } = historySummary(points, m.key, m.unit === "temp" ? part.limit : undefined);
   const warmer = m.unit === "temp" && busy?.change != null && busy.change >= STEADY_MARGIN;
   return (
@@ -278,33 +298,108 @@ function reading(temp: Temp, type: Reading["type"], v: number | null | undefined
 }
 
 /** Every sensor on the part: now, lowest and highest, grouped by what it measures. */
-/** Every sensor the part reports, one kind at a time (temperatures, usage, speeds…), each with now, lowest and highest. */
-function Readings({ part, readings, kind, onKind }: { part: PartLine; readings: Reading[]; kind: SensorType | null; onKind: (k: SensorType) => void }) {
-  const kinds = sensorKinds(readings);
-  if (!kinds.length) return <p className="muted pf-none">{part.name} reports no sensors.</p>;
-  const k = kinds.find((g) => g.type === kind) ?? kinds[0];
+/** The part's sensors of the kind picked at the top, each with now, lowest and highest. */
+function Readings({ part, title, readings, logged, picked }: { part: PartLine; title: string; readings: Reading[]; logged: boolean; picked: string | null }) {
+  if (!readings.length) return null;
   return (
     <section className="pf-readings" aria-labelledby="pf-r-h">
       <div className="pf-chart-head">
-        <h3 className="label" id="pf-r-h">Sensors <span className="faint num">{readings.length}</span></h3>
+        <h3 className="label" id="pf-r-h">{logged ? "Sensors" : title} <span className="faint num">{readings.length}</span></h3>
         <span className="faint">Lowest and highest since Rig started.</span>
       </div>
-      {kinds.length > 1 && (
-        <div className="seg pf-kinds" role="group" aria-label="Kind of sensor">
-          {kinds.map((g) => (
-            <button key={g.type} type="button" aria-pressed={g.type === k.type} onClick={() => onKind(g.type)}>
-              {g.title} <span className="num pf-count">{g.count}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      <SensorTable label={`${part.name}, ${k.title.toLowerCase()}`} groups={[{ key: k.type, rows: readings.filter((r) => r.type === k.type) }]} />
+      <SensorTable label={`${part.name}, ${title.toLowerCase()}`} groups={[{ key: "all", rows: readings }]} picked={picked} />
     </section>
   );
 }
 
+/**
+ * What to chart: a whole kind (all temperatures, all usage…) or one sensor of it, like the hot spot or core 3.
+ * A list grouped by kind, as HWMonitor groups its tree, with a filter to type in, since a processor can report 40 or more.
+ */
+function Picker({ views, readings, kind, sensor, onPick }: {
+  views: { type: SensorType; title: string }[]; readings: Reading[]; kind: SensorType; sensor: Reading | null;
+  onPick: (kind: SensorType, sensor: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  const shown = q.trim() ? findReadings(readings, q) : readings;
+  const title = views.find((v) => v.type === kind)?.title ?? "";
+  const pick = (k: SensorType, id: string | null) => { onPick(k, id); setOpen(false); setQ(""); };
+  return (
+    <div className="pf-pick" ref={box} onKeyDown={(e) => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); } }}>
+      <button type="button" className="input pf-pick-btn" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="pf-pick-kind">{title}</span>{sensor ? sensor.name : "All"}
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+      </button>
+      {open && (
+        <div className="pf-pick-pop" role="dialog" aria-label="What to chart">
+          <input className="input pf-pick-find" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type to filter, like hot spot" aria-label="Filter sensors" autoFocus />
+          <div className="pf-pick-list">
+            {views.map((v) => {
+              const rows = shown.filter((r) => r.type === v.type);
+              if (q.trim() && !rows.length) return null;
+              return (
+                <div key={v.type} role="group" aria-label={v.title}>
+                  <div className="pf-pick-h">{v.title}</div>
+                  <button type="button" aria-pressed={kind === v.type && !sensor} onClick={() => pick(v.type, null)}>All {v.title.toLowerCase()}</button>
+                  {rows.map((r) => <button key={r.id} type="button" aria-pressed={sensor?.id === r.id} onClick={() => pick(v.type, r.id)}>{r.name}</button>)}
+                </div>
+              );
+            })}
+            {q.trim() && !shown.length && <p className="faint pf-pick-none">No sensor matches.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One sensor, or every sensor of a kind, drawn from the readings that came in while the page was open. */
+function SensorChart({ readings, recent, online, label }: { readings: Reading[]; recent: LivePoint[]; online: boolean; label: string }) {
+  const temp = useTemp();
+  const pts = recent.filter((p) => readings.some((r) => p.vals[r.id] != null));
+  if (!readings.length || pts.length < 2) {
+    return <ChartNote>{online ? "This draws as readings come in. Rig logs each part's temperature and usage over days; single sensors chart from when you open the page." : "This PC is offline, so there's nothing live to chart."}</ChartNote>;
+  }
+  const w = 860, h = 200, type = readings[0].type;
+  const vs = pts.flatMap((p) => readings.map((r) => p.vals[r.id])).filter((v): v is number => v != null);
+  let lo = Math.min(...vs), hi = Math.max(...vs);
+  if (hi - lo < Math.abs(hi) * 0.1 || hi === lo) { const pad = Math.max(Math.abs(hi) * 0.05, 1); lo -= pad; hi += pad; }
+  if (type === "load" || type === "level" || type === "control") { lo = 0; hi = Math.max(100, hi); }
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const x = (t: number) => ((t - t0) / (t1 - t0 || 1)) * w, y = (v: number) => h - ((v - lo) / (hi - lo || 1)) * h;
+  const path = (id: string) => pts.filter((p) => p.vals[id] != null).map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.vals[id]).toFixed(1)}`).join("");
+  const one = readings.length === 1;
+  return (
+    <div className="pf-schart">
+      <div className="pf-schart-axis faint num" aria-hidden="true"><span>{reading(temp, type, hi)}</span><span>{reading(temp, type, (hi + lo) / 2)}</span><span>{reading(temp, type, lo)}</span></div>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label={label}>
+        {[0, h / 2, h].map((gy) => <line key={gy} x1={0} x2={w} y1={gy} y2={gy} className="pf-schart-grid" vectorEffect="non-scaling-stroke" />)}
+        {readings.map((r) => <path key={r.id} d={path(r.id)} className={`chart-line ${one ? "gpu" : "cpu"}`} vectorEffect="non-scaling-stroke" />)}
+      </svg>
+    </div>
+  );
+}
+
+/** Which sensor kind each chart belongs to, so picking a kind shows its chart. */
+const metricKind: Record<ReadingUnit, SensorType> = { temp: "temperature", percent: "load", rpm: "fan" };
+
+/** What the dropdown at the top of a part offers: every kind of sensor it reports, and any chart Rig logs for it even with no sensor of that kind. */
+function viewsOf(part: PartLine, readings: Reading[]): { type: SensorType; title: string }[] {
+  const kinds: { type: SensorType; title: string }[] = sensorKinds(readings).map(({ type, title }) => ({ type, title }));
+  for (const m of part.metrics) if (!kinds.some((k) => k.type === metricKind[m.unit])) kinds.unshift({ type: metricKind[m.unit], title: m.title });
+  return kinds;
+}
+
 /** Sensors with now, lowest and highest, as HWMonitor lists them; a group can carry a heading row. */
-function SensorTable({ label, groups }: { label: string; groups: { key: string; head?: ReactNode; rows: Reading[] }[] }) {
+function SensorTable({ label, groups, picked = null }: { label: string; groups: { key: string; head?: ReactNode; rows: Reading[] }[]; picked?: string | null }) {
   const temp = useTemp();
   return (
     <table className="pf-table" aria-label={label}>
@@ -313,7 +408,7 @@ function SensorTable({ label, groups }: { label: string; groups: { key: string; 
         <tbody key={g.key}>
           {g.head && <tr className="pf-group"><th scope="rowgroup" colSpan={4}>{g.head}</th></tr>}
           {g.rows.map((r) => (
-            <tr key={r.id}>
+            <tr key={r.id} className={r.id === picked ? "pf-picked" : undefined}>
               <th scope="row">{r.name}</th>
               <td className="num">{reading(temp, r.type, r.value)}</td>
               <td className="num faint">{reading(temp, r.type, r.min)}</td>

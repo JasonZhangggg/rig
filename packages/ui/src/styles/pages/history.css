@@ -46,8 +46,23 @@
 .pf-keys dd.num { font-size: 1.15rem; font-weight: 600; letter-spacing: -.015em; }
 .pf-keys dd.faint { font-size: 12px; overflow-wrap: anywhere; }
 .pf-limited { margin: 0; }
-.pf-kinds { align-self: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
-.pf-kinds .pf-count { margin-left: 4px; font-weight: 500; opacity: .6; }
+.pf-pick { position: relative; margin-left: auto; align-self: center; }
+.pf-pick-btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; font-weight: 600; cursor: pointer; }
+.pf-pick-kind { color: var(--text-3); font-weight: 500; }
+.pf-pick-btn:active { transform: scale(.98); }
+.pf-pick-pop { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 300px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-md, 12px); background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, .14); }
+.pf-pick-find { width: 100%; height: 36px; }
+.pf-pick-list { max-height: 360px; margin-top: 6px; overflow-y: auto; }
+.pf-pick-h { padding: 10px 8px 4px; color: var(--text-3); font: var(--t-label); }
+.pf-pick-list button { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font-size: 13.5px; cursor: pointer; }
+.pf-pick-list button[aria-pressed="true"] { background: var(--good); color: #111111; font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .pf-pick-list button:hover { background: var(--surface-2); } .pf-pick-list button[aria-pressed="true"]:hover { background: var(--good); } }
+.pf-pick-none { margin: 8px; }
+.pf-schart { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; height: 200px; }
+.pf-schart-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: 11.5px; text-align: right; }
+.pf-schart svg { width: 100%; height: 100%; overflow: visible; }
+.pf-schart-grid { stroke: var(--line); stroke-width: 1; }
+.pf-table tr.pf-picked th, .pf-table tr.pf-picked td { background: color-mix(in srgb, var(--good) 35%, transparent); }
 .pf-found-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* Each core side by side, like Task Manager's logical processors. */
