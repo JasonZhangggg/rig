@@ -15,11 +15,14 @@ partIcon.motherboard = partIcon.board;
 
 export const shortType = (t: string) => t.replace(" and cooler", "");
 
+/** The kind of part on the Upgrades tab for each part on My PC. */
+export const shopCatOf: Record<string, string> = { ram: "memory", ssd: "storage", gpu: "gpu", cpu: "cooler", fans: "fans", psu: "psu" };
+
 // What clicking an issue does everywhere
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
   if (i.fix) { ctx.review(i.fix, { by: "you", why: i.title }); return; }
   if (i.ask) { ctx.ask(i.ask); return; }
-  if (i.part && i.go === "upgrades") ctx.set({ selected: i.part, tab: "upgrade" });
+  if (i.part && i.go === "upgrades") ctx.set({ shopCat: shopCatOf[i.part] ?? null });
   else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
   ctx.go(i.go);
 }

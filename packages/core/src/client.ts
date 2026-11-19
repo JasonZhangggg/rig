@@ -5,6 +5,7 @@
 import type { ActionCall } from "./actions";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
+import type { Shop } from "./shop";
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
@@ -115,6 +116,8 @@ export interface RigClient {
 
   history(machineId: string, range: Range): Promise<HistoryPoint[]>;
   upgrades(machineId: string): Promise<Upgrade[]>;
+  /** Parts that could go in the PC, to check against it. Null before Rig has read its parts. Prices are demo data while Shop.demo is true. */
+  shop(machineId: string): Promise<Shop | null>;
   games(machineId: string): Promise<Game[]>;
 
   changes(machineId: string): Promise<Change[]>;

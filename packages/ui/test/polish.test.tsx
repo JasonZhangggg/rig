@@ -150,7 +150,7 @@ describe("Escape and focus", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Storage/ }));
     await screen.findByRole("tab", { name: "Specs" });
     fireEvent.keyDown(document.body, { key: "Escape" });
-    await screen.findByText("Parts");
+    await screen.findByRole("heading", { name: "Parts" });
   });
 });
 

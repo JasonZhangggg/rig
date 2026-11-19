@@ -59,6 +59,7 @@ export const paths = {
   changes: (id: string) => `/machines/${encodeURIComponent(id)}/changes`,
   games: (id: string) => `/machines/${encodeURIComponent(id)}/games`,
   upgrades: (id: string) => `/machines/${encodeURIComponent(id)}/upgrades`,
+  shop: (id: string) => `/machines/${encodeURIComponent(id)}/shop`,
   sync: (id: string) => `/machines/${encodeURIComponent(id)}/sync`,
   events: (id: string) => `/machines/${encodeURIComponent(id)}/events`,
   recordings: (id: string) => `/machines/${encodeURIComponent(id)}/recordings`,

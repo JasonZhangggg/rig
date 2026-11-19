@@ -19,6 +19,7 @@ import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
+import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
 
 /** The elevated Windows helper (or a stand-in), one call at a time. */
@@ -380,6 +381,12 @@ export class LocalClient implements RigClient {
     if (!(await this.isLocal(id))) return this.cloud?.upgrades(id) ?? [];
     await this.start();
     return suggestUpgrades(this.inv!);
+  }
+
+  async shop(id: string) {
+    if (!this.isLocal(id)) return this.cloud?.shop(id) ?? null;
+    await this.start();
+    return this.inv ? shopFor(this.inv) : null;
   }
 
   async games(id: string): Promise<Game[]> {

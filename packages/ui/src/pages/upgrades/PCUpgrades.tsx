@@ -1,16 +1,14 @@
-// Upgrades on My PC: a short card with Rig's pick and the other ideas, and an
-// Upgrade tab on each part that has one. Each idea opens its part.
+// Upgrade ideas on My PC: Rig's pick for the Upgrades tab, and an Upgrade tab
+// on each part that has an idea.
 
 import { useEffect, useState } from "react";
 import type { PC, Upgrade } from "@rig/core";
-import { getStage, hoverPart } from "../../components/Stage";
 import { ManualRef } from "../../manuals/ManualRef";
 import { useApp } from "../../state";
-import { partIcon } from "../shared";
 import { bestPick, roomPart, type Pick } from "./pick";
 import { roomIn, type Room } from "./room";
 
-export const fitChip: Record<Upgrade["fit"], JSX.Element> = {
+const fitChip: Record<Upgrade["fit"], JSX.Element> = {
   fits: <span className="chip ok">Fits</span>,
   check: <span className="chip warn">Check first</span>,
   no: <span className="chip bad">Can't upgrade</span>,
@@ -21,7 +19,6 @@ const fitWords: Record<Upgrade["fit"], string> = { fits: "Fits as it is", check:
 /** The part on My PC each kind of upgrade belongs to, best first. */
 const partKeys: Record<string, string[]> = { Memory: ["ram"], Storage: ["ssd"], Cooling: ["fans"], Battery: ["battery"], Processor: ["cpu"], "Graphics card": ["gpu"] };
 export const partOf = (u: Upgrade, pc: PC) => partKeys[u.part]?.find((k) => pc.parts?.[k]) ?? null;
-const iconOf = (u: Upgrade, pc: PC) => partIcon[partOf(u, pc) ?? "board"] ?? partIcon.board;
 
 export interface PCUpgrades { list: Upgrade[] | null; failed: boolean; pick: Pick | null; room: Room[] }
 
@@ -37,18 +34,6 @@ export function useUpgrades(): PCUpgrades {
   const list = got?.id === pc.id ? got.list : null;
   const room = roomIn(pc);
   return { list, failed: !!(got?.id === pc.id && got.failed), pick: list ? bestPick(list, pc, room) : null, room };
-}
-
-/** Opens a part on My PC at its Upgrade tab. */
-export function useOpenUpgrade() {
-  const { pc, set } = useApp();
-  return (u: Upgrade) => {
-    const id = partOf(u, pc);
-    if (!id) return;
-    // Selecting in the scene opens the part at its Live tab, so the tab is set after.
-    getStage().scene.select(id);
-    set({ selected: id, tab: "upgrade" });
-  };
 }
 
 function AskBuy({ u, primary }: { u: Upgrade; primary?: boolean }) {
@@ -71,50 +56,6 @@ function Meter({ r }: { r: Room }) {
     return <span className="bar up-share" role="img" aria-label={`${Math.round((m.value / m.of) * 100)}% ${r.key === "battery" ? "of original capacity" : "used"}`}><i style={{ width: `${(m.value / m.of) * 100}%` }} /></span>;
   }
   return null;
-}
-
-/** On My PC, beside the parts: Rig's pick and the other ideas, one line each. */
-export function UpgradesCard({ ups }: { ups: PCUpgrades }) {
-  const { pc, ask } = useApp();
-  const open = useOpenUpgrade();
-  const { list, failed, pick } = ups;
-  // Pointing at an idea lights up the part it's for in the 3D view above.
-  const lights = (u: Upgrade) => ({ onPointerEnter: () => hoverPart(partOf(u, pc)), onPointerLeave: () => hoverPart(null), onFocus: () => hoverPart(partOf(u, pc)), onBlur: () => hoverPart(null) });
-  const rest = list?.filter((u) => u !== pick?.idea && u.fit !== "no") ?? [];
-  return (
-    <section className="card pc-ups" aria-labelledby="pc-ups-h" id="pc-upgrades">
-      <div className="card-head">
-        <h2 id="pc-ups-h">Upgrades</h2>
-        <button className="linkish pc-ups-ask" type="button" onClick={() => ask(`Which upgrade would make the biggest difference for ${pc.name}?`)}>Have a part in mind? Ask if it fits</button>
-      </div>
-      {list == null ? <p className="muted pc-ups-pad" role="status">Looking at what fits…</p>
-        : !list.length ? <p className="muted pc-ups-pad">{failed ? "Couldn't check upgrades just now." : `Nothing to suggest for ${pc.name} right now.`}</p>
-        : (
-          <div className="pc-ups-body">
-            {pick && (
-              <button type="button" className="pc-ups-pick" onClick={() => open(pick.idea)} {...lights(pick.idea)}>
-                <span className="label">Rig's pick</span>
-                <b>{pick.idea.title}</b>
-                <span className="muted">{pick.why}</span>
-              </button>
-            )}
-            {rest.length > 0 && (
-              <ul className="pc-ups-list" aria-label="Other ideas">
-                {rest.map((u) => (
-                  <li key={u.title}>
-                    <button type="button" onClick={() => open(u)} {...lights(u)}>
-                      <span className="up-ico" aria-hidden="true">{iconOf(u, pc)}</span>
-                      <span className="pc-ups-title">{u.title}</span>
-                      {fitChip[u.fit]}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-    </section>
-  );
 }
 
 /** The Upgrade tab of a part: each idea for it, the room it has, and what to do next. */

@@ -34,8 +34,6 @@ export interface SceneTheme {
   interior?: number;
   /** Turntable the PC stands on. */
   pedestal?: string; pedestalRim?: number;
-  /** Airflow particles: strength and cool/warm colors. */
-  air?: number; airCool?: string; airWarm?: string; airBlend?: "add" | "normal";
 }
 
 export interface PCScene {
@@ -53,8 +51,6 @@ export interface PCScene {
   setZoomable(v: boolean): void;
   /** Slow side-to-side sway, for previews. */
   setSpin(v: boolean): void;
-  /** Show air moving through the case. */
-  setAirflow(v: boolean): void;
   /** The unit the part labels show temperatures in. */
   setTempUnit(unit: TempUnit): void;
   dispose(): void;
@@ -96,6 +92,10 @@ export function createScene(
   const layer = document.createElement("div");
   layer.className = "scene-labels";
   container.appendChild(layer);
+  // A soft frame around the part being pointed at or picked, so it's plain which shape a label means.
+  const focusBox = document.createElement("div");
+  focusBox.className = "part-box";
+  layer.appendChild(focusBox);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -170,7 +170,7 @@ export function createScene(
   contact.position.y = 0.004;
   scene.add(contact);
 
-  // Round soft dot used for halos and airflow particles
+  // Round soft dot used for halos
   const dotTex = (() => {
     const c = document.createElement("canvas");
     c.width = c.height = 128;
@@ -216,8 +216,6 @@ export function createScene(
     pickables: [] as THREE.Mesh[],
     labels: {} as Record<string, Label>,
     pulses: [] as THREE.Sprite[],
-    air: null as null | { group: THREE.Group; mats: THREE.ShaderMaterial[] },
-    airOn: true,
     tempUnit: "c" as TempUnit,
   };
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
@@ -388,6 +386,11 @@ export function createScene(
     el.dataset.part = partId;
     el.innerHTML = labelHTML(part);
     el.addEventListener("click", (e) => { e.stopPropagation(); select(partId); });
+    // Pointing at a label lights its part, frames it and quiets the other labels, as pointing at the part does.
+    el.addEventListener("pointerenter", () => hoverFromScene(partId));
+    el.addEventListener("pointerleave", () => hoverFromScene(null));
+    el.addEventListener("focus", () => hoverFromScene(partId));
+    el.addEventListener("blur", () => hoverFromScene(null));
     const pin = document.createElement("div");
     pin.className = "scene-pin";
     pin.dataset.part = partId;
@@ -547,12 +550,6 @@ export function createScene(
       root.add(low);
     }
 
-    // Air through the case: in at the front fans, over the parts, out the back and top
-    buildAirflow([
-      [[0.1, 3.45, 2.7], [0.1, 3.45, 1.7], [0.15, 3.5, 0.4], [-0.1, 3.4, -0.8], [-0.1, 3.4, -1.7], [-0.1, 3.4, -2.8]],
-      [[0.1, 2.15, 2.7], [0.2, 2.2, 1.5], [0.3, 2.55, 0.2], [0.1, 3.1, -0.9], [-0.05, 3.45, -1.8], [-0.1, 3.4, -2.8]],
-      [[0.1, 2.15, 2.7], [0.35, 1.65, 1.2], [0.35, 1.6, -0.2], [0.3, 2.5, -1.2], [0.0, 3.3, -1.9], [-0.1, 3.35, -2.8]],
-    ], th);
 
     // Power supply inside the shroud
     const psu = box(1.5, 0.82, 1.6, M(th.psu), -0.25, 0.48, -1.4);
@@ -595,61 +592,6 @@ export function createScene(
     lp("fans", fans, [0.6, 3.7, D / 2]);
 
     return { target: new THREE.Vector3(0, 1.85, 0), cam: new THREE.Vector3(8.9, 4.5, 9.9), camExploded: new THREE.Vector3(11, 6.2, 10.8) };
-  }
-
-  // ---------- airflow ----------
-  // Thin flow lines with moving dashes, cool where air comes in and warm where it leaves.
-  function buildAirflow(paths: Vec3[][], th: SceneTheme) {
-    if (!th.air) return;
-    const group = new THREE.Group();
-    const mats: THREE.ShaderMaterial[] = [];
-    const offsets: Vec3[] = [[0.12, 0.1, 0], [-0.12, -0.1, 0]];
-    paths.forEach((path, pi) => offsets.forEach((o, oi) => {
-      const curve = new THREE.CatmullRomCurve3(path.map((v, i) => {
-        const k = Math.sin((i / (path.length - 1)) * Math.PI);
-        return new THREE.Vector3(v[0] + o[0] * (0.5 + k), v[1] + o[1] * (0.5 + k), v[2] + o[2]);
-      }));
-      const mat = new THREE.ShaderMaterial({
-        uniforms: {
-          time: { value: Math.random() * 10 }, opacity: { value: th.air },
-          cool: { value: new THREE.Color(th.airCool ?? "#7CC4FF") }, warm: { value: new THREE.Color(th.airWarm ?? "#FF9A55") },
-          phase: { value: pi * 0.37 + oi * 0.21 },
-        },
-        vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `uniform float time; uniform float opacity; uniform vec3 cool; uniform vec3 warm; uniform float phase; varying vec2 vUv;
-          void main(){
-            float u = vUv.x;
-            float f = fract(u * 4.0 - time * 0.4 + phase);
-            float dash = smoothstep(0.0, 0.25, f) * (1.0 - smoothstep(0.35, 0.6, f));
-            float ends = smoothstep(0.0, 0.12, u) * (1.0 - smoothstep(0.85, 1.0, u));
-            vec3 c = mix(cool, warm, smoothstep(0.2, 0.85, u));
-            float a = dash * ends * opacity;
-            if (a < 0.01) discard;
-            gl_FragColor = vec4(c, a);
-            #include <colorspace_fragment>
-          }`,
-        transparent: true, depthWrite: false,
-        blending: (th.airBlend ?? "add") === "add" ? THREE.AdditiveBlending : THREE.NormalBlending,
-      });
-      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 90, 0.016, 6, false), mat);
-      tube.renderOrder = 6;
-      group.add(tube);
-      mats.push(mat);
-    }));
-    root.add(group);
-    state.air = { group, mats };
-  }
-  function stepAir(dt: number) {
-    const a = state.air;
-    if (!a) return;
-    const vis = state.airOn ? 1 - easeInOut(state.explodeT) : 0;
-    a.group.visible = vis > 0.01;
-    if (!a.group.visible) return;
-    const speed = (parts().fans?.fan ?? 1100) / 1100;
-    for (const m of a.mats) {
-      if (!reducedMotion()) m.uniforms.time.value += dt * speed;
-      m.uniforms.opacity.value = (theme().air ?? 0) * vis;
-    }
   }
 
   // ---------- laptop ----------
@@ -761,7 +703,7 @@ export function createScene(
     for (const l of Object.values(state.labels)) l.pin.remove();
     root = new THREE.Group();
     scene.add(root);
-    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = []; state.air = null;
+    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = [];
     const th = theme();
     scene.background = th.transparent ? null : new THREE.Color(th.bg);
     scene.fog = th.transparent ? null : new THREE.Fog(th.bg, 18, 38);
@@ -801,7 +743,7 @@ export function createScene(
     // What the camera fits to the stage: the PC's box and the turntable. The turntable's sides may run a little
     // past the box, under a page's text, so the PC itself can be bigger; its front edge always shows.
     fitPts.length = 0;
-    // Only the parts' solid shapes count, not the air paths or the glow around fans.
+    // Only the parts' solid shapes count, not the glow around fans.
     const box3 = new THREE.Box3(), part = new THREE.Box3();
     root.updateMatrixWorld(true);
     for (const e of state.entries) e.obj.traverse((o) => {
@@ -897,11 +839,26 @@ export function createScene(
   function frame(exploded: boolean, instant: boolean) {
     if (!framing) return;
     const want = wantPos(exploded);
-    controls.target.copy(framing.target);
-    if (instant) camera.position.copy(want);
-    else camAnim = { from: camera.position.clone(), to: want, t: 0 };
+    if (instant) { controls.target.copy(framing.target); camera.position.copy(want); camAnim = null; }
+    else camAnim = { from: camera.position.clone(), to: want, t: 0, look: { from: controls.target.clone(), to: framing.target.clone() } };
   }
-  let camAnim: { from: THREE.Vector3; to: THREE.Vector3; t: number } | null = null;
+  let camAnim: { from: THREE.Vector3; to: THREE.Vector3; t: number; look?: { from: THREE.Vector3; to: THREE.Vector3 } } | null = null;
+
+  // A picked part pulls the camera in until it fills most of the view, from the side you were already looking at.
+  const _sphere = new THREE.Sphere();
+  function focusOn(id: string) {
+    if (!framing || id === "case" || id === "chassis") return;
+    const mine = state.entries.filter((e) => e.partId === id && e.obj.visible);
+    if (!mine.length) return;
+    _box.makeEmpty();
+    for (const e of mine) _box.union(_part.setFromObject(e.obj));
+    _box.getBoundingSphere(_sphere);
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const fit = Math.max(_sphere.radius, 0.45) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 1.6;
+    const dist = Math.min(fit, camera.position.distanceTo(controls.target));
+    camAnim = { from: camera.position.clone(), to: _sphere.center.clone().addScaledVector(dir, dist), t: 0, look: { from: controls.target.clone(), to: _sphere.center.clone() } };
+    wake();
+  }
 
   function heatColor(t: number) {
     const th = theme();
@@ -930,7 +887,7 @@ export function createScene(
         const isHov = state.hovered === e.partId;
         if ((isSel || isHov) && !m.userData.glow) {
           m.emissive.set(theme().highlight);
-          m.emissiveIntensity = isSel ? 0.45 : 0.25;
+          m.emissiveIntensity = isSel ? 0.5 : 0.4;
         }
         // Case panels go see-through in heat view so internals show
         let op = m.userData.baseOpacity;
@@ -945,6 +902,7 @@ export function createScene(
       l.pin.classList.toggle("is-selected", state.selected === id);
       l.pin.classList.toggle("is-hovered", state.hovered === id && state.selected !== id);
     }
+    layer.classList.toggle("has-focus", !!(state.hovered || state.selected));
     labelsDirty = true;
   }
 
@@ -983,16 +941,24 @@ export function createScene(
   renderer.domElement.addEventListener("pointermove", (e) => {
     if (e.pointerType !== "mouse") return;
     const id = pick(e);
-    if (id !== state.hovered) {
-      state.hovered = id;
-      renderer.domElement.style.cursor = id ? "pointer" : "grab";
-      applyHighlights();
-      onHover?.(id);
-    }
+    renderer.domElement.style.cursor = id ? "pointer" : "grab";
+    hoverFromScene(id);
   });
 
+  /** The pointer is over a part, or its label, in the 3D view itself: light it and tell the page, so a list can light its row. */
+  function hoverFromScene(id: string | null) {
+    if (id === state.hovered) return;
+    state.hovered = id;
+    applyHighlights();
+    onHover?.(id);
+    wake();
+  }
+
   function select(id: string | null) {
+    const was = state.selected;
     state.selected = id && parts()[id] ? id : null;
+    if (state.selected && state.selected !== was) focusOn(state.selected);
+    else if (!state.selected && was) frame(state.exploded, false);
     applyHighlights();
     onSelect?.(state.selected);
   }
@@ -1008,6 +974,7 @@ export function createScene(
   const px = (v: number) => Math.round(v * 10) / 10;
 
   function layoutLabels() {
+    if (stageW) placeFocusBox(stageW, stageH);
     const all = Object.entries(state.labels);
     if (!all.length || !stageW) return;
     if (labelsDirty) {
@@ -1064,6 +1031,29 @@ export function createScene(
     if (layer.style.getPropertyValue("--ly") !== ly) layer.style.setProperty("--ly", ly);
   }
   document.fonts?.ready.then(() => { labelsDirty = true; });
+
+  // The part's outline on screen: its 3D bounds projected, padded a little, and drawn as a frame.
+  const _box = new THREE.Box3(), _part = new THREE.Box3(), _c = new THREE.Vector3();
+  function placeFocusBox(w: number, h: number) {
+    const id = state.hovered ?? state.selected;
+    const mine = id && id !== "case" && id !== "chassis" ? state.entries.filter((e) => e.partId === id && e.obj.visible) : [];
+    if (!mine.length) { if (focusBox.style.opacity !== "0") focusBox.style.opacity = "0"; return; }
+    _box.makeEmpty();
+    for (const e of mine) _box.union(_part.setFromObject(e.obj));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      _c.set(k & 1 ? _box.max.x : _box.min.x, k & 2 ? _box.max.y : _box.min.y, k & 4 ? _box.max.z : _box.min.z).project(camera);
+      const sx = (_c.x + 1) / 2 * w, sy = (1 - _c.y) / 2 * h;
+      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
+    }
+    const pad = 6;
+    x0 = Math.max(2, x0 - pad); y0 = Math.max(2, y0 - pad); x1 = Math.min(w - 2, x1 + pad); y1 = Math.min(h - 2, y1 + pad);
+    put(focusBox, `translate(${px(x0)}px, ${px(y0)}px)`);
+    const bw = `${px(Math.max(0, x1 - x0))}px`, bh = `${px(Math.max(0, y1 - y0))}px`;
+    if (focusBox.style.width !== bw) focusBox.style.width = bw;
+    if (focusBox.style.height !== bh) focusBox.style.height = bh;
+    if (focusBox.style.opacity !== "1") focusBox.style.opacity = "1";
+  }
 
   // ---------- loop ----------
   function resize() {
@@ -1123,6 +1113,7 @@ export function createScene(
     if (camAnim) {
       camAnim.t = Math.min(1, camAnim.t + (reducedMotion() ? 1 : dt * 1.4));
       camera.position.lerpVectors(camAnim.from, camAnim.to, easeInOut(camAnim.t));
+      if (camAnim.look) controls.target.lerpVectors(camAnim.look.from, camAnim.look.to, easeInOut(camAnim.t));
       if (camAnim.t >= 1) camAnim = null;
     }
     if (!reducedMotion()) {
@@ -1131,7 +1122,6 @@ export function createScene(
         rotor.rotation.z -= dt * rpm * 0.012;
       }
     }
-    stepAir(dt);
     if (state.pulses.length) {
       const k = reducedMotion() ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
@@ -1163,7 +1153,6 @@ export function createScene(
     resetView() { frame(state.exploded, false); },
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; },
-    setAirflow(v) { state.airOn = v; },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); },
     dispose() {
       gone = true;

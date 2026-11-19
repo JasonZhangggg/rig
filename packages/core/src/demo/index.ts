@@ -6,6 +6,7 @@ import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC 
 import type { Inventory, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
+import { shopFor } from "../shop";
 import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
@@ -152,6 +153,7 @@ export class DemoClient implements RigClient {
   }
 
   async upgrades(id: string) { return suggestUpgrades(this.pcs[id].inv); }
+  async shop(id: string) { const p = this.pcs[id]; return p ? shopFor(p.inv) : null; }
   async games(id: string) { return this.pcs[id].inv.gpus.some((g) => !g.integrated) ? demoGames : []; }
 
   async events(id: string) { const p = this.pcs[id]; return p ? cleanEvents(demoEvents(p.inv.machine.kind, Date.now())) : []; }

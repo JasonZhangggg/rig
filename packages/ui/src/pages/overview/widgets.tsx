@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { coveredIssues, shownAlerts, shownSummary, type Issue, type Stat } from "@rig/core";
+import { coveredIssues, shownAlerts, shownSummary, type Issue, type PC, type Stat } from "@rig/core";
 import { StageSlot } from "../../components/Stage";
 import { useAlertKindsOff, useApp, useTemp, useTempText, type Ctx } from "../../state";
 import { alertIssue, bySeverity, dustIssue, issueGo, partIcon, shortType } from "../shared";
@@ -104,6 +104,13 @@ export function PCWidget({ style, opts, editing, views }: WidgetProps & { views:
 
 // ----- Health -----
 
+/** What holds the score down, in a line. The page's heading already says how the PC is doing, so this says why. */
+export function healthWhy(breakdown: PC["breakdown"], fallback: string) {
+  const low = (breakdown ?? []).filter((b) => b.sev !== "ok").sort((a, b) => a.value - b.value)[0];
+  if (low) return `${low.label}: ${low.note}.`;
+  return breakdown?.length ? "Every check passed." : fallback;
+}
+
 export function HealthWidget({ style, opts, box }: WidgetProps) {
   const { pc } = useApp();
   const { summary } = useHomeIssues();
@@ -117,7 +124,7 @@ export function HealthWidget({ style, opts, box }: WidgetProps) {
   const text = (
     <div className="f-health-text">
       <h2>Health</h2>
-      {on(opts, "summary") && <p>{known ? summary : `Rig scores ${pc.name} once it has had a good look.`}</p>}
+      {on(opts, "summary") && <p>{known ? healthWhy(pc.breakdown, summary) : `Rig scores ${pc.name} once it has had a good look.`}</p>}
       {on(opts, "link") && <a className="f-link" href="#history">See history<Go /></a>}
     </div>
   );
@@ -191,7 +198,6 @@ export function TodoWidget({ style, opts, box }: WidgetProps) {
       )}
       {on(opts, "foot") && (
         <div className="f-todo-foot">
-          <p>Want a fuller look at {pc.name}?</p>
           <button type="button" className="f-link" onClick={() => ask(checkupQuestion(pc.name))}>Run a checkup<Go /></button>
         </div>
       )}
@@ -238,7 +244,7 @@ export function StorageWidget({ style, opts, box }: WidgetProps) {
   if (!st || !st.totalGb) {
     return (
       <section className="f-store" data-style={style}>
-        <div className="pl-head"><div><h3>Storage</h3></div></div>
+        <div className="pl-head"><div><h2>Storage</h2></div></div>
         <EmptyNote ghost={false}>Rig hasn't read the drives yet. How full they are shows up here soon.</EmptyNote>
       </section>
     );
@@ -252,7 +258,7 @@ export function StorageWidget({ style, opts, box }: WidgetProps) {
   return (
     <section className="f-store" data-style={style}>
       <div className="pl-head">
-        <div><h3>Storage</h3><span className="f-faint">{size(st.totalGb)} in all</span></div>
+        <div><h2>Storage</h2><span className="f-faint">{size(st.totalGb)} in all</span></div>
         {style !== "number" && <div className="pl-figure"><b>{pct}%</b><span>Used</span></div>}
       </div>
       {style === "ring" ? (
@@ -301,7 +307,7 @@ export function LiveWidget({ style, opts, box }: WidgetProps) {
   const value = (s: Stat) => (s.unit === "°C" ? temp(s.value, { mark: "degree" }) : `${s.value}${s.unit}`);
   return (
     <section className="f-live" data-style={style}>
-      <div className="pl-head"><div><h3>Right now</h3><span className="f-faint">{pc.online ? "Live from " + pc.name : "Last readings from " + pc.name}</span></div></div>
+      <div className="pl-head"><div><h2>Right now</h2><span className="f-faint">{pc.online ? "Live from " + pc.name : "Last readings from " + pc.name}</span></div></div>
       {stats.length ? (
         <ul className="f-live-list" ref={list}>
           {stats.map((s) => {
@@ -335,7 +341,7 @@ export function PartsWidget({ style, opts, box }: WidgetProps) {
   const rest = parts.length - fits;
   return (
     <section className="f-parts" data-style={style}>
-      <div className="pl-head"><div><h3>Parts</h3>{parts.length > 0 && <span className="f-faint">{parts.length} {parts.length === 1 ? "part" : "parts"} in {pc.name}</span>}</div></div>
+      <div className="pl-head"><div><h2>Parts</h2>{parts.length > 0 && <span className="f-faint">{parts.length} {parts.length === 1 ? "part" : "parts"} in {pc.name}</span>}</div></div>
       {parts.length ? (
         <ul className="f-parts-list" ref={list}>
           {parts.slice(0, fits).map(([id, p]) => (
