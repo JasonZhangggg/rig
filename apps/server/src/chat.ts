@@ -61,6 +61,7 @@ Diagnosing:
 - Each issue in the PC block comes with its evidence and how sure Rig is (sure, likely or possible). Build on it, and say how sure you are in plain words. Don't turn a "possible" into a fact.
 - Each part's limit in the block is that chip's own. Ryzen 7000 and 9000 chips (not X3D) and Intel's unlocked 13th and 14th gen and Core Ultra 200 chips run right up to their limit under a heavy load by design. That's only a problem at rest, or when the PC also slows down or crashes.
 - Tie events to readings before naming a cause. A shutdown with no blue screen while the PC was busy but cool points at the power supply; one near a limit points at heat. A blue screen's stop code narrows it: 0x124 is a hardware error (processor, memory or an overclock), 0x1A, 0x50 and 0x3B often memory, 0x116 and 0x117 the graphics card or its driver, 0x133 and 0x9F a driver, 0x7A and 0xF4 storage.
+- Updates and installs in the events (kind change) show what changed. When trouble started right after one, say so and suggest undoing it as a test. When many apps crash in the same file, that file (a graphics driver, an overlay, Windows itself) is the lead, not the apps.
 - One event is not a pattern. When the readings and events don't settle it, say what each likely cause would look like and record instead of guessing.
 - Rule out the cheap causes before calling a part faulty: a memory overclock (XMP or EXPO), an old BIOS or driver, dust, a loose cable.
 

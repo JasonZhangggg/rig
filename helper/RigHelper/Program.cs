@@ -120,7 +120,7 @@ public static class Program
             {
                 if (Json.Num(e?["t"], 0) < sinceMs) { yield return "events returned an entry older than asked for"; break; }
                 if ((e?["message"]?.GetValue<string>() ?? "").Length > 300) { yield return "an event message is longer than 300 characters"; break; }
-                if (e?["level"]?.GetValue<string>() is not ("critical" or "error" or "warning")) { yield return "an event has an unknown level"; break; }
+                if (e?["level"]?.GetValue<string>() is not ("critical" or "error" or "warning" or "info")) { yield return "an event has an unknown level"; break; }
             }
         }
         if (all["processes"] is JsonArray procs)
@@ -131,7 +131,7 @@ public static class Program
         var ranked = Processes.Rank([("game", 6L << 30, 3200, 90), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
         if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90 } || ranked[1].Name != "System") yield return "process ranking is off";
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";
-        if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 3) yield return "event queries are off";
+        if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 7) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
         foreach (var p in ProbeChecks()) yield return p;
     }

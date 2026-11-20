@@ -6,13 +6,14 @@
 // the pure code that turns a recording into the few moments that matter.
 
 import type { CustomInfo } from "./probes";
+import { describeChange, memoryTest } from "./changes";
 import { cpuTemp, gpuTemp } from "./health";
 import { findSensor, type Snapshot } from "./telemetry";
 
 // ----- Windows events -----
 
-export type EventKind = "crash" | "driver" | "hardware" | "shutdown" | "disk" | "power" | "other";
-/** "info" is only for power events (starts, shutdowns, sleep, wake), which Rig's background recorder keeps. */
+export type EventKind = "crash" | "driver" | "hardware" | "shutdown" | "disk" | "power" | "change" | "other";
+/** "info" is for power events (starts, shutdowns, sleep, wake), which Rig's background recorder keeps, and for changes: updates, driver and app installs. */
 export type EventLevel = "critical" | "error" | "warning" | "info";
 
 /** One Windows event log entry as the helper reads it. */
@@ -43,6 +44,7 @@ export const eventKinds: { kind: EventKind; label: string; one: string }[] = [
   { kind: "shutdown", label: "Shutdowns", one: "Unexpected shutdown" },
   { kind: "disk", label: "Disk", one: "Disk problem" },
   { kind: "power", label: "Power", one: "Power" },
+  { kind: "change", label: "Updates and installs", one: "Update or install" },
   { kind: "other", label: "Other", one: "Windows error" },
 ];
 
@@ -58,12 +60,16 @@ const eventRules: EventRule[] = [
   { kind: "hardware", source: /whea/i },
   { kind: "disk", source: /^(disk|ntfs|volmgr|stornvme|storahci|nvme|volsnap|microsoft-windows-ntfs)$/i },
   { kind: "power", source: /^microsoft-windows-kernel-general$/i, ids: [12, 13] },
+  { kind: "change", source: /^microsoft-windows-windowsupdateclient$/i, ids: [19] },
+  { kind: "change", source: /^(microsoft-windows-)?userpnp$/i, ids: [20001] },
+  { kind: "change", source: /^msiinstaller$/i, ids: [11707, 1033] },
   { kind: "power", source: /^user32$/i, ids: [1074] },
   { kind: "shutdown", source: /^rig recorder$/i, ids: [RIG_EVENT.unclean] },
   { kind: "power", source: /^rig recorder$/i },
 ];
 
-export function classifyEvent(e: Pick<RawEvent, "source" | "id">): EventKind {
+export function classifyEvent(e: Pick<RawEvent, "source" | "id"> & { message?: string }): EventKind {
+  if (/memorydiagnostics-results/i.test(e.source)) return memoryTest({ source: e.source, message: e.message ?? "" }) === "failed" ? "hardware" : "other";
   return eventRules.find((r) => r.source.test(e.source) && (!r.ids || r.ids.includes(e.id)))?.kind ?? "other";
 }
 
@@ -86,7 +92,7 @@ export function cleanEvents(raw: unknown, max = MAX_EVENTS): PCEvent[] {
       t: Math.round(e.t), log: e.log === "Application" ? "Application" : "System", source, id: Math.round(e.id),
       level: levels.includes(e.level as EventLevel) ? e.level as EventLevel : "error",
       message: String(e.message ?? "").replace(/\s+/g, " ").trim().slice(0, MESSAGE_MAX),
-      kind: classifyEvent({ source, id: e.id }),
+      kind: classifyEvent({ source, id: e.id, message: String(e.message ?? "") }),
     });
     if (out.length >= max) break;
   }
@@ -103,6 +109,7 @@ export function eventTitle(e: PCEvent): string {
     case "shutdown": return /^rig recorder$/i.test(e.source) ? "The PC stopped suddenly" : "The PC turned off without shutting down";
     case "disk": return "A drive reported a problem";
     case "power": return powerTitle(e);
+    case "change": { const c = describeChange(e); return c ? `Installed ${c.what}` : "Something was installed"; }
     default: return `${e.source} reported ${e.level === "warning" ? "a warning" : "an error"}`;
   }
 }
@@ -438,7 +445,7 @@ export function summarise(r: Pick<Recording, "samples" | "events" | "intervalMs"
     const hot = hotRuns.find((h) => e.t >= h.from - r.intervalMs && e.t <= h.to + r.intervalMs * 2);
     const context = s ? around(s, limits) : samples.length ? "No readings right around it, so the PC was likely off or restarting." : "";
     moments.push({
-      t: e.t, kind: "event", severity: e.kind === "other" ? "info" : e.level === "warning" && e.kind !== "driver" ? "warn" : "bad",
+      t: e.t, kind: "event", severity: e.kind === "other" || e.kind === "change" ? "info" : e.level === "warning" && e.kind !== "driver" ? "warn" : "bad",
       title: eventTitle(e),
       detail: [hot ? `It happened while the ${partNames[hot.part]} was running hot.` : "", context, `Windows logged: ${e.source} ${e.id}${e.message ? `, "${e.message.slice(0, 140)}"` : ""}.`].filter(Boolean).join(" "),
     });
@@ -504,3 +511,4 @@ export function describeRecording(r: Recording, s: RecordingSummary, opts: { tim
 export function limitsOf(pc: { parts?: Record<string, { limit?: number }> }): Limits {
   return { cpu: pc.parts?.cpu?.limit, gpu: pc.parts?.gpu?.limit };
 }
+

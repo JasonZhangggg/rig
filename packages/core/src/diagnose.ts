@@ -10,6 +10,7 @@
 
 import type { HistoryPoint, Issue } from "./model";
 import type { PCEvent } from "./recordings";
+import { describeChange, memoryTest, type PCChange } from "./changes";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { cpuLimit, gpuHotSpot, gpuLimit, gpuMemTemp, gpuTemp, hotSpotLimit } from "./limits";
 import { findSensor } from "./telemetry";
@@ -352,12 +353,126 @@ const crashAdvice: Record<StopGroup, string> = {
   driver: "The crash codes point at a driver. Updating the chipset, graphics, network and audio drivers fixes most of these.",
 };
 
-function stability({ inv, snap, events, history = [] }: HealthInput, now: number, add: Add) {
+const day = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+/** The latest change in the three days before trouble first showed, when the log reaches back far enough to show the week before was quiet. */
+function startedAfter(events: readonly PCEvent[], first: number | undefined, fits: (c: PCChange) => boolean = () => true): PCChange | null {
+  if (first == null || !events.length) return null;
+  const oldest = Math.min(...events.map((e) => e.t));
+  return events
+    .map((e) => (e.kind === "change" ? describeChange(e) : null))
+    .filter((c): c is PCChange => !!c && c.t <= first && first - c.t <= 3 * DAY && c.t - oldest >= 7 * DAY && fits(c))
+    .sort((a, b) => b.t - a.t)[0] ?? null;
+}
+
+/** One sentence tying trouble to the change before it, and how to test that. */
+function afterChange(c: PCChange, first: number, one: boolean) {
+  const gap = first - c.t;
+  const within = gap < DAY ? "hours" : gap < 2 * DAY ? "a day" : `${Math.round(gap / DAY)} days`;
+  const undo = c.type === "update" ? "Uninstalling it (Settings, Windows Update, Update history) is a quick test." : c.type === "driver" ? "Going back to the previous driver is a quick test." : "Removing it for a few days is a quick test.";
+  return {
+    body: `${one ? "It came" : "They started"} ${within} after ${c.what} was installed on ${day(c.t)}. ${undo}`,
+    evidence: `First one ${within} after ${c.what} was installed (${day(c.t)})`,
+  };
+}
+
+/** Driver files that belong to the graphics driver, whatever app loads them. */
+const GRAPHICS_DLL = /^(nvwgf2umx?|nvoglv(32|64)|nvd3dumx?|nvgpucomp(32|64)|nvcuda|nvapi(64)?|atiumd\w*|amdxx(32|64)|atiuxp?(64)?|amdvlk(32|64)|aticfx(32|64)|atidxx(32|64)|igd10\w*|igd12\w*|igc(32|64)|igxelpicd(32|64)|ig\d+icd(32|64)|igdusc(32|64))\.dll$/i;
+/** Windows' own core files, which every app loads. */
+const SYSTEM_DLL = /^(ntdll|kernelbase|ucrtbase|msvcrt|combase|kernel32|user32|win32u)\.dll$/i;
+/** Add-ons that load into games to draw an overlay or capture them. */
+const ADDONS: [RegExp, string][] = [
+  [/^rtsshooks/i, "RivaTuner's on-screen display (part of MSI Afterburner)"],
+  [/^discordhook/i, "Discord's in-game overlay"],
+  [/^gameoverlayrenderer/i, "Steam's in-game overlay"],
+  [/^(nvspcap|nvcamera|nvappoverlay)/i, "NVIDIA's in-game overlay"],
+  [/^(graphics-hook|obs-vulkan|obs-opengl)/i, "OBS's game capture"],
+  [/^igo(32|64)/i, "the EA app's in-game overlay"],
+  [/^(overwolf|owclient)/i, "Overwolf"],
+  [/^(uplay_r1|overlay64)/i, "Ubisoft Connect's overlay"],
+  [/^medal/i, "Medal's recorder"],
+];
+
+const appOf = (m: string) => /faulting application name:?\s+([^\s,]+)/i.exec(m)?.[1];
+const moduleOf = (m: string) => /faulting module name:?\s+([^\s,]+)/i.exec(m)?.[1];
+
+function appCrashes({ inv }: HealthInput, events: readonly PCEvent[], fortnight: readonly PCEvent[], add: Add) {
+  const list = fortnight
+    .filter((e) => e.kind === "crash" && /^application error$/i.test(e.source))
+    .map((e) => ({ t: e.t, app: appOf(e.message), mod: moduleOf(e.message) }))
+    .filter((x): x is { t: number; app: string; mod: string } => !!x.app && !!x.mod && x.app.toLowerCase() !== x.mod.toLowerCase());
+  const groups = new Map<string, typeof list>();
+  for (const x of list) groups.set(x.mod.toLowerCase(), [...(groups.get(x.mod.toLowerCase()) ?? []), x]);
+  const allFirst = (mod: string) => events.filter((e) => e.kind === "crash" && moduleOf(e.message)?.toLowerCase() === mod).map((e) => e.t).sort((a, b) => a - b)[0];
+  const names = (g: typeof list) => [...new Set(g.map((x) => x.app.replace(/\.exe$/i, "")))];
+  let shown = 0;
+  for (const [mod, g] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+    if (shown >= 2) break;
+    const apps = names(g), file = g[0].mod, n = g.length;
+    const evidence = [`${n} app crashes in 14 days inside ${file}`, `${apps.length === 1 ? "App" : "Apps"}: ${apps.slice(0, 4).join(", ")}${apps.length > 4 ? ` and ${apps.length - 4} more` : ""}`];
+    const addon = ADDONS.find(([re]) => re.test(mod))?.[1];
+    if (GRAPHICS_DLL.test(mod) && n >= 3) {
+      const first = allFirst(mod), c = startedAfter(events, first, (x) => x.graphics || x.type === "update"), why = c && afterChange(c, first, false);
+      add({
+        id: "app-crash-graphics", category: STABILITY, weight: 15, severity: "warn", part: "gpu", confidence: apps.length >= 2 || c ? "likely" : "possible",
+        title: apps.length >= 2 ? `Games and apps crashed ${times(n)} in the graphics driver` : `${apps[0]} crashed ${times(n)} in the graphics driver`,
+        body: [`Each crash was inside the graphics driver's own files (${file}), so the driver is the likely cause, not the ${apps.length >= 2 ? "apps" : "app"}.`, why ? why.body : "A clean install of the newest driver fixes most of these; remove any graphics overclock while you test."].join(" "),
+        evidence: [...evidence, ...(why ? [why.evidence] : [])],
+        action: "Ask what to do", go: "chat", ask: `My games keep crashing in ${file}, which is the graphics driver. How do I fix it?`,
+      });
+      shown++;
+    } else if (SYSTEM_DLL.test(mod) && apps.length >= 3 && n >= 4) {
+      add({
+        id: "app-crash-system", category: STABILITY, weight: 12, severity: "warn", confidence: "possible",
+        title: `${apps.length} different apps crashed inside Windows itself`,
+        body: `When unrelated apps crash in the same Windows file (${file}), unstable memory or damaged system files are the usual cause. Test memory with Windows Memory Diagnostic${memoryOverclocked(inv) ? ", try the standard memory speed for a few days" : ""}, and have Windows repair its own files with sfc /scannow in an admin terminal.`,
+        evidence,
+        action: "Ask what to do", go: "chat", ask: `Several different apps keep crashing in ${file}. Is it my memory or Windows?`,
+      });
+      shown++;
+    } else if (addon && n >= 2) {
+      add({
+        id: `app-crash-addon-${mod}`, category: STABILITY, weight: 12, severity: "warn", confidence: "likely",
+        title: `${apps.length >= 2 ? "Apps" : apps[0]} crashed ${times(n)} in ${addon}`,
+        body: `${addon[0].toUpperCase()}${addon.slice(1)} loads into games to draw on top of them, and every one of these crashes was inside it (${file}). Update it, or turn it off for a few days, and see if the crashes stop.`,
+        evidence,
+        action: "Ask about it", go: "chat", ask: `My games keep crashing in ${file}. Should I turn off that overlay?`,
+      });
+      shown++;
+    } else if (!SYSTEM_DLL.test(mod) && !GRAPHICS_DLL.test(mod) && apps.length >= 2 && n >= 3) {
+      add({
+        id: `app-crash-module-${mod}`, category: STABILITY, weight: 10, severity: "warn", confidence: "possible",
+        title: `${apps.length} apps crashed in the same file, ${file}`,
+        body: "It isn't part of those apps, so it's likely an add-on, overlay or security tool that loads into them. Find which program installed it, then update it or turn it off for a few days.",
+        evidence,
+        action: "Ask about it", go: "chat", ask: `Different apps keep crashing in ${file}. What is it?`,
+      });
+      shown++;
+    }
+  }
+}
+
+function stability(input: HealthInput, now: number, add: Add) {
+  const { inv, snap, events, history = [] } = input;
   if (!events) return;
   const recent = (days: number) => events.filter((e) => e.t <= now && now - e.t < days * DAY);
   const gpu = inv.gpus.find((g) => !g.integrated);
   const lim = { cpu: cpuLimit(inv.cpu.name, snap), gpu: gpu ? gpuLimit(gpu.vendor) : Infinity };
   const fortnight = recent(14);
+  const lastMemoryTest = events.filter((e) => memoryTest(e) != null).sort((a, b) => b.t - a.t)[0] ?? null;
+
+  if (lastMemoryTest && memoryTest(lastMemoryTest) === "failed") {
+    add({
+      id: "mem-test-failed", category: STABILITY, weight: 40, severity: "bad", part: "ram", confidence: "sure",
+      title: "Windows' memory test found errors",
+      body: memoryOverclocked(inv)
+        ? "Memory that fails this test causes crashes and damaged files. Set memory to its standard speed in the BIOS and run the test again. If it still fails, test one stick at a time to find the bad one."
+        : "Memory that fails this test causes crashes and damaged files. Test one stick at a time to find the bad one; most memory has a lifetime warranty.",
+      evidence: [`Windows Memory Diagnostic on ${day(lastMemoryTest.t)}: errors found`],
+      action: "Ask what to do", go: "chat", ask: "Windows' memory test found errors. What should I do?",
+    });
+  }
+  appCrashes(input, events, fortnight, add);
 
   // Blue screens, one per crash (Windows logs each from two sources).
   const crashes = incidents(fortnight.filter(isBlueScreen), 10 * MIN);
@@ -370,12 +485,22 @@ function stability({ inv, snap, events, history = [] }: HealthInput, now: number
     const extra = lead === "hardware" || lead === "memory"
       ? [memoryOverclocked(inv) ? "Memory runs above the standard speed, which is a common cause." : "", intelVmin(inv.cpu.name) ? "This processor also needs Intel's BIOS fix if the BIOS predates September 2024." : ""].filter(Boolean).join(" ")
       : "";
+    const allCrashes = incidents(events.filter(isBlueScreen), 10 * MIN);
+    const first = allCrashes[0]?.[0].t;
+    const change = startedAfter(events, first, lead === "graphics" ? (c) => c.graphics || c.type === "update" : undefined);
+    const why = change && first != null ? afterChange(change, first, crashes.length === 1) : null;
+    const test = lead === "memory" || lead === "hardware" ? lastMemoryTest : null;
+    const testLine = test ? (memoryTest(test) === "failed" ? "Windows' memory test found errors, so memory is the likely cause." : `Windows' memory test passed on ${day(test.t)}, which makes failing memory less likely, though it can miss a memory speed that's only just unstable.`) : "";
     add({
       id: "crashes", category: STABILITY, weight: Math.min(40, 20 + (crashes.length - 1) * 10), severity: crashes.length >= 2 || lead === "hardware" ? "bad" : "warn",
-      confidence: lead && top[1] >= 2 && top[1] === groups.length ? "likely" : "possible",
+      confidence: (lead && top[1] >= 2 && top[1] === groups.length) || (test && memoryTest(test) === "failed") ? "likely" : "possible",
       title: crashes.length === 1 ? "Windows crashed with a blue screen" : `Windows crashed ${times(crashes.length)} in two weeks`,
-      body: [lead ? crashAdvice[lead] : "Ask Rig to read the crash codes and what was running.", extra].filter(Boolean).join(" "),
-      evidence: [`${crashes.length} blue screen${crashes.length === 1 ? "" : "s"} in the last 14 days`, ...[...new Set(named)].slice(0, 4).map((c) => `Stop code ${c}`)],
+      body: [lead ? crashAdvice[lead] : "Ask Rig to read the crash codes and what was running.", testLine || extra, why?.body ?? ""].filter(Boolean).join(" "),
+      evidence: [
+        `${crashes.length} blue screen${crashes.length === 1 ? "" : "s"} in the last 14 days`, ...[...new Set(named)].slice(0, 4).map((c) => `Stop code ${c}`),
+        ...(test ? [`Windows Memory Diagnostic on ${day(test.t)}: ${memoryTest(test) === "failed" ? "errors found" : "no errors"}`] : []),
+        ...(why ? [why.evidence] : []),
+      ],
       action: "Ask why", go: "chat", ask: `Windows crashed ${times(crashes.length)} recently${named.length ? ` (${[...new Set(named)].slice(0, 3).join(", ")})` : ""}. What's causing it?`,
     });
   }
@@ -425,15 +550,20 @@ function stability({ inv, snap, events, history = [] }: HealthInput, now: number
       return pts.length ? pts.some((p) => (p.gpu ?? -Infinity) >= lim.gpu - 6) : null;
     });
     const hot = seen.filter((v) => v === true).length, cool = seen.filter((v) => v === false).length;
+    const first = incidents(events.filter((e) => e.kind === "driver"), 2 * MIN)[0]?.[0].t;
+    const change = hot > cool ? null : startedAfter(events, first, (c) => c.graphics || c.type === "update");
+    const why = change && first != null ? afterChange(change, first, false) : null;
     add({
-      id: "driver-resets", category: STABILITY, weight: 15, severity: "warn", part: "gpu", confidence: hot > cool || cool > hot ? "likely" : "possible",
+      id: "driver-resets", category: STABILITY, weight: 15, severity: "warn", part: "gpu", confidence: hot > cool || cool > hot || why ? "likely" : "possible",
       title: `The graphics driver stopped and recovered ${times(resets.length)} this week`,
       body: hot > cool
         ? "Most came while the card was near its limit, so heat is the likely cause. Clean its fans and check case airflow."
-        : cool > hot
+        : why
+          ? `${cool > hot ? "The card wasn't hot when they happened. " : ""}${why.body}`
+          : cool > hot
           ? "The card wasn't hot when they happened, so the driver itself or an overclock is more likely. A clean driver install, and removing any overclock, fixes most of these."
           : "A clean driver install fixes most of these. If they keep coming, Rig can record what the card does next time.",
-      evidence: [`${resets.length} driver resets in 7 days`, ...(hot + cool ? [`${hot} while the card was hot, ${cool} while it was cool`] : [])],
+      evidence: [`${resets.length} driver resets in 7 days`, ...(hot + cool ? [`${hot} while the card was hot, ${cool} while it was cool`] : []), ...(why ? [why.evidence] : [])],
       action: "Ask what to do", go: "chat", ask: "My graphics driver keeps crashing and recovering. How do I fix it?",
     });
   }
