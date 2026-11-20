@@ -1,7 +1,7 @@
 {
   "name": "@rig/desktop",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "description": "Rig for Windows: the Tauri app that reads this PC through the helper.",
   "scripts": {
