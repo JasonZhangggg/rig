@@ -23,6 +23,17 @@ describe("LocalClient", () => {
     expect(pc.parts?.cpu.temp).toBeGreaterThan(20);
   });
 
+  it("reads Windows' event log into the PC's findings", async () => {
+    const at = new Date("2026-11-17T20:00:00").getTime();
+    const off = (daysAgo: number) => ({ t: at - daysAgo * 864e5, log: "System" as const, source: "Microsoft-Windows-Kernel-Power", id: 41, level: "critical" as const, message: "The system has rebooted without cleanly shutting down first." });
+    const { client } = setup({ events: async () => [off(1), off(4)] });
+    await client.events(fixtures.atlas.inv.machine.id);
+    const [pc] = await client.machines();
+    client.stop();
+    expect(pc.issues?.find((i) => i.id === "shutdowns")?.title).toBe("The PC turned off without shutting down twice");
+    expect(pc.breakdown?.map((b) => b.label)).toContain("Crashes and errors");
+  });
+
   it("shows the PC when its settings can't be read", async () => {
     const { client } = setup({ facts: () => Promise.reject(new Error("Settings are slow.")) });
     const [pc] = await client.machines();

@@ -49,6 +49,10 @@ export interface Issue {
   ask?: string;
   /** A change that fixes it, shown for review before anything happens. */
   fix?: ActionCall[];
+  /** What Rig saw that led here, one plain line each, so the chat (and the person) can check the reasoning. */
+  evidence?: string[];
+  /** How sure Rig is about the cause: sure when a reading shows it, likely when the signs point to it, possible when it's one of a few causes. */
+  confidence?: "sure" | "likely" | "possible";
 }
 
 export interface Stat { label: string; value: number; unit: string; note: string; warn?: boolean }

@@ -3,7 +3,7 @@
 // web view, so both always agree.
 
 import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageSlice } from "./model";
-import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding } from "./health";
+import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type SystemFacts } from "./telemetry";
 
 export interface Identity { name?: string; accent?: string; cleanedAt?: string }
@@ -61,10 +61,14 @@ export function livePoint(pc: PC, t: number): HistoryPoint {
   };
 }
 
-export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}): PC & { findings: Finding[] } {
+/** What else the checks can read: Windows events (the crash checks run only when these are given) and recorded history. */
+export type Evidence = Pick<HealthInput, "events" | "history" | "now">;
+
+export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}, more: Evidence = {}): PC & { findings: Finding[] } {
   const laptop = inv.machine.kind === "laptop";
   const parts: Record<string, Part> = {};
-  const fs = findings({ inv, snap, facts });
+  const fs = findings({ inv, snap, facts, ...more });
+  const cpuLim = cpuLimit(inv.cpu.name, snap);
   const warnPart = new Set(fs.filter((f) => f.severity === "warn" || f.severity === "bad").map((f) => f.part).filter(Boolean));
 
   // Processor
@@ -74,10 +78,10 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const cpuFan = findSensor(snap, "board", "fan", /cpu|#1/i) ?? findSensor(snap, "cooler", "fan");
   parts.cpu = {
     name: inv.cpu.name, type: laptop ? "Processor" : "Processor and cooler", modelSource: "generic",
-    temp: round(ct?.value), tempMax: ct ? round(Math.max(dayMax[ct.id] ?? 0, ct.value ?? 0)) : undefined, limit: cpuLimit(inv.cpu.name),
+    temp: round(ct?.value), tempMax: ct ? round(Math.max(dayMax[ct.id] ?? 0, ct.value ?? 0)) : undefined, limit: cpuLim,
     load: round(cpuLoad?.value), clock: ghz(cpuClock), fan: laptop ? undefined : round(cpuFan?.value),
     warn: warnPart.has("cpu"),
-    specs: [["Cores", `${inv.cpu.cores} cores, ${inv.cpu.threads} threads`], ...(inv.cpu.maxClockMhz ? [["Top speed", ghz(inv.cpu.maxClockMhz)!] as [string, string]] : []), ["Safe limit", `${cpuLimit(inv.cpu.name)}°C`]],
+    specs: [["Cores", `${inv.cpu.cores} cores, ${inv.cpu.threads} threads`], ...(inv.cpu.maxClockMhz ? [["Top speed", ghz(inv.cpu.maxClockMhz)!] as [string, string]] : []), ["Safe limit", `${cpuLim}°C`]],
     manual: [],
   };
 
@@ -133,7 +137,11 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   // Storage: the system drive
   const disk = inv.disks.find((d) => d.media === "nvme") ?? inv.disks[0];
   if (disk) {
-    const st = findSensor(snap, "storage", "temperature");
+    // The drive shown, not whichever drive reported first.
+    const mine = (x: Sensor) => x.hwName.trim().toLowerCase() === disk.model.trim().toLowerCase();
+    const st = snap?.sensors.find((x) => x.hw === "storage" && x.type === "temperature" && x.value != null && mine(x) && /^(composite |)temperature$/i.test(x.name))
+      ?? snap?.sensors.find((x) => x.hw === "storage" && x.type === "temperature" && x.value != null && mine(x))
+      ?? findSensor(snap, "storage", "temperature");
     const sys = inv.volumes.find((v) => v.letter.startsWith("C")) ?? inv.volumes[0];
     parts.ssd = {
       name: disk.model, type: "Storage", modelSource: "generic", temp: round(st?.value), tempMax: st ? round(Math.max(dayMax[st.id] ?? 0, st.value ?? 0)) : undefined,
@@ -141,7 +149,8 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
       specs: [
         ["Size", disk.sizeGb >= 1000 ? `${(disk.sizeGb / 1000).toFixed(1)} TB` : `${Math.round(disk.sizeGb)} GB`],
         ["Type", { nvme: "NVMe SSD", ssd: "SATA SSD", hdd: "Hard drive", unknown: "Drive" }[disk.media]],
-        ...(disk.healthPercent != null ? [["Health", `${disk.healthPercent}%`] as [string, string]] : []),
+        ...(disk.healthPercent != null ? [["Life left", `${disk.healthPercent}%`] as [string, string]] : []),
+        ...(disk.status ? [["Windows health check", { healthy: "Healthy", warning: "Warning", unhealthy: "Failing" }[disk.status]] as [string, string]] : []),
         ...(disk.writtenTb != null ? [["Written so far", `${disk.writtenTb.toFixed(1)} TB`] as [string, string]] : []),
         ...(sys ? [["Free", `${Math.round(sys.freeGb)} GB on ${sys.letter}`] as [string, string]] : []),
       ],
@@ -197,7 +206,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     return [{ id: x.id, part, name: x.hw === "storage" && drives.size > 1 ? `${x.hwName} ${x.name}` : x.name, type: x.type, value: x.value, min: x.min ?? null, max: top }];
   });
 
-  const { health, breakdown } = score(laptop, fs);
+  const { health, breakdown } = score(laptop, fs, more.events != null);
   const issues: Issue[] = fs.length ? fs : [{ id: "all-good", severity: "ok", title: "Nothing needs a look", body: "Temperatures, storage and settings all look normal.", action: "Ask Rig anything", go: "chat" }];
 
   return {

@@ -165,7 +165,7 @@ public static class Inventory
     static object Disks(List<IHardware> lhm)
     {
         var list = new List<object>();
-        foreach (var d in Query("SELECT FriendlyName, Size, MediaType, BusType FROM MSFT_PhysicalDisk", @"root\Microsoft\Windows\Storage"))
+        foreach (var d in Query("SELECT FriendlyName, Size, MediaType, BusType, HealthStatus FROM MSFT_PhysicalDisk", @"root\Microsoft\Windows\Storage"))
         {
             string model = Str(d, "FriendlyName");
             long bus = Num(d, "BusType"), media = Num(d, "MediaType");
@@ -181,6 +181,8 @@ public static class Inventory
                 media = bus == 17 ? "nvme" : media == 4 ? "ssd" : media == 3 ? "hdd" : "unknown",
                 healthPercent = used is double u ? (int?)Math.Max(0, 100 - (int)Math.Round(u)) : life is double l ? (int?)Math.Round(l) : null,
                 writtenTb = writtenGb is double w ? (double?)Math.Round(w / 1000, 1) : null,
+                // Windows' own reading of the drive's self-test: 0 healthy, 1 warning, 2 unhealthy, 5 unknown.
+                status = d["HealthStatus"] is null ? null : Num(d, "HealthStatus") switch { 0 => "healthy", 1 => "warning", 2 => "unhealthy", _ => (string?)null },
             });
         }
         return list;

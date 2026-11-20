@@ -18,7 +18,7 @@ export interface Inventory {
   gpus: { name: string; vendor: "nvidia" | "amd" | "intel" | "other"; vramMb?: number; driverVersion?: string; driverDate?: string; integrated: boolean }[];
   board: { manufacturer: string; product: string; biosVersion: string; biosDate?: string };
   memory: { totalMb: number; slotsTotal?: number; modules: { manufacturer?: string; partNumber?: string; capacityMb: number; speedMhz?: number; slot?: string }[] };
-  disks: { model: string; sizeGb: number; media: "nvme" | "ssd" | "hdd" | "unknown"; healthPercent?: number; writtenTb?: number }[];
+  disks: { model: string; sizeGb: number; media: "nvme" | "ssd" | "hdd" | "unknown"; healthPercent?: number; writtenTb?: number; /** Windows' own verdict from the drive's self-test (SMART). Missing from helpers before 0.1.5. */ status?: "healthy" | "warning" | "unhealthy" }[];
   volumes: { letter: string; label?: string; sizeGb: number; freeGb: number }[];
   battery?: { designWh?: number; fullWh?: number; cycles?: number };
   displays: { name: string; width: number; height: number; refreshHz: number; maxRefreshHz: number; primary: boolean }[];
