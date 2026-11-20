@@ -9,7 +9,8 @@ vi.mock("../src/styles/index.css", () => ({}));
 const { RigApp } = await import("../src/App");
 const { LineChart } = await import("../src/chart");
 const { highlights } = await import("../src/pages/logs/summary");
-const { cleanEvents } = await import("@rig/core");
+const { cleanEvents, eventTitle } = await import("@rig/core");
+const { kindWord } = await import("../src/pages/logs/words");
 
 async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
@@ -214,5 +215,12 @@ describe("Logs", () => {
     const groups = highlights(events, "Box");
     expect(groups.map((g) => [g.title, g.short, g.events.length])).toEqual([["Windows crashed (blue screen)", "Blue screen", 1], ["game crashed", "game crashes", 3]]);
     expect(highlights(events.slice(4), "Box")).toEqual([]);
+  });
+
+  it("keeps updates and installs out of what went wrong, but names them", () => {
+    const [install] = cleanEvents([{ t: Date.now(), log: "System", source: "Microsoft-Windows-UserPnp", id: 20001, level: "info", message: "Driver Management concluded the process to install driver nv_dispig.inf_amd64_1\\nv_dispig.inf for Device Instance ID PCI\\VEN_10DE with the following status: 0x0." }]);
+    expect(highlights([install], "Box")).toEqual([]);
+    expect(eventTitle(install)).toBe("Installed the NVIDIA graphics driver");
+    expect(kindWord(install.kind)).toBe("Update or install");
   });
 });

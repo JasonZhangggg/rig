@@ -26,6 +26,8 @@ public static class EventLogs
     ];
 
     /// What to read from each log, newest first: every critical and error, plus warnings from the sources above.
+    /// Then what changed on the PC (Windows updates, driver installs, app installs) and Windows' memory test
+    /// results, so Rig can tell when a problem started right after a change.
     public static IEnumerable<(string log, string xpath, int cap)> Queries(DateTime sinceUtc)
     {
         string since = $"TimeCreated[@SystemTime>='{sinceUtc:yyyy-MM-ddTHH:mm:ss.fffZ}']";
@@ -33,6 +35,10 @@ public static class EventLogs
         yield return ("System", $"*[System[(Level=1 or Level=2) and {since}]]", 150);
         yield return ("System", $"*[System[Provider[{sources}] and (Level=3) and {since}]]", 100);
         yield return ("Application", $"*[System[(Level=1 or Level=2) and {since}]]", 100);
+        yield return ("System", $"*[System[Provider[@Name='Microsoft-Windows-WindowsUpdateClient'] and EventID=19 and {since}]]", 40);
+        yield return ("System", $"*[System[Provider[@Name='Microsoft-Windows-UserPnp'] and EventID=20001 and {since}]]", 40);
+        yield return ("System", $"*[System[Provider[@Name='Microsoft-Windows-MemoryDiagnostics-Results'] and {since}]]", 5);
+        yield return ("Application", $"*[System[Provider[@Name='MsiInstaller'] and (EventID=11707 or EventID=1033) and {since}]]", 30);
     }
 
     public static List<EventDto> Read(long sinceMs, int max)
@@ -64,7 +70,7 @@ public static class EventLogs
         return list.OrderByDescending(e => e.T).Take(max).ToList();
     }
 
-    static string Level(byte? level) => level switch { 1 => "critical", 3 => "warning", _ => "error" };
+    static string Level(byte? level) => level switch { 1 => "critical", 2 => "error", 3 => "warning", _ => "info" };
 
     public static string Message(EventRecord rec)
     {
