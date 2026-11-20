@@ -106,6 +106,7 @@ export class LocalClient implements RigClient {
   /** Recordings the account hasn't got the latest version of yet. */
   private unsent = new Set<string>();
   private eventLog: { at: number; list: PCEvent[] } | null = null;
+  private eventRead: Promise<void> | null = null;
   /** What the background recorder logged, read a little at a time. Kept on this PC only: sync never sends it. */
   private bg = new BackgroundLog();
   private bgCursor: RecorderCursor | null = null;
@@ -201,6 +202,8 @@ export class LocalClient implements RigClient {
       await this.watchAlerts(now);
       await this.recorder.tick(this.snap);
       void this.readBackground();
+      // The crash checks read Windows' event log; it's cached, so this reads it at most every few minutes.
+      if (this.link.events) void this.windowsEvents().catch(() => {});
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg !== this.lastError) this.o.log("warn", `sensors: ${msg}`);
@@ -240,7 +243,7 @@ export class LocalClient implements RigClient {
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax);
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now() });
     const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
@@ -405,10 +408,16 @@ export class LocalClient implements RigClient {
   private async windowsEvents(): Promise<PCEvent[]> {
     const now = this.o.now();
     if (!this.eventLog || now - this.eventLog.at > EVENTS_EVERY_MS) {
-      const raw = await this.link.events?.(now - EVENTS_DAYS * 864e5) ?? [];
-      this.eventLog = { at: now, list: cleanEvents(raw) };
+      // One read at a time: the sensor loop asks every few seconds while a read can take longer.
+      this.eventRead ??= (async () => {
+        try {
+          const raw = await this.link.events?.(now - EVENTS_DAYS * 864e5) ?? [];
+          this.eventLog = { at: now, list: cleanEvents(raw) };
+        } finally { this.eventRead = null; }
+      })();
+      await this.eventRead;
     }
-    return this.eventLog.list;
+    return this.eventLog!.list;
   }
 
   /** Windows' event log, plus what the background recorder caught: power events, and anything Windows has since dropped. */

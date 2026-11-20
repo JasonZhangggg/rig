@@ -10,6 +10,7 @@
 // and a difference between two as a bare "5°", so tempsInText (alertInUnit)
 // can show it in °F with differences scaled but not offset.
 
+import { WEAR_CRITICAL, WEAR_LOW } from "./diagnose";
 import { cpuLimit, cpuTemp, gpuLimit, gpuTemp, summaryLine } from "./health";
 import { tempsInText, type TempUnit } from "./units";
 import { HISTORY_WINDOW_MS, type Alert, type AlertKind, type HistoryPoint, type PC, type Severity } from "./model";
@@ -53,7 +54,7 @@ interface Watched { key: "cpu" | "gpu"; name: string; limit: number; temp: Senso
 
 /** The parts with a known safe limit: the processor, and the graphics card when it isn't built into the processor. */
 function watched(inv: Inventory, snap: Snapshot | null): Watched[] {
-  const out: Watched[] = [{ key: "cpu", name: "Processor", limit: cpuLimit(inv.cpu.name), temp: cpuTemp(snap) }];
+  const out: Watched[] = [{ key: "cpu", name: "Processor", limit: cpuLimit(inv.cpu.name, snap), temp: cpuTemp(snap) }];
   const gpu = inv.gpus.find((g) => !g.integrated);
   if (gpu) out.push({ key: "gpu", name: "Graphics card", limit: gpuLimit(gpu.vendor), temp: gpuTemp(snap) });
   return out;
@@ -85,6 +86,7 @@ const tooHot: AlertRule = {
 /** A fan reading 0 rpm counts as stopped when its part is within this many °C of its limit, and at least FAN_HOT_MIN. Cards and laptops that rest their fans do it well below this. */
 export const FAN_HOT_MARGIN = 20;
 export const FAN_HOT_MIN = 65;
+export const FAN_HOT_MAX = 80;
 
 /** The fans that cool each watched part: the graphics card's own, and the processor's (the one the PC view shows, or every fan on a laptop). */
 function fansFor(inv: Inventory, snap: Snapshot | null): Record<Watched["key"], Sensor[]> {
@@ -108,9 +110,11 @@ const fanStopped: AlertRule = {
       const t = p.temp?.value;
       // Max is the fastest the helper has seen this fan spin since it started, so a header with nothing on it never counts.
       const stopped = fans[p.key].find((s) => s.value === 0 && (s.max ?? 0) > 0);
-      const hot = Math.max(FAN_HOT_MIN, p.limit - FAN_HOT_MARGIN);
+      // Capped at FAN_HOT_MAX: a chip with a high limit (Intel's laptop chips run to 110°C) still needs its fan well before then.
+      const hot = Math.min(FAN_HOT_MAX, Math.max(FAN_HOT_MIN, p.limit - FAN_HOT_MARGIN));
       if (t == null || !stopped || !over(t, hot, hot - LIMIT_MARGIN, holding.has(id))) return [];
-      const fan = p.key === "gpu" ? "Graphics card fan" : laptop ? "A laptop fan" : "Processor fan";
+      // Boards name most headers by number, and which number the cooler is on varies by board, so only a header named for the CPU is called the processor's.
+      const fan = p.key === "gpu" ? "Graphics card fan" : laptop ? "A laptop fan" : /cpu/i.test(stopped.name) || stopped.hw === "cooler" ? "Processor fan" : `A fan on the motherboard (${stopped.name})`;
       const what = p.key === "gpu" ? "card" : "processor";
       const advice = p.key === "gpu" ? "Check that nothing is caught in it and its cable is plugged in."
         : laptop ? "Keep the vents clear. If it stays stopped, the fan may need replacing."
@@ -119,7 +123,7 @@ const fanStopped: AlertRule = {
         id, part: p.key, severity: "bad",
         title: `${fan} has stopped`,
         detail: `It reads 0 rpm while the ${what} is at ${round(t)}°C. ${advice}`,
-        ask: `My ${fan.replace(/^A /, "").toLowerCase()} reads 0 rpm while the ${what} is at ${round(t)}°C. What should I do?`,
+        ask: `My ${fan.replace(/^A /, "").replace(/ \(.*\)$/, "").toLowerCase()} reads 0 rpm while the ${what} is at ${round(t)}°C. What should I do?`,
       }];
     });
   },
@@ -152,9 +156,8 @@ const driveFull: AlertRule = {
   }),
 };
 
-/** A drive is nearly worn out below this much of its life left, as the drive itself reports it, and critical below WEAR_CRITICAL. */
-export const WEAR_LOW = 20;
-export const WEAR_CRITICAL = 10;
+/** A drive is nearly worn out below WEAR_LOW of its life left, as the drive itself reports it, and critical below WEAR_CRITICAL. The PC's findings use the same lines. */
+export { WEAR_CRITICAL, WEAR_LOW } from "./diagnose";
 
 const driveWearing: AlertRule = {
   kind: "drive-wearing",

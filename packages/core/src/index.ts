@@ -3,6 +3,8 @@ export * from "./telemetry";
 export * from "./actions";
 export * from "./client";
 export * from "./health";
+export * from "./limits";
+export * from "./diagnose";
 export * from "./history";
 export * from "./recordings";
 export * from "./recorder";

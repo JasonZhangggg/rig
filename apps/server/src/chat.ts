@@ -9,7 +9,7 @@ import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, titleFor, toRequest, validateCall,
   type ActionCall, type Manual, type ChatEvent, type ChatRequest, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
-  type ProbeStatus, type RecordingRequest, type Source, type SystemFacts,
+  type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
 import type { PageMatch } from "./db";
 import { excerpt, shortTitle } from "./manuals";
@@ -56,6 +56,13 @@ How to answer:
 - Use the PC's own readings and settings first. Name real numbers ("the CPU is at 88°C, its limit is 100°C").
 - When the question is about a specific part (a fan header, a BIOS setting, a driver, a warranty, an error code), use the part's manual when Rig has read it (see Manuals); otherwise search the maker's support pages, read the page, and base the answer on it. Prefer the maker's own site over forums.
 - If you are unsure or the readings don't show something, say so instead of guessing.
+
+Diagnosing:
+- Each issue in the PC block comes with its evidence and how sure Rig is (sure, likely or possible). Build on it, and say how sure you are in plain words. Don't turn a "possible" into a fact.
+- Each part's limit in the block is that chip's own. Ryzen 7000 and 9000 chips (not X3D) and Intel's unlocked 13th and 14th gen and Core Ultra 200 chips run right up to their limit under a heavy load by design. That's only a problem at rest, or when the PC also slows down or crashes.
+- Tie events to readings before naming a cause. A shutdown with no blue screen while the PC was busy but cool points at the power supply; one near a limit points at heat. A blue screen's stop code narrows it: 0x124 is a hardware error (processor, memory or an overclock), 0x1A, 0x50 and 0x3B often memory, 0x116 and 0x117 the graphics card or its driver, 0x133 and 0x9F a driver, 0x7A and 0xF4 storage.
+- One event is not a pattern. When the readings and events don't settle it, say what each likely cause would look like and record instead of guessing.
+- Rule out the cheap causes before calling a part faulty: a memory overclock (XMP or EXPO), an old BIOS or driver, dust, a loose cable.
 
 Fixes:
 - You can propose changes to this PC only with the propose_change tool, and only from its list. The person sees a card with the value now and after, and decides. Nothing changes until they approve in the app, and every change can be undone in Changes.
@@ -215,6 +222,30 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
   { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4, max_content_tokens: 20000 },
 ];
 
+const UNIT: Partial<Record<Reading["type"], string>> = { temperature: "°C", load: "%", fan: " RPM", power: " W", clock: " MHz", voltage: " V", level: "%", current: " A" };
+const FIRST: Reading["type"][] = ["temperature", "fan", "voltage", "load", "power", "clock"];
+const MAX_READINGS = 80;
+
+/**
+ * Every sensor as one short line, like "gpu: GPU Hot Spot 78°C (max 91)", most useful kinds first.
+ * The parts list shows one temperature per part; a diagnosis often needs the rest (hot spot, rails, each fan).
+ */
+export function compactReadings(readings: readonly Reading[] | undefined): string[] | undefined {
+  if (!readings?.length) return undefined;
+  const rank = (r: Reading) => { const i = FIRST.indexOf(r.type); return i < 0 ? FIRST.length : i; };
+  // Voltages keep two decimals: a 12 V rail at 11.4 is the point, not a rounding detail.
+  const round = (v: number, type: Reading["type"]) => (type === "voltage" || Math.abs(v) < 10 ? Math.round(v * 100) / 100 : Math.round(v));
+  return readings
+    .filter((r) => r.value != null && UNIT[r.type] != null)
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, MAX_READINGS)
+    .map((r) => {
+      const unit = UNIT[r.type]!;
+      const max = r.max != null && r.max !== r.value ? ` (max ${round(r.max, r.type)})` : "";
+      return `${r.part}: ${r.name} ${round(r.value!, r.type)}${unit}${max}`;
+    });
+}
+
 /** A compact description of the PC for the model. */
 export function describePC(ctx: ChatContext): string {
   const { view, facts, inventory } = ctx;
@@ -225,7 +256,8 @@ export function describePC(ctx: ChatContext): string {
   }));
   const data = {
     name: view.name, kind: view.kind, os: view.os, health: view.health, summary: view.summary, online: view.online, lastSync: view.lastSync,
-    parts, issues: view.issues?.map(({ title, body, severity }) => ({ title, body, severity })), fans: view.fans, storage: view.storage,
+    parts, issues: view.issues?.map(({ title, body, severity, evidence, confidence }) => ({ title, body, severity, evidence, confidence })),
+    alerts: view.alerts?.map((a) => a.title), readings: compactReadings(view.readings), fans: view.fans, storage: view.storage,
     settings: facts && {
       powerPlans: facts.powerPlans, gameMode: facts.gameMode, visualEffects: facts.visualEffects,
       maxProcessorState: facts.maxProcessorState, startupApps: facts.startupApps,

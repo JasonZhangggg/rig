@@ -35,18 +35,19 @@ describe("demo history", () => {
     expect(temps.peak).toBe(temps.days[0].peak);
   });
 
-  it("gives the laptop processor-only history with hot exports and light games", async () => {
+  it("gives the laptop processor-only history with exports and light games", async () => {
     const { pc, points } = await demoWeek("demo-pebble");
     const ctx = insightContext(pc);
     expect(points.every((p) => p.gpu === null)).toBe(true);
     expect(sessions(weekEvenings(points, ctx))).toEqual([
       [[null, "background", 3, 1]],
       [["Stardew Valley", "played", 0, 2.5]],
-      [[null, "hot", 2, 2]],
+      // Its Core Ultra 7 155H runs to 110°C, so exports in the low 90s aren't hot for it.
+      [[null, "background", 2, 2]],
       [["Minecraft", "played", 1.5, 3.5]],
       [["Stardew Valley", "played", 1, 2]],
       [["Minecraft", "played", 2, 1.5]],
-      [[null, "hot", 1.5, 1.5]],
+      [[null, "background", 1.5, 1.5]],
     ]);
     expect(weekTemps(points, ctx).subject).toBe("cpu");
   });
