@@ -274,8 +274,14 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.all("/api/*", (c) => c.json({ message: "Not found" }, 404));
-  // Anything else is the website's files.
-  app.all("*", (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text("Not found", 404)));
+  // Anything else is the website's files. The site lives at one address; a page opened at
+  // another (the old workers.dev one, or www) moves there, so sign-in cookies stay on one site.
+  app.all("*", (c) => {
+    const site = new URL(c.env.WEB_ORIGIN);
+    const url = new URL(c.req.url);
+    if (site.protocol === "https:" && url.host !== site.host) return c.redirect(`${site.origin}${url.pathname}${url.search}`, 301);
+    return c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text("Not found", 404);
+  });
 
   return app;
 }

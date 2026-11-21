@@ -20,7 +20,9 @@ One Cloudflare Worker serves the website and, under `/api`, accounts, sync and c
    - `ANTHROPIC_API_KEY`, for chat (without it, chat says it isn't set up)
    - Optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
    - Optional: `BESTBUY_API_KEY`, for real photos and prices on Upgrades (free key from developer.bestbuy.com; without it every price is demo)
-4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. Leave the address empty to use `https://rig.<your-subdomain>.workers.dev`, or give your own. It creates the tables, connects Hyperdrive with its query cache off, builds the website and deploys. Running it again updates everything.
+4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. It creates the tables, connects Hyperdrive with its query cache off, builds the website and deploys. Running it again updates everything.
+
+The site is at `https://rigpc.app`, the custom domains under `routes` in `wrangler.toml` (the domain is on the same Cloudflare account, and the API token needs access to its zone). Another address goes in the Run workflow box, with `routes` changed to match. The `workers.dev` address stays on: installed apps up to 0.1.4 call its `/api`, and its pages move to the site, as do pages on `www`. The first deploy to a new domain runs with the `workers.dev` address as the site until the domain answers, up to ten minutes, so sign-in never points at an address that isn't up. Google sign-in needs `<site>/api/auth/callback/google` as a redirect URI on its OAuth client.
 5. Add the repository variable `RIG_API_URL` = `<that address>/api`, so installers built by CI use this server. CI and releases stop with an error without it. To publish an installer, see [releasing.md](releasing.md).
 
 Nothing secret goes in the repo or the logs; the workflow passes secrets straight to Cloudflare.
