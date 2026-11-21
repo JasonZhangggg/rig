@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       web_origin:
-        description: "The address people open. Leave empty to use rig.<your-subdomain>.workers.dev"
+        description: "The address people open. Leave empty for https://rigpc.app"
         required: false
 
 concurrency:
@@ -40,18 +40,18 @@ jobs:
           done
           [ -z "$missing" ] || { echo "::error::Add these repository secrets first:$missing"; exit 1; }
 
+      # The site is at rigpc.app (the custom domains in wrangler.toml). The workers.dev
+      # address keeps answering the API for installed apps, and its pages move to the site.
       - name: Work out the site address
         env:
-          WEB_ORIGIN: ${{ inputs.web_origin }}
+          WEB_ORIGIN: ${{ inputs.web_origin || 'https://rigpc.app' }}
         run: |
-          if [ -z "$WEB_ORIGIN" ]; then
-            sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty') || true
-            [ -n "$sub" ] || { echo "::error::Couldn't read the account's workers.dev subdomain. Open Workers & Pages once in the Cloudflare dashboard to create one, or pass web_origin."; exit 1; }
-            WEB_ORIGIN="https://rig.$sub.workers.dev"
-          fi
           case "$WEB_ORIGIN" in https://*) ;; *) echo "::error::web_origin must start with https://"; exit 1;; esac
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty') || true
+          [ -n "$sub" ] || { echo "::error::Couldn't read the account's workers.dev subdomain. Open Workers & Pages once in the Cloudflare dashboard to create one."; exit 1; }
           echo "WEB_ORIGIN=${WEB_ORIGIN%/}" >> "$GITHUB_ENV"
+          echo "WORKERS_DEV=https://rig.$sub.workers.dev" >> "$GITHUB_ENV"
           echo "Site address: ${WEB_ORIGIN%/}"
 
       - name: Create or update the database tables
@@ -85,6 +85,9 @@ jobs:
 
       - run: pnpm --filter @rig/web build
 
+      # A new custom domain can take a few minutes to answer. Until it does, the Worker
+      # runs with the workers.dev address as its site, so sign-in never points at an
+      # address that isn't up yet.
       - name: Deploy the Worker
         working-directory: apps/server
         env:
@@ -97,11 +100,19 @@ jobs:
           secrets=$(mktemp)
           trap 'rm -f "$secrets"' EXIT
           jq -n 'env | {BETTER_AUTH_SECRET, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BESTBUY_API_KEY} | with_entries(select(.value != null and .value != ""))' > "$secrets"
-          npx wrangler deploy --var "WEB_ORIGIN:${WEB_ORIGIN%/}" --secrets-file "$secrets"
+          deploy() { npx wrangler deploy --var "WEB_ORIGIN:$1" --secrets-file "$secrets"; }
+          answers() { curl -fsS -o /dev/null --max-time 10 "$WEB_ORIGIN/api/config"; }
+          if [ "$WEB_ORIGIN" != "$WORKERS_DEV" ] && ! answers; then
+            deploy "$WORKERS_DEV"
+            for i in $(seq 60); do answers && break; sleep 10; done
+            answers || { echo "::error::$WEB_ORIGIN didn't answer within 10 minutes, so the site stays at $WORKERS_DEV. Check the domain under Workers & Pages > rig > Domains, then run Deploy again."; exit 1; }
+          fi
+          deploy "$WEB_ORIGIN"
 
       - name: Check it's up
         run: |
           sleep 5
-          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "${WEB_ORIGIN%/}/api/config"
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$WEB_ORIGIN/api/config"
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors -o /dev/null "$WORKERS_DEV/api/config"
           echo
-          echo "Online at ${WEB_ORIGIN%/}. For installers that use it, set the repository variable RIG_API_URL to ${WEB_ORIGIN%/}/api"
+          echo "Online at $WEB_ORIGIN, and installed apps still reach $WORKERS_DEV/api."

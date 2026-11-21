@@ -5,11 +5,21 @@ main = "src/worker.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
-# The website's built files. /api/* goes to the Worker first; everything else is a file.
+# The site's address. Custom domains need the domain's zone on this Cloudflare account.
+# workers_dev stays on: installed apps up to 0.1.4 call the workers.dev address, and
+# wrangler turns it off when routes are listed unless it's set.
+routes = [
+  { pattern = "rigpc.app", custom_domain = true },
+  { pattern = "www.rigpc.app", custom_domain = true },
+]
+workers_dev = true
+
+# The website's built files. /api/* goes to the Worker first, and so do the two pages,
+# so a page opened at another address moves to WEB_ORIGIN. Everything else is a file.
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/", "/index.html", "/app", "/app/*"]
 
 # The Postgres database (Neon), reached through Hyperdrive. Replace the id
 # with the one `wrangler hyperdrive create rig` prints. For local runs,

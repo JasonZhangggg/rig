@@ -548,3 +548,26 @@ describe("your data", () => {
   });
 });
 
+
+describe("the site's address", () => {
+  const site = { WEB_ORIGIN: "https://rigpc.app", ASSETS: { fetch: async () => new Response("the website") } as unknown as Fetcher };
+
+  it("moves a page opened at the old address to the site, keeping where it was going", async () => {
+    const { call } = await setup(site);
+    const res = await call("https://rig.example.workers.dev/app/?user_code=ABCD1234");
+    expect(res.status).toBe(301);
+    expect(res.headers.get("location")).toBe("https://rigpc.app/app/?user_code=ABCD1234");
+  });
+
+  it("serves the website at its own address", async () => {
+    const { call } = await setup(site);
+    const res = await call("https://rigpc.app/app/");
+    expect(await res.text()).toBe("the website");
+  });
+
+  it("still answers installed apps that call the old address", async () => {
+    const { call } = await setup(site);
+    const res = await call("https://rig.example.workers.dev/api/config");
+    expect(res.status).toBe(200);
+  });
+});
