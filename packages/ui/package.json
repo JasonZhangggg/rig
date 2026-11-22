@@ -10,7 +10,8 @@
     ".": "./src/index.ts",
     "./styles.css": "./src/styles/index.css",
     "./preview": "./src/components/PCPreview.tsx",
-    "./version": "./src/version.ts"
+    "./version": "./src/version.ts",
+    "./proto3d": "./src/proto3d.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

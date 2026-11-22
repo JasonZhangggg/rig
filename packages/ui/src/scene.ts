@@ -1,14 +1,13 @@
 // 3D view of the PC, drawn in ink: flat toon shading with outlined edges.
-// Models are built in code from part sizes. Popular cases,
-// graphics cards and boards will load a matched model from a library instead,
-// and anything else falls back to a shape built like this one.
+// Models are built in code from each part's real size and layout (pc.build,
+// from core build.ts); anything Rig doesn't know is a typical part of its kind.
 // Units: 1 unit = 100 mm.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
-import { formatTemp, type PC, type Part, type TempUnit } from "@rig/core";
+import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { placeLabels } from "./sceneLabels";
 
@@ -53,6 +52,8 @@ export interface PCScene {
   setSpin(v: boolean): void;
   /** The unit the part labels show temperatures in. */
   setTempUnit(unit: TempUnit): void;
+  /** Triangles and draw calls in the last frame. */
+  stats(): { triangles: number; calls: number };
   dispose(): void;
 }
 
@@ -411,8 +412,13 @@ export function createScene(
 
   // ---------- tower ----------
   function buildTower(pc: PC, th: SceneTheme): Framing {
-    const W = 2.27, H = 4.46, D = 4.64;
-    const caseMat = () => M(th.caseColor);
+    // Every size comes from the PC's build (build.ts), in mm; without one, a typical tower.
+    const b = pc.build ?? resolveBuild({});
+    const mm = (v: number) => v / 100;
+    const W = mm(b.case.w), H = mm(b.case.h), D = mm(b.case.d);
+    const dual = b.case.layout === "dual-chamber";
+    const shellColor = b.case.source === "generic" ? th.caseColor : b.case.color;
+    const caseMat = () => M(shellColor);
     const accent = th.accent ?? pc.accent;
 
     // Case shell
@@ -420,38 +426,44 @@ export function createScene(
     shell.add(box(0.04, H, D, caseMat(), -W / 2, H / 2, 0)); // right side (solid)
     shell.add(box(W, 0.04, D, caseMat(), 0, 0.02, 0)); // bottom
     shell.add(box(W, H, 0.04, caseMat(), 0, H / 2, -D / 2)); // back
-    const shroud = box(W - 0.08, 0.9, D - 0.1, M(th.caseColor), 0, 0.49, 0);
-    shell.add(shroud);
-    // Feet
-    for (const [fx, fz] of [[-0.8, -1.9], [0.8, -1.9], [-0.8, 1.9], [0.8, 1.9]]) {
-      shell.add(box(0.3, 0.06, 0.3, M(th.trim), fx, -0.02, fz));
+    if (!dual) shell.add(box(W - 0.08, 0.9, D - 0.1, M(shellColor), 0, 0.49, 0)); // power supply shroud
+    for (const [fx, fz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      shell.add(box(0.3, 0.06, 0.3, M(th.trim), fx * (W / 2 - 0.3), -0.02, fz * (D / 2 - 0.4)));
     }
     add(shell, "case");
     const top = box(W, 0.04, D, caseMat(), 0, H - 0.02, 0);
     top.add(outline(W, 0.04, D));
     add(top, "case", [0, 1.2, 0]);
-    // Front mesh panel
+
+    // Front panel: mesh, glass or solid, with the case's own trim
     const front = new THREE.Group();
-    const meshMat = M(th.caseColor);
-    meshMat.alphaMap = meshTexture(W * 14, H * 14);
-    meshMat.transparent = true;
-    meshMat.alphaTest = 0.4;
-    meshMat.side = THREE.DoubleSide;
-    meshMat.userData.baseOpacity = 1;
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.12, H - 0.12), meshMat);
-    panel.position.set(0, H / 2, D / 2 + 0.02);
-    front.add(panel);
-    // Frame around the mesh
+    if (b.case.front === "mesh") {
+      const meshMat = M(shellColor);
+      meshMat.alphaMap = meshTexture(W * 14, H * 14);
+      meshMat.transparent = true; meshMat.alphaTest = 0.4; meshMat.side = THREE.DoubleSide;
+      meshMat.userData.baseOpacity = 1;
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.12, H - 0.12), meshMat);
+      panel.position.set(0, H / 2, D / 2 + 0.02);
+      front.add(panel);
+    } else if (b.case.front === "glass") {
+      front.add(box(W - 0.06, H - 0.06, 0.02, M(th.glass, { op: th.glassOpacity }), 0, H / 2, D / 2 + 0.01));
+    } else {
+      front.add(box(W - 0.06, H - 0.06, 0.03, caseMat(), 0, H / 2, D / 2 + 0.01));
+    }
     const fm = caseMat();
     front.add(box(W, 0.08, 0.06, fm, 0, 0.04, D / 2));
     front.add(box(W, 0.08, 0.06, fm, 0, H - 0.04, D / 2));
     front.add(box(0.08, H, 0.06, fm, -W / 2 + 0.04, H / 2, D / 2));
     front.add(box(0.08, H, 0.06, fm, W / 2 - 0.04, H / 2, D / 2));
-    // Accent light strip: part of identity
-    front.add(box(0.05, H * 0.82, 0.02, M(accent, { emissive: accent, ei: 1.4 }), W / 2 - 0.12, H / 2, D / 2 + 0.03));
-    const stripGlow = halo(accent, 0.55, H * 0.95, 0.5);
-    stripGlow.position.set(W / 2 - 0.12, H / 2, D / 2 + 0.08);
-    front.add(stripGlow);
+    if (b.case.trim) {
+      // Wooden slats down the front, as on the Fractal North
+      for (let i = 0; i < 9; i++) front.add(box(0.12, H - 0.5, 0.05, M(b.case.trim), -W / 2 + 0.18 + i * 0.2, H / 2 + 0.1, D / 2 + 0.05));
+    } else {
+      front.add(box(0.05, H * 0.82, 0.02, M(accent, { emissive: accent, ei: 1.4 }), W / 2 - 0.12, H / 2, D / 2 + 0.03));
+      const stripGlow = halo(accent, 0.55, H * 0.95, 0.5);
+      stripGlow.position.set(W / 2 - 0.12, H / 2, D / 2 + 0.08);
+      front.add(stripGlow);
+    }
     add(front, "case", [0, 0, 1.8], { noPick: true });
     // Glass side panel
     const glassMat = M(th.glass, { op: th.glassOpacity });
@@ -460,140 +472,183 @@ export function createScene(
     glass.add(outline(0.02, H - 0.12, D - 0.12));
     add(glass, "case", [2.6, 0, 0], { noPick: true, fade: true });
 
-    // Motherboard against the right side
-    const bx = -W / 2 + 0.2;
+    // Motherboard on its tray. Everything on it is placed from the board's own layout, in mm.
+    const bx = dual ? -W / 2 + 0.95 : -W / 2 + 0.2;
+    const zBack = -D / 2 + 0.22, yTop = H - 0.22;
+    const BW = mm(b.board.w), BH = mm(b.board.h);
+    const surf = bx + 0.015;
+    const at = (id: string) => b.board.items.find((i) => i.id === id);
+    const center = (i: { u: number; v: number; w: number; h: number }) => ({ z: zBack + mm(i.u + i.w / 2), y: yTop - mm(i.v + i.h / 2) });
     const mb = new THREE.Group();
-    mb.position.set(bx, 2.72, -0.88);
-    mb.add(box(0.03, 3.05, 2.44, M(th.board), 0, 0, 0));
-    const hs = M(th.heatsink);
-    mb.add(box(0.18, 0.95, 0.3, hs, 0.1, 0.85, -0.6)); // VRM
-    mb.add(box(0.18, 0.3, 0.9, hs, 0.1, 1.35, -0.25)); // VRM top
-    mb.add(box(0.06, 0.45, 0.45, hs, 0.04, -1.05, 0.6)); // chipset
-    // PCIe slots
-    for (const y of [-0.55, -1.25]) mb.add(box(0.06, 0.07, 1.6, M(th.trim), 0.04, y, -0.25));
-    // DIMM slots
-    for (let i = 0; i < 4; i++) mb.add(box(0.06, 1.33, 0.05, M(th.trim), 0.04, 0.62, 0.76 + i * 0.1));
-    // I/O shroud
-    mb.add(box(0.25, 1.1, 0.25, M(th.trim), 0.13, 0.75, -1.05));
+    mb.add(box(0.03, BH, BW, M(b.board.source === "generic" ? th.board : b.board.color), bx, yTop - BH / 2, zBack + BW / 2));
+    for (const it of b.board.items) {
+      const c = center(it);
+      const w = mm(it.w), h = mm(it.h);
+      const raise = { heatsink: 0.2, chipset: 0.08, io: 0.26, dimm: 0.07, pcie: 0.11, m2: 0.03, socket: 0.05, power: 0.1, fan: 0.08, usb: 0.08, "front-panel": 0.08, rgb: 0.08, audio: 0.08, sata: 0.1, other: 0.05 }[it.kind];
+      const color = it.kind === "heatsink" || it.kind === "chipset" || it.kind === "m2" ? th.heatsink : it.kind === "socket" ? th.chip : th.trim;
+      mb.add(box(raise, h, w, M(color), surf + raise / 2, c.y, c.z));
+    }
     add(mb, "motherboard", [-0.4, 0, 0]);
 
-    // CPU cooler (dual tower)
+    // Processor cooler on the socket
+    const sock = center(at("socket") ?? { u: 105, v: 52, w: 40, h: 40 });
     const cool = new THREE.Group();
-    cool.position.set(bx + 0.75, 3.4, -0.8);
-    const finMat = M(th.fins);
-    for (const zc of [-0.35, 0.35]) {
-      for (let i = 0; i < 18; i++) {
-        cool.add(box(1.05, 0.012, 0.52, finMat, 0.05, -0.62 + i * 0.075, zc));
+    const fanS = mm(b.cooler.fanMm);
+    if (b.cooler.kind === "aio") {
+      cool.add(roundBox(0.62, 0.42, 0.62, 0.12, M(b.cooler.color), 0, 0, 0).rotateZ(Math.PI / 2));
+      cool.position.set(surf + 0.22, sock.y, sock.z);
+      // Radiator under the top panel, its fans blowing up
+      const n = (b.cooler.radiator ?? 360) / 120;
+      const rad = new THREE.Group();
+      rad.add(box(1.24, 0.27, mm(b.cooler.radiator ?? 360) + 0.3, M(b.cooler.color), 0, 0.2, 0));
+      for (let i = 0; i < n; i++) {
+        const f = fan(1.2, th.fanFrame, accent, { glow: 0.6 });
+        f.rotation.x = Math.PI / 2;
+        f.position.set(0, 0, (i - (n - 1) / 2) * 1.22);
+        rad.add(f);
+        state.rotors.push({ rotor: f.userData.rotor, partId: "cpu" });
       }
+      rad.position.set(bx + (W / 2 - bx) * 0.5, H - 0.4, zBack + mm(b.board.w) / 2 + 0.2);
+      cool.add(rad);
+      rad.position.sub(cool.position);
+      for (const dz of [-0.12, 0.12]) {
+        const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0.2, 0.1, dz), new THREE.Vector3(0.6, 0.8, dz + 0.2), rad.position.clone().add(new THREE.Vector3(0, 0, -1.4 + dz))]);
+        cool.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.045, 8, false), M(b.cooler.color)));
+      }
+    } else if (b.cooler.kind === "low-profile") {
+      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, mm(b.cooler.height), 32), M(b.cooler.color));
+      cyl.rotation.z = Math.PI / 2;
+      cool.add(cyl);
+      const f = fan(1.0, th.fanFrame, accent, { glow: 0.8 });
+      f.rotation.y = Math.PI / 2;
+      f.position.x = mm(b.cooler.height) / 2;
+      cool.add(f);
+      state.rotors.push({ rotor: f.userData.rotor, partId: "cpu" });
+      cool.position.set(surf + mm(b.cooler.height) / 2, sock.y, sock.z);
+    } else {
+      const ch = mm(b.cooler.height);
+      const finMat = M(b.cooler.source === "generic" ? th.fins : b.cooler.color);
+      const towers = b.cooler.kind === "dual-tower" ? [-0.35, 0.35] : [0];
+      const finCount = Math.round(fanS / 0.07);
+      for (const zc of towers) for (let i = 0; i < finCount; i++) cool.add(box(ch - 0.1, 0.012, 0.52, finMat, 0.05, -fanS / 2 + 0.05 + i * 0.07, zc));
+      for (const zc of towers) for (const dz of [-0.12, 0.12]) {
+        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, fanS + 0.2, 12), M(th.copper));
+        pipe.position.set(-ch / 2 + 0.2, -0.05, zc + dz);
+        cool.add(pipe);
+      }
+      const cfan = fan(fanS, b.cooler.fanColor ?? th.fanFrame, accent, { glow: 0.7, blade: b.cooler.fanColor ? "#7a4a33" : undefined });
+      cfan.position.set(0.05, 0, b.cooler.kind === "dual-tower" ? 0 : 0.32);
+      cool.add(cfan);
+      state.rotors.push({ rotor: cfan.userData.rotor, partId: "cpu" });
+      cool.position.set(surf + ch / 2, sock.y, sock.z);
     }
-    for (const zc of [-0.35, 0.35]) for (const dz of [-0.12, 0.12]) {
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 12), M(th.copper));
-      pipe.position.set(-0.35, -0.05, zc + dz);
-      cool.add(pipe);
-    }
-    const cfan = fan(1.2, th.fanFrame, accent, { glow: 0.7 });
-    cfan.position.set(0.05, 0, 0.0);
-    cfan.scale.set(0.95, 1.05, 0.9);
-    cool.add(cfan);
-    state.rotors.push({ rotor: cfan.userData.rotor, partId: "cpu" });
     add(cool, "cpu", [1.9, 0.9, 0.4]);
 
-    // RAM sticks (slots 2 and 4)
+    // Memory sticks in the slots that hold them, as tall as the kit really is
     const ram = new THREE.Group();
-    ram.position.set(bx + 0.24, 3.34, -0.12);
-    for (const i of [0, 2]) {
+    const rh = mm(b.memory.height);
+    for (const name of b.memory.slots) {
+      const slot = b.board.items.find((i) => i.kind === "dimm" && i.name === name);
+      if (!slot) continue;
+      const c = center(slot);
       const stick = new THREE.Group();
-      stick.add(box(0.36, 1.33, 0.06, M(th.ram), 0, 0, 0));
-      stick.add(box(0.06, 1.25, 0.065, M(accent, { emissive: accent, ei: 1.2 }), 0.2, 0, 0));
-      stick.position.z = i * 0.1;
-      const rg = halo(accent, 0.45, 1.5, 0.28);
-      rg.position.set(0.24, 0, 0);
-      stick.add(rg);
+      stick.add(box(rh, 1.33, 0.06, M(b.memory.color), 0, 0, 0));
+      if (b.memory.rgb || b.memory.source === "generic") {
+        stick.add(box(0.06, 1.25, 0.065, M(accent, { emissive: accent, ei: 1.2 }), rh / 2, 0, 0));
+        const rg = halo(accent, 0.45, 1.5, 0.28);
+        rg.position.set(rh / 2 + 0.04, 0, 0);
+        stick.add(rg);
+      }
+      stick.position.set(surf + 0.07 + rh / 2, c.y, c.z);
       ram.add(stick);
     }
     add(ram, "ram", [1.4, 1.6, 0.9]);
 
-    // SSD under its heatsink
-    const ssd = box(0.03, 0.22, 0.8, M(th.heatsink), bx + 0.06, 2.58, -0.75);
+    // SSD in the first M.2 slot
+    const m2 = center(at("m2-1") ?? { u: 50, v: 130, w: 80, h: 22 });
+    const ssd = box(0.04, 0.22, 0.8, M(th.heatsink), surf + 0.05, m2.y, m2.z);
     add(ssd, "ssd", [2.4, 0.25, 1.1]);
 
-    // Graphics card
-    const gpu = new THREE.Group();
-    gpu.position.set(bx + 0.72, 2.0, -0.93);
-    gpu.add(box(1.34, 0.42, 2.67, M(th.gpuShroud), 0, 0, 0));
-    // Fin stack peeking out of the sides
-    const gfin = M(th.fins);
-    for (let i = 0; i < 22; i++) gpu.add(box(1.36, 0.26, 0.012, gfin, 0, -0.02, -1.15 + i * 0.105));
-    gpu.add(box(1.3, 0.04, 2.6, M(th.gpuBack), 0, 0.23, 0)); // backplate
-    gpu.add(box(0.03, 0.06, 1.6, M(accent, { emissive: accent, ei: 1.0 }), 0.68, 0.12, 0.2)); // light bar
-    for (const z of [-0.62, 0.62]) {
-      const f = fan(0.95, th.gpuShroud, th.gpuFanRing, { thick: 0.12, glow: 0.15 });
-      f.rotation.x = Math.PI / 2;
-      f.position.set(0, -0.22, z);
-      gpu.add(f);
-      state.rotors.push({ rotor: f.userData.rotor, partId: "gpu" });
+    // Graphics card in the first long slot, as long, tall and thick as the real card
+    let gpu: THREE.Group | null = null;
+    if (b.gpu) {
+      const g = b.gpu;
+      const slot = center(at("pcie1") ?? { u: 42, v: 156, w: 89, h: 7 });
+      const L = mm(g.length), Hc = mm(g.height), T = mm(g.thick);
+      gpu = new THREE.Group();
+      gpu.position.set(surf + Hc / 2 + 0.02, slot.y - T / 2 + 0.05, -D / 2 + 0.06 + L / 2);
+      gpu.add(box(Hc, T - 0.04, L, M(g.source === "generic" ? th.gpuShroud : g.shroud), 0, 0, 0));
+      const gfin = M(th.fins);
+      const nf = Math.floor(L / 0.105);
+      for (let i = 0; i < nf; i++) gpu.add(box(Hc + 0.02, T * 0.6, 0.012, gfin, 0, -0.02, -L / 2 + 0.1 + i * 0.105));
+      if (g.backplate) gpu.add(box(Hc - 0.04, 0.03, L - 0.06, M(th.gpuBack), 0, T / 2 - 0.01, 0));
+      gpu.add(box(0.03, 0.06, L * 0.55, M(accent, { emissive: accent, ei: 1.0 }), Hc / 2, T / 4, L * 0.1));
+      const fs = mm(g.fanMm), gap = (L - g.fans * fs) / (g.fans + 1);
+      for (let i = 0; i < g.fans; i++) {
+        const f = fan(fs, g.shroud, th.gpuFanRing, { thick: 0.12, glow: 0.15 });
+        f.rotation.x = Math.PI / 2;
+        f.position.set(0, -T / 2, -L / 2 + gap * (i + 1) + fs * (i + 0.5));
+        gpu.add(f);
+        state.rotors.push({ rotor: f.userData.rotor, partId: "gpu" });
+      }
+      if (pc.parts?.gpu?.warn) {
+        const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
+        heat.position.set(0.1, -0.35, 0);
+        heat.userData.pulse = true;
+        gpu.add(heat);
+        state.pulses.push(heat);
+      }
+      add(gpu, "gpu", [2.4, -0.6, 1.2]);
     }
-    if (pc.parts?.gpu?.warn) {
-      const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
-      heat.position.set(0.1, -0.35, 0);
-      heat.userData.pulse = true;
-      gpu.add(heat);
-      state.pulses.push(heat);
-    }
-    add(gpu, "gpu", [2.4, -0.6, 1.2]);
 
-    // Accent light inside the case, so the parts are lit like a real build
     if (th.interior) {
       const inner = new THREE.PointLight(accent, th.interior, 6, 1.7);
-      inner.position.set(0.55, 3.1, 0.9);
+      inner.position.set(0.55, H * 0.7, 0.9);
       root.add(inner);
       const low = new THREE.PointLight(accent, th.interior * 0.6, 4, 1.7);
       low.position.set(0.5, 1.2, 1.4);
       root.add(low);
     }
 
-
-    // Power supply inside the shroud
-    const psu = box(1.5, 0.82, 1.6, M(th.psu), -0.25, 0.48, -1.4);
+    // Power supply: under the shroud, or behind the board tray in a dual-chamber case
+    const psu = dual ? box(0.82, 0.86, 1.6, M(th.psu), (-W / 2 + bx) / 2, 0.5, -D / 2 + 1.0) : box(1.5, 0.82, 1.6, M(th.psu), -W / 2 + 0.85, 0.48, -D / 2 + 0.9);
     add(psu, "psu", [2.6, -0.1, 0.4]);
 
-    // Case fans
+    // Case fans where this case has them
     const fans = new THREE.Group();
-    for (const y of [2.15, 3.45]) {
-      const f = fan(1.2, th.fanFrame, accent, { glow: 0.8 });
-      f.position.set(0, y, D / 2 - 0.2);
-      fans.add(f);
-      state.rotors.push({ rotor: f.userData.rotor, partId: "fans" });
-    }
-    add(fans, "fans", [0, 0, 1.0]);
-    const rear = fan(1.2, th.fanFrame, accent, { glow: 0.6 });
-    rear.position.set(-0.1, 3.4, -D / 2 + 0.18);
-    add(rear, "fans", [0, 0, -1.0]);
-
-    // Sleeved cables from the power supply; hidden in the exploded view
-    const cables = new THREE.Group();
-    const cable = (pts: Vec3[], color: string, r = 0.045) => {
-      const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
-      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, r, 10, false), M(color));
-      m.castShadow = true;
-      cables.add(m);
+    const cf = mm(b.case.fans.size);
+    const row = (n: number, place: (i: number, f: THREE.Group) => void) => {
+      for (let i = 0; i < n; i++) {
+        const f = fan(cf, th.fanFrame, accent, { glow: 0.8 });
+        place(i, f);
+        fans.add(f);
+        state.rotors.push({ rotor: f.userData.rotor, partId: "fans" });
+      }
     };
-    cable([[bx + 0.1, 0.95, 0.35], [bx + 0.35, 1.3, 0.4], [bx + 0.5, 2.2, 0.38], [bx + 0.12, 2.6, 0.36]], th.trim, 0.06); // 24-pin
-    cable([[bx + 0.6, 0.95, 0.2], [bx + 0.85, 1.45, 0.25], [bx + 1.05, 1.95, 0.32]], th.trim);
-    cable([[bx + 0.7, 0.95, 0.12], [bx + 0.95, 1.5, 0.16], [bx + 1.15, 1.98, 0.22]], accent, 0.03);
-    add(cables, "psu", [0, 0, 0], { fade: true, noPick: true });
+    const fanX = (bx + W / 2) / 2;
+    row(b.case.fans.front, (i, f) => f.position.set(fanX, H - 0.35 - cf / 2 - i * (cf + 0.05), D / 2 - 0.2));
+    row(b.case.fans.bottom, (i, f) => { f.rotation.x = Math.PI / 2; f.position.set(fanX, 0.25, D / 2 - 0.3 - cf / 2 - i * (cf + 0.05)); });
+    row(b.case.fans.side, (i, f) => { f.rotation.y = Math.PI / 2; f.position.set(bx - 0.18, 1.2 + i * (cf + 0.05), D / 2 - 0.3 - cf / 2); });
+    if (b.cooler.kind !== "aio") row(b.case.fans.top, (i, f) => { f.rotation.x = Math.PI / 2; f.position.set(fanX, H - 0.18, D / 2 - 0.4 - cf / 2 - i * (cf + 0.05)); });
+    add(fans, "fans", [0, 0, 1.0]);
+    if (b.case.fans.rear) {
+      const rear = fan(cf, th.fanFrame, accent, { glow: 0.6 });
+      rear.position.set(fanX - 0.05, yTop - cf / 2 - 0.1, -D / 2 + 0.18);
+      add(rear, "fans", [0, 0, -1.0]);
+    }
 
     // Labels
     const lp = (id: string, obj: THREE.Object3D, p: Vec3) => addLabel(id, obj, p);
-    lp("gpu", gpu, [0.9, 0, 0.9]);
+    if (gpu) lp("gpu", gpu, [0.9, 0, 0.9]);
     lp("cpu", cool, [0.6, 0.85, 0]);
-    lp("ram", ram, [0.2, 0.75, 0.2]);
+    lp("ram", ram, [surf + 0.4, yTop - 0.75, zBack + mm(180)]);
     lp("ssd", ssd, [0.1, 0.2, 0.4]);
     lp("psu", psu, [0.8, 0.3, 0.6]);
-    lp("motherboard", mb, [0, -1.5, 1.2]);
-    lp("fans", fans, [0.6, 3.7, D / 2]);
+    lp("motherboard", mb, [bx, yTop - BH + 0.3, zBack + BW]);
+    lp("fans", fans, [fanX + 0.6, H * 0.8, D / 2]);
 
-    return { target: new THREE.Vector3(0, 1.85, 0), cam: new THREE.Vector3(8.9, 4.5, 9.9), camExploded: new THREE.Vector3(11, 6.2, 10.8) };
+    const s = Math.max(H / 4.46, D / 4.64);
+    return { target: new THREE.Vector3(0, H * 0.42, 0), cam: new THREE.Vector3(8.9 * s, 4.5 * s, 9.9 * s), camExploded: new THREE.Vector3(11 * s, 6.2 * s, 10.8 * s) };
   }
 
   // ---------- laptop ----------
@@ -1167,6 +1222,7 @@ export function createScene(
   }
 
   return {
+    stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls }),
     setPC(pc, t) {
       state.pc = pc; state.theme = t; state.selected = null;
       rebuild(); resize(); frame(state.exploded, true);

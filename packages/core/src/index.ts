@@ -30,3 +30,4 @@ export * from "./manualSearch";
 export * from "./manualText";
 export * from "./sensors";
 export * from "./changes";
+export * from "./build";

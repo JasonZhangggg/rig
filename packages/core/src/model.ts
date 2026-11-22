@@ -3,6 +3,7 @@
 
 import type { ActionCall } from "./actions";
 import type { SensorType } from "./telemetry";
+import type { BuildShape } from "./build";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
 export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "manuals" | "web" | "signin" | "settings";
@@ -90,6 +91,8 @@ export interface PC {
   alerts?: Alert[];
   /** Every sensor the parts report, as they read at seenAt. */
   readings?: Reading[];
+  /** The shape of each part for the 3D view, from build.ts. Missing: a typical tower. */
+  build?: BuildShape;
 }
 
 /** The kinds of alert Rig raises. Each one can be turned off on a device. */

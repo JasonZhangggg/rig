@@ -12,7 +12,7 @@ export default defineConfig({
   server: { port: 5173, proxy: { "/api": "http://localhost:8787" } },
   build: {
     rollupOptions: {
-      input: { main: new URL("index.html", import.meta.url).pathname, app: new URL("app/index.html", import.meta.url).pathname },
+      input: { main: new URL("index.html", import.meta.url).pathname, app: new URL("app/index.html", import.meta.url).pathname, proto: new URL("proto/index.html", import.meta.url).pathname },
     },
   },
 });
