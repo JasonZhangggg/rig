@@ -41,7 +41,7 @@ Detection:
 
 ## Board layouts
 
-The layout record is the expensive part: about 35 items per board in mm. The prototype's Tomahawk layout is placed by hand from the ATX rules and the board's header names, so it can be 10 mm out. The real source is the manual's "Overview of Components" page, which Rig already finds (MSI: page 24 of the B650M Mortar guide, 28 of the X870 Tomahawk). Untested: tracing that page with Claude's vision into positions, with a person checking an overlay. Boards without a record get a typical layout for their size.
+The layout record is the expensive part: about 35 items per board in mm. The prototype's Tomahawk layout is placed by hand from the ATX rules and the board's header names, so it can be 10 mm out. The real source is the manual's "Overview of Components" page, which Rig already finds (MSI: page 24 of the B650M Mortar guide, 28 of the X870 Tomahawk). Tested on the MSI PRO B650-A WIFI manual (page 27): the drawing is to scale (its sides measure 1.25 to 1, the same as 305 by 244 mm, within 0.5%), the spacing from PCI_E1 to PCI_E2 measures 61.0 mm against the 60.96 mm the rules give, and every header carries its printed name, so traced positions land within about 2 to 3 mm. A person still checks an overlay before a record ships. Boards without a record get a typical layout for their size.
 
 ## Rough scope
 
