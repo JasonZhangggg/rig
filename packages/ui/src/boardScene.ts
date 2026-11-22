@@ -10,6 +10,7 @@ import type { BoardItem, BoardShape } from "@rig/core";
 import { makeBoard, pinNumber, type BoardNode } from "./board3d";
 import { canvasTex, realMaterial, type Kit } from "./parts3d";
 import { placeLabels } from "./sceneLabels";
+import { createLabelDeck, type DeckItem, type DeckPoint, type LabelStyle } from "./labelStyles";
 
 export { pinNumber } from "./board3d";
 
@@ -19,6 +20,8 @@ export interface BoardScene {
   dispose(): void;
   /** Triangles and draw calls in the last frame, for the size and speed checks. */
   stats(): { triangles: number; calls: number; ms: number };
+  /** How the board is labeled: today's pins, or one of the styles in labelStyles.ts. */
+  setLabelStyle(style: LabelStyle): void;
 }
 
 export interface PinGroup {
@@ -88,6 +91,14 @@ export function createBoardScene(
   const layer = document.createElement("div");
   layer.className = "scene-labels board-labels";
   container.appendChild(layer);
+  // The other label styles; the last one picked in this browser is kept, as in the PC view.
+  const savedStyle = (() => { try { return localStorage.getItem("rig.labelStyle") as LabelStyle | null; } catch { return null; } })();
+  const deck = createLabelDeck(layer, savedStyle ?? "pins", {
+    onPick: (id) => { highlight({ id }); opts.onPick?.(id); },
+    onHover: (id) => { hovered = id; },
+  });
+  layer.classList.toggle("uses-deck", deck.style !== "pins");
+  let hovered: string | null = null, nameAll = false, roomKey = "";
   const card = document.createElement("div");
   card.className = "pinout";
   card.hidden = true;
@@ -153,7 +164,7 @@ export function createBoardScene(
   const halos: THREE.Mesh[] = [];
   const pinMats: THREE.MeshStandardMaterial[] = [];
   const pinOriginal = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
-  interface Label { pin: HTMLElement; dot: HTMLElement; lead: HTMLElement; el: HTMLElement; at: THREE.Object3D; w: number; h: number }
+  interface Label { id: string; pin: HTMLElement; dot: HTMLElement; lead: HTMLElement; el: HTMLElement; at: THREE.Object3D; w: number; h: number }
   let labels: Label[] = [];
   const sides: Record<string, -1 | 1> = {};
   const target = new THREE.Vector3(), camGoal = new THREE.Vector3();
@@ -173,7 +184,7 @@ export function createBoardScene(
     labels = [];
     card.hidden = true;
     card.replaceChildren();
-    offsetFor = null;
+    offsetFor = null; roomKey = "";
   }
 
   function addLabel(n: BoardNode, text: [string, string]) {
@@ -192,7 +203,7 @@ export function createBoardScene(
     const at = new THREE.Object3D();
     at.position.set(0, 0, n.top + 0.01);
     n.group.add(at);
-    labels.push({ pin, dot, lead, el, at, w: 0, h: 0 });
+    labels.push({ id: n.item.id, pin, dot, lead, el, at, w: 0, h: 0 });
     sizeDirty = true;
   }
 
@@ -289,11 +300,16 @@ export function createBoardScene(
     }
     // Labels: every lit item, or a few landmarks when nothing is picked. A header with a pin map is named by the map.
     const named = dim ? focus.filter((n) => !(n === one && groups.length)) : nodes.filter((n) => landmarks.includes(n.item.id));
+    const items: DeckItem[] = [];
     for (const n of named) {
       const it = n.item;
       const plain = it.id === "dimm-1" && !dim ? "Memory slots" : it.label;
-      addLabel(n, [it.name && !/^Rear I\/O$/.test(it.name) ? it.name : "", plain]);
+      const code = it.id === "dimm-1" && !dim ? "" : it.name && !/^Rear I\/O$/.test(it.name) ? it.name : "";
+      addLabel(n, [code, plain]);
+      items.push({ id: it.id, title: plain, code: code || undefined });
     }
+    deck.setItems(items);
+    nameAll = dim;
     frame();
     fromPos.copy(camera.position); fromTarget.copy(controls.target);
     tweenStart = performance.now();
@@ -311,13 +327,24 @@ export function createBoardScene(
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focus.length === 1 ? 0.6 : 0.3);
     const fit = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * (focus.length ? 1.25 : 0.98);
     const dir = new THREE.Vector3(0.08, focus.length ? 0.5 : 0.32, 1).normalize();
-    camGoal.copy(target).addScaledVector(dir, Math.max(fit / Math.min(1, camera.aspect), controls.minDistance + 0.05));
+    // A label style's columns or list take room beside the board: fit the board in what's left.
+    const room = w ? deck.room(w) : null;
+    const uw = Math.max(1, w - (room ? room.l + room.r : 0)), uh = Math.max(1, h - (room ? room.t + room.b : 0));
+    const squeeze = room ? (h / uh) / Math.min(1, uw / uh) * Math.min(1, camera.aspect) : 1;
+    camGoal.copy(target).addScaledVector(dir, Math.max(fit * squeeze / Math.min(1, camera.aspect), controls.minDistance + 0.05));
   }
 
   // ---------- picking ----------
   const ray = new THREE.Raycaster();
   let down: { x: number; y: number } | null = null;
   renderer.domElement.addEventListener("pointerdown", (ev) => { down = { x: ev.clientX, y: ev.clientY }; });
+  renderer.domElement.addEventListener("pointermove", (ev) => {
+    if (ev.pointerType !== "mouse" || deck.style === "pins") return;
+    const r = renderer.domElement.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
+    const id = (ray.intersectObject(built.group, true).find((h) => h.object.userData.id)?.object.userData.id as string | undefined) ?? null;
+    hovered = id && labels.some((l) => l.id === id) ? id : null;
+  });
   renderer.domElement.addEventListener("pointerup", (ev) => {
     if (!down || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 5) return; // a drag, not a click
     const r = renderer.domElement.getBoundingClientRect();
@@ -335,7 +362,7 @@ export function createBoardScene(
     renderer.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
-    offsetFor = null;
+    offsetFor = null; roomKey = "";
     sizeDirty = true;
     frame();
   }
@@ -350,17 +377,46 @@ export function createBoardScene(
   // Move the picture aside for the pin map: left of it on a wide stage, above it on a narrow one.
   function offsetView() {
     const want = card.hidden ? null : w >= 640 ? "right" : "bottom";
-    if (want === offsetFor) return;
+    const room = deck.room(w);
+    const key = `${want}:${room ? [room.t, room.r, room.b, room.l].join(",") : ""}`;
+    if (key === roomKey) return;
+    roomKey = key;
     offsetFor = want;
-    if (!want) camera.clearViewOffset();
-    else if (want === "right") camera.setViewOffset(w, h, (card.offsetWidth + 24) / 2, 0, w, h);
-    else camera.setViewOffset(w, h, 0, (card.offsetHeight + 16) / 2, w, h);
+    const l = room?.l ?? 0, t = room?.t ?? 0;
+    const r = (room?.r ?? 0) + (want === "right" ? card.offsetWidth + 24 : 0);
+    const b = (room?.b ?? 0) + (want === "bottom" ? card.offsetHeight + 16 : 0);
+    if (!l && !r && !t && !b) camera.clearViewOffset();
+    else camera.setViewOffset(w, h, (r - l) / 2, (b - t) / 2, w, h);
   }
 
   const v = new THREE.Vector3(), c0 = new THREE.Vector3();
   const put = (el: HTMLElement, tf: string) => { if (el.style.transform !== tf) el.style.transform = tf; };
   const px = (n: number) => Math.round(n * 10) / 10;
+  const _q = new THREE.Quaternion(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _pb = new THREE.Box3();
+  function layoutDeck() {
+    const toScreen = (p: THREE.Vector3): [number, number, number] => { v.copy(p).project(camera); return [(v.x + 1) / 2 * w, (1 - v.y) / 2 * h, v.z]; };
+    built.group.getWorldQuaternion(_q);
+    const step = 0.05;
+    const points: DeckPoint[] = labels.map((l) => {
+      l.at.getWorldPosition(c0);
+      const [x, y, z] = toScreen(c0);
+      const [rx, ry] = toScreen(_r.set(step, 0, 0).applyQuaternion(_q).add(c0));
+      const [dx, dy] = toScreen(_u.set(0, -step, 0).applyQuaternion(_q).add(c0));
+      return { id: l.id, x, y, depth: 0.2, off: z > 1, ux: [(rx - x) / step, (ry - y) / step], uy: [(dx - x) / step, (dy - y) / step] };
+    });
+    // The board's outline on screen, for the callout columns.
+    _pb.setFromObject(built.pcb);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      const [sx, sy] = toScreen(_r.set(k & 1 ? _pb.max.x : _pb.min.x, k & 2 ? _pb.max.y : _pb.min.y, k & 4 ? _pb.max.z : _pb.min.z));
+      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
+    }
+    const right = card.hidden || offsetFor !== "right" ? w : w - card.offsetWidth - 24;
+    deck.layout(points, { width: right, height: h, box: { x0, y0, x1: Math.min(x1, right), y1 }, hovered, named: nameAll, selected: focus.length === 1 ? focus[0].item.id : null });
+  }
+
   function layoutLabels() {
+    if (deck.style !== "pins") return layoutDeck();
     if (!labels.length) return;
     if (sizeDirty) { for (const l of labels) { l.w = l.el.offsetWidth; l.h = l.el.offsetHeight; } sizeDirty = false; }
     const pins = labels.map((l, i) => {
@@ -404,6 +460,15 @@ export function createBoardScene(
   return {
     highlight,
     stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, ms: lastMs }),
+    setLabelStyle(style) {
+      deck.setStyle(style);
+      layer.classList.toggle("uses-deck", style !== "pins");
+      try { localStorage.setItem("rig.labelStyle", style); } catch { /* private window */ }
+      roomKey = "";
+      frame();
+      fromPos.copy(camera.position); fromTarget.copy(controls.target);
+      tweenStart = performance.now();
+    },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -411,6 +476,7 @@ export function createBoardScene(
       controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();
+      deck.dispose();
       layer.remove();
       card.remove();
     },

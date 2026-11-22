@@ -1,0 +1,110 @@
+/* The other label styles for the 3D views (labelStyles.ts). Each style shows only its own pieces; the deck places
+   them with transforms. Lines get a soft light halo under a dark hairline so they read over dark and light parts. */
+.scene-labels.uses-deck .scene-pin { display: none; }
+.deck { --dk-ink: var(--graphite); --dk-halo: rgba(255, 255, 255, .78); position: absolute; inset: 0; pointer-events: none; font-family: var(--font); color: var(--text); }
+.deck[data-style="pins"] { display: none; }
+.deck > .dk-mark, .deck > .dk-label, .dk-card { position: absolute; top: 0; left: 0; will-change: transform; }
+.dk-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dk-halo { fill: none; stroke: var(--dk-halo); stroke-width: 3.2; stroke-linejoin: round; stroke-linecap: round; }
+.dk-line { fill: none; stroke: color-mix(in srgb, var(--text) 58%, transparent); stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; }
+.dk-line.is-hot { stroke: var(--text); stroke-width: 1.6; }
+.dk-halo, .dk-line, .deck .dk-label, .deck .dk-mark { transition: opacity .2s var(--ease-out); }
+.deck.has-focus .dk-line:not(.is-hot), .deck.has-focus .dk-halo:not(.is-hot) { opacity: .22; }
+.deck .is-off { display: none !important; }
+.dk-mark, .dk-label, .dk-legend, .dk-card { display: none; }
+.deck .dk-label { margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; white-space: nowrap; cursor: pointer; pointer-events: auto; }
+.deck .dk-label:focus-visible, .deck .dk-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.dk-value { font-variant-numeric: tabular-nums; }
+.dk-code { letter-spacing: .06em; text-transform: uppercase; }
+
+/* ---------- Callouts: names in columns beside the model ---------- */
+.deck[data-eff="callouts"] .dk-mark {
+  display: block; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  background: var(--dk-ink); box-shadow: 0 0 0 2px var(--dk-halo);
+}
+.deck[data-eff="callouts"] .dk-mark.is-warn { background: var(--look); }
+.deck[data-eff="callouts"] .dk-mark.is-behind { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--dk-ink), 0 0 0 2px var(--dk-halo); }
+.deck[data-eff="callouts"] .dk-label { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font: 600 13px/1.25 var(--font); letter-spacing: -.005em; }
+.deck[data-eff="callouts"] .dk-label[data-side="left"] { align-items: flex-end; text-align: right; }
+.deck[data-eff="callouts"] .dk-value { font: 500 13px/1.2 var(--font); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.deck[data-eff="callouts"] .dk-value.is-warn { color: var(--look-text); }
+.deck[data-eff="callouts"] .dk-value.is-warn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 5px 1px 0; border-radius: 50%; background: var(--look); }
+.deck[data-eff="callouts"] .dk-code { font: 600 10.5px/1.3 var(--font); color: var(--text-3); }
+.deck[data-eff="callouts"].has-focus .dk-label:not(.is-hot) { opacity: .45; }
+.deck[data-eff="callouts"].has-focus .dk-mark:not(.is-hot) { opacity: .45; }
+@media (hover: hover) and (pointer: fine) { .deck[data-eff="callouts"] .dk-label:hover .dk-title { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; } }
+
+/* ---------- Numbers: a marker on each part and a list of what they are ---------- */
+.deck[data-eff="numbers"] .dk-mark {
+  display: grid; place-items: center; width: 22px; height: 22px; margin: -11px 0 0 -11px; box-sizing: border-box; border-radius: 50%;
+  background: var(--dk-ink); color: #FFFFFF; font: 650 11.5px/1 var(--font); font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 2px 8px rgba(0, 0, 0, .28); pointer-events: auto; cursor: pointer;
+}
+.deck[data-eff="numbers"] .dk-mark::before { content: attr(data-n); }
+.deck[data-eff="numbers"] .dk-mark.is-warn { background: var(--look); color: #1B1B1F; }
+.deck[data-eff="numbers"] .dk-mark.is-behind { background: #FFFFFF; color: var(--dk-ink); box-shadow: inset 0 0 0 1.5px var(--dk-ink), 0 0 0 2px #FFFFFF; }
+.deck[data-eff="numbers"] .dk-mark.is-hot { box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 6px color-mix(in srgb, var(--good) 80%, transparent), 0 2px 8px rgba(0, 0, 0, .28); }
+.deck[data-eff="numbers"].has-focus .dk-mark:not(.is-hot) { opacity: .5; }
+.deck[data-eff="numbers"] .dk-legend {
+  display: block; position: absolute; top: 16px; left: 16px; width: 240px; box-sizing: border-box; margin: 0; padding: 6px; list-style: none;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px); box-shadow: 0 10px 28px rgba(0, 0, 0, .07); pointer-events: auto;
+}
+.dk-legend li { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 9px; padding: 5px 7px; border-radius: 8px; cursor: pointer; font: 500 12.5px/1.25 var(--font); color: var(--text); }
+.dk-legend li i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--dk-ink); color: #FFFFFF; font: normal 650 10.5px/1 var(--font); }
+.dk-legend li b { font-weight: 550; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-legend li b small { margin-left: 4px; color: var(--text-3); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; }
+.dk-legend li span { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.dk-legend li span.is-warn { color: var(--look-text); font-weight: 600; }
+.dk-legend li.is-hot { background: var(--sel); }
+.deck[data-eff="numbers"][data-wide="false"] .dk-legend { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; padding: 4px; }
+.deck[data-eff="numbers"][data-wide="false"] .dk-legend li { padding: 3px 6px; font-size: 12.5px; gap: 8px; }
+
+/* ---------- Quiet: dots until a part is pointed at or picked, then one card ---------- */
+.deck[data-eff="focus"] .dk-mark {
+  display: block; width: 10px; height: 10px; margin: -5px 0 0 -5px; box-sizing: border-box; border-radius: 50%;
+  background: #FFFFFF; box-shadow: inset 0 0 0 2.5px var(--dk-ink), 0 0 0 2px rgba(255, 255, 255, .55), 0 1px 4px rgba(0, 0, 0, .3);
+  pointer-events: auto; cursor: pointer;
+}
+.deck[data-eff="focus"] .dk-mark::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
+.deck[data-eff="focus"] .dk-mark.is-warn { background: var(--look); box-shadow: inset 0 0 0 2.5px var(--look-text), 0 0 0 2px rgba(255, 255, 255, .55), 0 1px 4px rgba(0, 0, 0, .3); }
+.deck[data-eff="focus"] .dk-mark.is-hot { background: var(--dk-ink); box-shadow: 0 0 0 2.5px #FFFFFF, 0 0 0 7px color-mix(in srgb, var(--good) 75%, transparent); }
+.deck[data-eff="focus"] .dk-label { visibility: hidden; }
+.deck[data-eff="focus"] .dk-label.is-named { visibility: visible; }
+.deck[data-eff="focus"] .dk-label {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; box-sizing: border-box; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 0 0 1px var(--line), 0 2px 8px rgba(0, 0, 0, .12);
+  font: 600 12px/1 var(--font); backdrop-filter: blur(6px);
+}
+.deck[data-eff="focus"] .dk-label .dk-value { color: var(--text-2); font-weight: 500; }
+.deck[data-eff="focus"] .dk-label .dk-value.is-warn { color: var(--look-text); font-weight: 650; }
+.deck[data-eff="focus"] .dk-label .dk-code { order: -1; font-size: 10.5px; color: var(--text-3); }
+.deck[data-eff="focus"] .dk-card {
+  display: flex; flex-direction: column; gap: 2px; min-width: 168px; max-width: 250px; box-sizing: border-box; padding: 12px 14px 13px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); opacity: 0; transition: opacity .18s var(--ease-out); pointer-events: none;
+}
+.deck[data-eff="focus"] .dk-card.is-shown { opacity: 1; }
+.dk-c-title { font: 600 14px/1.3 var(--font); letter-spacing: -.01em; }
+.dk-c-sub { color: var(--text-2); font: 500 12.5px/1.35 var(--font); }
+.dk-c-code { color: var(--text-3); font: 600 10.5px/1.4 var(--font); letter-spacing: .06em; text-transform: uppercase; }
+.dk-c-value { margin-top: 8px; font: 500 28px/1 var(--font); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dk-c-value.is-warn { color: var(--look-text); }
+
+/* ---------- Tags: flat on the part, turned with it ---------- */
+.deck[data-eff="tags"] .dk-label {
+  display: inline-flex; align-items: stretch; transform-origin: 0 0; border-radius: 6px; overflow: hidden;
+  background: rgba(22, 23, 26, .86); color: #F4F3F0; font: 600 12px/1 var(--font); letter-spacing: -.005em;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .24), 0 4px 14px rgba(0, 0, 0, .28); backdrop-filter: blur(4px);
+}
+.deck[data-eff="tags"] .dk-label > span { display: flex; align-items: center; padding: 6px 8px; }
+.deck[data-eff="tags"] .dk-value { background: rgba(255, 255, 255, .13); color: var(--good); }
+.deck[data-eff="tags"] .dk-value.is-warn { background: var(--look); color: #1B1B1F; }
+.deck[data-eff="tags"] .dk-code { order: -1; background: rgba(255, 255, 255, .13); color: var(--good); font-size: 10.5px; letter-spacing: .07em; }
+.deck[data-eff="tags"] .dk-label.is-behind { opacity: .5; }
+.deck[data-eff="tags"] .dk-label.is-hot { box-shadow: 0 0 0 2px var(--good), 0 4px 14px rgba(0, 0, 0, .3); }
+.deck[data-eff="tags"].has-focus .dk-label:not(.is-hot) { opacity: .4; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dk-halo, .dk-line, .deck .dk-label, .deck .dk-mark, .deck[data-eff="focus"] .dk-card { transition: none; }
+}

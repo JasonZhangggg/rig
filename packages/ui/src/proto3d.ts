@@ -7,3 +7,4 @@ export { makeGpu, makeCooler, makeRam, makeFan, realMaterial, plainFan, type Kit
 export { makeBoard } from "./board3d";
 export { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 export { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+export type { LabelStyle } from "./labelStyles";

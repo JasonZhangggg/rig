@@ -10,6 +10,7 @@ import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { placeLabels } from "./sceneLabels";
+import { createLabelDeck, type DeckPoint, type LabelStyle } from "./labelStyles";
 import { makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
@@ -57,6 +58,8 @@ export interface PCScene {
   setSpin(v: boolean): void;
   /** The unit the part labels show temperatures in. */
   setTempUnit(unit: TempUnit): void;
+  /** How the parts are labeled: today's pins, or one of the styles in labelStyles.ts. */
+  setLabelStyle(style: LabelStyle): void;
   /** Triangles and draw calls in the last frame. */
   stats(): { triangles: number; calls: number };
   dispose(): void;
@@ -103,6 +106,10 @@ export function createScene(
   const focusBox = document.createElement("div");
   focusBox.className = "part-box";
   layer.appendChild(focusBox);
+  // The other label styles. Until one is chosen in the app, the last one picked in this browser is kept (rig.labelStyle).
+  const savedStyle = (() => { try { return localStorage.getItem("rig.labelStyle") as LabelStyle | null; } catch { return null; } })();
+  const deck = createLabelDeck(layer, savedStyle ?? "pins", { onPick: (id) => select(id), onHover: (id) => hoverFromScene(id) });
+  layer.classList.toggle("uses-deck", deck.style !== "pins");
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -224,6 +231,8 @@ export function createScene(
     labels: {} as Record<string, Label>,
     pulses: [] as THREE.Sprite[],
     tempUnit: "c" as TempUnit,
+    /** The surface tags lie on: the motherboard, which faces the glass. */
+    surface: null as THREE.Object3D | null,
   };
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
   const theme = (): SceneTheme => state.theme!;
@@ -370,6 +379,17 @@ export function createScene(
       const html = part ? labelHTML(part) : "";
       if (part && l.el.innerHTML !== html) { l.el.innerHTML = html; labelsDirty = true; }
     }
+    syncDeck();
+  }
+
+  function syncDeck() {
+    // In the order the parts list beside the view uses, so the numbers read the same in both.
+    const order = Object.keys(parts());
+    const ids = Object.keys(state.labels).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    deck.setItems(ids.flatMap((id) => {
+      const p = parts()[id];
+      return p ? [{ id, title: p.type, sub: p.name, value: p.temp ? formatTemp(p.temp, state.tempUnit, { mark: "degree" }) : undefined, warn: p.warn }] : [];
+    }));
   }
 
   function addLabel(partId: string, anchor: THREE.Object3D, pos: Vec3) {
@@ -400,6 +420,7 @@ export function createScene(
     anchor.add(at);
     state.labels[partId] = { pin, dot, lead, el, anchor: at, w: 0, h: 0, hidden: false };
     labelsDirty = true;
+    syncDeck();
   }
 
   // ---------- tower ----------
@@ -438,6 +459,7 @@ export function createScene(
     if (m2) board.group.remove(m2.group);
     const mb = onBoard();
     mb.add(board.group);
+    state.surface = board.group;
     add(mb, "motherboard", [0.4, 0, 0]);
     const ssd = onBoard();
     if (m2) ssd.add(m2.group);
@@ -681,7 +703,8 @@ export function createScene(
     for (const l of Object.values(state.labels)) l.pin.remove();
     root = new THREE.Group();
     scene.add(root);
-    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = [];
+    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = []; state.surface = null;
+    syncDeck();
     const th = theme();
     scene.background = th.transparent ? null : new THREE.Color(th.bg);
     scene.fog = th.transparent ? null : new THREE.Fog(th.bg, 18, 38);
@@ -758,10 +781,12 @@ export function createScene(
   function readFit() {
     const cs = getComputedStyle(container);
     const raw = cs.getPropertyValue("--fit-inset").trim();
-    if (!raw) { fit = null; return; }
-    const [t, r = t, b = t, l = r] = raw.split(/\s+/).map(parseFloat);
+    // A label style with columns or a list keeps room for them beside the PC.
+    const room = deck.room(container.clientWidth);
+    if (!raw && !room) { fit = null; return; }
+    const [t, r = t, b = t, l = r] = raw ? raw.split(/\s+/).map(parseFloat) : [36, 36, 36, 36];
     const x = parseFloat(cs.getPropertyValue("--fit-x"));
-    fit = { t, r, b, l, x: Number.isFinite(x) ? x : 0.5 };
+    fit = { t: t + (room?.t ?? 0), r: r + (room?.r ?? 0), b: b + (room?.b ?? 0), l: l + (room?.l ?? 0), x: Number.isFinite(x) ? x : 0.5 };
   }
 
   // The PC's outline on screen from a camera dist away along dir, over the whole of the slow sway.
@@ -962,13 +987,14 @@ export function createScene(
       for (const [, l] of all) { l.w = l.el.offsetWidth; l.h = l.el.offsetHeight; }
       labelsDirty = false;
     }
-    const shown = all.filter(([, l]) => l.w > 0);
+    const shown = deck.style === "pins" ? all.filter(([, l]) => l.w > 0) : all;
     if (!shown.length) return;
     const w = stageW, h = stageH;
     const near = camera.position.distanceTo(model.center) - model.radius;
     // Every few frames, labels whose part is behind something solid fade back.
     const look = labelFrame++ % 6 === 0;
     const pins = [];
+    const deckPoints: DeckPoint[] = [];
     for (const [id, l] of shown) {
       l.anchor.getWorldPosition(_a);
       const dist = _a.distanceTo(camera.position);
@@ -981,12 +1007,17 @@ export function createScene(
         });
         l.hidden = !!hit;
       }
+      if (deck.style !== "pins") deckPoints.push(deckPoint(id, l, w, h, (dist - near) / (2 * model.radius)));
       _a.project(camera);
       const off = _a.z > 1 || Math.abs(_a.x) > 1.1 || Math.abs(_a.y) > 1.1;
       l.pin.classList.toggle("is-off", off);
       l.pin.classList.toggle("is-behind", l.hidden);
       if (off) continue;
       pins.push({ id, x: (_a.x + 1) / 2 * w, y: (1 - _a.y) / 2 * h, depth: (dist - near) / (2 * model.radius), w: l.w, h: l.h });
+    }
+    if (deck.style !== "pins") {
+      deck.layout(deckPoints, { width: w, height: h, box: modelBox(w, h), hovered: state.hovered, selected: state.selected });
+      return;
     }
     _a.copy(model.center).project(camera);
     const placed = placeLabels(pins, { width: w, height: h, cx: (_a.x + 1) / 2 * w }, sides);
@@ -1012,6 +1043,38 @@ export function createScene(
     if (layer.style.getPropertyValue("--ly") !== ly) layer.style.setProperty("--ly", ly);
   }
   document.fonts?.ready.then(() => { labelsDirty = true; invalidate(); });
+
+  // Where a label's anchor is for the deck, and for tags, which way the board's surface runs on screen.
+  const _s = new THREE.Vector3(), _q = new THREE.Quaternion(), _r = new THREE.Vector3(), _u = new THREE.Vector3();
+  function deckPoint(id: string, l: Label, w: number, h: number, depth: number): DeckPoint {
+    const toScreen = (v: THREE.Vector3): [number, number, number] => { _s.copy(v).project(camera); return [(_s.x + 1) / 2 * w, (1 - _s.y) / 2 * h, _s.z]; };
+    const [x, y, z] = toScreen(_a);
+    const p: DeckPoint = { id, x, y, depth, behind: l.hidden, off: z > 1 || x < -0.05 * w || x > 1.05 * w || y < -0.05 * h || y > 1.05 * h };
+    if (state.surface) {
+      state.surface.getWorldQuaternion(_q);
+      const step = 0.1;
+      const [rx, ry] = toScreen(_r.set(step, 0, 0).applyQuaternion(_q).add(_a));
+      const [dx, dy] = toScreen(_u.set(0, -step, 0).applyQuaternion(_q).add(_a));
+      p.ux = [(rx - x) / step, (ry - y) / step];
+      p.uy = [(dx - x) / step, (dy - y) / step];
+    }
+    return p;
+  }
+  // The PC's outline on screen, from its bounds (kept until the build or the explode changes).
+  const _mb = new THREE.Box3();
+  let mbKey = "";
+  function modelBox(w: number, h: number) {
+    const k = `${root.uuid}:${state.explodeT.toFixed(3)}`;
+    if (k !== mbKey) { _mb.setFromObject(root); mbKey = k; }
+    if (_mb.isEmpty()) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k2 = 0; k2 < 8; k2++) {
+      _s.set(k2 & 1 ? _mb.max.x : _mb.min.x, k2 & 2 ? _mb.max.y : _mb.min.y, k2 & 4 ? _mb.max.z : _mb.min.z).project(camera);
+      const sx = (_s.x + 1) / 2 * w, sy = (1 - _s.y) / 2 * h;
+      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
+    }
+    return { x0, y0, x1, y1 };
+  }
 
   // The part's outline on screen: its 3D bounds projected, padded a little, and drawn as a frame.
   const _box = new THREE.Box3(), _part = new THREE.Box3(), _c = new THREE.Vector3();
@@ -1169,6 +1232,14 @@ export function createScene(
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; invalidate(); },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); invalidate(); },
+    setLabelStyle(style) {
+      deck.setStyle(style);
+      layer.classList.toggle("uses-deck", style !== "pins");
+      try { localStorage.setItem("rig.labelStyle", style); } catch { /* private window */ }
+      labelsDirty = true;
+      readFit(); applyFit();
+      invalidate();
+    },
     dispose() {
       gone = true;
       cancelAnimationFrame(raf);

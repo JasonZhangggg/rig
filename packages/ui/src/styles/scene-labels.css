@@ -1,3 +1,4 @@
+@import "./label-styles.css";
 /* The 3D view's part labels. A pin sits on the part, a hairline leader runs out to the side, and the label
    hangs at its end, a little smaller and softer the farther its part is. scene.ts places each one with transforms. */
 .scene-labels { --lx: -1px; --ly: 2px; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
