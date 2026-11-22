@@ -7,7 +7,7 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import type { ActionCall } from "./actions";
 import {
   ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, readJson, unreachableText,
-  type AddManualRequest, type ChatRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
+  type AddManualRequest, type BoardLayoutReply, type ChatRequest, type ReadLayoutRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
 } from "./api";
 import type { DataExport } from "./export";
 import type { Account, Change, ChatEvent, ChatMessage, Log, Range, RigClient } from "./client";
@@ -259,6 +259,11 @@ export class CloudClient implements RigClient {
   }
 
   async removeManual(id: string, mid: string) { await this.req(paths.manual(id, mid), { method: "DELETE" }); }
+
+  boardLayout(id: string, maker: string, model: string) { return this.req<BoardLayoutReply>(paths.boardLayout(id, maker, model)); }
+  readBoardLayout(id: string, mid: string, page: ReadLayoutRequest) {
+    return this.req<BoardLayoutReply>(paths.manualLayout(id, mid), { method: "POST", body: JSON.stringify(page) });
+  }
 
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
   async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts; probes?: ProbeStatus[] }) {

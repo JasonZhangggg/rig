@@ -3,6 +3,7 @@
 
 import type { Change, ChatEvent, ChatMessage } from "./client";
 import type { Game, HistoryPoint, PC } from "./model";
+import type { BoardLayout } from "./boardLayout";
 import type { ManualDiagram, ManualPage, ManualTarget } from "./manuals";
 import type { PCEvent, RecordingRequest } from "./recordings";
 import type { ProbeStatus } from "./probes";
@@ -72,6 +73,8 @@ export const paths = {
   manualPdf: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pdf`,
   manualPages: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pages`,
   manualPage: (id: string, mid: string, n: number) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pages/${n}`,
+  boardLayout: (id: string, maker: string, model: string) => `/machines/${encodeURIComponent(id)}/board-layout?maker=${encodeURIComponent(maker)}&model=${encodeURIComponent(model)}`,
+  manualLayout: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/layout`,
   chat: "/chat",
   config: "/config",
   // Better Auth
@@ -96,9 +99,16 @@ export const paths = {
  * - GET    manualPage(id, mid, n)     -> ManualPage (404 when not read)
  * - GET    manualSearch(id, q, mid?)  -> ManualHit[]
  * - DELETE manual(id, mid)            -> 204
+ * - GET    boardLayout(id, maker, model) -> BoardLayoutReply (the board model's shared layout, read once for everyone)
+ * - POST   manualLayout(id, mid)      body ReadLayoutRequest -> BoardLayoutReply (reads the drawing unless it's read or being read)
  */
 export interface AddManualRequest { target: ManualTarget; name: string; bytes: number }
 export interface SaveManualPagesRequest { pages: ManualPage[]; diagrams: ManualDiagram[] }
+
+/** Where a board model's layout stands: read (with it), being read by another PC, failed, or never tried. */
+export interface BoardLayoutReply { status: "done" | "reading" | "failed" | "none"; layout?: BoardLayout }
+/** The manual's layout page as a picture, rendered by the app, with that page's and the next page's text. */
+export interface ReadLayoutRequest { page: number; image: string; mediaType: "image/png" | "image/jpeg"; width: number; height: number; text?: string }
 
 /** Body of DELETE /api/me. The person types this word to confirm. */
 export interface DeleteAccountRequest { confirm: typeof DELETE_WORD }

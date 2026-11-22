@@ -1,6 +1,8 @@
 // Real-PC 3D prototype: /proto/?build=<preset> for the PC, /proto/?board=<item kind or id> for the board.
 import "@rig/ui/styles.css";
-import { coolers, gpus, resolveBuild, type BuildInput, type PC } from "@rig/core";
+import { coolers, gpus, layoutFromReading, resolveBuild, type BuildInput, type LayoutReading, type PC } from "@rig/core";
+import msiRead from "../../../packages/core/test/fixtures/layout-msi-pro-b650-a.json";
+import asrockRead from "../../../packages/core/test/fixtures/layout-asrock-b650m-pro-rs.json";
 import { DemoClient } from "@rig/core/demo";
 import { createBoardScene, createScene, makeCooler, makeGpu, makeRam, plainFan, realMaterial, sceneTheme, type Kit } from "@rig/ui/proto3d";
 
@@ -93,7 +95,11 @@ async function main() {
   const pcs = await new DemoClient().machines();
   const atlas = pcs.find((p: PC) => p.kind === "tower" && p.parts)!;
   if (q.has("board")) {
-    const board = resolveBuild(presets.atlas.input).board;
+    // &read=msi or &read=asrock: a layout read from that board's manual drawing, as the server reads it.
+    const read = q.get("read");
+    const fromManual = read === "msi" ? layoutFromReading({ maker: "MSI", model: "PRO B650-A WIFI", page: 27, reading: msiRead as LayoutReading })
+      : read === "asrock" ? layoutFromReading({ maker: "ASRock", model: "B650M Pro RS WiFi", page: 10, reading: asrockRead as LayoutReading }) : undefined;
+    const board = fromManual ? resolveBuild({ board: { manufacturer: "", product: fromManual.model }, boardLayout: fromManual }).board : resolveBuild(presets.atlas.input).board;
     const s = createBoardScene(stage, board);
     const sel = q.get("board")!;
     if (sel) s.highlight(board.items.some((i) => i.id === sel) ? { id: sel } : { kind: sel as never });

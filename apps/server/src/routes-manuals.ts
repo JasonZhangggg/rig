@@ -2,12 +2,13 @@
 // needs an account, and the PC must be on it, like recordings.
 
 import {
-  MANUAL_MAX_BYTES,
-  type AddManualRequest, type Manual, type ManualHit,
+  MANUAL_MAX_BYTES, boardKey,
+  type AddManualRequest, type BoardLayoutReply, type LayoutReading, type Manual, type ManualHit, type ReadLayoutRequest,
 } from "@rig/core";
+import { LAYOUT_MODEL, LAYOUT_RETRY_MS, LAYOUT_STALE_MS, readBoardLayout } from "./boardLayout";
 import type { AppHono, C } from "./app";
 import type { Streamer } from "./chat";
-import type { MachineRow } from "./db";
+import type { BoardLayoutRow, MachineRow } from "./db";
 import type { Env } from "./env";
 import {
   MISS_DAYS, checkPages, checkTarget, findManualAddress, openPdf, pdfStream, sourceKey, trimSnippet,
@@ -153,5 +154,60 @@ export function manualRoutes(app: AppHono, d: ManualDeps) {
     const mid = c.req.param("mid");
     const ok = validId(mid) && await c.get("store").removeManual(c.get("user").id, m.id, mid);
     return ok ? c.body(null, 204) : noManual(c);
+  });
+
+  // ----- Board layouts: each board model's drawing is read once, for everyone -----
+
+  const reply = (row: BoardLayoutRow | null, now: Date): BoardLayoutReply => {
+    if (!row) return { status: "none" };
+    if (row.status === "done" && row.reading) return { status: "done", layout: { maker: row.maker, model: row.model, page: row.page ?? 1, reading: row.reading as LayoutReading } };
+    if (row.status === "reading" && now.getTime() - row.started_at.getTime() < LAYOUT_STALE_MS) return { status: "reading" };
+    return row.status === "failed" && now.getTime() - row.updated_at.getTime() < LAYOUT_RETRY_MS ? { status: "failed" } : { status: "none" };
+  };
+
+  app.get("/api/machines/:id/board-layout", async (c) => {
+    const m = await d.machine(c);
+    if (!m) return d.notFound(c);
+    const maker = (c.req.query("maker") ?? "").trim(), model = (c.req.query("model") ?? "").trim();
+    if (!maker || !model || maker.length > 80 || model.length > 120) return c.json({ message: "Give the board's maker and model." }, 400);
+    return c.json(reply(await c.get("store").boardLayout(boardKey(maker, model)), d.now()));
+  });
+
+  // The app sends the manual's layout page as a picture. The board is the
+  // manual's, not the request's, and only a manual found on the maker's site
+  // counts, so what everyone shares comes from the maker's own manual.
+  app.post(`${base}/:mid/layout`, async (c) => {
+    const m = await d.machine(c);
+    if (!m) return d.notFound(c);
+    const man = await manualOf(c, m);
+    if (!man) return noManual(c);
+    if (man.kind !== "motherboard" || man.source !== "found") return c.json({ message: "Rig reads layouts from a motherboard manual it found on the maker's site." }, 400);
+    const body = await c.req.json().catch(() => null) as Partial<ReadLayoutRequest> | null;
+    const page = body?.page;
+    if (typeof page !== "number" || !Number.isInteger(page) || page < 1 || (man.pageCount && page > man.pageCount)) return c.json({ message: "page must be one of the manual's pages." }, 400);
+    if (body?.mediaType !== "image/png" && body?.mediaType !== "image/jpeg") return c.json({ message: "The page must be a PNG or JPEG picture." }, 400);
+    if (typeof body.image !== "string" || body.image.length < 100 || !/^[A-Za-z0-9+/=]+$/.test(body.image.slice(0, 2000))) return c.json({ message: "image must be the picture as base64." }, 400);
+    const w = body.width, h = body.height;
+    if (typeof w !== "number" || typeof h !== "number" || w < 200 || h < 200 || w > 2600 || h > 2600) return c.json({ message: "The picture must be 200 to 2600 pixels a side." }, 400);
+    const text = typeof body.text === "string" ? body.text.slice(0, 6000) : undefined;
+
+    const store = c.get("store");
+    const key = boardKey(man.maker, man.model);
+    const now = d.now();
+    const had = reply(await store.boardLayout(key), now);
+    if (had.status !== "none") return c.json(had, had.status === "reading" ? 202 : 200);
+    if (!c.env.ANTHROPIC_API_KEY) return c.json({ message: "Rig can't read board layouts on this server yet." }, 503);
+    if (!(await store.claimBoardLayout(key, { maker: man.maker, model: man.model, page, userId: c.get("user").id }, now, LAYOUT_STALE_MS, LAYOUT_RETRY_MS))) {
+      return c.json(reply(await store.boardLayout(key), d.now()), 202);
+    }
+    try {
+      const read = await readBoardLayout(d.claude(c.env), { image: body.image, mediaType: body.mediaType, width: w, height: h, text }, { maker: man.maker, model: man.model }, c.req.raw.signal);
+      await store.finishBoardLayout(key, { reading: read.reading ?? undefined, problem: read.problem, reader: LAYOUT_MODEL, inputTokens: read.inputTokens, outputTokens: read.outputTokens, ms: read.ms }, d.now());
+    } catch {
+      // The API failed: let the next PC try again rather than wait a week.
+      await store.finishBoardLayout(key, { problem: "api" }, new Date(0));
+      return c.json({ message: "Rig couldn't read the board's layout just now. It'll try again later." }, 502);
+    }
+    return c.json(reply(await store.boardLayout(key), d.now()));
   });
 }

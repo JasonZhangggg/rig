@@ -93,3 +93,48 @@ export async function renderPage(bytes: ArrayBuffer, n: number, canvas: HTMLCanv
 
 /** True when an error is a drawing that was replaced by a newer one, not a real failure. */
 export const isCancelled = (e: unknown) => e instanceof Error && e.name === "RenderingCancelledException";
+
+/**
+ * A page as a picture for the server's layout reader: drawn sharp, its white
+ * margins cut off (they cost tokens and hold nothing), then scaled so the long
+ * side is at most `maxSide` pixels.
+ */
+export async function renderForReading(bytes: ArrayBuffer, n: number, maxSide = 1568): Promise<{ image: string; mediaType: "image/png"; width: number; height: number }> {
+  const doc = await open(bytes);
+  const page = await doc.getPage(Math.min(Math.max(1, n), doc.numPages));
+  const base = page.getViewport({ scale: 1 });
+  const view = page.getViewport({ scale: (maxSide * 1.5) / Math.max(base.width, base.height) });
+  const big = document.createElement("canvas");
+  big.width = Math.floor(view.width);
+  big.height = Math.floor(view.height);
+  const ctx = big.getContext("2d", { willReadFrequently: true })!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, big.width, big.height);
+  await page.render({ canvas: big, viewport: view }).promise;
+  page.cleanup();
+
+  // The ink's bounding box, with a small margin.
+  const { data, width, height } = ctx.getImageData(0, 0, big.width, big.height);
+  let x0 = width, y0 = height, x1 = -1, y1 = -1;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      if (data[i] < 235 || data[i + 1] < 235 || data[i + 2] < 235) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) { x0 = 0; y0 = 0; x1 = width - 1; y1 = height - 1; }
+  const pad = 12;
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(width - 1, x1 + pad); y1 = Math.min(height - 1, y1 + pad);
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+  const s = Math.min(1, maxSide / Math.max(cw, ch));
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(cw * s));
+  out.height = Math.max(1, Math.round(ch * s));
+  const o = out.getContext("2d")!;
+  o.imageSmoothingQuality = "high";
+  o.drawImage(big, x0, y0, cw, ch, 0, 0, out.width, out.height);
+  const url = out.toDataURL("image/png");
+  return { image: url.slice(url.indexOf(",") + 1), mediaType: "image/png", width: out.width, height: out.height };
+}

@@ -100,6 +100,8 @@ export interface BuildInput {
   /** null: no graphics card (the processor's own graphics). Missing: not known yet, a typical card. */
   gpu?: null | { name: string; /** PCI subsystem vendor id ("1043"), which names the card's maker. */ subsysVendor?: string; subsysId?: string };
   board?: { manufacturer: string; product: string };
+  /** The board's layout read from its manual (boardLayout.ts), used when Rig has no record of its own for it. */
+  boardLayout?: Omit<BoardShape, "source">;
   memory?: { slotsTotal?: number; modules: { partNumber?: string; manufacturer?: string; slot?: string }[] };
   picks?: { case?: string; cooler?: string; gpu?: string };
 }
@@ -216,7 +218,8 @@ export function resolveBuild(input: BuildInput): BuildShape {
   const product = input.board?.product ?? "";
   const known = boards[product.toUpperCase()];
   const form: BoardShape["form"] = /\bITX\b|-I\b/i.test(product) ? "itx" : /\bM\b|M-|MATX|\dM\b/i.test(product) ? "matx" : "atx";
-  const board: BoardShape = known ? { ...known, source: "detected" } : typicalBoard(form, product ? `${input.board?.manufacturer} ${product}` : "Motherboard", product ? "estimated" : "generic");
+  const fromManual = input.boardLayout;
+  const board: BoardShape = known ? { ...known, source: "detected" } : fromManual ? { ...fromManual, source: "detected" } : typicalBoard(form, product ? `${input.board?.manufacturer} ${product}` : "Motherboard", product ? "estimated" : "generic");
 
   // Graphics card: the person's pick, the one card Rig knows for this chip and maker, or a typical card of the chip.
   let gpu: GpuShape | undefined;
