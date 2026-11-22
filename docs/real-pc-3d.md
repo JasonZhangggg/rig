@@ -1,6 +1,17 @@
 # Making the 3D PC match the real one
 
-Prototype on branch `claude/real-pc-3d`. Open `/proto/?build=north` (or `generic`, `atlas`, `o11`, `h5`) and `/proto/?board=fp` (or `fan`, `m2`, `usb`, or any item id) with `pnpm dev:web`.
+Prototype on branch `claude/real-pc-3d`. Open `/proto/?build=north` (or `generic`, `atlas`, `o11`, `h5`; add `&ink` for the old drawn look), `/proto/?board=fp` (or `fan`, `m2`, `usb`, or any item id) and one part alone with `/proto/?part=gpu:asus-tuf-4070s-oc` (`cooler:noctua-nh-d15`, `ram:CMT64GX5M4B6000C30`; `&view=fans` turns a card over) with `pnpm dev:web`.
+
+## How the parts are drawn
+
+The PC view's "real" finish builds each part from its record plus a `look` that names the product's design:
+
+- **`parts3d.ts`:** fans (frames, pads, swept blades, Axial-tech rings, TORX pairs, hub stickers), graphics cards (TUF, ROG Strix, Ventus, Founders Edition: backplate art and vents, fin stack, heatpipes, shroud trim, the lit name on the edge that faces the glass), tower coolers (NH-D15 beige and brown, Peerless Assassin), the LF3 pump and radiator, the Wraith, and memory (Vengeance, Vengeance RGB, Dominator).
+- **`case3d.ts`:** cases (North walnut slats, O11 glass front, H5 Flow perforated front), glass, shroud, feet and the power supply.
+- **`board3d.ts`:** the board itself (printed traces, silkscreen names, plated holes, power stage parts) and every slot and header, shared by the tower and the board view.
+- **The board view (`boardScene.ts`):** uses the app's own part labels. One header with named pins gets a pin map beside the board, colored by what plugs in, with the same colors on the pins in 3D.
+
+Everything is drawn from code and canvas textures; no model files or maker artwork.
 
 ## Recommendation
 

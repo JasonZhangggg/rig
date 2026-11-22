@@ -27,6 +27,8 @@ export interface CaseShape {
   fans: { front: number; top: number; rear: number; side: number; bottom: number; size: 120 | 140 };
   /** Wood strips on the front, like the Fractal North. */
   trim?: string;
+  /** Which of the 3D view's drawn designs this case is ("north", "o11-evo", "h5-flow"); missing: a plain case. */
+  look?: string;
 }
 
 export interface GpuShape {
@@ -35,6 +37,8 @@ export interface GpuShape {
   length: number; height: number; thick: number;
   fans: number; fanMm: number;
   shroud: string; backplate: boolean;
+  /** The maker's cooler design the 3D view draws ("tuf", "strix", "ventus", "fe"); missing: a plain card. */
+  look?: string;
 }
 
 export interface CoolerShape {
@@ -47,11 +51,15 @@ export interface CoolerShape {
   radiator?: 240 | 280 | 360;
   /** Fins or pump, and the fans' own color when it isn't the theme's. */
   color: string; fanColor?: string;
+  /** The drawn design ("nh-d15", "pa120", "lf3", "wraith"); missing: a plain cooler of its kind. */
+  look?: string;
 }
 
 export interface MemoryShape {
   model: string; source: ShapeSource;
   height: number; color: string; rgb: boolean;
+  /** The drawn heatspreader ("vengeance", "vengeance-rgb", "dominator"); missing: a plain stick. */
+  look?: string;
   /** Slot names that hold a stick ("A2", "B2"). */
   slots: string[];
 }
@@ -100,16 +108,16 @@ export interface BuildInput {
 // Sizes are the makers' own figures where their pages give them (checked 2026-11-22).
 
 export const cases: Record<string, Omit<CaseShape, "source">> = {
-  "fractal-north": { model: "Fractal Design North", w: 215, h: 469, d: 447, front: "mesh", layout: "standard", color: "#2b2b2e", fans: { front: 2, top: 0, rear: 1, side: 0, bottom: 0, size: 140 }, trim: "#8a5a35" },
-  "lianli-o11-evo": { model: "Lian Li O11 Dynamic EVO", w: 285, h: 459, d: 465, front: "glass", layout: "dual-chamber", color: "#1d1e21", fans: { front: 0, top: 3, rear: 1, side: 3, bottom: 3, size: 120 } },
-  "nzxt-h5-flow": { model: "NZXT H5 Flow", w: 227, h: 464, d: 446, front: "mesh", layout: "standard", color: "#ececec", fans: { front: 2, top: 0, rear: 1, side: 0, bottom: 1, size: 120 } },
+  "fractal-north": { model: "Fractal Design North", w: 215, h: 469, d: 447, front: "mesh", layout: "standard", color: "#2b2b2e", fans: { front: 2, top: 0, rear: 1, side: 0, bottom: 0, size: 140 }, trim: "#8a5a35", look: "north" },
+  "lianli-o11-evo": { model: "Lian Li O11 Dynamic EVO", w: 285, h: 459, d: 465, front: "glass", layout: "dual-chamber", color: "#1d1e21", fans: { front: 0, top: 3, rear: 1, side: 3, bottom: 3, size: 120 }, look: "o11-evo" },
+  "nzxt-h5-flow": { model: "NZXT H5 Flow", w: 227, h: 464, d: 446, front: "mesh", layout: "standard", color: "#ececec", fans: { front: 2, top: 0, rear: 1, side: 0, bottom: 1, size: 120 }, look: "h5-flow" },
 };
 
 export const gpus: Record<string, Omit<GpuShape, "source"> & { chip: string; maker: string }> = {
-  "asus-tuf-4070s-oc": { model: "ASUS TUF RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 301, height: 139, thick: 63, fans: 3, fanMm: 92, shroud: "#3a3c40", backplate: true },
-  "asus-strix-4070s-oc": { model: "ASUS ROG Strix RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 339, height: 149, thick: 62, fans: 3, fanMm: 98, shroud: "#2a2b30", backplate: true },
-  "msi-ventus2x-4070s-oc": { model: "MSI RTX 4070 SUPER Ventus 2X OC", chip: "RTX 4070 SUPER", maker: "1462", length: 242, height: 125, thick: 43, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true },
-  "nvidia-fe-4070s": { model: "NVIDIA RTX 4070 SUPER Founders Edition", chip: "RTX 4070 SUPER", maker: "10de", length: 244, height: 112, thick: 40, fans: 2, fanMm: 90, shroud: "#2b2c2e", backplate: true },
+  "asus-tuf-4070s-oc": { model: "ASUS TUF RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 301, height: 139, thick: 63, fans: 3, fanMm: 92, shroud: "#3a3c40", backplate: true, look: "tuf" },
+  "asus-strix-4070s-oc": { model: "ASUS ROG Strix RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 339, height: 149, thick: 62, fans: 3, fanMm: 98, shroud: "#2a2b30", backplate: true, look: "strix" },
+  "msi-ventus2x-4070s-oc": { model: "MSI RTX 4070 SUPER Ventus 2X OC", chip: "RTX 4070 SUPER", maker: "1462", length: 242, height: 125, thick: 43, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true, look: "ventus" },
+  "nvidia-fe-4070s": { model: "NVIDIA RTX 4070 SUPER Founders Edition", chip: "RTX 4070 SUPER", maker: "10de", length: 244, height: 112, thick: 40, fans: 2, fanMm: 90, shroud: "#2b2c2e", backplate: true, look: "fe" },
 };
 
 /** A typical card of each chip, for when the exact card isn't known. */
@@ -120,18 +128,18 @@ const chipTypical: Record<string, Pick<GpuShape, "length" | "height" | "thick" |
 };
 
 export const coolers: Record<string, Omit<CoolerShape, "source">> = {
-  "noctua-nh-d15": { model: "Noctua NH-D15", kind: "dual-tower", height: 165, fanMm: 140, color: "#c8ccd1", fanColor: "#d9c4a3" },
-  "thermalright-pa120se": { model: "Thermalright Peerless Assassin 120 SE", kind: "dual-tower", height: 155, fanMm: 120, color: "#2c2d30" },
-  "arctic-lf3-360": { model: "Arctic Liquid Freezer III 360", kind: "aio", height: 0, fanMm: 120, radiator: 360, color: "#1f2023" },
-  "amd-wraith-prism": { model: "AMD Wraith Prism", kind: "low-profile", height: 93, fanMm: 120, color: "#2a2a2a" },
+  "noctua-nh-d15": { model: "Noctua NH-D15", kind: "dual-tower", height: 165, fanMm: 140, color: "#c8ccd1", fanColor: "#d9c4a3", look: "nh-d15" },
+  "thermalright-pa120se": { model: "Thermalright Peerless Assassin 120 SE", kind: "dual-tower", height: 155, fanMm: 120, color: "#c9ccd0", fanColor: "#1c1d20", look: "pa120" },
+  "arctic-lf3-360": { model: "Arctic Liquid Freezer III 360", kind: "aio", height: 0, fanMm: 120, radiator: 360, color: "#1f2023", look: "lf3" },
+  "amd-wraith-prism": { model: "AMD Wraith Prism", kind: "low-profile", height: 93, fanMm: 120, color: "#2a2a2a", look: "wraith" },
 };
 
 /** Memory kits named by the start of their part number, which the stick itself reports. */
-const memoryFamilies: { prefix: RegExp; model: string; height: number; color: string; rgb: boolean }[] = [
-  { prefix: /^CMK\d+GX5/i, model: "Corsair Vengeance DDR5", height: 35, color: "#1c1c1e", rgb: false },
-  { prefix: /^CMH\d+GX5/i, model: "Corsair Vengeance RGB DDR5", height: 44, color: "#1c1c1e", rgb: true },
-  { prefix: /^CMT\d+GX5/i, model: "Corsair Dominator Platinum RGB DDR5", height: 56, color: "#2a2a2c", rgb: true },
-  { prefix: /^CMP\d+GX5/i, model: "Corsair Dominator Titanium RGB DDR5", height: 57, color: "#3a3b3e", rgb: true },
+const memoryFamilies: { prefix: RegExp; model: string; height: number; color: string; rgb: boolean; look: string }[] = [
+  { prefix: /^CMK\d+GX5/i, model: "Corsair Vengeance DDR5", height: 35, color: "#1c1c1e", rgb: false, look: "vengeance" },
+  { prefix: /^CMH\d+GX5/i, model: "Corsair Vengeance RGB DDR5", height: 44, color: "#1c1c1e", rgb: true, look: "vengeance-rgb" },
+  { prefix: /^CMT\d+GX5/i, model: "Corsair Dominator Platinum RGB DDR5", height: 56, color: "#2a2a2c", rgb: true, look: "dominator" },
+  { prefix: /^CMP\d+GX5/i, model: "Corsair Dominator Titanium RGB DDR5", height: 57, color: "#3a3b3e", rgb: true, look: "dominator" },
 ];
 
 /** Board layouts by product name. Positions in mm; see BoardItem. */
@@ -237,7 +245,7 @@ export function resolveBuild(input: BuildInput): BuildShape {
     if (name) slots.push(name);
   });
   const memory: MemoryShape = fam
-    ? { model: fam.model, source: "detected", height: fam.height, color: fam.color, rgb: fam.rgb, slots }
+    ? { model: fam.model, source: "detected", height: fam.height, color: fam.color, rgb: fam.rgb, look: fam.look, slots }
     : { model: "Memory", source: mods.length ? "estimated" : "generic", height: 34, color: "#1c1c1e", rgb: false, slots: slots.length ? slots : ["A2", "B2"] };
 
   const real = (s: ShapeSource) => s === "detected" || s === "picked" || s === "catalog";

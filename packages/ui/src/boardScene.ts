@@ -1,12 +1,17 @@
-// 3D view of one motherboard, built from its layout (BoardShape in core build.ts):
-// every slot and header sits where the board's layout puts it, and headers get
-// their real pins. Picking a kind ("Fan headers") or one header lights it up,
-// dims the rest and moves the camera to it; one header also names its pins.
-// Units: 1 unit = 100 mm, the board lies in the x-y plane facing +z.
+// 3D view of one motherboard, built from its layout (BoardShape in core build.ts) with the same realistic
+// board the tower uses (board3d.ts). Picking a kind ("Fan headers") or one header lights it up and steps the
+// rest of the board back; labels hang off each lit item the way the PC view's labels do. One header with
+// named pins also gets a pin map beside the board: the pins as they sit, colored by what plugs in, and the
+// same colors on the pins in 3D so the two can be matched at a glance.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { BoardItem, BoardShape } from "@rig/core";
+import { makeBoard, pinNumber, type BoardNode } from "./board3d";
+import { canvasTex, realMaterial, type Kit } from "./parts3d";
+import { placeLabels } from "./sceneLabels";
+
+export { pinNumber } from "./board3d";
 
 export interface BoardScene {
   /** Light up every item of a kind, one item by id, or nothing. */
@@ -16,169 +21,308 @@ export interface BoardScene {
   stats(): { triangles: number; calls: number; ms: number };
 }
 
-const PITCH = 0.0254; // 2.54 mm header pitch
-
-/** The number printed for a pin. Two-row headers count across the rows, odd pins in the first row (1, 3, 5 over 2, 4, 6). */
-export function pinNumber(item: BoardItem, i: number) {
-  const { cols, rows } = item.pins!;
-  const r = Math.floor(i / cols), c = i % cols;
-  return rows === 2 ? c * 2 + r + 1 : i + 1;
+export interface PinGroup {
+  /** What plugs in ("Power switch"), without its + or − mark. */
+  name: string;
+  color: string;
+  pins: { index: number; number: number; sign: "+" | "−" | "" }[];
 }
-const lift: Record<BoardItem["kind"], number> = {
-  heatsink: 0.22, chipset: 0.09, io: 0.3, dimm: 0.08, pcie: 0.11, m2: 0.03, socket: 0.05, power: 0.1, fan: 0.07,
-  usb: 0.07, "front-panel": 0.02, rgb: 0.02, audio: 0.02, sata: 0.09, other: 0.04,
+
+// The colors the wires themselves usually have, so the map matches the plug in the person's hand.
+const wireColor: Record<string, string> = {
+  Ground: "#3a3b3f", "+12V": "#e3b324", Speed: "#3f9f58", PWM: "#3b78d0", "+5V": "#d4483b", Data: "#3f9f58",
+  Red: "#d4483b", Green: "#3f9f58", Blue: "#3b78d0",
+  "Power switch": "#d4673b", Reset: "#e3b324", "Power LED": "#3f9f58", "HDD LED": "#3b78d0", Reserved: "#9a9890",
 };
+const spare = ["#3b78d0", "#3f9f58", "#d4673b", "#a45cc2", "#e3b324", "#9a9890"];
+
+/** A header's pins grouped by what plugs into them, in the order of their lowest pin number. */
+export function pinGroups(item: BoardItem): PinGroup[] {
+  const p = item.pins;
+  if (!p?.names) return [];
+  const missing = p.missing ?? [];
+  const by = new Map<string, PinGroup>();
+  p.names.forEach((raw, i) => {
+    if (!raw || missing.includes(i)) return;
+    const m = /^(.*?)\s*([+−-])$/.exec(raw);
+    const name = m ? m[1] : raw, sign = m ? (m[2] === "+" ? "+" : "−") : "";
+    if (!by.has(name)) by.set(name, { name, color: wireColor[name] ?? spare[by.size % spare.length], pins: [] });
+    by.get(name)!.pins.push({ index: i, number: pinNumber(item, i), sign });
+  });
+  const out = [...by.values()];
+  for (const g of out) g.pins.sort((a, b) => a.number - b.number);
+  return out.sort((a, b) => a.pins[0].number - b.pins[0].number);
+}
+
+/** The items worth naming when nothing is picked. */
+const landmarks = ["socket", "dimm-1", "pcie1", "m2-1", "atx24", "eps", "fp"];
+
+/** A soft rounded glow, drawn once and tinted per use. */
+const glowTex = () => canvasTex("board-glow", 256, 256, (g) => {
+  g.filter = "blur(18px)";
+  g.fillStyle = "#fff";
+  g.beginPath(); g.roundRect(44, 44, 168, 168, 26); g.fill();
+});
+/** The board's own soft shadow on the surface under it. */
+const shadowTex = () => canvasTex("board-shadow", 256, 256, (g) => {
+  g.filter = "blur(22px)";
+  g.fillStyle = "rgba(0,0,0,0.55)";
+  g.beginPath(); g.roundRect(40, 40, 176, 176, 12); g.fill();
+});
 
 export function createBoardScene(
   container: HTMLElement,
   board: BoardShape,
-  opts: { accent?: string; dark?: boolean; onPick?: (id: string | null) => void } = {},
+  opts: { accent?: string; onPick?: (id: string | null) => void } = {},
 ): BoardScene {
-  const accent = new THREE.Color(opts.accent ?? "#E8692E");
+  const accent = new THREE.Color(opts.accent ?? "#E6D3A3");
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.style.position ||= "relative";
   container.appendChild(renderer.domElement);
   const layer = document.createElement("div");
-  layer.className = "board-labels";
-  Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none", overflow: "hidden" });
-  container.style.position ||= "relative";
+  layer.className = "scene-labels board-labels";
   container.appendChild(layer);
+  const card = document.createElement("div");
+  card.className = "pinout";
+  card.hidden = true;
+  container.appendChild(card);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 0.7));
-  const key = new THREE.DirectionalLight(0xffffff, 1.4);
-  key.position.set(3, 4, 8);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x9a968c, 0.55));
+  const key = new THREE.DirectionalLight(0xfff8ef, 1.8);
+  key.position.set(-4.5, 5, 3);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  const sc = key.shadow.camera;
+  sc.left = -2.2; sc.right = 2.2; sc.top = 2.2; sc.bottom = -2.2; sc.near = 0.5; sc.far = 15;
+  key.shadow.radius = 4;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.01;
   scene.add(key);
+  const rim = new THREE.DirectionalLight(0xe8eefc, 0.5);
+  rim.position.set(4, 2, -3);
+  scene.add(rim);
 
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+  const camera = new THREE.PerspectiveCamera(28, 1, 0.02, 60);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.enablePan = false;
-  controls.minDistance = 0.3;
-  controls.maxDistance = 14;
+  controls.minDistance = 0.35;
+  controls.maxDistance = 12;
 
+  // ---------- the board ----------
+  const kit: Kit = { M: (c, o) => realMaterial(c, o), spin: () => {}, accent: `#${accent.getHexString()}` };
+  const built = makeBoard(kit, board, { pins: true, ppm: 8 });
   const BW = board.w / 100, BH = board.h / 100;
-  const toX = (u: number) => u / 100 - BW / 2;
-  const toY = (v: number) => BH / 2 - v / 100;
   const root = new THREE.Group();
-  root.rotation.x = -0.5; // tilted back a little, like a board on a desk
+  root.rotation.x = -0.42; // tilted back, like a board lying on a desk in front of you
   scene.add(root);
+  built.group.position.set(-BW / 2, BH / 2, 0);
+  root.add(built.group);
+  built.group.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    o.receiveShadow = true;
+    if (o !== built.pcb && o.geometry.type !== "PlaneGeometry") o.castShadow = true;
+  });
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(BW * 1.45, BH * 1.45), new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false, opacity: 0.55 }));
+  shadow.position.set(0.04, -0.06, -0.12);
+  root.add(shadow);
 
-  const pcb = new THREE.Mesh(new THREE.BoxGeometry(BW, BH, 0.016), new THREE.MeshStandardMaterial({ color: board.color, roughness: 0.6, metalness: 0.1 }));
-  pcb.position.z = -0.008;
-  root.add(pcb);
-  // Screen-printed grid so the board reads as a circuit board, not a slab
-  const silk = new THREE.GridHelper(Math.max(BW, BH), 24, 0x3a3d42, 0x2c2f33);
-  silk.rotation.x = Math.PI / 2;
-  silk.position.z = 0.001;
-  silk.scale.set(BW / Math.max(BW, BH), 1, BH / Math.max(BW, BH));
-  root.add(silk);
-
-  const baseColor: Record<BoardItem["kind"], string> = {
-    heatsink: "#8b9098", chipset: "#8b9098", io: "#5a5e66", dimm: "#3a3d43", pcie: "#3a3d43", m2: "#9aa0a8", socket: "#d9c79a",
-    power: "#e7e7e2", fan: "#f1f1ec", usb: "#2f6fd6", "front-panel": "#16171a", rgb: "#16171a", audio: "#16171a", sata: "#2b2d31", other: "#2b2d31",
-  };
-
-  interface Node { item: BoardItem; group: THREE.Group; mats: THREE.MeshStandardMaterial[]; pins: THREE.Vector3[] }
-  const nodes: Node[] = [];
-  const pinGeo = new THREE.BoxGeometry(0.0064, 0.0064, 0.06);
-  const pinMat = new THREE.MeshStandardMaterial({ color: "#d8b25a", metalness: 0.35, roughness: 0.35 });
-  const pin1Mat = new THREE.MeshStandardMaterial({ color: "#f5d77e", metalness: 0.35, roughness: 0.3, emissive: "#8a6a20", emissiveIntensity: 0.6 });
-
-  for (const item of board.items) {
-    const g = new THREE.Group();
-    const w = item.w / 100, h = item.h / 100, d = lift[item.kind];
-    g.position.set(toX(item.u) + w / 2, toY(item.v) - h / 2, 0);
-    const mat = new THREE.MeshStandardMaterial({ color: baseColor[item.kind], roughness: 0.55, metalness: item.kind === "heatsink" || item.kind === "chipset" || item.kind === "m2" ? 0.6 : 0.1, transparent: true });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    body.position.z = d / 2;
-    body.userData.id = item.id;
-    g.add(body);
-    const pins: THREE.Vector3[] = [];
-    if (item.pins) {
-      const { cols, rows, missing = [] } = item.pins;
-      const ox = -((cols - 1) * PITCH) / 2, oy = ((rows - 1) * PITCH) / 2;
-      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-        const i = r * cols + c;
-        const p = new THREE.Vector3(ox + c * PITCH, oy - r * PITCH, 0.03);
-        pins.push(p);
-        if (missing.includes(i)) continue;
-        const m = new THREE.Mesh(pinGeo, i === 0 ? pin1Mat : pinMat);
-        m.position.copy(p);
-        m.userData.id = item.id;
-        g.add(m);
-      }
-    }
-    root.add(g);
-    nodes.push({ item, group: g, mats: [mat], pins });
+  // Everything the dimming touches, with its own color to come back to
+  const nodes = built.nodes;
+  const baseColor = new Map<THREE.Material, THREE.Color>();
+  const remember = (m: THREE.Material) => { if ("color" in m && !baseColor.has(m)) baseColor.set(m, (m as THREE.MeshStandardMaterial).color.clone()); };
+  built.group.traverse((o) => { if (o instanceof THREE.Mesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(remember); });
+  const nodeMats = new Map<BoardNode, Set<THREE.Material>>();
+  for (const n of nodes) {
+    const set = new Set<THREE.Material>();
+    n.group.traverse((o) => { if (o instanceof THREE.Mesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => set.add(m)); });
+    nodeMats.set(n, set);
   }
 
   // ---------- highlight ----------
-  let focus: Node[] = [];
-  const labels: { el: HTMLElement; at: THREE.Object3D }[] = [];
+  let focus: BoardNode[] = [];
+  const halos: THREE.Mesh[] = [];
+  const pinMats: THREE.MeshStandardMaterial[] = [];
+  const pinOriginal = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  interface Label { pin: HTMLElement; dot: HTMLElement; lead: HTMLElement; el: HTMLElement; at: THREE.Object3D; w: number; h: number }
+  let labels: Label[] = [];
+  const sides: Record<string, -1 | 1> = {};
   const target = new THREE.Vector3(), camGoal = new THREE.Vector3();
-  let tween = 0;
+  // The camera glides to a new view over a fixed time, so a slow computer gets there as soon as a fast one.
+  const fromPos = new THREE.Vector3(), fromTarget = new THREE.Vector3();
+  let tweenStart = -1;
+  let sizeDirty = true, offsetFor: "right" | "bottom" | null = null;
 
-  function clearLabels() {
-    for (const l of labels) { l.el.remove(); l.at.removeFromParent(); }
-    labels.length = 0;
+  function clearFocus() {
+    for (const h of halos) { h.removeFromParent(); (h.material as THREE.Material).dispose(); }
+    halos.length = 0;
+    for (const [mesh, m] of pinOriginal) mesh.material = m;
+    pinOriginal.clear();
+    for (const m of pinMats) m.dispose();
+    pinMats.length = 0;
+    for (const l of labels) { l.pin.remove(); l.at.removeFromParent(); }
+    labels = [];
+    card.hidden = true;
+    card.replaceChildren();
+    offsetFor = null;
   }
-  function label(text: string, parent: THREE.Object3D, pos: THREE.Vector3, small = false) {
-    const el = document.createElement("div");
-    el.textContent = text;
-    Object.assign(el.style, {
-      position: "absolute", left: "0", top: "0", whiteSpace: "nowrap", font: `600 ${small ? 11 : 12}px system-ui, sans-serif`,
-      padding: small ? "1px 5px" : "3px 8px", borderRadius: "6px", background: opts.dark ? "rgba(20,20,24,.85)" : "rgba(255,255,255,.92)",
-      color: opts.dark ? "#fff" : "#16171a", boxShadow: "0 1px 4px rgba(0,0,0,.25)", transform: "translate(-50%,-130%)",
-    });
-    layer.appendChild(el);
+
+  function addLabel(n: BoardNode, text: [string, string]) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "part-label";
+    if (text[0]) { const a = document.createElement("span"); a.className = "pl-name"; a.textContent = text[0]; el.append(a); }
+    if (text[1]) { const b = document.createElement("span"); b.className = "pl-temp"; b.textContent = text[1]; el.append(b); }
+    el.addEventListener("click", () => { highlight({ id: n.item.id }); opts.onPick?.(n.item.id); });
+    const pin = document.createElement("div");
+    pin.className = "scene-pin";
+    const dot = document.createElement("i"); dot.className = "pin-dot";
+    const lead = document.createElement("i"); lead.className = "pin-lead";
+    pin.append(lead, dot, el);
+    layer.appendChild(pin);
     const at = new THREE.Object3D();
-    at.position.copy(pos);
-    parent.add(at);
-    labels.push({ el, at });
+    at.position.set(0, 0, n.top + 0.01);
+    n.group.add(at);
+    labels.push({ pin, dot, lead, el, at, w: 0, h: 0 });
+    sizeDirty = true;
+  }
+
+  function addHalo(n: BoardNode) {
+    const w = n.item.w / 100, h = n.item.h / 100, pad = Math.max(0.035, Math.min(w, h) * 0.25);
+    const m = new THREE.MeshBasicMaterial({ map: glowTex(), color: accent, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+    const halo = new THREE.Mesh(new THREE.PlaneGeometry((w + pad * 2) * 1.4, (h + pad * 2) * 1.4), m);
+    halo.position.z = 0.0015;
+    halo.renderOrder = 1;
+    n.group.add(halo);
+    halos.push(halo);
+  }
+
+  /** The pin map for one header: its pins as they sit on the board, then what each color is. */
+  function showCard(n: BoardNode, groups: PinGroup[]) {
+    const it = n.item, p = it.pins!;
+    const head = document.createElement("div");
+    head.className = "po-head";
+    head.innerHTML = `<span class="po-name"></span><span class="po-label"></span>`;
+    head.children[0].textContent = it.name;
+    head.children[1].textContent = it.label;
+    const grid = document.createElement("div");
+    grid.className = "po-grid";
+    grid.style.gridTemplateColumns = `repeat(${p.cols}, var(--po-pin))`;
+    const colorOf = new Map<number, string>();
+    for (const g of groups) for (const q of g.pins) colorOf.set(q.index, g.color);
+    const cells: HTMLElement[] = [];
+    for (let i = 0; i < p.cols * p.rows; i++) {
+      const c = document.createElement("span");
+      c.className = "po-pin";
+      if ((p.missing ?? []).includes(i)) c.classList.add("is-empty");
+      else {
+        c.textContent = String(pinNumber(it, i));
+        const col = colorOf.get(i);
+        if (col) c.style.setProperty("--c", col); else c.classList.add("is-unused");
+        if (pinNumber(it, i) === 1) c.classList.add("is-first");
+      }
+      cells.push(c);
+      grid.append(c);
+    }
+    const legend = document.createElement("ul");
+    legend.className = "po-legend";
+    for (const g of groups) {
+      const li = document.createElement("li");
+      li.style.setProperty("--c", g.color);
+      li.innerHTML = `<i></i><b></b><span></span>`;
+      li.children[1].textContent = g.name;
+      li.children[2].textContent = g.pins.map((q) => `${q.number}${q.sign ? ` ${q.sign}` : ""}`).join(", ");
+      const mark = (on: boolean) => {
+        for (const q of g.pins) {
+          cells[q.index].classList.toggle("is-lit", on);
+          const mesh = n.pins[q.index];
+          if (mesh) mesh.scale.set(on ? 1.35 : 1, on ? 1.35 : 1, on ? 1.12 : 1);
+        }
+        grid.classList.toggle("has-lit", on);
+      };
+      li.addEventListener("pointerenter", () => mark(true));
+      li.addEventListener("pointerleave", () => mark(false));
+      legend.append(li);
+    }
+    const note = document.createElement("p");
+    note.className = "po-note";
+    note.textContent = groups.some((g) => g.pins.some((q) => q.sign))
+      ? "Seen from above. Pin 1 is square. On an LED plug, + is the colored wire."
+      : "Seen from above. Pin 1 is square.";
+    card.append(head, grid, legend, note);
+    card.hidden = false;
   }
 
   function highlight(sel: { kind?: BoardItem["kind"]; id?: string } | null) {
+    clearFocus();
     focus = sel ? nodes.filter((n) => (sel.id ? n.item.id === sel.id : n.item.kind === sel.kind)) : [];
-    clearLabels();
-    for (const n of nodes) {
-      const on = focus.includes(n);
-      for (const m of n.mats) {
-        m.opacity = !focus.length || on ? 1 : 0.28;
-        m.emissive.copy(on ? accent : new THREE.Color(0));
-        m.emissiveIntensity = on ? 0.55 : 0;
-      }
+    const dim = focus.length > 0;
+    for (const [m, c] of baseColor) { const sm = m as THREE.MeshStandardMaterial; sm.color.copy(c); sm.envMapIntensity = sm.userData.envI ??= sm.envMapIntensity; }
+    if (dim) {
+      // Step the rest back: the board darker, every other part darker still
+      const lit = new Set<THREE.Material>();
+      for (const n of focus) for (const m of nodeMats.get(n)!) lit.add(m);
+      for (const [m, c] of baseColor) if (!lit.has(m)) { const sm = m as THREE.MeshStandardMaterial; sm.color.copy(c).multiplyScalar(0.34); sm.envMapIntensity = sm.userData.envI * 0.3; }
     }
+    for (const n of focus) addHalo(n);
+    const one = focus.length === 1 ? focus[0] : null;
+    const groups = one ? pinGroups(one.item) : [];
+    if (one && groups.length) {
+      for (const g of groups) {
+        const m = realMaterial(g.color, { metal: 0.35, rough: 0.32, emissive: g.color, ei: 0.45 });
+        pinMats.push(m);
+        for (const q of g.pins) {
+          const mesh = one.pins[q.index];
+          if (mesh) { pinOriginal.set(mesh, mesh.material); mesh.material = m; }
+        }
+      }
+      showCard(one, groups);
+    }
+    // Labels: every lit item, or a few landmarks when nothing is picked. A header with a pin map is named by the map.
+    const named = dim ? focus.filter((n) => !(n === one && groups.length)) : nodes.filter((n) => landmarks.includes(n.item.id));
+    for (const n of named) {
+      const it = n.item;
+      const plain = it.id === "dimm-1" && !dim ? "Memory slots" : it.label;
+      addLabel(n, [it.name && !/^Rear I\/O$/.test(it.name) ? it.name : "", plain]);
+    }
+    frame();
+    fromPos.copy(camera.position); fromTarget.copy(controls.target);
+    tweenStart = performance.now();
+  }
+
+  // Where the camera goes: the whole board, or the lit items, framed with room for the pin map.
+  function frame() {
+    scene.updateMatrixWorld(true);
     const box = new THREE.Box3();
     if (focus.length) for (const n of focus) box.expandByObject(n.group);
-    else box.setFromObject(pcb);
-    const one = focus.length === 1 ? focus[0] : null;
-    for (const n of focus) label(n.item.name ? `${n.item.name} · ${n.item.label}` : n.item.label, n.group, new THREE.Vector3(0, n.item.h / 200 + (focus.length === 1 && n.item.pins?.names ? 0.07 : 0), lift[n.item.kind]));
-    if (one?.item.pins?.names) {
-      // Name every pin, alternating above and below so neighbours don't collide
-      const { names, missing = [] } = one.item.pins;
-      one.pins.forEach((p, i) => {
-        if (missing.includes(i) || !names[i]) return;
-        label(`${pinNumber(one.item, i)} ${names[i]}`, one.group, p.clone().add(new THREE.Vector3(0, i < one.item.pins!.cols ? 0.03 : -0.045, 0.03)), true);
-      });
-    }
+    else box.setFromObject(built.pcb);
     box.getCenter(target);
-    const size = box.getSize(new THREE.Vector3()).length();
-    const dist = Math.max(one ? 0.55 : 0.9, size * 1.6);
-    camGoal.copy(target).add(new THREE.Vector3(0.08, one ? -0.3 : -0.55, 1).normalize().multiplyScalar(dist));
-    tween = 1;
+    // One small header near an edge: lean the view a little toward the board's middle so it shows where on the board it is
+    if (focus.length === 1) target.lerp(new THREE.Box3().setFromObject(built.pcb).getCenter(new THREE.Vector3()), 0.18);
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focus.length === 1 ? 0.6 : 0.3);
+    const fit = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * (focus.length ? 1.25 : 0.98);
+    const dir = new THREE.Vector3(0.08, focus.length ? 0.5 : 0.32, 1).normalize();
+    camGoal.copy(target).addScaledVector(dir, Math.max(fit / Math.min(1, camera.aspect), controls.minDistance + 0.05));
   }
 
   // ---------- picking ----------
   const ray = new THREE.Raycaster();
-  renderer.domElement.addEventListener("click", (ev) => {
+  let down: { x: number; y: number } | null = null;
+  renderer.domElement.addEventListener("pointerdown", (ev) => { down = { x: ev.clientX, y: ev.clientY }; });
+  renderer.domElement.addEventListener("pointerup", (ev) => {
+    if (!down || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 5) return; // a drag, not a click
     const r = renderer.domElement.getBoundingClientRect();
     ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
-    const hit = ray.intersectObjects(root.children, true).find((h) => h.object.userData.id);
+    const hit = ray.intersectObject(built.group, true).find((h) => h.object.userData.id);
     const id = (hit?.object.userData.id as string | undefined) ?? null;
     highlight(id ? { id } : null);
     opts.onPick?.(id);
@@ -191,6 +335,9 @@ export function createBoardScene(
     renderer.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
+    offsetFor = null;
+    sizeDirty = true;
+    frame();
   }
   const ro = new ResizeObserver(resize);
   ro.observe(container);
@@ -198,29 +345,61 @@ export function createBoardScene(
   highlight(null);
   camera.position.copy(camGoal);
   controls.target.copy(target);
-  tween = 0;
+  tweenStart = -1;
 
-  const v = new THREE.Vector3();
+  // Move the picture aside for the pin map: left of it on a wide stage, above it on a narrow one.
+  function offsetView() {
+    const want = card.hidden ? null : w >= 640 ? "right" : "bottom";
+    if (want === offsetFor) return;
+    offsetFor = want;
+    if (!want) camera.clearViewOffset();
+    else if (want === "right") camera.setViewOffset(w, h, (card.offsetWidth + 24) / 2, 0, w, h);
+    else camera.setViewOffset(w, h, 0, (card.offsetHeight + 16) / 2, w, h);
+  }
+
+  const v = new THREE.Vector3(), c0 = new THREE.Vector3();
+  const put = (el: HTMLElement, tf: string) => { if (el.style.transform !== tf) el.style.transform = tf; };
+  const px = (n: number) => Math.round(n * 10) / 10;
+  function layoutLabels() {
+    if (!labels.length) return;
+    if (sizeDirty) { for (const l of labels) { l.w = l.el.offsetWidth; l.h = l.el.offsetHeight; } sizeDirty = false; }
+    const pins = labels.map((l, i) => {
+      l.at.getWorldPosition(v).project(camera);
+      l.pin.classList.toggle("is-off", v.z > 1);
+      return { id: String(i), x: (v.x + 1) / 2 * w, y: (1 - v.y) / 2 * h, depth: 0.2, w: l.w, h: l.h };
+    });
+    c0.copy(target).project(camera);
+    const right = card.hidden || offsetFor !== "right" ? w : w - card.offsetWidth - 24;
+    const placed = placeLabels(pins, { width: right, height: h, cx: (c0.x + 1) / 2 * w, reach: 34 }, sides);
+    pins.forEach((p, i) => {
+      const q = placed[i], l = labels[i];
+      sides[p.id] = q.side;
+      const dx = q.ex - p.x, dy = q.ey - p.y;
+      put(l.dot, `translate(${px(p.x)}px, ${px(p.y)}px)`);
+      put(l.lead, `translate(${px(p.x)}px, ${px(p.y)}px) rotate(${Math.atan2(dy, dx).toFixed(3)}rad) scaleX(${px(Math.hypot(dx, dy))})`);
+      put(l.el, `translate(${px(q.x)}px, ${px(q.y)}px) scale(${q.scale.toFixed(3)})`);
+    });
+  }
+
   function tick() {
     raf = requestAnimationFrame(tick);
-    if (tween > 0) {
-      camera.position.lerp(camGoal, 0.12);
-      controls.target.lerp(target, 0.12);
-      tween = camera.position.distanceTo(camGoal) > 0.002 ? 1 : 0;
+    offsetView();
+    if (tweenStart >= 0) {
+      const t = Math.min(1, (performance.now() - tweenStart) / 650), e = 1 - Math.pow(1 - t, 3);
+      camera.position.lerpVectors(fromPos, camGoal, e);
+      controls.target.lerpVectors(fromTarget, target, e);
+      if (t >= 1) tweenStart = -1;
     }
     controls.update();
     const t0 = performance.now();
+    const pulse = 0.5 + 0.2 * Math.sin(t0 / 420);
+    for (const halo of halos) (halo.material as THREE.MeshBasicMaterial).opacity = pulse;
     renderer.render(scene, camera);
     lastMs = performance.now() - t0;
-    const pulse = 0.4 + 0.25 * Math.sin(t0 / 260);
-    for (const n of focus) for (const m of n.mats) m.emissiveIntensity = pulse;
-    for (const l of labels) {
-      l.at.getWorldPosition(v).project(camera);
-      l.el.style.translate = `${((v.x + 1) / 2) * w}px ${((1 - v.y) / 2) * h}px`;
-      l.el.style.opacity = v.z < 1 ? "1" : "0";
-    }
+    layoutLabels();
   }
   tick();
+  document.fonts?.ready.then(() => { sizeDirty = true; });
 
   return {
     highlight,
@@ -228,10 +407,12 @@ export function createBoardScene(
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
-      clearLabels();
+      clearFocus();
+      controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       layer.remove();
+      card.remove();
     },
   };
 }

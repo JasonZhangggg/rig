@@ -66,3 +66,40 @@
 @media (prefers-reduced-motion: reduce) {
   .scene-pin .part-label, .part-box { transition: none; }
 }
+
+/* The board view: the same labels as the PC view, and a pin map beside the board for one header. */
+.board-labels .scene-pin .part-label { gap: 7px; }
+.board-labels .part-label .pl-name { font-weight: 650; letter-spacing: .01em; }
+.pinout {
+  --po-pin: 30px;
+  position: absolute; top: 16px; right: 16px; width: 256px; max-height: calc(100% - 32px); overflow: auto; box-sizing: border-box;
+  padding: 16px 16px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-lg); color: var(--text); font: 13px/1.35 var(--font);
+}
+.pinout[hidden] { display: none; }
+.po-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.po-name { font: var(--t-title); letter-spacing: -.01em; }
+.po-label { color: var(--text-2); }
+.po-grid { display: grid; gap: 6px; justify-content: start; padding: 10px; margin-bottom: 14px; border-radius: 10px; background: #1d1f22; }
+.po-pin {
+  display: grid; place-items: center; width: var(--po-pin); height: var(--po-pin); border-radius: 50%;
+  background: var(--c, #4a4c50); color: #fff; font: 600 12px/1 var(--font); font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .18); transition: transform .15s var(--ease-out), opacity .15s;
+}
+.po-pin.is-first { border-radius: 5px; }
+.po-pin.is-unused { background: #4a4c50; color: #b9bab6; }
+.po-pin.is-empty { background: none; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .14); }
+.po-grid.has-lit .po-pin:not(.is-lit):not(.is-empty) { opacity: .3; }
+.po-pin.is-lit { transform: scale(1.1); }
+.po-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.po-legend li { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 9px; padding: 5px 6px; margin: 0 -6px; border-radius: 8px; }
+.po-legend li:hover { background: var(--sel); }
+.po-legend i { width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+.po-legend b { font-weight: 550; }
+.po-legend span { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.po-note { margin: 12px 0 0; color: var(--text-3); font-size: 12px; }
+@media (max-width: 639px) {
+  .pinout { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .po-pin { transition: none; } }
