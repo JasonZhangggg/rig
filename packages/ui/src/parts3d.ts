@@ -396,7 +396,19 @@ export function makeFan(kit: Kit, size: number, thick: number, look: FanLook) {
   }
   g.add(rotor);
   kit.spin(rotor);
+  g.add(fanHitArea(R));
   return g;
+}
+
+const hitMaterial = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+/**
+ * A still disc over a fan's blades that's never drawn but catches the pointer. Without it the pointer falls through the
+ * gaps between spinning blades, and the fan lights up and goes dark over and over while it's pointed at.
+ */
+export function fanHitArea(radius: number) {
+  const hit = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), hitMaterial);
+  hit.userData.noShadow = true;
+  return hit;
 }
 
 // ---------- graphics cards ----------

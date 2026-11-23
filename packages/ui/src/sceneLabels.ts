@@ -33,6 +33,8 @@ export interface LabelView {
   box?: Box | null;
   hovered?: string | null;
   selected?: string | null;
+  /** Height kept clear along the stage's bottom edge for the page's own buttons, in px. */
+  foot?: number;
 }
 
 /** Space the labels want kept clear of the model, in px. */
@@ -244,7 +246,7 @@ export function createSceneLabels(
     const box = view.box ?? { x0: view.width * 0.3, y0: view.height * 0.1, x1: view.width * 0.7, y1: view.height * 0.9 };
     const cx = (box.x0 + box.x1) / 2;
     sides = splitSides(shown.map((n) => at.get(n.item.id)!), cx, sides);
-    const top = Math.max(12, box.y0 - 8), bottom = Math.min(view.height - 12, box.y1 + 8);
+    const top = Math.max(12, box.y0 - 8), bottom = Math.min(view.height - 12 - (view.foot ?? 0), box.y1 + 8);
     for (const s of [-1, 1] as const) {
       const col = shown.filter((n) => sides[n.item.id] === s).sort((a, b) => at.get(a.item.id)!.y - at.get(b.item.id)!.y);
       const ys = spreadColumn(col.map((n) => at.get(n.item.id)!.y), col.map((n) => n.h), top, bottom, 12);

@@ -4,7 +4,8 @@
 .pc-view { --stage-h: clamp(420px, calc(100dvh - 200px), 900px); display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: clamp(32px, 4vw, 64px); align-items: start; }
 .pc-page.is-part .pc-view { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
 /* The 3D view is a picture, not a section: one flat tint, no gradient. */
-.stage-card { position: relative; isolation: isolate; min-height: 420px; height: var(--stage-h); overflow: hidden; border-radius: var(--r); background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
+/* --stage-foot keeps the parts list and labels clear of the view buttons along the bottom. */
+.stage-card { --stage-foot: 60px; position: relative; isolation: isolate; min-height: 420px; height: var(--stage-h); overflow: hidden; border-radius: var(--r); background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
 .stage-tools { position: absolute; z-index: 2; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none; display: flex; gap: 6px; padding: 6px; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 
 .customize { position: absolute; z-index: 5; top: 16px; right: 16px; width: 260px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-lg); }
