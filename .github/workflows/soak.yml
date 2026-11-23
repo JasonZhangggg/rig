@@ -2,17 +2,24 @@ name: Soak
 
 # How much memory and processor Rig's helper and recorder use over a long run on
 # Windows, for this branch and a base side by side on the same runner.
-# Started by hand only: Actions tab > Soak > Run workflow, or
-#   gh workflow run soak.yml --ref <branch> -f minutes=20 -f base=main
+# Started by hand (Actions tab > Soak > Run workflow, or
+#   gh workflow run soak.yml --ref <branch> -f minutes=20 -f base=main)
+# and when the soak itself changes, with the defaults below.
 on:
+  push:
+    paths: [tools/soak.ps1, .github/workflows/soak.yml]
   workflow_dispatch:
     inputs:
       minutes:
         description: Minutes to run each build
         default: "20"
       base:
-        description: Branch or commit to compare against (empty for none)
+        description: Branch or commit to compare against
         default: main
+
+env:
+  MINUTES: ${{ inputs.minutes || '20' }}
+  BASE: ${{ inputs.base || 'main' }}
 
 jobs:
   soak:
@@ -27,22 +34,20 @@ jobs:
         shell: pwsh
         run: |
           dotnet publish helper/RigHelper -c Release -o out-branch
-          if ("${{ inputs.base }}") {
-            git worktree add base-src "${{ inputs.base }}"
-            dotnet publish base-src/helper/RigHelper -c Release -o out-base
-          }
+          $ref = if (git rev-parse --verify --quiet "origin/$env:BASE") { "origin/$env:BASE" } else { $env:BASE }
+          git worktree add base-src $ref
+          dotnet publish base-src/helper/RigHelper -c Release -o out-base
       # The base first, then this branch, one at a time so neither slows the other.
       - name: Soak the base
-        if: inputs.base != ''
         shell: pwsh
         run: |
-          "### Base: ${{ inputs.base }}" | Add-Content $env:GITHUB_STEP_SUMMARY
-          ./tools/soak.ps1 -Helper out-base/RigHelper.exe -Minutes ${{ inputs.minutes }} -Out soak-base
+          "### Base: ${{ env.BASE }}" | Add-Content $env:GITHUB_STEP_SUMMARY
+          ./tools/soak.ps1 -Helper out-base/RigHelper.exe -Minutes ${{ env.MINUTES }} -Out soak-base
       - name: Soak this branch
         shell: pwsh
         run: |
           "### This branch: ${{ github.ref_name }}" | Add-Content $env:GITHUB_STEP_SUMMARY
-          ./tools/soak.ps1 -Helper out-branch/RigHelper.exe -Minutes ${{ inputs.minutes }} -Out soak-branch
+          ./tools/soak.ps1 -Helper out-branch/RigHelper.exe -Minutes ${{ env.MINUTES }} -Out soak-branch
       - uses: actions/upload-artifact@v4
         if: always()
         with:
