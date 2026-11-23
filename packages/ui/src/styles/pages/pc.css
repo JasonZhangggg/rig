@@ -237,10 +237,5 @@
 .mt-add > :not(.mt-add-btn) { padding: 18px 20px; }
 .mt-add-btn { width: 100%; min-height: 132px; display: grid; place-content: center; gap: 4px; padding: 18px 20px; border: 0; border-radius: var(--r); background: transparent; color: var(--text); font: inherit; text-align: center; cursor: pointer; transition: transform .16s var(--ease-out); }
 .mt-add-btn:active { transform: scale(.98); }
-.mt-drivers { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.mt-drv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.mt-drv-what { display: grid; gap: 2px; min-width: 0; }
-.mt-drv-ver { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .mt-note { margin: 10px 0 0; font-size: 13px; }
 @media (hover: hover) and (pointer: fine) { .mt-add-btn:hover { background: var(--surface-2); } }
-@media (max-width: 700px) { .mt-drv { grid-template-columns: 1fr; gap: 8px; } }

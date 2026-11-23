@@ -10,6 +10,7 @@ import { HitList, useManualSearch } from "./Search";
 import { useManuals } from "./useManuals";
 import { openManual } from "./viewerState";
 import { manualRows } from "./words";
+import { Row, Rows } from "../components/Rows";
 
 const driverPages: Record<string, string> = {
   NVIDIA: "https://www.nvidia.com/en-us/drivers/",
@@ -70,27 +71,21 @@ function Drivers() {
   return (
     <section aria-labelledby="mt-drv-h">
       <h2 id="mt-drv-h" className="mt-h">Drivers and BIOS</h2>
-      <ul className="mt-drivers">
+      <Rows>
         {list.map(([id, p]) => {
           const d = p.driver!;
           const bios = d.installed.startsWith("BIOS");
           const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || p.name.includes(k));
           const newer = !!d.latest && d.latest !== d.installed;
           return (
-            <li key={id} className="mt-drv">
-              <span className="mt-drv-what"><span className="label">{bios ? "BIOS" : `${p.type} driver`}</span><b>{p.name}</b></span>
-              <span className="mt-drv-ver">
-                <span className="num">{d.installed}</span>
-                {newer ? <span className="chip warn">{d.latest} is out</span> : d.latest ? <span className="chip ok">Up to date</span> : null}
-              </span>
-              <span className="mt-drv-go">
-                {maker ? <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>
-                  : <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>}
-              </span>
-            </li>
+            <Row key={id} name={p.name} title={p.name}
+              meta={bios ? `${d.installed}.` : `${p.type} driver, ${d.installed}.`}
+              tag={newer ? <span className="chip warn">{d.latest} is out</span> : d.latest ? <span className="chip ok">Up to date</span> : null}
+              action={maker ? <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>
+                : <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>} />
           );
         })}
-      </ul>
+      </Rows>
       <p className="faint mt-note">Rig never installs drivers or BIOS updates by itself.</p>
     </section>
   );

@@ -94,22 +94,37 @@ describe("Logs", () => {
     within(list).getByText(/None of these on/);
   });
 
-  it("opens an event in place to what Windows wrote, and asks about it", async () => {
+  it("shows each event as a row with its time and kind, opens what Windows wrote under Details, and asks about it", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     await open("logs");
-    const row = await screen.findByRole("button", { name: /Discord\.exe crashed/, expanded: false });
-    expect(row.getAttribute("aria-expanded")).toBe("false");
-    const body = document.getElementById(row.getAttribute("aria-controls")!)!;
-    expect(body.hasAttribute("inert")).toBe(true);
-    fireEvent.click(row);
-    expect(row.getAttribute("aria-expanded")).toBe("true");
-    expect(body.hasAttribute("inert")).toBe(false);
+    const details = await screen.findByRole("button", { name: "Details: Discord.exe crashed", expanded: false });
+    const row = details.closest("li")!;
+    within(row).getByText("Crash, logged by Application Error.");
+    const body = document.getElementById(details.getAttribute("aria-controls")!)!;
+    expect(body.hidden).toBe(true);
+    fireEvent.click(details);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(details.textContent).toBe("Hide");
+    expect(body.hidden).toBe(false);
     within(body).getByText("Application Error · event 1000");
     within(body).getByText(/discord_voice\.node/);
-    fireEvent.click(within(body).getByRole("button", { name: "Ask about this event" }));
+    fireEvent.click(within(row).getByRole("button", { name: /^Ask/ }));
     await waitFor(() => expect(location.hash).toBe("#chat"));
     await screen.findByText(/Windows logged "Discord\.exe crashed" on Atlas/);
+  });
+
+  it("groups events by day, with how many on each", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const list = await screen.findByRole("region", { name: /^Events/ });
+    const days = within(list).getAllByRole("region");
+    expect(days.length).toBeGreaterThan(1);
+    for (const d of days) {
+      const n = within(d).getAllByRole("listitem").length;
+      within(d).getByText(n === 1 ? "1 event" : `${n} events`);
+    }
   });
 
   it("shows a finished recording as what it found, and opens it from the events it caught", async () => {
