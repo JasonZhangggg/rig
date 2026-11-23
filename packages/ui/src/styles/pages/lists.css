@@ -7,32 +7,12 @@
 
 /* ---------- Changes ---------- */
 
-.ch-next-list,
-.ch-timeline { list-style: none; margin: 0; padding: 0; }
-.ch-next-list { padding: 0 0 10px; }
 .ch-log { padding-bottom: 10px; }
 .ch-log .card-head { flex-wrap: wrap; padding-bottom: 4px; }
-.ch-day { display: flex; flex-direction: column; gap: 2px; padding: 12px 0 0; }
-.ch-day-label { display: flex; align-items: baseline; gap: 10px; color: var(--text-2); font-size: 13px; font-weight: 600; }
-.ch-day-label span { color: var(--text-3); font-weight: 500; }
-.ch-timeline { position: relative; }
-.ch-timeline.ch-line::before { content: ""; position: absolute; top: 22px; bottom: 22px; left: 4px; width: 1.5px; background: var(--line-strong); }
-.ch-timeline > .ch-entry { grid-template-columns: 76px minmax(0, 1fr) auto; padding-left: 22px; }
-.ch-timeline > .ch-entry::before {
-  content: ""; position: absolute; top: 19px; left: 0; width: 10px; height: 10px; border-radius: 50%;
-  background: var(--graphite); box-shadow: 0 0 0 4px var(--surface);
-}
-.ch-timeline > .ch-entry.undone::before { border: 1.5px solid var(--text-3); background: var(--surface); }
-.ch-entry { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 16px; padding: 12px 0; }
-.ch-next-list .ch-entry + .ch-entry,
-.ch-timeline .ch-entry + .ch-entry { border-top: 1px solid var(--line); }
-.ch-time { padding-top: 1px; color: var(--text-2); font-size: 13px; white-space: nowrap; }
-.ch-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.ch-meta { font-size: 13px; }
-.ch-entry.undone h3 { color: var(--text-2); }
-.ch-acts { display: flex; align-items: center; gap: 6px; }
-.change { display: flex; flex-direction: column; gap: 12px; padding-top: 10px; }
-.change-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ch-next .rows { padding-bottom: 10px; }
+/* The before and after under Details, in a frame, as wide as the title: the buttons' column stays clear. */
+:is(.ch-log, .ch-next) .row-more { grid-column: 1; align-items: stretch; }
+:is(.ch-log, .ch-next) .row-more .diff-wrap { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
 
 .ch-how { display: flex; flex-direction: column; gap: 4px; max-width: 72ch; padding-top: 8px; font-size: 13px; }
 .ch-how-h { color: var(--text); font: var(--t-title); }
@@ -82,9 +62,6 @@
 .bar.tuned i { background: var(--good); }
 
 @media (max-width: 860px) {
-  .ch-entry,
-  .ch-timeline > .ch-entry { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
-  .ch-time { padding: 0; }
   .page.ch-is-empty { min-height: 0; margin-bottom: 0; }
   .ch-is-empty .ch-empty, .ch-empty { padding: 28px 0 8px; }
   .game { grid-template-columns: 1fr; }

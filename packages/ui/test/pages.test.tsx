@@ -30,9 +30,12 @@ describe("Changes", () => {
     await show("changes");
     const waiting = await screen.findByRole("region", { name: /^Waiting for review/ });
     expect(within(waiting).getByText(/runs at 60 Hz but can do 165 Hz/)).toBeTruthy();
-    expect(within(waiting).queryByText("60 Hz")).toBeNull();
-    fireEvent.click(within(waiting).getAllByRole("button", { name: /^Details:/ })[0]);
-    await within(waiting).findByText("60 Hz");
+    const more = within(waiting).getAllByRole("button", { name: /^Details:/ })[0];
+    const body = document.getElementById(more.getAttribute("aria-controls")!)!;
+    expect(body.hidden).toBe(true);
+    fireEvent.click(more);
+    expect(body.hidden).toBe(false);
+    await within(body).findByText("60 Hz");
 
     const counts = screen.getByRole("group", { name: "Show only" });
     expect(within(counts).getByRole("button", { name: /Applied/ }).textContent).toBe("1Applied");
@@ -40,9 +43,12 @@ describe("Changes", () => {
 
     const day = screen.getByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
     expect(within(day).getByText("Turned off NVIDIA Broadcast at startup")).toBeTruthy();
-    expect(within(day).queryByText("Starts with Windows")).toBeNull();
-    fireEvent.click(within(day).getByRole("button", { name: "Details: Turned off NVIDIA Broadcast at startup" }));
-    expect(within(day).getByText("Starts with Windows")).toBeTruthy();
+    const details = within(day).getByRole("button", { name: "Details: Turned off NVIDIA Broadcast at startup" });
+    const change = document.getElementById(details.getAttribute("aria-controls")!)!;
+    expect(change.hidden).toBe(true);
+    fireEvent.click(details);
+    expect(change.hidden).toBe(false);
+    expect(within(change).getByText("Starts with Windows")).toBeTruthy();
 
     fireEvent.click(within(waiting).getAllByRole("button", { name: /^Review:/ })[0]);
     expect(await screen.findByRole("dialog")).toBeTruthy();
