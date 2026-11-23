@@ -32,3 +32,4 @@ export * from "./sensors";
 export * from "./changes";
 export * from "./build";
 export * from "./boardLayout";
+export * from "./boardUsage";

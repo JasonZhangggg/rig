@@ -109,8 +109,7 @@ function SceneFeed() {
   useEffect(() => {
     const onPC = ui.route === "pc";
     scene.setExploded(onPC && ui.exploded);
-    scene.setHeat(onPC && ui.heat);
-  }, [ui.route, ui.exploded, ui.heat, scene]);
+  }, [ui.route, ui.exploded, scene]);
   useEffect(() => {
     if (ui.route === "pc" && ui.selected) scene.select(ui.selected);
     else if (ui.route !== "pc") scene.select(null);

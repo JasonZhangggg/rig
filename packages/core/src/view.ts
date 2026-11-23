@@ -228,6 +228,13 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     settings: facts ? { gameMode: facts.gameMode, visualEffects: facts.visualEffects, powerPlans: facts.powerPlans, startupOn: facts.startupApps.filter((a) => a.enabled).length } : undefined,
     cleanedAt: id.cleanedAt,
     readings,
+    board: laptop ? undefined : {
+      memory: m.modules.map((x) => ({ slot: x.slot, gb: gb(x.capacityMb), mts: x.speedMhz, maker: x.manufacturer, partNumber: x.partNumber })),
+      memorySlots: m.slotsTotal,
+      drives: inv.disks.map((d) => ({ model: d.model, media: d.media, sizeGb: Math.round(d.sizeGb) })),
+      gpu: inv.gpus.find((g) => !g.integrated)?.name,
+      fans: (snap?.sensors ?? []).filter((x) => x.hw === "board" && x.type === "fan").map((x) => ({ id: x.id, name: x.name })),
+    },
     findings: fs,
   };
 }

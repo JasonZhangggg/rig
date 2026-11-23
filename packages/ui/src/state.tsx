@@ -67,7 +67,6 @@ export interface UI {
   route: Route;
   pcId: string | null;
   exploded: boolean;
-  heat: boolean;
   selected: string | null;
   tab: string;
   /** The kind of part open on My PC's Upgrades tab, or the person's list. */
@@ -288,7 +287,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
-    exploded: false, heat: false, selected: null, tab: "live", shopCat: null, range: "7d",
+    exploded: false, selected: null, tab: "live", shopCat: null, range: "7d",
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
