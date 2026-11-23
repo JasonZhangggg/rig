@@ -72,12 +72,26 @@ describe("Changes", () => {
   it("says what will show up when nothing has changed yet", async () => {
     const client = new DemoClient();
     client.changes = async () => [];
+    const watch = client.watch.bind(client);
+    client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, issues: (pc.issues ?? []).filter((i) => !i.fix?.length) }));
     await show("changes", client);
-    expect(await screen.findByText("No changes yet")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
-    expect(screen.getByText("How changes work")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Ask Rig what to fix" }));
+    const empty = await screen.findByRole("region", { name: "Every change, with an Undo" });
+    expect(within(empty).getByText(/When you say yes to a fix, it shows up here/)).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Show only" })).toBeNull();
+    // The example change is a picture: nothing in it can be pressed or read out as a real change.
+    expect(within(empty).queryByRole("button", { name: "Undo" })).toBeNull();
+    fireEvent.click(within(empty).getByRole("button", { name: "Ask Rig what to fix" }));
     await waitFor(() => expect(location.hash).toBe("#chat"));
+  });
+
+  it("points to the waiting fixes when nothing has changed yet but some wait for review", async () => {
+    const client = new DemoClient();
+    client.changes = async () => [];
+    await show("changes", client);
+    await screen.findByRole("region", { name: /^Waiting for review/ });
+    const empty = screen.getByRole("region", { name: "Every change, with an Undo" });
+    expect(within(empty).getByText(/Once you say yes to a fix above/)).toBeTruthy();
+    expect(within(empty).queryByRole("button")).toBeNull();
   });
 
   it("names days the way people say them", () => {

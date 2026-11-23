@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
-import { DiffTable, Icon, StatusChip } from "../components/common";
+import { DiffTable, StatusChip } from "../components/common";
 import { useApp } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
+import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
@@ -36,7 +37,7 @@ export function Changes() {
   // A filter that would leave the list empty, like Undone after the last undo is redone, falls back to everything.
   useEffect(() => { if (filter !== "all" && !list.length) setFilter("all"); }, [filter, list.length]);
   return (
-    <div className="page pg-focus">
+    <div className={`page pg-focus${!any && !fixes.length ? " ch-is-empty" : ""}`}>
       <div className="page-head">
         <div><h1>Changes</h1><p className="sub">Everything changed on {pc.name}, with the old values saved.</p></div>
       </div>
@@ -52,7 +53,7 @@ export function Changes() {
           {byDay(list).map(([date, day]) => <Day key={date} changes={day} />)}
         </section>
       )}
-      <HowChangesWork />
+      {any && <HowChangesWork />}
     </div>
   );
 }
@@ -137,19 +138,5 @@ function Entry({ c }: { c: Change }) {
       {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
       {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
     </Row>
-  );
-}
-
-function NoChanges({ quiet }: { quiet: boolean }) {
-  const { go, pc } = useApp();
-  return (
-    <section className="card ch-empty">
-      <span className="ch-empty-icon" aria-hidden="true"><Icon d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2" /></span>
-      <div className="ch-empty-text">
-        <h2 className="plain-h">No changes yet</h2>
-        <p className="muted">Every change Rig makes on {pc.name} shows up here with the before and after, and an Undo button that puts the old values back.</p>
-      </div>
-      <div><button className={`btn${quiet ? "" : " primary"}`} type="button" onClick={() => go("chat")}>Ask Rig what to fix</button></div>
-    </section>
   );
 }
