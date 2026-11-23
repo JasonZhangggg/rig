@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { boardUsage, type BoardItem, type BoardShape, type PC, type SlotUse } from "@rig/core";
-import { createBoardScene, pinGroups, pinNumber, type BoardHover } from "../../boardScene";
+import { createBoardScene, pinGroups, pinNumber, type BoardHover, type BoardScene } from "../../boardScene";
 import { useApp } from "../../state";
 import { boardStage, useBoardShape } from "./boardStage";
 
@@ -53,6 +53,16 @@ export function BoardView() {
   const at = useRef({ x: 0, y: 0 });
   const [tip, setTip] = useState<{ id: string; pin?: number } | null>(null);
   const [no3d, setNo3d] = useState(false);
+  const sceneRef = useRef<BoardScene | null>(null);
+  // Slots Rig can place get a mark on the board: filled when in use, an outline when free.
+  const marks = useMemo(() => {
+    const m: Record<string, "used" | "free"> = {};
+    for (const g of usage) if (g.bySlot) for (const s of g.slots) if (s.state !== "unknown") m[s.id] = s.state;
+    return m;
+  }, [usage]);
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  useEffect(() => { sceneRef.current?.setUsage(marks); }, [marks]);
 
   useEffect(() => {
     const place = (h: BoardHover) => {
@@ -75,8 +85,10 @@ export function BoardView() {
       setNo3d(true); // no WebGL: the Slots tab still reads fine
       return;
     }
+    s.setUsage(marksRef.current);
+    sceneRef.current = s;
     boardStage.attach(s);
-    return () => { boardStage.attach(null); boardStage.pointed(null); s.dispose(); };
+    return () => { sceneRef.current = null; boardStage.attach(null); boardStage.pointed(null); s.dispose(); };
   }, [board]);
 
   // Beside the pointer, flipped to its left where it would run under the pin map or off the view.
@@ -104,7 +116,12 @@ export function BoardView() {
           {d.pin && <span className="board-tip-pin">{d.pin}</span>}
         </div>
       )}
-      {no3d ? <p className="board-hint faint">This screen can't draw the board in 3D.</p> : <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom · Click a slot or header for a closer look</p>}
+      <div className="board-top">
+        {no3d ? <p className="board-hint faint">This screen can't draw the board in 3D.</p> : <>
+          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom · Click a slot or header for a closer look</p>
+          {Object.keys(marks).length > 0 && <p className="board-key" aria-hidden="true"><i className="is-used" />In use<i className="is-free" />Free</p>}
+        </>}
+      </div>
     </div>
   );
 }

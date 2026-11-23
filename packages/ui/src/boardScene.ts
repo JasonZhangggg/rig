@@ -24,6 +24,8 @@ export interface BoardScene {
   hover(ids: string[]): void;
   /** Back to the whole board. */
   reset(): void;
+  /** Marks slots in use (a filled frame) and free (an outline). Slots left out get no mark. */
+  setUsage(states: Record<string, "used" | "free">): void;
   dispose(): void;
   /** Triangles and draw calls in the last frame, for the size and speed checks. */
   stats(): { triangles: number; calls: number; ms: number; frames: number };
@@ -232,6 +234,46 @@ export function createBoardScene(
   }
   function addHalo(n: BoardNode) { halos.push(makeHalo(n, 0.62)); }
 
+  // ---------- in use / free ----------
+  // A filled frame around each slot in use and a thin outline around each free one, so the board reads like the Slots tab.
+  let usageMarks: THREE.Mesh[] = [], usageKey = "";
+  const USED = 0x4cc274; // the same green as .board-key
+  const rounded = (w: number, h: number, r: number, path: THREE.Path = new THREE.Shape()) => {
+    const x = -w / 2, y = -h / 2;
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    path.moveTo(x + r, y);
+    path.lineTo(x + w - r, y); path.quadraticCurveTo(x + w, y, x + w, y + r);
+    path.lineTo(x + w, y + h - r); path.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    path.lineTo(x + r, y + h); path.quadraticCurveTo(x, y + h, x, y + h - r);
+    path.lineTo(x, y + r); path.quadraticCurveTo(x, y, x + r, y);
+    return path;
+  };
+  function setUsage(states: Record<string, "used" | "free">) {
+    const key = Object.keys(states).sort().map((k) => `${k}=${states[k]}`).join("|");
+    if (key === usageKey) return;
+    usageKey = key;
+    usageMarks.forEach(freeMesh);
+    usageMarks = [];
+    for (const n of nodes) {
+      const state = states[n.item.id];
+      if (!state) continue;
+      const used = state === "used", pad = 0.012, t = used ? 0.011 : 0.007, r = 0.014;
+      const w = n.item.w / 100 + pad * 2, h = n.item.h / 100 + pad * 2;
+      const frame = rounded(w, h, r) as THREE.Shape;
+      frame.holes.push(rounded(w - t * 2, h - t * 2, r - t, new THREE.Path()));
+      const parts: [THREE.Shape, number][] = [[frame, used ? 1 : 0.45]];
+      if (used) parts.push([rounded(w - t * 2, h - t * 2, r - t) as THREE.Shape, 0.5]);
+      for (const [shape, opacity] of parts) {
+        const m = new THREE.Mesh(new THREE.ShapeGeometry(shape, 6), new THREE.MeshBasicMaterial({ color: used ? USED : 0xffffff, transparent: true, opacity, depthWrite: false, toneMapped: false }));
+        m.position.z = n.top + 0.002;
+        m.renderOrder = 2;
+        n.group.add(m);
+        usageMarks.push(m);
+      }
+    }
+    invalidate();
+  }
+
   // ---------- hover ----------
   // A softer glow than a pick, and the pin under the pointer stands up a little.
   let hoverHalos: THREE.Mesh[] = [], hoverKey = "";
@@ -256,7 +298,11 @@ export function createBoardScene(
     invalidate();
   }
 
-  /** The pin map for one header: its pins as they sit on the board, then what each color is. */
+  /**
+   * The pin map for one header: its pins as they sit on the board, each run of pins named right beside it, above the
+   * top row and below the bottom one (or to the right of a header that stands on end). Signed pins show + and −.
+   * A header with more than two rows of named pins keeps a list under the map instead.
+   */
   function showCard(n: BoardNode, groups: PinGroup[]) {
     const it = n.item, p = it.pins!;
     const head = document.createElement("div");
@@ -266,50 +312,99 @@ export function createBoardScene(
     head.children[1].textContent = it.label;
     const grid = document.createElement("div");
     grid.className = "po-grid";
-    grid.style.gridTemplateColumns = `repeat(${p.cols}, var(--po-pin))`;
-    const colorOf = new Map<number, string>();
-    for (const g of groups) for (const q of g.pins) colorOf.set(q.index, g.color);
+    const groupOf = new Map<number, PinGroup>(), signOf = new Map<number, string>();
+    for (const g of groups) for (const q of g.pins) { groupOf.set(q.index, g); signOf.set(q.index, q.sign); }
+    const onEnd = p.cols === 1 && p.rows > 1;
+    const labeled = groups.length > 0 && (p.rows <= 2 || onEnd);
+    const top = labeled && !onEnd && p.rows === 2 ? 1 : 0; // a label row above the pins
+    grid.style.gridTemplateColumns = onEnd && labeled ? "var(--po-pin) auto" : `repeat(${p.cols}, var(--po-pin))`;
+    if (labeled) grid.classList.add("is-labeled");
     const cells: HTMLElement[] = [];
     for (let i = 0; i < p.cols * p.rows; i++) {
       const c = document.createElement("span");
       c.className = "po-pin";
+      c.style.gridRow = String(Math.floor(i / p.cols) + 1 + top);
+      c.style.gridColumn = String((i % p.cols) + 1);
       if ((p.missing ?? []).includes(i)) c.classList.add("is-empty");
       else {
-        c.textContent = String(pinNumber(it, i));
-        const col = colorOf.get(i);
-        if (col) c.style.setProperty("--c", col); else c.classList.add("is-unused");
+        const g = groupOf.get(i), sign = signOf.get(i);
+        c.textContent = labeled && sign ? sign : String(pinNumber(it, i));
+        if (g) c.style.setProperty("--c", g.color); else c.classList.add("is-unused");
         if (pinNumber(it, i) === 1) c.classList.add("is-first");
       }
       cells.push(c);
       grid.append(c);
     }
-    const legend = document.createElement("ul");
-    legend.className = "po-legend";
-    for (const g of groups) {
-      const li = document.createElement("li");
-      li.style.setProperty("--c", g.color);
-      li.innerHTML = `<i></i><b></b><span></span>`;
-      li.children[1].textContent = g.name;
-      li.children[2].textContent = g.pins.map((q) => `${q.number}${q.sign ? ` ${q.sign}` : ""}`).join(", ");
-      const mark = (on: boolean) => {
-        for (const q of g.pins) {
-          cells[q.index].classList.toggle("is-lit", on);
-          const mesh = n.pins[q.index];
-          if (mesh) { mesh.userData.lit = on; mesh.scale.set(on ? 1.35 : 1, on ? 1.35 : 1, on ? 1.12 : 1); }
+    const mark = (g: PinGroup, on: boolean) => {
+      for (const q of g.pins) {
+        cells[q.index].classList.toggle("is-lit", on);
+        const mesh = n.pins[q.index];
+        if (mesh) { mesh.userData.lit = on; mesh.scale.set(on ? 1.35 : 1, on ? 1.35 : 1, on ? 1.12 : 1); }
+      }
+      grid.classList.toggle("has-lit", on);
+      invalidate();
+    };
+    const tag = (g: PinGroup) => {
+      const el = document.createElement("span");
+      el.className = "po-tag";
+      el.style.setProperty("--c", g.color);
+      el.textContent = g.name;
+      el.addEventListener("pointerenter", () => mark(g, true));
+      el.addEventListener("pointerleave", () => mark(g, false));
+      return el;
+    };
+    if (labeled && onEnd) {
+      // One name per run of pins, beside them.
+      for (let r = 0; r < p.rows; ) {
+        const g = groupOf.get(r);
+        let end = r + 1;
+        while (g && end < p.rows && groupOf.get(end) === g) end++;
+        if (g) { const el = tag(g); el.classList.add("is-side"); el.style.gridRow = `${r + 1} / ${end + 1}`; el.style.gridColumn = "2"; grid.append(el); }
+        r = end;
+      }
+    } else if (labeled) {
+      // Runs of same-named pins along the top row get their name above, along the bottom row below.
+      const rows = p.rows === 2 ? [0, 1] : [0];
+      for (const row of rows) {
+        const above = p.rows === 2 && row === 0;
+        for (let col = 0; col < p.cols; ) {
+          const g = groupOf.get(row * p.cols + col);
+          let end = col + 1;
+          while (g && end < p.cols && groupOf.get(row * p.cols + end) === g) end++;
+          if (g) {
+            const el = tag(g);
+            el.classList.add(above ? "is-above" : "is-below");
+            if (end - col === 1) el.classList.add(col === 0 ? "is-start" : col === p.cols - 1 ? "is-end" : "is-one");
+            el.style.gridRow = String(above ? 1 : p.rows + 1 + top);
+            el.style.gridColumn = `${col + 1} / ${end + 1}`;
+            grid.append(el);
+          }
+          col = end;
         }
-        grid.classList.toggle("has-lit", on);
-        invalidate();
-      };
-      li.addEventListener("pointerenter", () => mark(true));
-      li.addEventListener("pointerleave", () => mark(false));
-      legend.append(li);
+      }
+    }
+    const parts: HTMLElement[] = [head, grid];
+    if (!labeled && groups.length) {
+      const legend = document.createElement("ul");
+      legend.className = "po-legend";
+      for (const g of groups) {
+        const li = document.createElement("li");
+        li.style.setProperty("--c", g.color);
+        li.innerHTML = `<i></i><b></b><span></span>`;
+        li.children[1].textContent = g.name;
+        li.children[2].textContent = g.pins.map((q) => `${q.number}${q.sign ? ` ${q.sign}` : ""}`).join(", ");
+        li.addEventListener("pointerenter", () => mark(g, true));
+        li.addEventListener("pointerleave", () => mark(g, false));
+        legend.append(li);
+      }
+      parts.push(legend);
     }
     const note = document.createElement("p");
     note.className = "po-note";
     note.textContent = groups.some((g) => g.pins.some((q) => q.sign))
       ? "Seen from above. Pin 1 is square. On an LED plug, + is the colored wire."
       : "Seen from above. Pin 1 is square.";
-    card.append(head, grid, legend, note);
+    card.append(...parts, note);
     card.hidden = false;
     cells.forEach((c, i) => { c.dataset.pin = String(i); });
     pinCells = cells;
@@ -538,6 +633,7 @@ export function createBoardScene(
   return {
     highlight,
     hover,
+    setUsage,
     reset() { highlight(null); },
     stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, ms: lastMs, frames }),
     dispose() {

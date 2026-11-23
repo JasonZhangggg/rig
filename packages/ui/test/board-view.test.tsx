@@ -18,7 +18,7 @@ vi.mock("../src/boardScene", async (real) => ({
   createBoardScene: (_el: HTMLElement, _shape: unknown, opts: { onHover?: (h: BoardHover | null) => void }) => {
     board.point = opts.onHover ?? null;
     const rec = (name: string) => (arg?: unknown) => { board.calls.push([name, arg]); };
-    return { highlight: rec("highlight"), hover: rec("hover"), reset: rec("reset"), dispose: rec("dispose"), stats: () => ({ frames: 0 }) };
+    return { highlight: rec("highlight"), hover: rec("hover"), reset: rec("reset"), setUsage: rec("setUsage"), dispose: rec("dispose"), stats: () => ({ frames: 0 }) };
   },
 }));
 
@@ -93,6 +93,15 @@ describe("The motherboard on My PC", () => {
     const reset = pinGroups(fp).find((g) => g.name === "Reset")!.pins[0].index;
     act(() => board.point!({ id: "fp", pin: reset, x: 100, y: 100 }));
     expect(document.querySelector(".board-tip-pin")?.textContent).toMatch(/^Pin \d+: Reset/);
+  });
+
+  it("marks the slots in use and the free ones on the board, and leaves unmarked what Rig can't place", async () => {
+    await openBoard();
+    const marks = board.calls.filter(([n]) => n === "setUsage").at(-1)?.[1] as Record<string, string>;
+    expect(marks).toMatchObject({ "dimm-0": "free", "dimm-1": "used", "dimm-2": "free", "dimm-3": "used", pcie1: "used" });
+    expect(marks["m2-1"]).toBeUndefined();
+    expect(marks.fp).toBeUndefined();
+    expect(document.querySelector(".board-key")?.textContent).toBe("In useFree");
   });
 
   it("puts Reset view back to the whole board", async () => {
