@@ -73,6 +73,12 @@ export interface BackgroundSample extends RecordingSample {
 
 export interface Anomaly { t: number; why: string; text: string }
 
+/** A finished day, kept thinned to what its recording shows. Its full readings are let go, but for those around a closer look. */
+export interface SettledDay { day: number; first: number; last: number; samples: RecordingSample[]; intervalMs: number }
+
+/** How long after a closer look starts its full readings are kept once its day is over. A closer look lasts minutes. */
+export const LOOK_KEEP_MS = 2 * 3_600_000;
+
 type Rec = Record<string, unknown>;
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -84,6 +90,10 @@ export class BackgroundLog {
   /** Windows events and the recorder's own (sleep, wake, battery, stopping suddenly). */
   events: RawEvent[] = [];
   anomalies: Anomaly[] = [];
+  /** Finished days, thinned, by the time their day starts. A week of full readings with their app lists would hold tens of MB. */
+  settled = new Map<number, SettledDay>();
+  /** Each finished day's recording, with what it was made from, so a new line today doesn't redo the week. */
+  dayRecs = new Map<number, { key: string; rec: Recording }>();
   /** The sensor list the next readings refer to. */
   private header: Omit<Sensor, "value">[] | null = null;
 
@@ -152,6 +162,40 @@ export class BackgroundLog {
     this.samples = this.samples.filter((s) => s.t >= fromMs);
     this.events = this.events.filter((e) => e.t >= fromMs);
     this.anomalies = this.anomalies.filter((a) => a.t >= fromMs);
+    for (const [day, d] of this.settled) {
+      if (d.last < fromMs) { this.settled.delete(day); this.dayRecs.delete(day); continue; }
+      if (d.first >= fromMs) continue;
+      const samples = d.samples.filter((x) => x.t >= fromMs);
+      this.settled.set(day, { ...d, samples, first: samples[0]?.t ?? fromMs });
+      this.dayRecs.delete(day);
+    }
+  }
+
+  /**
+   * Thins every day that ended before today and lets its full readings go, keeping only those a closer look shows: from a few
+   * minutes before one starts to a couple of hours after. Readings that arrive late for a settled day still count towards it.
+   */
+  settle(now: number) {
+    const today = startOfDay(now);
+    const looks = this.anomalies.map((a) => [a.t - LEAD_MS, a.t + LOOK_KEEP_MS] as const);
+    const near = (t: number) => looks.some(([a, b]) => t >= a && t <= b);
+    const byDay = new Map<number, BackgroundSample[]>();
+    for (const x of this.samples) {
+      const day = startOfDay(x.t);
+      if (day >= today) continue;
+      const settled = this.settled.get(day);
+      if (settled && x.t <= settled.last) continue;
+      (byDay.get(day) ?? byDay.set(day, []).get(day)!).push(x);
+    }
+    if (!byDay.size) return;
+    for (const [day, list] of byDay) {
+      const had = this.settled.get(day);
+      const all = sorted(had ? [...had.samples as BackgroundSample[], ...list] : list);
+      const thin = thinned(all, day, day + DAY);
+      this.settled.set(day, { day, first: all[0].t, last: all[all.length - 1].t, samples: thin.samples, intervalMs: thin.intervalMs });
+      this.dayRecs.delete(day);
+    }
+    this.samples = this.samples.filter((x) => startOfDay(x.t) >= today || near(x.t));
   }
 
   /** The recorder's events, cleaned and labelled: problems and power events kept apart so a busy week of sleep and wake can't push out a crash. */
@@ -161,9 +205,11 @@ export class BackgroundLog {
 }
 
 const sorted = <T extends { t: number }>(xs: T[]) => [...xs].sort((a, b) => a.t - b.t);
+const startOfDay = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
-/** One recording for each closer look, and one for each day, newest first. */
+/** One recording for each closer look, and one for each day, newest first. Settles the days that are over first (see BackgroundLog.settle). */
 export function backgroundRecordings(log: BackgroundLog, pcId: string, limits: Limits, now: number): Recording[] {
+  log.settle(now);
   const samples = sorted(log.samples);
   const events = cleanEvents(log.events.filter((e) => e.level !== "info"), 1000);
   const out: Recording[] = [];
@@ -186,17 +232,27 @@ export function backgroundRecordings(log: BackgroundLog, pcId: string, limits: L
   }
   close();
 
-  // A day at a time, in the person's own days, with readings thinned to what a recording holds.
+  // A day at a time, in the person's own days, with readings thinned to what a recording holds. Finished days were thinned once,
+  // and their recordings are made again only when an event in them or the limits change.
+  const label = (day: number) => `Background log for ${new Date(day).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}`;
+  const limitsKey = JSON.stringify(limits);
+  for (const [day, d] of log.settled) {
+    if (!d.samples.length) continue;
+    const inside = events.filter((e) => e.t >= d.first - 60_000 && e.t <= d.last + 60_000);
+    const key = `${limitsKey}|${pcId}|${d.first}|${d.last}|${d.samples.length}|${inside.length}|${inside.map((e) => e.t).join()}`;
+    let got = log.dayRecs.get(day);
+    if (got?.key !== key) log.dayRecs.set(day, (got = { key, rec: make(`bg-d-${dayId(day)}`, label(day), d.first, d.last, d.samples, inside, pcId, limits, day, d.intervalMs, true) }));
+    out.push(got.rec);
+  }
   const byDay = new Map<number, BackgroundSample[]>();
   for (const s of samples) {
-    const d = new Date(s.t); d.setHours(0, 0, 0, 0);
-    const k = d.getTime();
+    const k = startOfDay(s.t);
+    if (log.settled.has(k)) continue;
     (byDay.get(k) ?? byDay.set(k, []).get(k)!).push(s);
   }
   for (const [day, list] of byDay) {
-    const label = new Date(day).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
     const thin = thinned(list, day, day + DAY);
-    out.push(make(`bg-d-${dayId(day)}`, `Background log for ${label}`, list[0].t, list[list.length - 1].t, thin.samples, events, pcId, limits, day, thin.intervalMs, true));
+    out.push(make(`bg-d-${dayId(day)}`, label(day), list[0].t, list[list.length - 1].t, thin.samples, events, pcId, limits, day, thin.intervalMs, true));
   }
   return out.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
 }
