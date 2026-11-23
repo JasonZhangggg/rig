@@ -113,13 +113,15 @@ describe("Manuals", () => {
     expect(board.getByRole("button", { name: /^Plugging things in/ }).getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("asks about the part from the box at the bottom of the Manual tab", async () => {
+  it("asks about the part from the box at the bottom of the Manual tab when Enter is pressed", async () => {
     await partTab("Motherboard");
     await card(/^Motherboard:/);
     const box = screen.getByRole("textbox", { name: "Ask a question about this part" });
     expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(box, { target: { value: "Where does the front USB-C go?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+    expect(location.hash).not.toBe("#chat");
+    fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() => expect(location.hash).toBe("#chat"));
     expect(await screen.findByText(/^About my .+: Where does the front USB-C go\?$/)).toBeTruthy();
   });

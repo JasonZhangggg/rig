@@ -65,6 +65,12 @@ export function OpenManualIcon({ manual }: { manual: Manual }) {
   );
 }
 
+/** Grows the question box with what's typed, up to four lines, then it scrolls. */
+function grow(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 4 * 22 + 18)}px`;
+}
+
 /** Ask about the part: the answer comes in the chat, naming the manual page when one helped. */
 export function AskManual({ about, fromManual }: { about: string; fromManual: boolean }) {
   const { ask } = useApp();
@@ -72,9 +78,11 @@ export function AskManual({ about, fromManual }: { about: string; fromManual: bo
   const text = q.trim();
   return (
     <div className="mn-ask-bar">
-      <form className="mn-ask" onSubmit={(e) => { e.preventDefault(); if (text) { ask(`About my ${about}: ${text}`); setQ(""); } }}>
-        <input id="ask-manual" value={q} onChange={(e) => setQ(e.target.value)} placeholder={fromManual ? "Ask about this part or its manual" : "Ask about this part"} aria-label="Ask a question about this part" autoComplete="off"
-          title={fromManual ? "Answers say which page of the manual they came from." : "Rig answers from what it knows about this part."} />
+      <form className="mn-ask" onSubmit={(e) => { e.preventDefault(); if (text) { ask(`About my ${about}: ${text}`); setQ(""); const ta = e.currentTarget.querySelector("textarea"); if (ta) ta.style.height = ""; } }}>
+        <textarea id="ask-manual" rows={1} value={q} placeholder={fromManual ? "Ask about this part or its manual" : "Ask about this part"} aria-label="Ask a question about this part"
+          title={fromManual ? "Answers say which page of the manual they came from." : "Rig answers from what it knows about this part."}
+          onChange={(e) => { setQ(e.target.value); grow(e.target); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
         <button type="submit" className="mn-ask-send" aria-label="Ask" disabled={!text}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
