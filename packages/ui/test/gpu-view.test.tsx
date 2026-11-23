@@ -36,8 +36,9 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function openCard() {
   location.hash = "pc";
   render(<RigApp client={new DemoClient()} />);
-  fireEvent.click(await screen.findByRole("button", { name: /^Graphics card/ }));
-  await screen.findByRole("tab", { name: "Ports" });
+  // The first test pays for the app's cold start, which takes a few seconds on CI.
+  fireEvent.click(await screen.findByRole("button", { name: /^Graphics card/ }, { timeout: 5000 }));
+  await screen.findByRole("tab", { name: "Ports" }, { timeout: 5000 });
 }
 const group = (title: string) => screen.getByRole("heading", { name: title }).closest("li")!;
 
