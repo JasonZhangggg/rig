@@ -227,6 +227,39 @@ public static class Program
         var cond = new ProbeCondition("gpuTemp", null, ">=", 85, 0);
         if (!cond.Holds(85) || cond.Holds(84.9)) yield return "probe conditions compare wrongly";
         if (ProbeReader.Scalar(new byte[] { 1, 255 })?.ToJsonString() != "\"01FF\"" || ProbeReader.Scalar(42u)?.ToJsonString() != "42") yield return "probe values convert wrongly";
+        foreach (var p in IdleProbeChecks(me)) yield return p;
+    }
+
+    /// With no custom logs the recorder's custom-log thread rests instead of checking every second, and a new one still starts within a moment.
+    static IEnumerable<string> IdleProbeChecks(string me)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"rig-selftest-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        int changes = 0;
+        var problems = new List<string>();
+        try
+        {
+            using var engine = new ProbeEngine(dir, _ => { }, () => Interlocked.Increment(ref changes));
+            engine.Start();
+            Thread.Sleep(3500);
+            if (engine.Rounds > 2) problems.Add($"with no custom logs, the custom-log thread checked {engine.Rounds} times in 3.5 seconds");
+            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var spec = new JsonObject
+            {
+                ["id"] = "t-idle", ["label"] = "Test", ["createdAt"] = now, ["expiresAt"] = now + 3_600_000,
+                ["source"] = new JsonObject { ["kind"] = "process", ["name"] = "game.exe" },
+            };
+            if (ProbeRules.Parse(spec, now, me).Probe is not ProbeSpec p) problems.Add("the idle custom-log test's probe was refused");
+            else
+            {
+                ProbeStore.Save(dir, [p]);
+                var waited = Stopwatch.StartNew();
+                while (Volatile.Read(ref changes) == 0 && waited.ElapsedMilliseconds < 4000) Thread.Sleep(50);
+                if (Volatile.Read(ref changes) == 0) problems.Add("a custom log added while none were running didn't start within 4 seconds");
+            }
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+        return problems;
     }
 
     static string? Arg(string[] args, string name)
