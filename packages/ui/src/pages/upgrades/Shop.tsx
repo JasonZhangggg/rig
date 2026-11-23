@@ -3,7 +3,7 @@
 // build. The catalog and prices are demo data until Rig has a shop feed, and
 // every price on screen says so. Photos come only from that feed.
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { categoryState, drawWith, fitOf, gainOf, makersIn, matchesQuery, photoOf, priceOf, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
 import { useActions, useStillPC, useUI } from "../../state";
 import { partIcon } from "../shared";
@@ -84,7 +84,8 @@ function useShop() {
 }
 
 /** My PC's upgrade ideas come in from the page, which keeps them while you move between its tabs. */
-export function UpgradesTab({ ups }: { ups: PCUpgrades }) {
+/** Drawn again only when the ideas or the PC's parts change, not on every reading of the page around it. */
+export const UpgradesTab = memo(function UpgradesTab({ ups }: { ups: PCUpgrades }) {
   const { set } = useActions();
   const ui = useUI();
   const pc = useStillPC();
@@ -139,7 +140,7 @@ export function UpgradesTab({ ups }: { ups: PCUpgrades }) {
       </div>
     </div>
   );
-}
+});
 
 /** The top of the tab: a free fix before any purchase, and the one upgrade Rig would start with. */
 function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () => void; pickText: PCUpgrades["pick"] }) {

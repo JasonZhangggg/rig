@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PC } from "@rig/core";
 import { DemoClient } from "@rig/core/demo";
 
+const { useUpgrades } = await import("../src/pages/upgrades/PCUpgrades");
 const { AppProvider, keepUnchanged, useActions, useApp, useData, useStillPC } = await import("../src/state");
 
 const draws: Record<string, number> = {};
@@ -12,6 +13,9 @@ const drew = (k: string) => { draws[k] = (draws[k] ?? 0) + 1; };
 function Buttons() { useActions(); drew("buttons"); return null; }
 function Name() { const pc = useStillPC(); drew("name"); return <p>{pc.name}: {pc.issues?.length ?? 0} issues</p>; }
 function Chat() { const { chat } = useData("chat"); drew("chat"); return <p>{chat.length} messages</p>; }
+const upgrades = new Set<unknown>();
+/** Like the PC page: drawn on every reading, and works out the upgrade ideas each time. */
+function Upgrades() { useApp(); upgrades.add(useUpgrades()); return null; }
 function Live() { const { pc } = useApp(); drew("live"); return <p>CPU {pc.parts?.cpu?.temp}</p>; }
 
 /** Renders the four screens on a demo PC and hands back a way to send it a new reading. */
@@ -24,18 +28,25 @@ async function setup() {
     send = cb;
     return real(id, (pc) => { if (!last) cb(pc); last = pc; });
   });
-  render(<AppProvider client={client} fallback={(s) => <p>{s}</p>}><Buttons /><Name /><Chat /><Live /></AppProvider>);
+  render(<AppProvider client={client} fallback={(s) => <p>{s}</p>}><Buttons /><Name /><Chat /><Live /><Upgrades /></AppProvider>);
   await screen.findByText(/^CPU/);
   const reading = (change: (pc: PC) => PC) => act(async () => { last = change(structuredClone(last)); send(last); });
   return { reading };
 }
 
-/** A new reading: the processor a degree warmer, seen a second later. */
-const warmer = (pc: PC): PC => ({
-  ...pc,
-  seenAt: new Date(Date.parse(pc.seenAt ?? "2026-01-01") + 1000).toISOString(),
-  parts: { ...pc.parts, cpu: { ...pc.parts!.cpu, temp: (pc.parts!.cpu.temp ?? 50) + 1 } },
-});
+/** A new reading: the processor a degree warmer and a little more memory in use, seen a second later. */
+const warmer = (pc: PC): PC => {
+  const ram = pc.parts!.ram;
+  return {
+    ...pc,
+    seenAt: new Date(Date.parse(pc.seenAt ?? "2026-01-01") + 1000).toISOString(),
+    parts: {
+      ...pc.parts,
+      cpu: { ...pc.parts!.cpu, temp: (pc.parts!.cpu.temp ?? 50) + 1 },
+      ram: { ...ram, specs: [...ram.specs.filter(([k]) => k !== "In use"), ["In use", `${Math.random().toFixed(3)} GB`]] },
+    },
+  };
+};
 
 beforeEach(() => { for (const k of Object.keys(draws)) delete draws[k]; localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -49,6 +60,15 @@ describe("Drawing again on a new reading", () => {
     expect(draws.buttons).toBe(before.buttons);
     expect(draws.name).toBe(before.name);
     expect(draws.chat).toBe(before.chat);
+  });
+
+  it("hands the Upgrades tab the same ideas on a new reading", async () => {
+    const { reading } = await setup();
+    await screen.findByText(/^CPU/);
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    upgrades.clear();
+    for (let i = 0; i < 3; i++) await reading(warmer);
+    expect(upgrades.size).toBe(1);
   });
 
   it("draws the PC's name and issues again when an issue comes or goes", async () => {

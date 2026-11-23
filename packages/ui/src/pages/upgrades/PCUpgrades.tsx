@@ -1,7 +1,7 @@
 // Upgrade ideas on My PC: Rig's pick for the Upgrades tab, and an Upgrade tab
 // on each part that has an idea.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PC, Upgrade } from "@rig/core";
 import { ManualRef } from "../../manuals/ManualRef";
 import { useActions, useAppSelector, useStillPC } from "../../state";
@@ -34,8 +34,12 @@ export function useUpgrades(): PCUpgrades {
   }, [client, pc.id]);
   const list = got?.id === pc.id ? got.list : null;
   const alerts = useAppSelector((c) => c.pc.alerts);
-  const room = roomIn(pc);
-  return { list, failed: !!(got?.id === pc.id && got.failed), pick: list ? bestPick(list, { ...pc, alerts }, room) : null, room };
+  const failed = !!(got?.id === pc.id && got.failed);
+  // The same object until the ideas or the PC's parts change, so the Upgrades tab isn't drawn again on every reading.
+  return useMemo(() => {
+    const room = roomIn(pc);
+    return { list, failed, pick: list ? bestPick(list, { ...pc, alerts }, room) : null, room };
+  }, [list, failed, pc, alerts]);
 }
 
 function AskBuy({ u, primary }: { u: Upgrade; primary?: boolean }) {

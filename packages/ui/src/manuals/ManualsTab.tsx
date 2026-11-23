@@ -1,7 +1,7 @@
 // The Manuals tab of My PC: search every manual, one card per part, and the
 // drivers and BIOS Rig read, with the maker's download page.
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ManualKind } from "@rig/core";
 import { useActions, useStillPC } from "../state";
 import { AddManual } from "./AddManual";
@@ -20,7 +20,8 @@ const driverPages: Record<string, string> = {
 
 const addable: ManualKind[] = ["monitor", "cooler", "case", "psu", "memory", "storage", "other"];
 
-export function ManualsTab() {
+/** Drawn again only when the manuals or the PC's parts change, not on every reading of the page around it. */
+export const ManualsTab = memo(function ManualsTab() {
   const pc = useStillPC();
   const state = useManuals();
   const [q, setQ] = useState("");
@@ -61,7 +62,7 @@ export function ManualsTab() {
       <Drivers />
     </div>
   );
-}
+});
 
 /** Each part with a driver or BIOS: what's installed, whether there's newer, and where to get it. */
 function Drivers() {

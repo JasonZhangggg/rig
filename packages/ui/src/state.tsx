@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
-import { alertRules, formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
+import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "manuals", "web", "signin", "settings"];
 
@@ -203,7 +203,7 @@ export function stillOf(pc: PC): StillPC {
   const still: StillPC = { ...rest };
   if (parts) {
     still.parts = {};
-    for (const [k, { temp: _t, tempMax: _m, load: _lo, clock: _c, fan: _fa, warn: _w, ...part }] of Object.entries(parts)) still.parts[k] = part;
+    for (const [k, { temp: _t, tempMax: _m, load: _lo, clock: _c, fan: _fa, warn: _w, ...part }] of Object.entries(parts)) still.parts[k] = { ...part, specs: part.specs.filter((row) => !liveSpec(row)) };
   }
   const kept = keepUnchanged(lastStill?.id === pc.id ? lastStill : null, still);
   lastStill = kept;
