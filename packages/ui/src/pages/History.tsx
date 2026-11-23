@@ -445,7 +445,7 @@ function Found({ query, readings, lines, onOpen }: { query: string; readings: Re
       {groups.length ? (
         <SensorTable label={`Readings matching ${query.trim()}`} onPick={(r) => onOpen(r.part, r.type, r.id)} groups={groups.map(({ line, rows }) => ({
           key: line.id, rows,
-          head: <span className="pf-found-head">{line.name}<button type="button" className="btn sm" onClick={() => onOpen(line.id, rows[0].type, null)}>Open {line.name.toLowerCase()}</button></span>,
+          head: <span className="pf-found-head">{line.name}<button type="button" className="btn ghost sm" onClick={() => onOpen(line.id, rows[0].type, null)}>Open {line.name.toLowerCase()}</button></span>,
         }))} />
       ) : <p className="muted pf-none">Try a part, like processor, a kind, like voltage, or a sensor, like core 3 or hot spot.</p>}
     </section>

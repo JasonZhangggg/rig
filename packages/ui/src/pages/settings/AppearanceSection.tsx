@@ -55,7 +55,7 @@ export function AppearanceSection() {
         </div>
       )}
       <SettingRow title="Reset appearance" body="Back to how Rig ships. Your custom colors are cleared too.">
-        <button className="btn sm" type="button" disabled={isDefaultAppearance(look)} onClick={() => { resetAppearance(); toast("Appearance is back to how Rig ships."); }}>Reset appearance</button>
+        <button className="btn ghost sm" type="button" disabled={isDefaultAppearance(look)} onClick={() => { resetAppearance(); toast("Appearance is back to how Rig ships."); }}>Reset appearance</button>
       </SettingRow>
     </>
   );
@@ -146,7 +146,7 @@ function CustomColors({ look }: { look: Appearance }) {
             {palettes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
-        <button className="btn sm" type="button" onClick={() => pick({ ...brass.colors })}>Reset to Brass</button>
+        <button className="btn ghost sm" type="button" onClick={() => pick({ ...brass.colors })}>Reset to Brass</button>
       </div>
     </div>
   );
@@ -156,7 +156,7 @@ function Problem({ text, fix, onFix }: { text: string; fix?: string; onFix?: () 
   return (
     <div className="callout warn look-problem" role="status">
       <span>{text}</span>
-      {fix && <button className="btn sm" type="button" onClick={onFix}>{fix}</button>}
+      {fix && <button className="btn ghost sm" type="button" onClick={onFix}>{fix}</button>}
     </div>
   );
 }

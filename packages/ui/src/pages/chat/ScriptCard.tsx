@@ -30,7 +30,7 @@ export function ScriptCard({ m }: { m: ChatMessage }) {
         <span className="faint">Runs only if you approve · turn it off in Settings</span>
         {sc.status === "waiting" && (
           <>
-            <button className="btn sm" type="button" disabled={approving} onClick={() => declineScript(m.id)}>Not now</button>
+            <button className="btn ghost sm" type="button" disabled={approving} onClick={() => declineScript(m.id)}>Not now</button>
             {/* The Windows permission prompt can stay up a while; the button says it's waiting on it. */}
             <button className="btn primary sm" type="button" disabled={approving} onClick={() => { setApproving(true); void approveScript(m.id).finally(() => setApproving(false)); }}>{approving ? "Approving…" : "Approve script"}</button>
           </>

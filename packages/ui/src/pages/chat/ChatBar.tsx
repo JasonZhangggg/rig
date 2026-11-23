@@ -38,7 +38,7 @@ export function ChatBar({ onNew }: { onNew: () => void }) {
         </ul>
       )}
       {data.chat.length > 0 && (
-        <button className="btn sm chat-new" type="button" onClick={onNew} disabled={data.answering}>
+        <button className="btn ghost sm chat-new" type="button" onClick={onNew} disabled={data.answering}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
           New chat
         </button>
