@@ -1,11 +1,11 @@
 // Real-PC 3D prototype: /proto/?build=<preset> for the PC, /proto/?board=<item kind or id> for the board.
-// &labels=pins|callouts|numbers|focus|tags picks the label style; &hot=gpu makes one part read hot.
+// &hot=gpu makes one part read hot.
 import "@rig/ui/styles.css";
 import { coolers, gpus, layoutFromReading, resolveBuild, type BuildInput, type LayoutReading, type PC } from "@rig/core";
 import msiRead from "../../../packages/core/test/fixtures/layout-msi-pro-b650-a.json";
 import asrockRead from "../../../packages/core/test/fixtures/layout-asrock-b650m-pro-rs.json";
 import { DemoClient } from "@rig/core/demo";
-import { createBoardScene, createScene, makeCooler, makeGpu, makeRam, plainFan, realMaterial, sceneTheme, type Kit, type LabelStyle } from "@rig/ui/proto3d";
+import { createBoardScene, createScene, makeCooler, makeGpu, makeRam, plainFan, realMaterial, sceneTheme, type Kit } from "@rig/ui/proto3d";
 
 const presets: Record<string, { title: string; input: BuildInput }> = {
   generic: { title: "Today: one typical tower for every PC", input: {} },
@@ -102,7 +102,6 @@ async function main() {
       : read === "asrock" ? layoutFromReading({ maker: "ASRock", model: "B650M Pro RS WiFi", page: 10, reading: asrockRead as LayoutReading }) : undefined;
     const board = fromManual ? resolveBuild({ board: { manufacturer: "", product: fromManual.model }, boardLayout: fromManual }).board : resolveBuild(presets.atlas.input).board;
     const s = createBoardScene(stage, board);
-    if (q.has("labels")) s.setLabelStyle(q.get("labels") as LabelStyle);
     const sel = q.get("board")!;
     if (sel) s.highlight(board.items.some((i) => i.id === sel) ? { id: sel } : { kind: sel as never });
     cap.textContent = `${board.model}${sel ? ` · ${sel}` : ""}`;
@@ -116,7 +115,6 @@ async function main() {
   const parts = hot && atlas.parts?.[hot] ? { ...atlas.parts, [hot]: { ...atlas.parts[hot], temp: 88, warn: true } } : atlas.parts;
   const pc: PC = { ...atlas, parts, build };
   const scene = createScene(stage);
-  if (q.has("labels")) scene.setLabelStyle(q.get("labels") as LabelStyle);
   scene.setPC(pc, { ...sceneTheme, finish: q.has("ink") ? "ink" : "real" });
   if (q.has("exploded")) scene.setExploded(true);
   const built = performance.now() - t0;

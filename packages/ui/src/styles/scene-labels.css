@@ -1,63 +1,65 @@
-@import "./label-styles.css";
-/* The 3D view's part labels. A pin sits on the part, a hairline leader runs out to the side, and the label
-   hangs at its end, a little smaller and softer the farther its part is. scene.ts places each one with transforms. */
-.scene-labels { --lx: -1px; --ly: 2px; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.part-label {
-  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-pill);
-  background: color-mix(in srgb, #FFFFFF 94%, transparent); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 12px rgba(0, 0, 0, .06); backdrop-filter: blur(6px); pointer-events: auto; cursor: pointer;
-}
-.part-label.is-selected { border-color: var(--graphite); background: var(--graphite); color: var(--primary-text, #FFFFFF); }
-.part-label .pl-temp { color: var(--text-2); }
-.part-label .pl-temp.warn { color: var(--warn); }
-.part-label.is-selected .pl-temp { color: inherit; opacity: .8; }
-.scene-pin { --fade: 1; position: absolute; top: 0; left: 0; }
-.pin-dot, .pin-lead { opacity: var(--fade); transition: opacity .25s var(--ease-out); }
-.scene-pin.is-off { display: none; }
-.scene-pin > * { position: absolute; top: 0; left: 0; }
-.pin-dot {
-  width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%;
-  background: var(--good-mark); box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in srgb, var(--good) 45%, transparent);
-}
-.pin-lead { width: 1px; height: 1.5px; margin-top: -.75px; transform-origin: 0 50%; background: color-mix(in srgb, var(--text) 70%, transparent); }
-.scene-pin .part-label {
-  height: 26px; padding: 0 10px; transform-origin: 0 0; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
-  background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: -.005em;
-  box-shadow: var(--lx) var(--ly) 6px -1px rgba(0, 0, 0, .14), calc(var(--lx) * 3) calc(var(--ly) * 3) 18px -4px rgba(0, 0, 0, .14);
-  backdrop-filter: blur(8px);
-}
-.scene-pin .part-label .pl-temp { color: var(--text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
-.scene-pin .part-label .pl-temp.warn { color: var(--look-text); }
-/* A part hidden behind something solid: its pin goes hollow and its label quiet, still readable. */
-.scene-pin.is-behind { --fade: .55 !important; }
-.scene-pin.is-behind .pin-dot { background: var(--surface); box-shadow: inset 0 0 0 2px var(--good-mark); }
-.scene-pin.is-behind .part-label:not(.is-selected) { color: var(--text-2); box-shadow: none; }
-.scene-pin.is-selected { z-index: 200 !important; }
-/* Pointed at from a list beside the 3D view. */
-.scene-pin.is-hovered { z-index: 150 !important; }
-.scene-pin.is-hovered .part-label { border-color: var(--good); }
-.scene-pin.is-hovered .pin-dot { box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px var(--sel); }
-.scene-pin.is-selected .pin-dot { background: var(--graphite); box-shadow: 0 0 0 2px var(--surface), 0 0 0 7px color-mix(in srgb, var(--graphite) 22%, transparent); }
-.scene-pin.is-selected .pin-lead { background: var(--text); }
-.scene-pin .part-label.is-selected { border-color: var(--graphite); background: var(--graphite); color: #FFFFFF; }
-.scene-pin .part-label.is-selected .pl-temp { color: inherit; opacity: .75; }
-@media (hover: hover) and (pointer: fine) {
-  .scene-pin:hover { --fade: 1 !important; z-index: 201 !important; }
-  .scene-pin:hover .pin-lead { background: var(--text); }
-}
-.scene-pin .part-label:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) {
-  .pin-dot, .pin-lead { transition: none; }
-}
+/* The 3D views' part labels (sceneLabels.ts). Callouts: each part's name, and its temperature, in a column beside
+   the model, joined to a dot on the part by a hairline. A soft light halo under each line keeps it readable over
+   dark and light parts. On a phone there's no room for columns, so each part gets a numbered marker and a list
+   under the model says what each number is. */
+.scene-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.callouts { --co-ink: var(--graphite); --co-halo: rgba(255, 255, 255, .78); position: absolute; inset: 0; pointer-events: none; font-family: var(--font); color: var(--text); }
+.callouts > .co-mark, .callouts > .co-label { position: absolute; top: 0; left: 0; will-change: transform; }
+.co-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.co-halo { fill: none; stroke: var(--co-halo); stroke-width: 3.2; stroke-linejoin: round; stroke-linecap: round; }
+.co-line { fill: none; stroke: color-mix(in srgb, var(--text) 58%, transparent); stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; }
+.co-line.is-hot { stroke: var(--text); stroke-width: 1.6; }
+.co-halo, .co-line, .co-label, .co-mark { transition: opacity .2s var(--ease-out); }
+.callouts .is-off { display: none !important; }
+.co-label { margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; white-space: nowrap; cursor: pointer; pointer-events: auto; }
+.co-label:focus-visible, .co-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.co-legend { display: none; }
 
-/* While one part is pointed at or picked, the other pins step back so the one that matters reads first,
-   and a soft frame shows which shape in the PC that part is. */
-.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) { --fade: .2 !important; }
-.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) .part-label { color: var(--text-3); box-shadow: none; }
-.scene-labels.has-focus .scene-pin:not(.is-hovered):not(.is-selected):not(:hover) .part-label .pl-temp { color: var(--text-3); }
-.scene-pin .part-label { transition: color .2s var(--ease-out), border-color .2s, background-color .2s; }
-.scene-pin.is-hovered .part-label { border-color: var(--text-3); background: var(--surface); }
-.scene-pin.is-hovered .pin-lead { background: var(--text); }
+/* ---------- Callouts ---------- */
+.callouts[data-mode="callouts"] .co-mark {
+  display: block; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  background: var(--co-ink); box-shadow: 0 0 0 2px var(--co-halo);
+}
+.callouts[data-mode="callouts"] .co-mark.is-warn { background: var(--look); }
+/* A part behind something solid: its dot goes hollow. */
+.callouts[data-mode="callouts"] .co-mark.is-behind { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--co-ink), 0 0 0 2px var(--co-halo); }
+.callouts[data-mode="callouts"] .co-label { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font: 600 13px/1.25 var(--font); letter-spacing: -.005em; }
+.callouts[data-mode="callouts"] .co-label[data-side="left"] { align-items: flex-end; text-align: right; }
+.co-value { font: 500 13px/1.2 var(--font); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.co-value.is-warn { color: var(--look-text); }
+.co-value.is-warn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 5px 1px 0; border-radius: 50%; background: var(--look); }
+.co-code { font: 600 10.5px/1.3 var(--font); color: var(--text-3); letter-spacing: .06em; text-transform: uppercase; }
+/* While one part is pointed at or picked, the others step back. */
+.callouts.has-focus .co-line:not(.is-hot), .callouts.has-focus .co-halo:not(.is-hot) { opacity: .22; }
+.callouts.has-focus .co-label:not(.is-hot), .callouts.has-focus .co-mark:not(.is-hot) { opacity: .45; }
+@media (hover: hover) and (pointer: fine) { .co-label:hover .co-title { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; } }
+
+/* ---------- Numbers, on a phone ---------- */
+.callouts[data-mode="numbers"] .co-label, .callouts[data-mode="numbers"] .co-lines { display: none; }
+.callouts[data-mode="numbers"] .co-mark {
+  display: grid; place-items: center; width: 22px; height: 22px; margin: -11px 0 0 -11px; box-sizing: border-box; border-radius: 50%;
+  background: var(--co-ink); color: #FFFFFF; font: 650 11.5px/1 var(--font); font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 2px 8px rgba(0, 0, 0, .28); pointer-events: auto; cursor: pointer;
+}
+.callouts[data-mode="numbers"] .co-mark::before { content: attr(data-n); }
+.callouts[data-mode="numbers"] .co-mark.is-warn { background: var(--look); color: #1B1B1F; }
+.callouts[data-mode="numbers"] .co-mark.is-behind { background: #FFFFFF; color: var(--co-ink); box-shadow: inset 0 0 0 1.5px var(--co-ink), 0 0 0 2px #FFFFFF; }
+.callouts[data-mode="numbers"] .co-mark.is-hot { box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 6px color-mix(in srgb, var(--good) 80%, transparent), 0 2px 8px rgba(0, 0, 0, .28); }
+.callouts[data-mode="numbers"].has-focus .co-mark:not(.is-hot) { opacity: .5; }
+.callouts[data-mode="numbers"] .co-legend {
+  display: block; position: absolute; bottom: 8px; left: 8px; right: 8px; box-sizing: border-box; margin: 0; padding: 4px; list-style: none;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px); box-shadow: 0 10px 28px rgba(0, 0, 0, .07); pointer-events: auto;
+}
+.co-legend li { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 8px; cursor: pointer; font: 500 12.5px/1.25 var(--font); color: var(--text); }
+.co-legend li i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--co-ink); color: #FFFFFF; font: normal 650 10.5px/1 var(--font); }
+.co-legend li b { font-weight: 550; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-legend li b small { margin-left: 4px; color: var(--text-3); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; }
+.co-legend li span { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.co-legend li span.is-warn { color: var(--look-text); font-weight: 600; }
+.co-legend li.is-hot { background: var(--sel); }
+
+/* A soft frame shows which shape in the PC the part pointed at is. */
 .part-box {
   position: absolute; top: 0; left: 0; width: 0; height: 0; opacity: 0; pointer-events: none;
   border: 1.5px solid color-mix(in srgb, var(--graphite) 55%, transparent); border-radius: 12px;
@@ -65,12 +67,10 @@
   transition: opacity .2s var(--ease-out);
 }
 @media (prefers-reduced-motion: reduce) {
-  .scene-pin .part-label, .part-box { transition: none; }
+  .co-halo, .co-line, .co-label, .co-mark, .part-box { transition: none; }
 }
 
-/* The board view: the same labels as the PC view, and a pin map beside the board for one header. */
-.board-labels .scene-pin .part-label { gap: 7px; }
-.board-labels .part-label .pl-name { font-weight: 650; letter-spacing: .01em; }
+/* The board view: the same callouts as the PC view, and a pin map beside the board for one header. */
 .pinout {
   --po-pin: 30px;
   position: absolute; top: 16px; right: 16px; width: 256px; max-height: calc(100% - 32px); overflow: auto; box-sizing: border-box;

@@ -9,8 +9,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
-import { placeLabels } from "./sceneLabels";
-import { createLabelDeck, type DeckPoint, type LabelStyle } from "./labelStyles";
+import { createSceneLabels, type LabelPoint } from "./sceneLabels";
 import { makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
@@ -58,8 +57,6 @@ export interface PCScene {
   setSpin(v: boolean): void;
   /** The unit the part labels show temperatures in. */
   setTempUnit(unit: TempUnit): void;
-  /** How the parts are labeled: today's pins, or one of the styles in labelStyles.ts. */
-  setLabelStyle(style: LabelStyle): void;
   /** Triangles and draw calls in the last frame. */
   stats(): { triangles: number; calls: number };
   dispose(): void;
@@ -67,7 +64,7 @@ export interface PCScene {
 
 type Vec3 = [number, number, number];
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
-interface Label { pin: HTMLDivElement; dot: HTMLElement; lead: HTMLElement; el: HTMLButtonElement; anchor: THREE.Object3D; w: number; h: number; hidden: boolean }
+interface Label { anchor: THREE.Object3D; hidden: boolean }
 /** The camera's vertical field of view on a landscape stage, in degrees. */
 const BASE_FOV = 32;
 
@@ -98,7 +95,7 @@ export function createScene(
   container.appendChild(renderer.domElement);
   const outlined = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultKeepAlive: true });
 
-  // Part labels: a pin on the part, a leader out to the side, and the label, laid out in px each frame.
+  // Part labels: callouts beside the PC, each joined to its part by a line (sceneLabels.ts), laid out in px each frame.
   const layer = document.createElement("div");
   layer.className = "scene-labels";
   container.appendChild(layer);
@@ -106,10 +103,8 @@ export function createScene(
   const focusBox = document.createElement("div");
   focusBox.className = "part-box";
   layer.appendChild(focusBox);
-  // The other label styles. Until one is chosen in the app, the last one picked in this browser is kept (rig.labelStyle).
-  const savedStyle = (() => { try { return localStorage.getItem("rig.labelStyle") as LabelStyle | null; } catch { return null; } })();
-  const deck = createLabelDeck(layer, savedStyle ?? "pins", { onPick: (id) => select(id), onHover: (id) => hoverFromScene(id) });
-  layer.classList.toggle("uses-deck", deck.style !== "pins");
+  // Pointing at a label lights its part and frames it, as pointing at the part does.
+  const labels = createSceneLabels(layer, { onPick: (id) => select(id), onHover: (id) => hoverFromScene(id) });
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -231,8 +226,6 @@ export function createScene(
     labels: {} as Record<string, Label>,
     pulses: [] as THREE.Sprite[],
     tempUnit: "c" as TempUnit,
-    /** The surface tags lie on: the motherboard, which faces the glass. */
-    surface: null as THREE.Object3D | null,
   };
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
   const theme = (): SceneTheme => state.theme!;
@@ -370,57 +363,23 @@ export function createScene(
     return obj;
   }
 
-  const labelHTML = (part: Part) =>
-    `<span class="pl-name">${part.type}</span>${part.temp ? `<span class="pl-temp${part.warn ? " warn" : ""}">${formatTemp(part.temp, state.tempUnit, { mark: "degree" })}</span>` : ""}`;
-
+  /** What each label says, in the order the parts list beside the view uses, so a phone's numbers read the same in both. */
   function refreshLabels() {
-    for (const [id, l] of Object.entries(state.labels)) {
-      const part = parts()[id];
-      const html = part ? labelHTML(part) : "";
-      if (part && l.el.innerHTML !== html) { l.el.innerHTML = html; labelsDirty = true; }
-    }
-    syncDeck();
-  }
-
-  function syncDeck() {
-    // In the order the parts list beside the view uses, so the numbers read the same in both.
     const order = Object.keys(parts());
     const ids = Object.keys(state.labels).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-    deck.setItems(ids.flatMap((id) => {
-      const p = parts()[id];
-      return p ? [{ id, title: p.type, sub: p.name, value: p.temp ? formatTemp(p.temp, state.tempUnit, { mark: "degree" }) : undefined, warn: p.warn }] : [];
+    labels.setItems(ids.flatMap((id) => {
+      const p: Part | undefined = parts()[id];
+      return p ? [{ id, title: p.type, value: p.temp ? formatTemp(p.temp, state.tempUnit, { mark: "degree" }) : undefined, warn: p.warn }] : [];
     }));
   }
 
   function addLabel(partId: string, anchor: THREE.Object3D, pos: Vec3) {
-    const part = parts()[partId];
-    if (!part) return;
-    const el = document.createElement("button");
-    el.className = "part-label";
-    el.type = "button";
-    el.dataset.part = partId;
-    el.innerHTML = labelHTML(part);
-    el.addEventListener("click", (e) => { e.stopPropagation(); select(partId); });
-    // Pointing at a label lights its part, frames it and quiets the other labels, as pointing at the part does.
-    el.addEventListener("pointerenter", () => hoverFromScene(partId));
-    el.addEventListener("pointerleave", () => hoverFromScene(null));
-    el.addEventListener("focus", () => hoverFromScene(partId));
-    el.addEventListener("blur", () => hoverFromScene(null));
-    const pin = document.createElement("div");
-    pin.className = "scene-pin";
-    pin.dataset.part = partId;
-    const dot = document.createElement("i");
-    dot.className = "pin-dot";
-    const lead = document.createElement("i");
-    lead.className = "pin-lead";
-    pin.append(lead, dot, el);
-    layer.appendChild(pin);
+    if (!parts()[partId]) return;
     const at = new THREE.Object3D();
     at.position.set(...pos);
     anchor.add(at);
-    state.labels[partId] = { pin, dot, lead, el, anchor: at, w: 0, h: 0, hidden: false };
-    labelsDirty = true;
-    syncDeck();
+    state.labels[partId] = { anchor: at, hidden: false };
+    refreshLabels();
   }
 
   // ---------- tower ----------
@@ -459,7 +418,6 @@ export function createScene(
     if (m2) board.group.remove(m2.group);
     const mb = onBoard();
     mb.add(board.group);
-    state.surface = board.group;
     add(mb, "motherboard", [0.4, 0, 0]);
     const ssd = onBoard();
     if (m2) ssd.add(m2.group);
@@ -700,11 +658,10 @@ export function createScene(
   function rebuild() {
     scene.remove(root);
     root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
-    for (const l of Object.values(state.labels)) l.pin.remove();
     root = new THREE.Group();
     scene.add(root);
-    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = []; state.surface = null;
-    syncDeck();
+    state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = [];
+    refreshLabels();
     const th = theme();
     scene.background = th.transparent ? null : new THREE.Color(th.bg);
     scene.fog = th.transparent ? null : new THREE.Fog(th.bg, 18, 38);
@@ -781,8 +738,10 @@ export function createScene(
   function readFit() {
     const cs = getComputedStyle(container);
     const raw = cs.getPropertyValue("--fit-inset").trim();
-    // A label style with columns or a list keeps room for them beside the PC.
-    const room = deck.room(container.clientWidth);
+    // A page can ask for only the picked part's label (--labels: picked), as Home does. Otherwise the callout
+    // columns, or a phone's list, get room beside the PC.
+    labels.setPickedOnly(cs.getPropertyValue("--labels").trim() === "picked");
+    const room = labels.room(container.clientWidth);
     if (!raw && !room) { fit = null; return; }
     const [t, r = t, b = t, l = r] = raw ? raw.split(/\s+/).map(parseFloat) : [36, 36, 36, 36];
     const x = parseFloat(cs.getPropertyValue("--fit-x"));
@@ -903,13 +862,6 @@ export function createScene(
         m.depthWrite = op >= 0.5 && !m.userData.cutout;
       });
     }
-    for (const [id, l] of Object.entries(state.labels)) {
-      l.el.classList.toggle("is-selected", state.selected === id);
-      l.pin.classList.toggle("is-selected", state.selected === id);
-      l.pin.classList.toggle("is-hovered", state.hovered === id && state.selected !== id);
-    }
-    layer.classList.toggle("has-focus", !!(state.hovered || state.selected));
-    labelsDirty = true;
   }
 
   function applyExplode(instant: boolean) {
@@ -970,11 +922,8 @@ export function createScene(
   }
 
   // ---------- labels ----------
-  // Sizes are read only when something changed (labelsDirty), before anything is written in that frame;
-  // every frame after that only writes transforms.
-  let labelsDirty = true, labelFrame = 0;
-  const sides: Record<string, -1 | 1> = {};
-  const _a = new THREE.Vector3(), _l = new THREE.Vector3();
+  let labelFrame = 0;
+  const _a = new THREE.Vector3(), _l = new THREE.Vector3(), _s = new THREE.Vector3();
   const occluder = new THREE.Raycaster();
   const put = (el: HTMLElement, tf: string) => { if (el.style.transform !== tf) el.style.transform = tf; };
   const px = (v: number) => Math.round(v * 10) / 10;
@@ -983,19 +932,11 @@ export function createScene(
     if (stageW) placeFocusBox(stageW, stageH);
     const all = Object.entries(state.labels);
     if (!all.length || !stageW) return;
-    if (labelsDirty) {
-      for (const [, l] of all) { l.w = l.el.offsetWidth; l.h = l.el.offsetHeight; }
-      labelsDirty = false;
-    }
-    const shown = deck.style === "pins" ? all.filter(([, l]) => l.w > 0) : all;
-    if (!shown.length) return;
     const w = stageW, h = stageH;
-    const near = camera.position.distanceTo(model.center) - model.radius;
-    // Every few frames, labels whose part is behind something solid fade back.
+    // Every few frames, anchors behind something solid get a hollow dot.
     const look = labelFrame++ % 6 === 0;
-    const pins = [];
-    const deckPoints: DeckPoint[] = [];
-    for (const [id, l] of shown) {
+    const points: LabelPoint[] = [];
+    for (const [id, l] of all) {
       l.anchor.getWorldPosition(_a);
       const dist = _a.distanceTo(camera.position);
       if (look) {
@@ -1007,59 +948,14 @@ export function createScene(
         });
         l.hidden = !!hit;
       }
-      if (deck.style !== "pins") deckPoints.push(deckPoint(id, l, w, h, (dist - near) / (2 * model.radius)));
-      _a.project(camera);
-      const off = _a.z > 1 || Math.abs(_a.x) > 1.1 || Math.abs(_a.y) > 1.1;
-      l.pin.classList.toggle("is-off", off);
-      l.pin.classList.toggle("is-behind", l.hidden);
-      if (off) continue;
-      pins.push({ id, x: (_a.x + 1) / 2 * w, y: (1 - _a.y) / 2 * h, depth: (dist - near) / (2 * model.radius), w: l.w, h: l.h });
+      _s.copy(_a).project(camera);
+      const x = (_s.x + 1) / 2 * w, y = (1 - _s.y) / 2 * h;
+      points.push({ id, x, y, behind: l.hidden, off: _s.z > 1 || x < -0.05 * w || x > 1.05 * w || y < -0.05 * h || y > 1.05 * h });
     }
-    if (deck.style !== "pins") {
-      deck.layout(deckPoints, { width: w, height: h, box: modelBox(w, h), hovered: state.hovered, selected: state.selected });
-      return;
-    }
-    _a.copy(model.center).project(camera);
-    const placed = placeLabels(pins, { width: w, height: h, cx: (_a.x + 1) / 2 * w }, sides);
-    pins.forEach((p, i) => {
-      const q = placed[i], l = state.labels[p.id];
-      sides[p.id] = q.side;
-      const dx = q.ex - p.x, dy = q.ey - p.y;
-      put(l.dot, `translate(${px(p.x)}px, ${px(p.y)}px) scale(${px(q.scale)})`);
-      put(l.lead, `translate(${px(p.x)}px, ${px(p.y)}px) rotate(${Math.atan2(dy, dx).toFixed(3)}rad) scaleX(${px(Math.hypot(dx, dy))})`);
-      put(l.el, `translate(${px(q.x)}px, ${px(q.y)}px) scale(${q.scale.toFixed(3)})`);
-      // Only the pin and leader fade with distance; the label itself stays solid so its text stays crisp.
-      const op = q.opacity.toFixed(2);
-      if (l.pin.style.getPropertyValue("--fade") !== op) l.pin.style.setProperty("--fade", op);
-      const z = String(Math.round((1 - p.depth) * 100));
-      if (l.pin.style.zIndex !== z) l.pin.style.zIndex = z;
-    });
-    // Labels cast their soft shadow away from the scene's key light.
-    _a.copy(model.center).project(camera);
-    _l.copy(model.center).add(key.position.clone().normalize()).project(camera);
-    const sx = _l.x - _a.x, sy = _a.y - _l.y, n = Math.hypot(sx, sy) || 1;
-    const lx = `${(-sx / n * 3).toFixed(1)}px`, ly = `${(-sy / n * 3 + 1).toFixed(1)}px`;
-    if (layer.style.getPropertyValue("--lx") !== lx) layer.style.setProperty("--lx", lx);
-    if (layer.style.getPropertyValue("--ly") !== ly) layer.style.setProperty("--ly", ly);
+    labels.layout(points, { width: w, height: h, box: modelBox(w, h), hovered: state.hovered, selected: state.selected });
   }
-  document.fonts?.ready.then(() => { labelsDirty = true; invalidate(); });
+  document.fonts?.ready.then(() => { refreshLabels(); invalidate(); });
 
-  // Where a label's anchor is for the deck, and for tags, which way the board's surface runs on screen.
-  const _s = new THREE.Vector3(), _q = new THREE.Quaternion(), _r = new THREE.Vector3(), _u = new THREE.Vector3();
-  function deckPoint(id: string, l: Label, w: number, h: number, depth: number): DeckPoint {
-    const toScreen = (v: THREE.Vector3): [number, number, number] => { _s.copy(v).project(camera); return [(_s.x + 1) / 2 * w, (1 - _s.y) / 2 * h, _s.z]; };
-    const [x, y, z] = toScreen(_a);
-    const p: DeckPoint = { id, x, y, depth, behind: l.hidden, off: z > 1 || x < -0.05 * w || x > 1.05 * w || y < -0.05 * h || y > 1.05 * h };
-    if (state.surface) {
-      state.surface.getWorldQuaternion(_q);
-      const step = 0.1;
-      const [rx, ry] = toScreen(_r.set(step, 0, 0).applyQuaternion(_q).add(_a));
-      const [dx, dy] = toScreen(_u.set(0, -step, 0).applyQuaternion(_q).add(_a));
-      p.ux = [(rx - x) / step, (ry - y) / step];
-      p.uy = [(dx - x) / step, (dy - y) / step];
-    }
-    return p;
-  }
   // The PC's outline on screen, from its bounds (kept until the build or the explode changes).
   const _mb = new THREE.Box3();
   let mbKey = "";
@@ -1111,7 +1007,6 @@ export function createScene(
     camera.updateProjectionMatrix();
     readFit();
     applyFit();
-    labelsDirty = true;
     invalidate();
   }
   const ro = new ResizeObserver(resize);
@@ -1232,14 +1127,6 @@ export function createScene(
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; invalidate(); },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); invalidate(); },
-    setLabelStyle(style) {
-      deck.setStyle(style);
-      layer.classList.toggle("uses-deck", style !== "pins");
-      try { localStorage.setItem("rig.labelStyle", style); } catch { /* private window */ }
-      labelsDirty = true;
-      readFit(); applyFit();
-      invalidate();
-    },
     dispose() {
       gone = true;
       cancelAnimationFrame(raf);
