@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Route } from "@rig/core";
-import { useApp } from "../state";
+import { useApp, useUpdates } from "../state";
+import { updateWhat } from "../pages/settings/UpdatesSection";
 import { DiffTable } from "./common";
 import { useModal } from "./modal";
 
@@ -71,5 +72,32 @@ export function Toast() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A small card in the corner when a new version of Rig is ready. It never blocks the app: Not now hides it
+ * until Rig restarts or a newer version comes out, and Settings, Updates always has the same button.
+ */
+export function UpdateNotice() {
+  const { host } = useApp();
+  const s = useUpdates(host);
+  const [hidden, setHidden] = useState<string | null>(null);
+  const version = s.kind === "ready" || s.kind === "installing" ? s.version : s.kind === "failed" && s.step === "install" ? s.version ?? null : null;
+  if (!host.updates || !version || (hidden === version && s.kind !== "installing")) return null;
+  const u = host.updates;
+  return (
+    <section className="update-notice" aria-labelledby="update-notice-h">
+      <div className="update-notice-text">
+        <b id="update-notice-h">{s.kind === "installing" ? `Updating to Rig ${version}…` : s.kind === "failed" ? `Rig ${version} didn't install` : `Rig ${version} is ready`}</b>
+        <p>{s.kind === "installing" ? "Rig closes and opens again on its own when it's done." : s.kind === "failed" ? "Rig stays on this version for now. Try again in a moment." : updateWhat}</p>
+      </div>
+      {s.kind !== "installing" && (
+        <div className="update-notice-actions">
+          <button className="btn sm" type="button" onClick={() => setHidden(version)}>Not now</button>
+          <button className="btn sm primary" type="button" onClick={() => void u.install()}>{s.kind === "failed" ? "Try again" : "Update"}</button>
+        </div>
+      )}
+    </section>
   );
 }

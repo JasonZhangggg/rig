@@ -10,6 +10,7 @@ import { AppearanceSection } from "./AppearanceSection";
 import { DataSection } from "./DataSection";
 import { NotificationsSection } from "./NotificationsSection";
 import { UnitsSection } from "./UnitsSection";
+import { UpdatesSection } from "./UpdatesSection";
 
 export { FoldedSection, SettingRow, SettingsSection, sectionAnchor } from "./parts";
 export { focusSection, onFocusSection, peekFocusSection, takeFocusSection } from "./focus";
@@ -33,7 +34,8 @@ export const settingsSections: SettingsSectionDef[] = [
   { id: "units", title: "Units", intro: "How temperatures show on every screen.", keywords: "units temperature celsius fahrenheit degrees °c °f", Body: UnitsSection },
   { id: "notifications", title: "Notifications", intro: "Which problems Rig alerts you about on this device.", keywords: "notifications alerts alert notify warnings windows hot temperature fan stopped drive full disk space wearing recording finished logs", Body: NotificationsSection },
   { id: "app", title: "App", intro: "How the Rig app runs on this PC.", keywords: "app startup start with windows launch login autostart", show: ({ host }) => !!host.autostart, Body: AppSection },
+  { id: "updates", title: "Updates", intro: "Which version of Rig this is, and getting the newest one.", keywords: "update updates upgrade new version newest latest install check release download", show: ({ host }) => !!host.updates, Body: UpdatesSection },
   { id: "account", title: "Account", intro: "Who's signed in, and deleting the account.", keywords: "account sign in sign out email delete remove", Body: AccountSection },
   { id: "data", title: "Your data", intro: "A copy of everything Rig keeps for you.", folded: true, keywords: "data download export backup json history copy", show: ({ client }) => !!client.exportData, Body: DataSection },
-  { id: "about", title: "About", intro: "Which version of Rig this is, and its logs.", folded: true, keywords: "about version release build number update server logs log debug troubleshoot", Body: AboutSection },
+  { id: "about", title: "About", intro: "Which version of Rig this is, and its logs.", folded: true, keywords: "about version release build number server logs log debug troubleshoot", Body: AboutSection },
 ];
