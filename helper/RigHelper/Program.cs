@@ -36,6 +36,17 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
+            // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
+            if (all["processes"] is JsonArray)
+            {
+                int reads = Processes.GpuReads;
+                Processes.Top(5, fresh: false);
+                Processes.Top(5, fresh: false);
+                if (Processes.GpuReads != reads) problems.Add($"the recorder's app list read the graphics counters {Processes.GpuReads - reads} more times within five minutes");
+            }
+            // Each sensor's id is worked out once, not with every reading.
+            var (r1, r2) = (hw0.Readings(), hw0.Readings());
+            if (r1.Count == r2.Count && r1.Zip(r2).Any(x => !ReferenceEquals(x.First.Id, x.Second.Id))) problems.Add("sensor ids are built again with every reading");
             if (problems.Count > 0) all["checks"] = new JsonObject { ["error"] = string.Join("; ", problems) };
             await File.WriteAllTextAsync(outFile, all.ToJsonString(new JsonSerializerOptions(Json.Options) { WriteIndented = true }));
             return all.Any(kv => kv.Value is JsonObject o && o["error"] != null) ? 1 : 0;
@@ -132,6 +143,8 @@ public static class Program
         }
         var ranked = Processes.Rank([("game", 6L << 30, 3200, 90), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
         if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90 } || ranked[1].Name != "System") yield return "process ranking is off";
+        if (Processes.GpuPid("pid_1234_luid_0x00000000_0x0000D1B5_phys_0_eng_0_engtype_3D") != 1234 || Processes.GpuPid("pid__x") != -1 || Processes.GpuPid("luid_1_engtype_3D") != -1 || Processes.GpuPid("pid_99999999999_x") != -1)
+            yield return "reading the process id from a graphics counter is off";
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 7) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
@@ -154,6 +167,15 @@ public static class Program
 
         var w = new Watch();
         SensorDto S(string hw, string type, string name, double? v) => new($"/{hw}/{name}", hw, hw, type, name, v, null, null);
+
+        // The sensor list's key is built once, and again only when a sensor comes or goes.
+        var keys = new SensorKey();
+        var two = new List<SensorDto> { S("cpu", "load", "CPU Total", 5), S("gpu", "temperature", "GPU Core", 50) };
+        string k1 = keys.Of(two), k2 = keys.Of(two.Select(x => x with { Value = 9 }).ToList());
+        if (k1 != "/cpu/CPU Total|/gpu/GPU Core" || !ReferenceEquals(k1, k2)) yield return "the recorder builds its sensor list key again on every reading";
+        if (keys.Of([.. two, S("gpu", "load", "GPU Load", 1)]) != "/cpu/CPU Total|/gpu/GPU Core|/gpu/GPU Load" || keys.Of([two[1], two[0]]) != "/gpu/GPU Core|/cpu/CPU Total" || keys.Of([]) != "")
+            yield return "the recorder missed a change in its sensor list";
+
         var r = Reading.From(now, [S("cpu", "temperature", "Core Max", 70), S("cpu", "temperature", "CPU Core #1 Distance to TjMax", 30), S("gpu", "temperature", "GPU Hot Spot", 99), S("gpu", "temperature", "GPU Core", 60)]);
         if (r.Cpu != 70 || r.Gpu != 60) yield return $"recorder picks the wrong temperatures: {r.Cpu} {r.Gpu}";
         r = r with { Gpu = 70 };
@@ -227,6 +249,39 @@ public static class Program
         var cond = new ProbeCondition("gpuTemp", null, ">=", 85, 0);
         if (!cond.Holds(85) || cond.Holds(84.9)) yield return "probe conditions compare wrongly";
         if (ProbeReader.Scalar(new byte[] { 1, 255 })?.ToJsonString() != "\"01FF\"" || ProbeReader.Scalar(42u)?.ToJsonString() != "42") yield return "probe values convert wrongly";
+        foreach (var p in IdleProbeChecks(me)) yield return p;
+    }
+
+    /// With no custom logs the recorder's custom-log thread rests instead of checking every second, and a new one still starts within a moment.
+    static IEnumerable<string> IdleProbeChecks(string me)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"rig-selftest-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        int changes = 0;
+        var problems = new List<string>();
+        try
+        {
+            using var engine = new ProbeEngine(dir, _ => { }, () => Interlocked.Increment(ref changes));
+            engine.Start();
+            Thread.Sleep(3500);
+            if (engine.Rounds > 2) problems.Add($"with no custom logs, the custom-log thread checked {engine.Rounds} times in 3.5 seconds");
+            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var spec = new JsonObject
+            {
+                ["id"] = "t-idle", ["label"] = "Test", ["createdAt"] = now, ["expiresAt"] = now + 3_600_000,
+                ["source"] = new JsonObject { ["kind"] = "process", ["name"] = "game.exe" },
+            };
+            if (ProbeRules.Parse(spec, now, me).Probe is not ProbeSpec p) problems.Add("the idle custom-log test's probe was refused");
+            else
+            {
+                ProbeStore.Save(dir, [p]);
+                var waited = Stopwatch.StartNew();
+                while (Volatile.Read(ref changes) == 0 && waited.ElapsedMilliseconds < 4000) Thread.Sleep(50);
+                if (Volatile.Read(ref changes) == 0) problems.Add("a custom log added while none were running didn't start within 4 seconds");
+            }
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+        return problems;
     }
 
     static string? Arg(string[] args, string name)

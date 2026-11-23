@@ -1,6 +1,7 @@
 // Runs the custom logs in probes.json (see Probes.cs) inside the background
-// recorder: one thread checks the list each second, decides which are due,
-// and reads each on the thread pool so a slow one (a big folder, a script)
+// recorder: one thread checks the list each second (every 15 seconds while
+// there are none, woken early when probes.json changes), decides which are
+// due, and reads each on the thread pool so a slow one (a big folder, a script)
 // never holds up the rest. Each Windows account's custom logs go to its own
 // folder of daily files, in the same line format as the main log.
 //
@@ -28,6 +29,8 @@ public sealed class ProbeEngine(string data, Action<string> note, Action changed
 
     static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     const int PruneEveryMs = 6 * 3600_000;
+    /// How long the loop sleeps while there are no custom logs. A change to probes.json wakes it sooner.
+    public const int IdleMs = 15_000;
     const long CustomMaxBytes = 100L << 20;
 
     readonly Dictionary<string, Runner> runners = [];
@@ -40,6 +43,12 @@ public sealed class ProbeEngine(string data, Action<string> note, Action changed
     long lastPrune;
     List<string> problems = [];
     int loopFailures;
+    readonly AutoResetEvent wake = new(false);
+    FileSystemWatcher? watcher;
+    int rounds;
+
+    /// How many times the loop has run, for the self-test.
+    public int Rounds => Volatile.Read(ref rounds);
 
     /// True while a custom log reads the sensors more often than the main loop's five seconds.
     public bool WantsFastSensors { get; private set; }
@@ -48,16 +57,39 @@ public sealed class ProbeEngine(string data, Action<string> note, Action changed
 
     public void Start()
     {
+        // The Rig app adds, approves and removes custom logs from other processes by rewriting probes.json.
+        try
+        {
+            watcher = new FileSystemWatcher(data, Path.GetFileName(ProbeStore.PathIn(data)))
+            {
+                IncludeSubdirectories = false,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            };
+            watcher.Created += (_, _) => Wake();
+            watcher.Changed += (_, _) => Wake();
+            watcher.Deleted += (_, _) => Wake();
+            watcher.Renamed += (_, _) => Wake();
+            watcher.Error += (_, _) => Wake();
+            watcher.EnableRaisingEvents = true;
+        }
+        catch { watcher?.Dispose(); watcher = null; }
         thread = new Thread(Loop) { IsBackground = true, Name = "Rig custom logs", Priority = ThreadPriority.BelowNormal };
         thread.Start();
+    }
+
+    void Wake()
+    {
+        try { wake.Set(); } catch (ObjectDisposedException) { }
     }
 
     void Loop()
     {
         var stop = cts.Token;
+        var waits = new[] { stop.WaitHandle, wake };
         while (!stop.IsCancellationRequested)
         {
             long now = Now;
+            Interlocked.Increment(ref rounds);
             try
             {
                 Reload(now);
@@ -66,7 +98,10 @@ public sealed class ProbeEngine(string data, Action<string> note, Action changed
                 loopFailures = 0;
             }
             catch (Exception e) { if (++loopFailures <= 3) note($"Custom logs: {e.Message}"); }
-            stop.WaitHandle.WaitOne(1000);
+            bool idle;
+            lock (gate) idle = runners.Count == 0;
+            // Without a watcher on probes.json, keep looking every second so a new custom log isn't missed for long.
+            WaitHandle.WaitAny(waits, idle && watcher != null ? IdleMs : 1000);
         }
     }
 
@@ -164,6 +199,8 @@ public sealed class ProbeEngine(string data, Action<string> note, Action changed
     {
         cts.Cancel();
         if (thread != null && thread != Thread.CurrentThread) thread.Join(TimeSpan.FromSeconds(10));
+        watcher?.Dispose();
+        watcher = null;
         long now = Now;
         lock (gate)
         {
