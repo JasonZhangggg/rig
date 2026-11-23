@@ -68,6 +68,11 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
     const int StatusEveryMs = 60_000;
     const int PruneEveryMs = 6 * 3600_000;
     const int WatchdogEveryMs = 30 * 60_000;
+    /// The garbage collector sizes its youngest generation from the processor's cache, often tens of megabytes, so the
+    /// recorder's small, steady garbage would grow its memory for a long while before the first collection. Collecting
+    /// that generation now and then (a millisecond or so) keeps it flat. A forced one is needed: an "optimized" one
+    /// skips until the generation is nearly full.
+    const int YoungGcEveryMs = 5 * 60_000;
     /// Events from before the recorder's first start: this many days back.
     const int BackfillDays = 30;
     const int BackfillPerQuery = 400;
@@ -129,7 +134,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
 
         string header = "";
         int headerId = 0, headerFile = -1;
-        long lastSample = 0, lastApps = 0, lastStatus = Now, lastPrune = Now, lastWatchdog = Now, detailFrom = 0, detailUntil = 0, lastRound = 0;
+        long lastSample = 0, lastApps = 0, lastStatus = Now, lastPrune = Now, lastWatchdog = Now, lastYoungGc = Now, detailFrom = 0, detailUntil = 0, lastRound = 0;
         int failures = 0;
 
         while (!stop.IsCancellationRequested)
@@ -203,6 +208,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
             if (now - lastStatus >= StatusEveryMs) { lastStatus = now; WriteStatus("running"); PowerNow(); }
             if (now - lastPrune >= PruneEveryMs) { lastPrune = now; Prune(); }
             if (now - lastWatchdog >= WatchdogEveryMs) { lastWatchdog = now; if (Watchdog()) return; }
+            if (now - lastYoungGc >= YoungGcEveryMs) { lastYoungGc = now; GC.Collect(0, GCCollectionMode.Forced, blocking: false); }
 
             stop.WaitHandle.WaitOne(probes?.WantsFastSensors == true ? 1000 : TickMs);
         }
