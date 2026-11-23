@@ -269,19 +269,7 @@ function SourceBadge({ part }: { part: Part }) {
 function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const { ask } = useApp();
   const inUnit = useTempText();
-  const [q, setQ] = useState("");
-  if (tab === "manual") {
-    return (
-      <>
-        <PartManual id={id} />
-        <form className="ask-inline" onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(`About my ${part.name}: ${q.trim()}`); }}>
-          <input id="ask-manual" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask this manual a question" aria-label="Ask this manual a question" />
-          <button className="btn sm">Ask</button>
-        </form>
-        <p className="faint detail-note">Answers name the manual and page they came from.</p>
-      </>
-    );
-  }
+  if (tab === "manual") return <PartManual id={id} about={part.name} />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));

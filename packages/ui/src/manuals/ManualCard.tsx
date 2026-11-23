@@ -3,6 +3,7 @@ import type { DiagramKind, Manual, PartTarget } from "@rig/core";
 import { useApp } from "../state";
 import { MoreMenu } from "../components/MoreMenu";
 import { openManual } from "./viewerState";
+import { ManualSections, OpenManualIcon } from "./ManualOutline";
 import type { ManualStore } from "./useManuals";
 import { busy, groupedJumps, jobText, jumpPages, keyJumps, manualJumps, modelName, pagesText, partName, type Jump, type Row } from "./words";
 
@@ -81,8 +82,11 @@ export function ManualJumps({ manual, only, prefer, count = 4, heading = "Jump t
   );
 }
 
-/** One part and its manual: what's happening and the one thing to do next. */
-export function ManualCard({ row, store, compact, prefer }: { row: Row; store: ManualStore; compact?: boolean; prefer?: DiagramKind[] }) {
+/**
+ * One part and its manual: what's happening and the one thing to do next. With outline (a part's Manual tab),
+ * the manual opens from its name or the icon beside it, and its sections fold open in groups.
+ */
+export function ManualCard({ row, store, compact, prefer, outline }: { row: Row; store: ManualStore; compact?: boolean; prefer?: DiagramKind[]; outline?: boolean }) {
   const { client } = useApp();
   const { target, manual: m, job } = row;
   const [form, setForm] = useState<null | "exact" | "again">(null);
@@ -94,6 +98,7 @@ export function ManualCard({ row, store, compact, prefer }: { row: Row; store: M
   const maker = target.maker || "the maker";
   const [pickReplacement, replaceInput] = usePdfPicker((f) => add(f, m?.id));
   let menu: ReactNode = null;
+  let openable: Manual | null = null;
 
   let state: ReactNode;
   if (busy(job)) {
@@ -132,6 +137,7 @@ export function ManualCard({ row, store, compact, prefer }: { row: Row; store: M
     );
   } else if (m) {
     const canOpen = m.indexed || !fileElsewhere;
+    if (canOpen) openable = m;
     menu = <MoreMenu label={`More for the ${m.title}`} items={[{ label: "Replace with another PDF", run: pickReplacement }, { label: "Remove this manual", run: () => setConfirm(true), danger: true }]} />;
     state = (
       <>
@@ -140,13 +146,22 @@ export function ManualCard({ row, store, compact, prefer }: { row: Row; store: M
           <span>{m.source === "added" ? "Added from a file" : m.host ? `From ${m.host}` : "From the maker"}</span>
         </p>
         {fileElsewhere && <p className="mn-note">The file is on the device it was added on. {m.indexed ? "Search and the chat still use it." : "Open Rig there to read it."}</p>}
-        {(canOpen || !m.indexed) && (
-          <div className="mn-open-row">
-            {canOpen && <button type="button" className="btn primary mn-open" onClick={() => openManual(m.id)}>Open manual</button>}
-            {!m.indexed && !fileElsewhere && <button type="button" className="btn" onClick={() => void store.read(m)}>Read it</button>}
-          </div>
+        {outline ? (
+          <>
+            {!m.indexed && !fileElsewhere && <button type="button" className="btn sm mn-read" onClick={() => void store.read(m)}>Read it so search and the chat can use it</button>}
+            <ManualSections manual={m} prefer={prefer} />
+          </>
+        ) : (
+          <>
+            {(canOpen || !m.indexed) && (
+              <div className="mn-open-row">
+                {canOpen && <button type="button" className="btn primary mn-open" onClick={() => openManual(m.id)}>Open manual</button>}
+                {!m.indexed && !fileElsewhere && <button type="button" className="btn" onClick={() => void store.read(m)}>Read it</button>}
+              </div>
+            )}
+            <ManualJumps manual={m} prefer={prefer} />
+          </>
         )}
-        <ManualJumps manual={m} prefer={prefer} />
       </>
     );
   } else {
@@ -174,7 +189,10 @@ export function ManualCard({ row, store, compact, prefer }: { row: Row; store: M
           {busy(job) && <span className="chip info">Working</span>}
         </div>
       )}
-      <div className="mn-title-row"><h3 className="mn-title">{title}</h3>{menu}</div>
+      <div className="mn-title-row">
+        <h3 className="mn-title">{outline && openable ? <button type="button" className="mn-title-link" onClick={() => openManual(openable!.id)}>{title}</button> : title}</h3>
+        {(outline && openable) || menu ? <div className="mn-head-tools">{outline && openable && <OpenManualIcon manual={openable} />}{menu}</div> : null}
+      </div>
       {m && !compact && m.title !== modelName(target) && <p className="faint mn-model">{modelName(target)}</p>}
       {state}
       {replaceInput}

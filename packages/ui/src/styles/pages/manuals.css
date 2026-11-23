@@ -133,3 +133,37 @@ button.source { font: inherit; font-size: 12.5px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .mn-progress .bar i { transition: none; } }
 
 /* On My PC, under the parts: manuals for things Rig can't see. */
+
+/* ---------- A part's Manual tab (ManualOutline.tsx): open by name or icon, groups that fold, ask at the bottom ---------- */
+.mn-head-tools { display: flex; align-items: center; gap: 2px; margin: -7px -6px -7px 0; }
+.mn-title-row .mn-head-tools .more { margin: 0; }
+.mn-open-icon svg { fill: none; }
+.mn-title-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color 160ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .mn-title-link:hover { text-decoration-color: currentColor; } }
+.mn-rel-title { min-width: 0; color: var(--text-2); font-size: 13.5px; font-weight: 500; }
+.mn-read { align-self: flex-start; }
+.mn-add-own { align-self: flex-start; }
+.mn-count { color: var(--text-3); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mn-chev { width: 16px; height: 16px; flex: none; color: var(--text-3); transition: transform 160ms var(--ease-out); }
+.mn-chev.open { transform: rotate(90deg); }
+.mn-outline { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.mn-og { border-bottom: 1px solid var(--line); }
+.mn-og-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.mn-og-head .mn-count { margin-left: auto; }
+.mn-secs { list-style: none; margin: 0 -10px 0 14px; padding: 0 0 6px; }
+.mn-sec { width: 100%; display: flex; align-items: baseline; gap: 12px; padding: 6px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.mn-sec-name { flex: 1; min-width: 0; }
+.mn-sec-p { flex: none; color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) { .mn-sec:hover { background: var(--surface-2); } }
+
+/* The ask box stays at the bottom: it sits where the 3D view ends, and stays in sight while a long tab scrolls. */
+.mn-part { flex: 1; }
+.mn-ask-bar { position: sticky; z-index: 2; bottom: 0; margin: auto 0 -16px; padding: 12px 0 16px; background: linear-gradient(to bottom, transparent, var(--bg) 18px); }
+.mn-ask { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 7px 7px 7px 18px; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 10px 28px -16px rgba(27, 27, 31, .28); transition: box-shadow 160ms var(--ease-out); }
+.mn-ask:focus-within { box-shadow: 0 0 0 1.5px var(--text-2), 0 10px 28px -16px rgba(27, 27, 31, .28); }
+.mn-ask input { flex: 1; min-width: 0; height: 42px; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 15px; }
+.mn-ask input::placeholder { color: var(--text-3); }
+.mn-ask-send { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border: 0; border-radius: 13px; background: var(--primary); color: var(--primary-text); cursor: pointer; transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out); }
+.mn-ask-send svg { width: 18px; height: 18px; }
+.mn-ask-send:disabled { background: var(--surface-2); color: var(--text-3); cursor: default; }
+@media (hover: hover) and (pointer: fine) { .mn-ask-send:not(:disabled):hover { background: var(--graphite-2); } }

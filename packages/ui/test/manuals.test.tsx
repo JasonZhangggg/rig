@@ -52,6 +52,8 @@ async function partTab(type: string, client = demo()) {
 }
 
 const card = async (name: RegExp) => within(await screen.findByRole("article", { name }));
+/** Opens every folded group of a manual's sections. */
+const openGroups = (c: ReturnType<typeof within>) => c.queryAllByRole("button", { expanded: false }).filter((b: HTMLElement) => b.classList.contains("mn-og-head")).forEach((b: HTMLElement) => fireEvent.click(b));
 const viewer = async () => within(await screen.findByRole("dialog", { name: /Manual|MAG B650|Zenbook/ }));
 
 beforeEach(() => { location.hash = ""; localStorage.clear(); read.pages = []; });
@@ -64,7 +66,11 @@ describe("Manuals", () => {
     await open("manuals");
     expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
     expect(location.hash).toBe("#manuals");
-    expect((await card(/^Motherboard:/)).getByText("12 pages")).toBeTruthy();
+    const board = await card(/^Motherboard:/);
+    expect(board.getByText("12 pages")).toBeTruthy();
+    expect(board.getByRole("button", { name: "Open manual" })).toBeTruthy();
+    fireEvent.click(board.getByRole("button", { name: "All 11 sections" }));
+    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in", "Fitting parts", "About the board"]);
     expect(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" })).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search the manuals" }), { target: { value: "F_PANEL" } });
     const hit = await screen.findByRole("button", { name: /Page 9/ });
@@ -72,13 +78,17 @@ describe("Manuals", () => {
     expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
   });
 
-  it("shows Atlas's board manual as read, with one Open manual button and Replace and Remove under the dots", async () => {
+  it("opens Atlas's board manual from its name or the icon beside it, with Replace and Remove under the dots", async () => {
     await partTab("Motherboard");
     const board = await card(/^Motherboard:/);
     expect(board.getByText("12 pages")).toBeTruthy();
-    expect(board.getAllByRole("button", { name: /^Open/ }).map((b) => b.textContent)).toEqual(["Open manual"]);
+    expect(board.queryByRole("button", { name: "Open manual" })).toBeNull();
     expect(board.queryByRole("button", { name: "Replace" })).toBeNull();
     expect(board.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(board.getByRole("button", { name: /^Open the / })).toBeTruthy();
+    fireEvent.click(within(board.getByRole("heading", { level: 3 })).getByRole("button"));
+    expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
+    act(() => closeManual());
     fireEvent.click(board.getByRole("button", { name: /^More for the/ }));
     const menu = within(board.getByRole("menu"));
     expect(menu.getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Replace with another PDF", "Remove this manual"]);
@@ -87,16 +97,31 @@ describe("Manuals", () => {
     expect(board.getByText(/Its pages leave search and the chat/)).toBeTruthy();
   });
 
-  it("lists four sections of the board manual to jump to, and every section grouped a click away", async () => {
+  it("groups the board manual's sections, with the group the part needs open and the rest folded", async () => {
     await partTab("Motherboard");
     const board = await card(/^Motherboard:/);
     const names = (list: HTMLElement) => within(list).getAllByRole("button").map((b) => b.getAttribute("aria-label"));
-    expect(names(board.getByRole("list", { name: /^Sections of the/ }))).toEqual(["Board layout, page 4", "Front panel header, page 9", "Fan headers, page 10", "Memory slot order, page 7"]);
-    fireEvent.click(board.getByRole("button", { name: "All 11 sections" }));
-    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in", "Fitting parts", "About the board"]);
+    const groups = () => board.getAllByRole("button", { expanded: true }).concat(board.getAllByRole("button", { expanded: false })).filter((b) => b.classList.contains("mn-og-head"));
+    expect(groups().map((b) => b.querySelector("span")?.textContent).sort()).toEqual(["About the board", "Fitting parts", "Plugging things in"]);
+    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in"]);
+    expect(names(board.getByRole("list"))).toEqual(["Front panel header, page 9", "Fan headers, page 10", "Power connectors, page 11", "USB headers, page 12", "RGB headers, page 12"]);
+    fireEvent.click(board.getByRole("button", { name: /^Fitting parts/ }));
+    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in", "Fitting parts"]);
+    openGroups(board);
     expect(board.getAllByRole("list").flatMap(names)).toHaveLength(11);
-    fireEvent.click(board.getByRole("button", { name: "Show fewer" }));
-    expect(board.getByRole("list", { name: /^Sections of the/ })).toBeTruthy();
+    fireEvent.click(board.getByRole("button", { name: /^Plugging things in/ }));
+    expect(board.getByRole("button", { name: /^Plugging things in/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("asks about the part from the box at the bottom of the Manual tab", async () => {
+    await partTab("Motherboard");
+    await card(/^Motherboard:/);
+    const box = screen.getByRole("textbox", { name: "Ask a question about this part" });
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(box, { target: { value: "Where does the front USB-C go?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await waitFor(() => expect(location.hash).toBe("#chat"));
+    expect(await screen.findByText(/^About my .+: Where does the front USB-C go\?$/)).toBeTruthy();
   });
 
   it("asks for the graphics card's exact model, and offers a PDF when the maker has none", async () => {
@@ -119,6 +144,7 @@ describe("Manuals", () => {
     expect(laptop.getByText("Rig hasn't looked for this one yet.")).toBeTruthy();
     fireEvent.click(laptop.getByRole("button", { name: "Find manual" }));
     expect(await laptop.findByText("6 pages", {}, { timeout: 3000 })).toBeTruthy();
+    openGroups(laptop);
     expect(laptop.getByRole("button", { name: /^Inside view, page \d/ })).toBeTruthy();
   });
 
@@ -173,6 +199,7 @@ describe("Manuals", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Manual" }));
     const part = await card(/^Motherboard:/);
     expect(part.getByText("12 pages")).toBeTruthy();
+    fireEvent.click(part.getByRole("button", { name: /^Fitting parts/ }));
     fireEvent.click(part.getByRole("button", { name: "Memory slot order, page 7" }));
     const v = await viewer();
     expect((v.getByLabelText("Page number") as HTMLInputElement).value).toBe("7");
