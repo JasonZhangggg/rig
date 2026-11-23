@@ -34,7 +34,8 @@ Before saying a change works, run the tests for the packages it touches and `pnp
 - `apps/desktop`: Tauri. `src-tauri/src/helper.rs` starts the helper and talks to it over a named pipe; `src/main.tsx` wires the client to the host.
 - `helper/RigHelper`: .NET 8 and LibreHardwareMonitor. Reads sensors, applies fixes, runs the background recorder and installs PawnIO.
 - `apps/server`: Hono on Cloudflare Workers, Postgres via Hyperdrive (query cache off), Better Auth. SQL migrations in `apps/server/migrations`.
-- `tools/`: `desktop.mjs` (behind `pnpm desktop`), `version.mjs` (one version across every package), `pawnio.mjs`.
+- `apps/setup`: Rig Setup, the Rig-styled window that installs, updates by hand and uninstalls Rig around Tauri's NSIS installer (`tools/setup.mjs` builds and packs it). See its README for what Windows still shows itself.
+- `tools/`: `desktop.mjs` (behind `pnpm desktop`), `version.mjs` (one version across every package), `pawnio.mjs`, `setup.mjs`.
 
 ## Rules
 

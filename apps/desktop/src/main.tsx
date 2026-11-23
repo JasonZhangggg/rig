@@ -7,6 +7,7 @@ import { inTauri, openLogs, tauriAutostart, tauriLink, tauriRecorder, tauriStore
 import { notifyAlerts, notifyRecording } from "./notify";
 import { tauriUpdates, watchForUpdates } from "./update";
 import { log, logUncaught } from "./log";
+import { installContextMenu } from "./contextmenu";
 
 // The Rig server. An installer build fails without VITE_RIG_API (see vite.config.ts); an empty one counts as missing.
 const api = (import.meta.env.VITE_RIG_API as string | undefined) || "http://localhost:8787/api";
@@ -26,7 +27,7 @@ async function pickLink(): Promise<HelperLink> {
   }
 }
 
-if (inTauri) { logUncaught(); watchForUpdates(); }
+if (inTauri) { logUncaught(); watchForUpdates(); installContextMenu(); }
 
 const root = createRoot(document.getElementById("root")!);
 pickLink().then((link) => {

@@ -23,9 +23,6 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.0.0
         version: 2.12.5
-      '@tauri-apps/plugin-dialog':
-        specifier: ^2.8.4
-        version: 2.8.4
       '@tauri-apps/plugin-log':
         specifier: ^2.10.2
         version: 2.10.2
@@ -57,12 +54,18 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.6(@types/node@26.6.6))
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
       vite:
         specifier: ^6.0.0
         version: 6.4.6(@types/node@26.6.6)
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@26.6.6)(jsdom@25.0.1)
 
   apps/server:
     dependencies:
@@ -1403,9 +1406,6 @@ packages:
     resolution: {integrity: sha512-Dm8s/4aiE52HsBh+Gz3uSrh+fEykRICA1VoAnQA80IqHoTRncPg+q4rGvuhmyNsHUPg3QrPjUrTUSfWmXLVVEw==}
     engines: {node: '>= 10'}
     hasBin: true
-
-  '@tauri-apps/plugin-dialog@2.8.4':
-    resolution: {integrity: sha512-+6ZOiXenOaxXwb8qCbBPdT2jX2cFPaVVHGIskrpmJLpmWj+qKRTD6X/z9x7hTdSQn7NedcoXCkWGej4a7dC4lw==}
 
   '@tauri-apps/plugin-log@2.10.2':
     resolution: {integrity: sha512-Vx6uLv9GIqzrnze3poz1LThP1dFi7PHkOVesVewlT8zhYiVFhF7lQIIGXgjh5qtUUUNTzC9/Cv1DiRcSyxI/Mw==}
@@ -3222,10 +3222,6 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.12.5
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.5
       '@tauri-apps/cli-win32-x64-msvc': 2.12.5
-
-  '@tauri-apps/plugin-dialog@2.8.4':
-    dependencies:
-      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-log@2.10.2':
     dependencies:

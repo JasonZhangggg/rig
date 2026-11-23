@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rig Setup</title>
+<!--
+  Rig's setup and uninstall window. rig-setup.exe shows this page in a small
+  frameless window and drives it with rig.show(view) (src/app.rs). It uses the
+  app's own tokens (packages/ui/src/styles/tokens.css), so it looks like Rig.
+  Opened in a browser without the exe, it shows a sample screen picked by the
+  address's #hash (see SAMPLES), for checking the design.
+-->
+<style>
+@font-face {
+  font-family: "Inter Tight Variable";
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 900;
+  src: url(inter-tight.woff2) format("woff2-variations");
+}
+:root {
+  --font: "Inter Tight Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --ground: #E4E1DA;
+  --bg: #F2F0EC;
+  --surface: #FFFFFF;
+  --surface-2: #F2F0EC;
+  --line: rgba(27, 27, 31, .10);
+  --line-strong: rgba(27, 27, 31, .18);
+  --text: #1B1B1F;
+  --text-2: #5E5D59;
+  --text-3: #65645F;
+  --graphite: #1B1B1F;
+  --graphite-2: #26262B;
+  --good-mark: #7C6A3A; --good-bg: #F3EDDD;
+  --look-text: #A4471C; --look-bg: #F8E2D5;
+  --r: 22px;
+  --r-sm: 14px;
+  --r-pill: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font: 450 15px/1.45 var(--font); letter-spacing: -.005em;
+  -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
+}
+button { font: inherit; color: inherit; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--graphite); outline-offset: 2px; }
+
+/* Title bar: the whole strip drags the window, like the app's own. */
+.bar { display: flex; align-items: center; gap: 10px; height: 52px; flex: none; padding: 0 10px 0 18px; }
+.mark { position: relative; width: 28px; height: 28px; flex: none; border-radius: 9px; background: var(--graphite); color: #FFFFFF; display: grid; place-items: center; font: 600 13px var(--font); }
+.mark i { position: absolute; right: 6px; bottom: 6px; width: 4px; height: 4px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
+.bar b { font: 600 15px/1 var(--font); letter-spacing: -.02em; }
+.bar small { color: var(--text-3); font-size: 13px; font-weight: 500; }
+.bar .grow { flex: 1; align-self: stretch; }
+.win { width: 34px; height: 34px; border: 0; border-radius: 10px; background: transparent; color: var(--text-3); display: grid; place-items: center; cursor: pointer; }
+.win svg { width: 16px; height: 16px; }
+.win:disabled { opacity: .35; cursor: default; }
+@media (hover: hover) and (pointer: fine) { .win:not(:disabled):hover { background: rgba(27, 27, 31, .06); color: var(--text); } }
+
+/* The page: one panel, like a screen in the app. */
+main { flex: 1; min-height: 0; margin: 0 12px 12px; padding: 26px 28px 22px; border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; }
+.screen { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: in .32s var(--ease-out) both; }
+@keyframes in { from { opacity: 0; transform: translateY(4px); } }
+h1 { margin: 0; font: 500 30px/1.08 var(--font); letter-spacing: -.035em; }
+.lede { margin: 10px 0 0; color: var(--text-2); max-width: 50ch; }
+.lede strong { color: var(--text); font-weight: 600; }
+.body { flex: 1; min-height: 0; margin-top: 20px; display: grid; align-content: start; gap: 10px; }
+
+.row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: var(--r-sm); background: var(--surface-2); }
+.row .t { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.row b { font-size: 14px; font-weight: 600; }
+.row small { color: var(--text-3); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row small.wrap { white-space: normal; }
+.row .ic { width: 30px; height: 30px; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--surface); color: var(--text-2); }
+.row .ic svg { width: 16px; height: 16px; }
+.row.look { background: var(--look-bg); }
+.row.look .ic { color: var(--look-text); }
+button.row { width: 100%; border: 0; text-align: left; cursor: pointer; }
+
+.switch { position: relative; width: 46px; height: 28px; flex: none; border-radius: var(--r-pill); background: var(--line-strong); transition: background .18s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform .22s cubic-bezier(.3, .7, .4, 1); }
+[aria-checked="true"] > .switch { background: var(--graphite); }
+[aria-checked="true"] > .switch::after { transform: translateX(18px); }
+
+.meter { height: 8px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--graphite); transition: width .4s var(--ease-out); }
+.step { margin-top: 14px; display: grid; gap: 2px; }
+.step b { font-size: 15px; font-weight: 600; }
+.step small { color: var(--text-3); font-size: 13px; font-weight: 500; }
+.work { margin-top: 30px; }
+
+.badge { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 18px; background: var(--good-bg); color: var(--good-mark); }
+.badge svg { width: 24px; height: 24px; }
+.badge.look { background: var(--look-bg); color: var(--look-text); }
+.badge.plain { background: var(--surface-2); color: var(--text-2); }
+
+.foot { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+.foot .ver { flex: 1; color: var(--text-3); font-size: 13px; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); background: var(--surface); color: var(--text); font-weight: 600; white-space: nowrap; cursor: pointer; }
+.btn.primary { background: var(--graphite); border-color: var(--graphite); color: #FFFFFF; font-weight: 500; min-width: 112px; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.danger { background: var(--look-text); border-color: var(--look-text); color: #FFFFFF; font-weight: 500; min-width: 112px; }
+.btn:disabled { opacity: .55; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .btn:not(:disabled):hover { background: var(--surface-2); }
+  .btn.ghost:not(:disabled):hover { background: var(--surface-2); }
+  .btn.primary:not(:disabled):hover { background: var(--graphite-2); border-color: var(--graphite-2); }
+  .btn.danger:not(:disabled):hover { background: #8E3C17; border-color: #8E3C17; }
+  button.row:hover { background: #ECE9E4; }
+}
+.btn:active:not(:disabled) { transform: scale(.98); }
+.btn, button.row { transition: background .15s, transform .12s; }
+
+@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="bar" data-drag>
+  <span class="mark" aria-hidden="true">R<i></i></span>
+  <b>Rig</b><small id="kind">Setup</small>
+  <span class="grow" data-drag></span>
+  <button class="win" type="button" id="min" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.5 8h9"/></svg></button>
+  <button class="win" type="button" id="x" aria-label="Close" title="Close"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+</div>
+<main id="main" aria-live="polite"></main>
+
+<script>
+"use strict";
+const icons = {
+  folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 4.5c0-.6.4-1 1-1h3.2l1.3 1.5H13c.6 0 1 .4 1 1V12c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z"/></svg>',
+  shield: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.8 13 3.6v4c0 3.1-2.1 5.4-5 6.6-2.9-1.2-5-3.5-5-6.6v-4z"/><path d="m5.8 8 1.5 1.5L10.3 6.5" stroke-linecap="round"/></svg>',
+  open: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.8v3.6M8 10.8v.1"/></svg>',
+  desk: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="8.5" rx="1.5"/><path d="M6 13.5h4M8 11v2.5" stroke-linecap="round"/></svg>',
+  data: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7.5v6M12 17v.1"/><circle cx="12" cy="12" r="9"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+};
+
+/** Tells the exe something. In a browser, it only logs it. */
+function send(type, data) {
+  const msg = JSON.stringify(Object.assign({ type }, data || {}));
+  if (window.ipc) window.ipc.postMessage(msg); else console.log("setup:", msg);
+}
+
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const row = (icon, title, sub, cls) => `<div class="row${cls ? " " + cls : ""}"><span class="ic">${icons[icon]}</span><span class="t"><b>${esc(title)}</b><small class="wrap">${esc(sub)}</small></span></div>`;
+const toggle = (id, icon, title, sub, on) => `<button class="row" type="button" role="switch" id="${id}" aria-checked="${on}"><span class="ic">${icons[icon]}</span><span class="t"><b>${esc(title)}</b><small class="wrap">${esc(sub)}</small></span><span class="switch" aria-hidden="true"></span></button>`;
+const foot = (v, buttons) => `<div class="foot"><span class="ver">${v ? "Version " + esc(v) : ""}</span>${buttons}</div>`;
+const btn = (id, label, cls) => `<button class="btn${cls ? " " + cls : ""}" type="button" id="${id}">${esc(label)}</button>`;
+
+/* What each step of the work says. Plain and short: what's happening and, if it waits on the person, what to do. */
+const STEPS = {
+  files: ["Copying Rig's files", "This takes a few seconds."],
+  permission: ["Waiting for your OK", "Windows is asking whether Rig may make changes. If you don't see it, check the taskbar."],
+  recorder: ["Setting up the background recorder", "It keeps a log of temperatures while Rig is closed."],
+  finishing: ["Finishing up", "Adding Rig to the Start menu."],
+  removing: ["Removing Rig", "This takes a few seconds."],
+  cleaning: ["Tidying up", "Removing what's left in Rig's folder."],
+};
+
+let view = null;
+let desktop = true;
+let wipe = false;
+
+function screen(v) {
+  const install = v.mode === "install";
+  const ver = v.version;
+  switch (v.screen) {
+    case "welcome": {
+      if (!install) {
+        return `<h1>Uninstall Rig?</h1>
+          <p class="lede">This removes Rig and its background recorder from this PC. Your account and your other PCs stay as they are.</p>
+          <div class="body">
+            ${toggle("wipe", "data", "Also delete this PC's readings and settings", "Readings, logs and sign-in kept on this PC. Leave it off to keep them.", wipe)}
+            ${row("shield", "Windows will ask once", "Removing the recorder needs your OK in a Windows prompt.")}
+            ${v.rigOpen ? row("open", "Rig is open", "It closes when you choose Uninstall.", "look") : ""}
+          </div>
+          ${foot(v.installed, btn("cancel", "Keep Rig", "ghost") + btn("go", "Uninstall", "danger"))}`;
+      }
+      const title = v.installed ? (v.installed === ver ? "Reinstall Rig" : "Update Rig") : "Install Rig";
+      const lede = v.installed
+        ? (v.installed === ver
+          ? `Rig <strong>${esc(ver)}</strong> is already on this PC. Installing again repairs it. Your readings and settings stay as they are.`
+          : `This updates Rig from <strong>${esc(v.installed)}</strong> to <strong>${esc(ver)}</strong>. Your readings and settings stay as they are.`)
+        : "Rig reads your PC's temperatures, fans and parts, keeps a log of them, and helps you fix what's slowing it down.";
+      return `<h1>${title}</h1>
+        <p class="lede">${lede}</p>
+        <div class="body">
+          ${v.installed ? "" : toggle("desk", "desk", "Add Rig to the desktop", "Rig is always in the Start menu too.", desktop)}
+          ${row("shield", "Windows will ask once", "Say yes so Rig can add its background recorder and the driver it reads temperatures through. If you say no, Rig still installs.")}
+          ${v.rigOpen ? row("open", "Rig is open", `Setup closes it when you choose ${v.installed ? (v.installed === ver ? "Reinstall" : "Update") : "Install"}.`, "look") : ""}
+        </div>
+        ${foot(ver, btn("cancel", "Cancel", "ghost") + btn("go", v.installed ? (v.installed === ver ? "Reinstall" : "Update") : "Install", "primary"))}`;
+    }
+    case "working": {
+      const s = STEPS[v.step] || STEPS.files;
+      const title = install ? (v.installed && v.installed !== ver ? "Updating Rig" : "Installing Rig") : "Uninstalling Rig";
+      return `<h1>${title}</h1>
+        <p class="lede">${install ? "This usually takes under a minute." : "This takes a few seconds."}</p>
+        <div class="work">
+          <div class="meter" role="progressbar" aria-label="${title}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v.progress * 100)}"><i style="width:${Math.max(3, v.progress * 100).toFixed(1)}%"></i></div>
+          <div class="step"><b>${esc(s[0])}</b><small>${esc(s[1])}</small></div>
+        </div>
+        <div class="body"></div>
+        ${foot(ver, "")}`;
+    }
+    case "done": {
+      if (!install) {
+        return `<div class="badge plain">${icons.check}</div>
+          <h1>Rig is uninstalled</h1>
+          <p class="lede">${v.wiped ? "Rig, its recorder and this PC's readings are gone." : "Rig and its recorder are gone. This PC's readings and settings are still here, in case you install Rig again."}</p>
+          <div class="body"></div>
+          ${foot("", btn("close", "Close", "primary"))}`;
+      }
+      const updated = v.installed && v.installed !== ver;
+      return `<div class="badge">${icons.check}</div>
+        <h1>${updated ? `Rig is up to date` : "Rig is installed"}</h1>
+        <p class="lede">${updated ? `You're on Rig <strong>${esc(ver)}</strong>.` : "Find it in the Start menu any time. Sign in when it opens to see this PC on rigpc.app too."}</p>
+        <div class="body">
+          ${v.recorderOff ? row("open", "The background recorder is off", "Rig reads only while it's open until you turn it on in Settings, App.", "look") : ""}
+        </div>
+        ${foot(ver, btn("close", "Close", "ghost") + btn("open", "Open Rig", "primary"))}`;
+    }
+    case "newer":
+      return `<div class="badge plain">${icons.up}</div>
+        <h1>A newer Rig is already here</h1>
+        <p class="lede">This PC has Rig <strong>${esc(v.installed)}</strong>, which is newer than this setup (${esc(ver)}). There's nothing to install.</p>
+        <div class="body"></div>
+        ${foot(ver, btn("close", "Close", "ghost") + btn("open", "Open Rig", "primary"))}`;
+    case "error":
+    default:
+      return `<div class="badge look">${icons.alert}</div>
+        <h1>${install ? "Rig didn't install" : "Rig didn't uninstall"}</h1>
+        <p class="lede">${esc(v.error || "Something stopped setup before it finished.")}</p>
+        <div class="body"></div>
+        ${foot(ver, btn("close", "Close", "ghost") + btn("go", "Try again", "primary"))}`;
+  }
+}
+
+/** Called by the exe with the whole view whenever it changes. */
+function show(v) {
+  const same = view && view.screen === v.screen && view.mode === v.mode;
+  view = v;
+  document.getElementById("kind").textContent = v.mode === "install" ? "Setup" : "Uninstall";
+  const busy = v.screen === "working";
+  document.getElementById("x").disabled = busy;
+  document.getElementById("x").title = busy ? (v.mode === "install" ? "Rig is installing" : "Rig is uninstalling") : "Close";
+  const main = document.getElementById("main");
+  if (same && busy) {
+    // Update in place, so the bar slides instead of the screen redrawing.
+    const s = STEPS[v.step] || STEPS.files;
+    const m = main.querySelector(".meter");
+    m.setAttribute("aria-valuenow", String(Math.round(v.progress * 100)));
+    m.firstElementChild.style.width = Math.max(3, v.progress * 100).toFixed(1) + "%";
+    main.querySelector(".step b").textContent = s[0];
+    main.querySelector(".step small").textContent = s[1];
+    return;
+  }
+  main.innerHTML = `<section class="screen">${screen(v)}</section>`;
+  wire(v);
+}
+
+function wire(v) {
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("desk", (e) => { desktop = !desktop; e.currentTarget.setAttribute("aria-checked", String(desktop)); });
+  on("wipe", (e) => { wipe = !wipe; e.currentTarget.setAttribute("aria-checked", String(wipe)); });
+  on("cancel", () => send("close"));
+  on("close", () => send("close"));
+  on("open", () => send("open"));
+  on("go", () => send(v.mode === "install" ? "install" : "uninstall", { desktop, wipe }));
+}
+
+document.getElementById("min").onclick = () => send("minimize");
+document.getElementById("x").onclick = () => send("close");
+// The title bar moves the window. Buttons in it don't.
+document.querySelector(".bar").addEventListener("mousedown", (e) => {
+  if (e.button === 0 && !e.target.closest("button")) send("drag");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && view && view.screen !== "working") send("close");
+  // Enter picks the main button, unless another button has focus.
+  if (e.key === "Enter" && !(document.activeElement && document.activeElement.tagName === "BUTTON")) {
+    const main = document.querySelector(".foot .btn.primary, .foot .btn.danger");
+    if (main && !main.disabled) { e.preventDefault(); main.click(); }
+  }
+  // A browser's own keys (reload, print, find, zoom) do nothing in a setup window.
+  if (e.key === "F5" || e.key === "F3" || e.key === "F7" || ((e.ctrlKey || e.metaKey) && /^[prfgjuso+=\-0]$/i.test(e.key))) e.preventDefault();
+});
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+window.rig = { show, preview: (name) => show(SAMPLES[name] || SAMPLES.welcome) };
+
+/* Sample screens for a browser: index.html#update, #working, #permission, ... */
+const SAMPLES = {
+  welcome: { mode: "install", screen: "welcome", version: "0.1.7", installed: null, rigOpen: false },
+  update: { mode: "install", screen: "welcome", version: "0.1.7", installed: "0.1.6", rigOpen: true },
+  reinstall: { mode: "install", screen: "welcome", version: "0.1.7", installed: "0.1.7", rigOpen: false },
+  working: { mode: "install", screen: "working", version: "0.1.7", installed: null, progress: .46, step: "files" },
+  permission: { mode: "install", screen: "working", version: "0.1.7", installed: null, progress: .78, step: "permission" },
+  done: { mode: "install", screen: "done", version: "0.1.7", installed: null },
+  updated: { mode: "install", screen: "done", version: "0.1.7", installed: "0.1.6" },
+  "recorder-off": { mode: "install", screen: "done", version: "0.1.7", installed: null, recorderOff: true },
+  newer: { mode: "install", screen: "newer", version: "0.1.7", installed: "0.1.8" },
+  error: { mode: "install", screen: "error", version: "0.1.7", error: "Setup stopped before Rig was installed. Try again, and if it happens again, restart the PC first." },
+  uninstall: { mode: "uninstall", screen: "welcome", version: "0.1.7", installed: "0.1.7", rigOpen: true },
+  "uninstall-working": { mode: "uninstall", screen: "working", version: "0.1.7", installed: "0.1.7", progress: .6, step: "removing" },
+  uninstalled: { mode: "uninstall", screen: "done", version: "0.1.7", wiped: false },
+};
+if (window.ipc) send("ready");
+else {
+  const pick = () => show(SAMPLES[location.hash.slice(1)] || SAMPLES.welcome);
+  window.addEventListener("hashchange", pick);
+  pick();
+}
+</script>
+</body>
+</html>
