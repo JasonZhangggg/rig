@@ -67,7 +67,7 @@ static partial class Native
 
     // ----- Display names (QueryDisplayConfig) -----
     const uint QDC_ONLY_ACTIVE_PATHS = 2;
-    const uint GET_SOURCE_NAME = 1, GET_TARGET_NAME = 2;
+    const uint GET_SOURCE_NAME = 1, GET_TARGET_NAME = 2, GET_ADAPTER_NAME = 4;
 
     [StructLayout(LayoutKind.Sequential)] public struct LUID { public uint Low; public int High; }
 
@@ -94,15 +94,22 @@ static partial class Native
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string devicePath;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ADAPTER_NAME { public HEADER header; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string adapterDevicePath; }
+
     [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint paths, out uint modes);
     [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint paths, [Out] PATH_INFO[] p, ref uint modes, [Out] MODE_INFO[] m, IntPtr topology);
     [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref SOURCE_NAME info);
     [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref TARGET_NAME info);
+    [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref ADAPTER_NAME info);
 
-    /// Each active screen: the monitor's own name and the GDI name (\\.\DISPLAY1) used to change its mode.
-    public static List<(string name, string gdi)> Screens()
+    /// One active screen: the monitor's own name, the GDI name (\\.\DISPLAY1) used to change its mode, the kind of
+    /// plug Windows says it's on (DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY) and the device path of the graphics driving it.
+    public record struct Screen(string name, string gdi, uint tech, string adapter);
+
+    public static List<Screen> Screens()
     {
-        var list = new List<(string, string)>();
+        var list = new List<Screen>();
         if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, out uint np, out uint nm) != 0) return list;
         var paths = new PATH_INFO[np];
         var modes = new MODE_INFO[nm];
@@ -114,7 +121,9 @@ static partial class Native
             if (DisplayConfigGetDeviceInfo(ref src) != 0) continue;
             DisplayConfigGetDeviceInfo(ref tgt);
             string name = string.IsNullOrWhiteSpace(tgt.friendlyName) ? (paths[i].tech == 0x80000000 ? "Built-in screen" : "Screen") : tgt.friendlyName;
-            list.Add((name, src.gdiName));
+            var ad = new ADAPTER_NAME { header = new HEADER { type = GET_ADAPTER_NAME, size = (uint)Marshal.SizeOf<ADAPTER_NAME>(), adapter = paths[i].tgtAdapter }, adapterDevicePath = "" };
+            string adapter = DisplayConfigGetDeviceInfo(ref ad) == 0 ? ad.adapterDevicePath : "";
+            list.Add(new Screen(name, src.gdiName, paths[i].tech, adapter));
         }
         return list;
     }
