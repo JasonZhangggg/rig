@@ -12,7 +12,7 @@ const fan = (id: string, name: string, label: string, u: number, v: number, rota
 export const msiMagB650TomahawkWifi: Omit<BoardShape, "source"> = {
   model: "MSI MAG B650 TOMAHAWK WIFI",
   form: "atx", w: 244, h: 305, color: "#1f2124",
-  layoutFrom: "Placed by hand for this prototype, about 10 mm out. The real one would be traced from page 28 of the manual.",
+  layoutFrom: "Placed by hand from the board's header names, so they can be about 10 mm out. Not yet traced from the manual's board drawing.",
   items: [
     { id: "io", name: "Rear I/O", label: "Rear ports", kind: "io", u: 0, v: 6, w: 24, h: 150 },
     { id: "vrm-top", name: "", label: "Power heatsink", kind: "heatsink", u: 48, v: 9, w: 96, h: 20 },

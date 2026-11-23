@@ -93,6 +93,22 @@ export interface PC {
   readings?: Reading[];
   /** The shape of each part for the 3D view, from build.ts. Missing: a typical tower. */
   build?: BuildShape;
+  /** What Windows says is plugged into the motherboard, for the board's slot usage (boardUsage.ts). Desktops only. */
+  board?: BoardFacts;
+}
+
+/** What Windows tells Rig about the things on a motherboard. Anything it can't see (front panel, USB and RGB headers) isn't here. */
+export interface BoardFacts {
+  /** Memory sticks, each with the slot Windows says it's in ("DIMM_A2"), when it says. */
+  memory: { slot?: string; gb: number; mts?: number; maker?: string; partNumber?: string }[];
+  /** How many memory slots Windows says the board has. */
+  memorySlots?: number;
+  /** Drives, by how they connect. */
+  drives: { model: string; media: "nvme" | "ssd" | "hdd" | "unknown"; sizeGb: number }[];
+  /** The graphics card in a slot; missing with only the processor's own graphics. */
+  gpu?: string;
+  /** The board's own fan inputs, by sensor id, so a reading shows which are spinning. */
+  fans: { id: string; name: string }[];
 }
 
 /** What a PC reads moment to moment: these change with nearly every reading. */

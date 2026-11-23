@@ -8,17 +8,25 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { BoardItem, BoardShape } from "@rig/core";
 import { makeBoard, pinNumber, type BoardNode } from "./board3d";
-import { canvasTex, realMaterial, type Kit } from "./parts3d";
+import { canvasTex, isSharedTexture, realMaterial, type Kit } from "./parts3d";
+import { reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelItem, type LabelPoint } from "./sceneLabels";
 
 export { pinNumber } from "./board3d";
 
+/** What the pointer is over on the board: an item, and one of its pins when it's over a pin. */
+export interface BoardHover { id: string; pin?: number; x: number; y: number }
+
 export interface BoardScene {
-  /** Light up every item of a kind, one item by id, or nothing. */
+  /** Light up every item of a kind, one item by id, or nothing, and move the camera to it. */
   highlight(sel: { kind?: BoardItem["kind"]; id?: string } | null): void;
+  /** A soft light on some items without moving the camera, as when the pointer is over their row in a list. */
+  hover(ids: string[]): void;
+  /** Back to the whole board. */
+  reset(): void;
   dispose(): void;
   /** Triangles and draw calls in the last frame, for the size and speed checks. */
-  stats(): { triangles: number; calls: number; ms: number };
+  stats(): { triangles: number; calls: number; ms: number; frames: number };
 }
 
 export interface PinGroup {
@@ -54,6 +62,10 @@ export function pinGroups(item: BoardItem): PinGroup[] {
   return out.sort((a, b) => a.pins[0].number - b.pins[0].number);
 }
 
+/** How far from a pin (in scene units, 1 = 100 mm) the pointer still counts as on it. */
+const PIN_REACH = 0.02;
+const reduced = () => { try { return reducedMotion(); } catch { return false; } };
+
 /** The items worth naming when nothing is picked. */
 const landmarks = ["socket", "dimm-1", "pcie1", "m2-1", "atx24", "eps", "fp"];
 
@@ -73,7 +85,16 @@ const shadowTex = () => canvasTex("board-shadow", 256, 256, (g) => {
 export function createBoardScene(
   container: HTMLElement,
   board: BoardShape,
-  opts: { accent?: string; onPick?: (id: string | null) => void } = {},
+  opts: {
+    accent?: string;
+    onPick?: (id: string | null) => void;
+    /** The item (and pin) under the pointer, with the pointer's place in the view, or null when it leaves the board. */
+    onHover?: (h: BoardHover | null) => void;
+    /** Drag moves the board around (map style), right-drag turns it. The proto page keeps drag-to-turn. */
+    dragToPan?: boolean;
+    /** Name a few landmarks (socket, memory, power) while nothing is picked. Off where pointing at a part says what it is. */
+    landmarks?: boolean;
+  } = {},
 ): BoardScene {
   const accent = new THREE.Color(opts.accent ?? "#E6D3A3");
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -83,7 +104,7 @@ export function createBoardScene(
   renderer.toneMappingExposure = 1.1;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  container.style.position ||= "relative";
+  if (getComputedStyle(container).position === "static") container.style.position = "relative";
   container.appendChild(renderer.domElement);
   const layer = document.createElement("div");
   layer.className = "scene-labels board-labels";
@@ -91,7 +112,7 @@ export function createBoardScene(
   // Callouts beside the board, as in the PC view (sceneLabels.ts).
   const callouts = createSceneLabels(layer, {
     onPick: (id) => { highlight({ id }); opts.onPick?.(id); },
-    onHover: (id) => { hovered = id; },
+    onHover: (id) => { hovered = id; invalidate(); },
   });
   let hovered: string | null = null, roomKey = "";
   const card = document.createElement("div");
@@ -101,7 +122,10 @@ export function createBoardScene(
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const room = new RoomEnvironment();
+  scene.environment = pmrem.fromScene(room, 0.04).texture;
+  room.dispose();
+  pmrem.dispose();
   scene.add(new THREE.HemisphereLight(0xffffff, 0x9a968c, 0.55));
   const key = new THREE.DirectionalLight(0xfff8ef, 1.8);
   key.position.set(-4.5, 5, 3);
@@ -120,9 +144,16 @@ export function createBoardScene(
   const camera = new THREE.PerspectiveCamera(28, 1, 0.02, 60);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.minDistance = 0.35;
+  controls.dampingFactor = 0.12;
+  // Panning slides the board across the view, the way a map moves under a finger.
+  controls.enablePan = true;
+  controls.screenSpacePanning = true;
+  controls.minDistance = 0.12;
   controls.maxDistance = 12;
+  if (opts.dragToPan) {
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  }
 
   // ---------- the board ----------
   const kit: Kit = { M: (c, o) => realMaterial(c, o), spin: () => {}, accent: `#${accent.getHexString()}` };
@@ -156,6 +187,7 @@ export function createBoardScene(
 
   // ---------- highlight ----------
   let focus: BoardNode[] = [];
+  let pinCells: HTMLElement[] = [];
   const halos: THREE.Mesh[] = [];
   const pinMats: THREE.MeshStandardMaterial[] = [];
   const pinOriginal = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
@@ -168,7 +200,7 @@ export function createBoardScene(
   let offsetFor: "right" | "bottom" | null = null;
 
   function clearFocus() {
-    for (const h of halos) { h.removeFromParent(); (h.material as THREE.Material).dispose(); }
+    halos.forEach(freeMesh);
     halos.length = 0;
     for (const [mesh, m] of pinOriginal) mesh.material = m;
     pinOriginal.clear();
@@ -178,6 +210,7 @@ export function createBoardScene(
     labels = [];
     card.hidden = true;
     card.replaceChildren();
+    pinCells = [];
     offsetFor = null; roomKey = "";
   }
 
@@ -188,14 +221,39 @@ export function createBoardScene(
     labels.push({ id: n.item.id, at });
   }
 
-  function addHalo(n: BoardNode) {
+  function makeHalo(n: BoardNode, opacity: number) {
     const w = n.item.w / 100, h = n.item.h / 100, pad = Math.max(0.035, Math.min(w, h) * 0.25);
-    const m = new THREE.MeshBasicMaterial({ map: glowTex(), color: accent, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+    const m = new THREE.MeshBasicMaterial({ map: glowTex(), color: accent, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
     const halo = new THREE.Mesh(new THREE.PlaneGeometry((w + pad * 2) * 1.4, (h + pad * 2) * 1.4), m);
     halo.position.z = 0.0015;
     halo.renderOrder = 1;
     n.group.add(halo);
-    halos.push(halo);
+    return halo;
+  }
+  function addHalo(n: BoardNode) { halos.push(makeHalo(n, 0.62)); }
+
+  // ---------- hover ----------
+  // A softer glow than a pick, and the pin under the pointer stands up a little.
+  let hoverHalos: THREE.Mesh[] = [], hoverKey = "";
+  let hoverPin: THREE.Mesh | null = null;
+  function freeMesh(h: THREE.Mesh) { h.removeFromParent(); h.geometry.dispose(); (h.material as THREE.Material).dispose(); }
+  function hover(ids: string[]) {
+    const key = ids.join("|");
+    if (key === hoverKey) return;
+    hoverKey = key;
+    hoverHalos.forEach(freeMesh);
+    hoverHalos = nodes.filter((n) => ids.includes(n.item.id) && !focus.includes(n)).map((n) => makeHalo(n, 0.55));
+    invalidate();
+  }
+  function hoverPinAt(mesh: THREE.Mesh | null) {
+    if (mesh === hoverPin) return;
+    if (hoverPin && !hoverPin.userData.lit) hoverPin.scale.set(1, 1, 1);
+    hoverPin = mesh;
+    if (mesh) mesh.scale.set(1.5, 1.5, 1.2);
+    // The same pin on the pin map, when the map is for this header.
+    const mapped = mesh && focus.length === 1 && focus[0].pins.includes(mesh) ? (mesh.userData.pin as number) : -1;
+    pinCells.forEach((c, i) => c.classList.toggle("is-hover", i === mapped));
+    invalidate();
   }
 
   /** The pin map for one header: its pins as they sit on the board, then what each color is. */
@@ -237,9 +295,10 @@ export function createBoardScene(
         for (const q of g.pins) {
           cells[q.index].classList.toggle("is-lit", on);
           const mesh = n.pins[q.index];
-          if (mesh) mesh.scale.set(on ? 1.35 : 1, on ? 1.35 : 1, on ? 1.12 : 1);
+          if (mesh) { mesh.userData.lit = on; mesh.scale.set(on ? 1.35 : 1, on ? 1.35 : 1, on ? 1.12 : 1); }
         }
         grid.classList.toggle("has-lit", on);
+        invalidate();
       };
       li.addEventListener("pointerenter", () => mark(true));
       li.addEventListener("pointerleave", () => mark(false));
@@ -252,6 +311,8 @@ export function createBoardScene(
       : "Seen from above. Pin 1 is square.";
     card.append(head, grid, legend, note);
     card.hidden = false;
+    cells.forEach((c, i) => { c.dataset.pin = String(i); });
+    pinCells = cells;
   }
 
   function highlight(sel: { kind?: BoardItem["kind"]; id?: string } | null) {
@@ -280,7 +341,7 @@ export function createBoardScene(
       showCard(one, groups);
     }
     // Labels: every lit item, or a few landmarks when nothing is picked. A header with a pin map is named by the map.
-    const named = dim ? focus.filter((n) => !(n === one && groups.length)) : nodes.filter((n) => landmarks.includes(n.item.id));
+    const named = dim ? focus.filter((n) => !(n === one && groups.length)) : opts.landmarks === false ? [] : nodes.filter((n) => landmarks.includes(n.item.id));
     const items: LabelItem[] = [];
     for (const n of named) {
       const it = n.item;
@@ -290,9 +351,13 @@ export function createBoardScene(
       items.push({ id: it.id, title: plain, code: code || undefined });
     }
     callouts.setItems(items);
+    layer.hidden = items.length === 0;
+    const was = hoverKey; hoverKey = "\0";
+    hover(was ? was.split("|") : []);
     frame();
     fromPos.copy(camera.position); fromTarget.copy(controls.target);
     tweenStart = performance.now();
+    invalidate();
   }
 
   // Where the camera goes: the whole board, or the lit items, framed with room for the pin map.
@@ -303,12 +368,12 @@ export function createBoardScene(
     else box.setFromObject(built.pcb);
     box.getCenter(target);
     // One small header near an edge: lean the view a little toward the board's middle so it shows where on the board it is
-    if (focus.length === 1) target.lerp(new THREE.Box3().setFromObject(built.pcb).getCenter(new THREE.Vector3()), 0.18);
-    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focus.length === 1 ? 0.6 : 0.3);
+    // One header: close enough to count its pins. A slot or anything bigger: framed whole.
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focus.length === 1 ? (focus[0].item.pins ? 0.16 : 0.3) : 0.3);
     const fit = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * (focus.length ? 1.25 : 0.98);
     const dir = new THREE.Vector3(0.08, focus.length ? 0.5 : 0.32, 1).normalize();
     // The callout columns, or a phone's list, take room beside the board: fit the board in what's left.
-    const room = w ? callouts.room(w) : null;
+    const room = w && labels.length ? callouts.room(w) : null;
     const uw = Math.max(1, w - (room ? room.l + room.r : 0)), uh = Math.max(1, h - (room ? room.t + room.b : 0));
     const squeeze = room ? (h / uh) / Math.min(1, uw / uh) * Math.min(1, camera.aspect) : 1;
     camGoal.copy(target).addScaledVector(dir, Math.max(fit * squeeze / Math.min(1, camera.aspect), controls.minDistance + 0.05));
@@ -318,12 +383,45 @@ export function createBoardScene(
   const ray = new THREE.Raycaster();
   let down: { x: number; y: number } | null = null;
   renderer.domElement.addEventListener("pointerdown", (ev) => { down = { x: ev.clientX, y: ev.clientY }; });
-  renderer.domElement.addEventListener("pointermove", (ev) => {
-    if (ev.pointerType !== "mouse") return;
+  // The pins are tiny, so a pin a hair off the pointer still counts when the pointer is over its header.
+  const pinNear = (n: BoardNode | undefined, p: THREE.Vector3) => {
+    if (!n) return null;
+    let best: THREE.Mesh | null = null, bd = PIN_REACH;
+    for (const m of n.pins) {
+      if (!m) continue;
+      const d = m.getWorldPosition(c1).distanceTo(p);
+      if (d < bd) { bd = d; best = m; }
+    }
+    return best;
+  };
+  const c1 = new THREE.Vector3();
+  let lastHover = "";
+  function pointAt(ev: PointerEvent) {
     const r = renderer.domElement.getBoundingClientRect();
     ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
-    const id = (ray.intersectObject(built.group, true).find((h) => h.object.userData.id)?.object.userData.id as string | undefined) ?? null;
-    hovered = id && labels.some((l) => l.id === id) ? id : null;
+    const hit = ray.intersectObject(built.group, true).find((h) => h.object.userData.id);
+    const id = (hit?.object.userData.id as string | undefined) ?? null;
+    const node = id ? nodes.find((n) => n.item.id === id) : undefined;
+    const pin = hit && node ? (hit.object.userData.pin !== undefined ? hit.object as THREE.Mesh : pinNear(node, hit.point)) : null;
+    return { id, pin, x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+  renderer.domElement.addEventListener("pointermove", (ev) => {
+    if (ev.pointerType !== "mouse" || ev.buttons) return;
+    const at = pointAt(ev);
+    const was = hovered;
+    hovered = at.id && labels.some((l) => l.id === at.id) ? at.id : null;
+    hoverPinAt(at.pin);
+    hover(at.id ? [at.id] : []);
+    renderer.domElement.style.cursor = at.id ? "pointer" : "";
+    const key = `${at.id}:${at.pin?.userData.pin ?? ""}`;
+    if (was !== hovered) invalidate();
+    if (opts.onHover && (key !== lastHover || at.id)) opts.onHover(at.id ? { id: at.id, pin: at.pin?.userData.pin as number | undefined, x: at.x, y: at.y } : null);
+    lastHover = key;
+  });
+  renderer.domElement.addEventListener("pointerleave", () => {
+    hoverPinAt(null); hover([]); hovered = null; lastHover = "";
+    renderer.domElement.style.cursor = "";
+    opts.onHover?.(null);
   });
   renderer.domElement.addEventListener("pointerup", (ev) => {
     if (!down || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 5) return; // a drag, not a click
@@ -331,12 +429,16 @@ export function createBoardScene(
     ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
     const hit = ray.intersectObject(built.group, true).find((h) => h.object.userData.id);
     const id = (hit?.object.userData.id as string | undefined) ?? null;
+    // A click on the board where nothing is keeps the view where it is; only a click on a part moves it.
+    if (!id && !focus.length) return;
     highlight(id ? { id } : null);
     opts.onPick?.(id);
   });
 
   // ---------- frame loop ----------
-  let w = 0, h = 0, raf = 0, lastMs = 0;
+  // Drawn only when something changes (a drag, the camera gliding, a hover, a new size), so a board at rest costs nothing.
+  let w = 0, h = 0, raf = 0, lastMs = 0, frames = 0, ticking = false;
+  function invalidate() { if (!raf) raf = requestAnimationFrame(tick); }
   function resize() {
     w = container.clientWidth; h = container.clientHeight;
     renderer.setSize(w, h);
@@ -344,7 +446,22 @@ export function createBoardScene(
     camera.updateProjectionMatrix();
     offsetFor = null; roomKey = "";
     frame();
+    // A new size puts the whole board back in view.
+    if (tweenStart < 0 && !focus.length) { camera.position.copy(camGoal); controls.target.copy(target); }
+    invalidate();
   }
+  // Panning stops at the board's edges, so the board can't be slid out of sight.
+  scene.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(built.pcb).expandByScalar(0.08);
+  const panShift = new THREE.Vector3();
+  controls.addEventListener("change", () => {
+    const t = controls.target;
+    const clamped = panShift.copy(t).clamp(bounds.min, bounds.max).sub(t);
+    if (clamped.lengthSq() > 0) { t.add(clamped); camera.position.add(clamped); }
+    if (!ticking) invalidate(); // in a frame, tick decides whether another is needed
+  });
+  controls.addEventListener("start", () => { tweenStart = -1; });
+  document.fonts?.ready.then(() => invalidate());
   const ro = new ResizeObserver(resize);
   ro.observe(container);
   resize();
@@ -355,8 +472,8 @@ export function createBoardScene(
 
   // Move the picture aside for the pin map: left of it on a wide stage, above it on a narrow one.
   function offsetView() {
-    const want = card.hidden ? null : w >= 640 ? "right" : "bottom";
-    const room = callouts.room(w);
+    const want = card.hidden ? null : window.innerWidth >= 640 ? "right" : "bottom"; // as the card's own CSS places it
+    const room = labels.length ? callouts.room(w) : null;
     const key = `${want}:${room ? [room.t, room.r, room.b, room.l].join(",") : ""}`;
     if (key === roomKey) return;
     roomKey = key;
@@ -387,33 +504,58 @@ export function createBoardScene(
     callouts.layout(points, { width: right, height: h, box: { x0, y0, x1: Math.min(x1, right), y1 }, hovered, selected: focus.length === 1 ? focus[0].item.id : null });
   }
 
+  const wasT = new THREE.Vector3(), wasP = new THREE.Vector3();
   function tick() {
-    raf = requestAnimationFrame(tick);
+    raf = 0;
     offsetView();
+    let moving = false;
     if (tweenStart >= 0) {
-      const t = Math.min(1, (performance.now() - tweenStart) / 650), e = 1 - Math.pow(1 - t, 3);
+      const t = Math.min(1, (performance.now() - tweenStart) / (reduced() ? 1 : 650)), e = 1 - Math.pow(1 - t, 3);
       camera.position.lerpVectors(fromPos, camGoal, e);
       controls.target.lerpVectors(fromTarget, target, e);
-      if (t >= 1) tweenStart = -1;
+      if (t >= 1) tweenStart = -1; else moving = true;
     }
-    controls.update();
+    // While damping eases a drag out, keep drawing until the camera settles. OrbitControls keeps saying it moved
+    // while a pan's leftover drifts by far less than a pixel, so the board stops once a frame moves less than a twentieth of a pixel.
+    wasT.copy(controls.target); wasP.copy(camera.position);
+    ticking = true;
+    const changed = controls.update();
+    ticking = false;
+    if (changed) {
+      const px = camera.position.distanceTo(controls.target) * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(1, h);
+      const still = (0.05 * px) ** 2; // a twentieth of a pixel
+      if (wasT.distanceToSquared(controls.target) > still || wasP.distanceToSquared(camera.position) > still) moving = true;
+    }
     const t0 = performance.now();
-    const pulse = 0.5 + 0.2 * Math.sin(t0 / 420);
-    for (const halo of halos) (halo.material as THREE.MeshBasicMaterial).opacity = pulse;
     renderer.render(scene, camera);
+    frames++;
     lastMs = performance.now() - t0;
     layoutLabels();
+    if (moving) invalidate();
   }
-  tick();
+  invalidate();
 
   return {
     highlight,
-    stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, ms: lastMs }),
+    hover,
+    reset() { highlight(null); },
+    stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, ms: lastMs, frames }),
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
       clearFocus();
+      hoverHalos.forEach(freeMesh);
       controls.dispose();
+      // Geometry and materials are the board's own; textures drawn once and shared between views stay.
+      scene.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        o.geometry.dispose();
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          for (const v of Object.values(m)) if (v instanceof THREE.Texture && !isSharedTexture(v)) v.dispose();
+          m.dispose();
+        }
+      });
+      scene.environment?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       callouts.dispose();

@@ -1,0 +1,54 @@
+/* My PC with the motherboard open: the board close up in the 3D view's place, and its slots beside it. */
+.board-stage { position: absolute; inset: 0; touch-action: none; }
+.board-stage > canvas { display: block; }
+.board-hint { position: absolute; z-index: 1; top: 14px; left: 16px; margin: 0; font-size: 12px; pointer-events: none; }
+@media (hover: none) { .board-hint { display: none; } }
+
+/* What the pointer is over: a small card that follows it. */
+.board-tip {
+  position: absolute; z-index: 4; top: 0; left: 0; display: grid; gap: 2px; max-width: 260px; padding: 9px 12px;
+  border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-lg), 0 0 0 1px var(--line);
+  color: var(--text-2); font-size: 13px; line-height: 1.35; pointer-events: none; will-change: transform;
+}
+.board-tip b { color: var(--text); font-weight: 600; }
+.board-tip b small { margin-left: 6px; color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.board-tip.is-used span:first-of-type { color: var(--text); }
+.board-tip-pin { color: var(--text); font-weight: 550; font-variant-numeric: tabular-nums; }
+
+/* Slots: one block per kind, a row of slot names that read as filled, empty or unseen, then one line on what's in them. */
+.bu { display: flex; flex-direction: column; gap: 4px; }
+.bu-groups { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.bu-group { display: grid; gap: 8px; margin: 0 -12px; padding: 14px 12px; border-radius: var(--r-sm); }
+.bu-group + .bu-group { background: linear-gradient(var(--line), var(--line)) 12px 0 / calc(100% - 24px) 1px no-repeat; }
+.bu-group.is-lit { background-color: var(--sel); }
+.bu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.bu-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.bu-count { color: var(--text-2); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.bu-cells { display: flex; flex-wrap: wrap; gap: 6px; }
+.bu-cell {
+  min-width: 44px; padding: 5px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2);
+  font: 600 12px/1.2 var(--font); letter-spacing: .02em; font-variant-numeric: tabular-nums; cursor: pointer;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.bu-cell.is-used { background: var(--text); color: var(--surface); box-shadow: none; }
+.bu-cell.is-unknown { color: var(--text-3); box-shadow: none; background-image: repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 6px); }
+.bu-cell.is-lit, .bu-cell:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .bu-cell:hover { outline: 2px solid var(--text); outline-offset: 2px; }
+}
+.bu-items { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.bu-items li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; }
+.bu-items b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.bu-items span { color: var(--text-2); }
+.bu-note { margin: 0; color: var(--text-3); font-size: 13px; line-height: 1.4; }
+.bu-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 0; font-size: 12px; }
+.bu-legend i { display: inline-block; width: 14px; height: 10px; margin-right: -8px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+.bu-legend i.is-used { background: var(--text); box-shadow: none; }
+.bu-legend i.is-unknown { box-shadow: none; background-image: repeating-linear-gradient(135deg, var(--line-strong) 0 2px, transparent 2px 5px); }
+.bu-from { margin: 4px 0 0; font-size: 12px; }
+
+/* The board stays in view while a long slot list scrolls beside it, so a slot picked low in the list still shows. */
+@media (min-width: 1101px) {
+  .pc-view:has(.board-stage) .stage-card { position: sticky; top: 24px; }
+}
+.board-stage:has(.pinout:not([hidden])) .board-hint { display: none; }

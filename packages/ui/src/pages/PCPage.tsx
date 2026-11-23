@@ -10,6 +10,9 @@ import { PartUpgrade, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PC
 import { UpgradesTab } from "./upgrades/Shop";
 import { arrowKeys } from "../components/modal";
 import { Warm } from "../components/common";
+import { BoardView } from "./board/BoardView";
+import { BoardUsage } from "./board/BoardUsage";
+import { boardStage } from "./board/boardStage";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
 const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals"]];
@@ -63,12 +66,11 @@ export function PCPage() {
       {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : (
       <div className="pc-view" ref={viewRef}>
         <section className="stage-card" aria-label="3D view">
-          <StageSlot id="pc-stage" />
+          {picked === "motherboard" ? <BoardView /> : <StageSlot id="pc-stage" />}
           {customize && !picked && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
             {!picked && <button className="btn ghost sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>}
-            <button className="btn ghost sm" type="button" aria-pressed={ui.heat} onClick={() => set({ heat: !ui.heat })}>Heat</button>
-            <button className="btn ghost sm" type="button" onClick={() => getStage().scene.resetView()}>Reset view</button>
+            <button className="btn ghost sm" type="button" onClick={() => (picked === "motherboard" ? boardStage.reset() : getStage().scene.resetView())}>Reset view</button>
           </div>
         </section>
         <div className="pc-side">{picked ? <PartDetail id={picked} ups={ups} /> : <PartsList />}</div>
@@ -204,10 +206,11 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   const { ui, pc, set } = useApp();
   const part = pc.parts![id];
   const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
-  const tabs: [string, string][] = [["specs", "Specs"], ["manual", "Manual"]];
+  // The motherboard opens on what's plugged into it.
+  const tabs: [string, string][] = [...(id === "motherboard" ? [["slots", "Slots"] as [string, string]] : []), ["specs", "Specs"], ["manual", "Manual"]];
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
-  const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : "specs";
+  const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : tabs[0][0];
   return (
     <div className="part-detail">
       <Readings part={part} id={id} />
@@ -270,6 +273,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const { ask } = useApp();
   const inUnit = useTempText();
   if (tab === "manual") return <PartManual id={id} about={part.name} />;
+  if (tab === "slots") return <BoardUsage />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));

@@ -97,3 +97,4 @@
   .pinout { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .po-pin { transition: none; } }
+.po-pin.is-hover { transform: scale(1.18); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
