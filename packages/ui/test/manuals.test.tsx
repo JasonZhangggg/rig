@@ -222,5 +222,5 @@ describe("Manuals", () => {
     fireEvent.click(source);
     const v = await viewer();
     expect((v.getByLabelText("Page number") as HTMLInputElement).value).toBe("9");
-  });
+  }, 15_000); // waits up to 6s for the streamed answer, longer than the default 5s test limit
 });
