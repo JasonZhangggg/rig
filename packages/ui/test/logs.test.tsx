@@ -12,6 +12,15 @@ const { highlights } = await import("../src/pages/logs/summary");
 const { cleanEvents, eventTitle } = await import("@rig/core");
 const { kindWord } = await import("../src/pages/logs/words");
 
+// jsdom has no PointerEvent; the strip's tip shows only for a mouse, so the test needs one that carries pointerType.
+if (typeof window.PointerEvent === "undefined") {
+  class PointerEvent extends MouseEvent {
+    pointerType: string;
+    constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerType = init.pointerType ?? ""; }
+  }
+  (window as unknown as { PointerEvent: unknown }).PointerEvent = PointerEvent;
+}
+
 async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
 }
@@ -63,9 +72,9 @@ describe("Logs", () => {
     expect(days).toHaveLength(30);
     const day = within(strip).getByRole("button", { name: /1 event: The PC turned off without shutting down/ });
 
-    fireEvent.mouseEnter(day);
+    fireEvent.pointerEnter(day, { pointerType: "mouse" });
     expect(within(strip).getByRole("tooltip").textContent).toMatch(/The PC turned off without shutting down/);
-    fireEvent.mouseLeave(day);
+    fireEvent.pointerLeave(day, { pointerType: "mouse" });
     expect(within(strip).queryByRole("tooltip")).toBeNull();
 
     const list = screen.getByRole("region", { name: /Events/ });

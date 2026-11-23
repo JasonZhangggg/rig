@@ -50,16 +50,22 @@
 .pf-pick-btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; font-weight: 600; cursor: pointer; }
 .pf-pick-kind { color: var(--text-3); font-weight: 500; }
 .pf-pick-btn:active { transform: scale(.98); }
-.pf-pick-pop { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: min(300px, calc(100vw - 32px)); padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, .14); }
-.pf-pick-find { width: 100%; height: 36px; }
-.pf-pick-list { max-height: 360px; margin-top: 6px; overflow-y: auto; }
-.pf-pick-list [role="group"] + [role="group"] { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
-.pf-pick-h { padding: 8px 8px 4px; color: var(--text-3); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; cursor: default; user-select: none; }
-.pf-pick-list button { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font-size: 13.5px; cursor: pointer; }
-.pf-pick-list button[aria-pressed="true"] { background: var(--sel); font-weight: 600; }
-.pf-pick-list button[aria-pressed="true"]::after { content: ""; float: right; width: 9px; height: 5px; margin: 5px 4px 0 0; border: solid currentColor; border-width: 0 0 2px 2px; transform: rotate(-45deg); }
-@media (hover: hover) and (pointer: fine) { .pf-pick-list button:hover { background: var(--sel); } }
-.pf-pick-none { margin: 8px; }
+.pf-pick-btn { max-width: min(320px, 60vw); }
+.pf-pick-one { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-pick-pop { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 200px; max-height: min(360px, 60vh); overflow-y: auto; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, .14); animation: pf-pop .12s ease-out; }
+@keyframes pf-pop { from { opacity: 0; transform: translateY(-4px); } }
+:root[data-motion="reduce"] .pf-pick-pop { animation: none; }
+@media (prefers-reduced-motion: reduce) { .pf-pick-pop { animation: none; } }
+.pf-pick-pop button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font-size: 13.5px; cursor: pointer; }
+.pf-pick-pop button .faint { margin-left: auto; font-size: 12px; }
+.pf-pick-pop button[aria-current="true"] { background: var(--sel); font-weight: 600; }
+.pf-pick-pop button:focus-visible { outline: 2px solid var(--focus, currentColor); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .pf-pick-pop button:hover { background: var(--sel); } }
+/* A sensor's name charts it on its own; the whole row is the target. */
+.pf-table.pickable tbody tr:not(.pf-group) { cursor: pointer; }
+.pf-row-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pf-row-btn[aria-pressed="true"] { font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .pf-table.pickable tbody tr:not(.pf-group):hover :is(th, td) { background: var(--sel); } }
 .pf-schart { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; height: 200px; }
 .pf-schart-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: 11.5px; text-align: right; }
 .pf-schart svg { width: 100%; height: 100%; overflow: visible; }

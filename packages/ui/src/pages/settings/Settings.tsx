@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { reducedMotion } from "../../appearance";
 import { useApp } from "../../state";
-import { FoldedSection, SettingsSection, peekFocusSection, sectionAnchor, settingsSections, takeFocusSection } from "./sections";
+import { FoldedSection, SettingsSection, onFocusSection, peekFocusSection, sectionAnchor, settingsSections, takeFocusSection } from "./sections";
 
 export function Settings() {
   const ctx = useApp();
@@ -13,9 +13,13 @@ export function Settings() {
     if (!open.includes(id) && folded.some((s) => s.id === id)) setOpen((o) => [...o, id]);
     requestAnimationFrame(() => document.getElementById(sectionAnchor(id))?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" }));
   };
+  const jumpTo = useRef(jump);
+  jumpTo.current = jump;
   useEffect(() => {
     const id = takeFocusSection();
     if (id) requestAnimationFrame(() => document.getElementById(sectionAnchor(id))?.scrollIntoView({ block: "start" }));
+    // Picked from Ctrl K while Settings is already open: the address doesn't change, so jump here.
+    return onFocusSection((id) => jumpTo.current(id));
   }, []);
   return (
     <div className="page set-page">

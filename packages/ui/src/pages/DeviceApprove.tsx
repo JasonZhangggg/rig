@@ -4,10 +4,12 @@ import { SignInArt } from "./SignIn";
 
 /** Website: the desktop app opened this page with its sign-in code. The person checks the code and approves. */
 export function DeviceApprove({ client, account, code, onClose }: { client: RigClient; account: Account; code: string; onClose: () => void }) {
-  const [state, setState] = useState<"ask" | "busy" | "approved" | "denied">("ask");
+  const [state, setState] = useState<"ask" | "approving" | "declining" | "approved" | "denied">("ask");
   const [error, setError] = useState<string | null>(null);
+  const busy = state === "approving" || state === "declining";
   const decide = async (approve: boolean) => {
-    setState("busy"); setError(null);
+    if (busy) return;
+    setState(approve ? "approving" : "declining"); setError(null);
     try { await client.approveDevice!(code, approve); setState(approve ? "approved" : "denied"); } catch (e) {
       setError(e instanceof Error ? e.message : "That didn't work. Try again."); setState("ask");
     }
@@ -35,8 +37,8 @@ export function DeviceApprove({ client, account, code, onClose }: { client: RigC
               <p className="muted">Rig on a PC wants to sign in as <b>{account.email}</b>. Approve only if the app shows this code.</p>
               <p className="signin-code num" aria-label="Sign-in code">{code}</p>
               {error && <div className="callout warn" role="alert">{error}</div>}
-              <button className="btn primary" type="button" disabled={state === "busy"} onClick={() => decide(true)}>{state === "busy" ? "Approving…" : "Approve"}</button>
-              <button className="btn ghost" type="button" disabled={state === "busy"} onClick={() => decide(false)}>That wasn't me</button>
+              <button className="btn primary" type="button" disabled={busy} onClick={() => decide(true)}>{state === "approving" ? "Approving…" : "Approve"}</button>
+              <button className="btn ghost" type="button" disabled={busy} onClick={() => decide(false)}>{state === "declining" ? "Declining…" : "That wasn't me"}</button>
             </>
           )}
         </div>

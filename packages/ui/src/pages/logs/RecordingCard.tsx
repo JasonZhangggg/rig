@@ -35,6 +35,7 @@ export const StateChip = ({ state }: { state: RecordingInfo["state"] }) =>
 export function RecordingCard({ request }: { request: RecordingRequest }) {
   const { data, pc, ask, stopRecording, openRecording } = useApp();
   const inUnit = useTempText();
+  const [stopping, setStopping] = useState(false);
   const live = data.recordings.find((r) => r.id === request.id);
   const state = live?.state ?? "pending";
   const finished = state === "done" || state === "cancelled";
@@ -58,7 +59,7 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
             <button className="btn sm" type="button" onClick={() => openRecording(request.id)}>Open the recording</button>
             <button className="btn primary sm" type="button" disabled={data.answering} onClick={() => ask("The recording finished. What did it find?")}>See what Rig found</button>
           </>
-        ) : state !== "failed" && <button className="btn sm" type="button" onClick={() => stopRecording(request.id)}>Stop</button>}
+        ) : state !== "failed" && <button className="btn sm" type="button" disabled={stopping} onClick={() => { setStopping(true); void stopRecording(request.id).finally(() => setStopping(false)); }}>{stopping ? "Stopping…" : "Stop"}</button>}
       </div>
     </div>
   );

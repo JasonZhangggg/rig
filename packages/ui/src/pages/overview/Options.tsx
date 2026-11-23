@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { useApp } from "../../state";
 import { KINDS, type Dashboard, type Dir, type OptValue, type Spacing, type Tone, type Widget } from "./layout";
 import { sourceItems } from "./widgets";
@@ -39,6 +39,8 @@ export interface Place {
   sizes: [string, string][];
   onSize: (size: string) => void;
   onMove: (dir: Dir) => void;
+  /** Whether the widget has room to move that way. A move that can't happen shows as a dimmed arrow. */
+  canMove: (dir: Dir) => boolean;
 }
 
 const arrows: [Dir, string, string][] = [["left", "Move left", "M12 5 7 10l5 5"], ["up", "Move up", "M5 12l5-5 5 5"], ["down", "Move down", "M5 8l5 5 5-5"], ["right", "Move right", "M8 5l5 5-5 5"]];
@@ -51,6 +53,13 @@ export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (pa
   const dark = w.tone === "dark";
   const lastSeries = (key: string) => w.kind === "temps" && SERIES.includes(key) && SERIES.filter((k) => w.opts[k] !== false).length === 1 && w.opts[key] !== false;
   const toggles = meta.options.filter((o) => o.type === "toggle");
+  // A move that reaches the edge dims its own arrow, so focus steps to an arrow that still moves rather than dropping to the page.
+  const move = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = move.current, now = document.activeElement;
+    if (!el || !(now instanceof HTMLButtonElement) || !el.contains(now) || !now.disabled) return;
+    (el.querySelector<HTMLElement>("button:not(:disabled)") ?? el.closest(".dsec")?.querySelector<HTMLElement>("button[aria-pressed='true']"))?.focus({ preventScroll: true });
+  });
   return (
     <>
       {place && (
@@ -58,9 +67,9 @@ export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (pa
           <Seg label="Size" value={place.size} options={place.sizes} onPick={place.onSize} />
           <div className="dopt">
             <span className="dopt-label" id="dopt-move">Move</span>
-            <div className="dseg dmove" role="group" aria-labelledby="dopt-move">
+            <div className="dseg dmove" role="group" aria-labelledby="dopt-move" ref={move}>
               {arrows.map(([dir, text, d]) => (
-                <button key={dir} type="button" aria-label={text} title={text} onClick={() => place.onMove(dir)}>
+                <button key={dir} type="button" aria-label={text} title={text} disabled={!place.canMove(dir)} onClick={() => place.onMove(dir)}>
                   <svg viewBox="0 0 20 20" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
               ))}
@@ -108,12 +117,22 @@ const Plus = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v
 
 /** The hidden widgets, to put back on Home. */
 export function AddWidgets({ hidden, onAdd }: { hidden: Widget[]; onAdd: (id: string) => void }) {
+  // An added widget leaves the list, so focus moves to the one that takes its place, or the one before it.
+  const list = useRef<HTMLUListElement>(null);
+  const added = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const at = added.current;
+    added.current = null;
+    if (at === null) return;
+    const items = list.current?.querySelectorAll<HTMLElement>("button");
+    if (items?.length) items[Math.min(at, items.length - 1)].focus({ preventScroll: true });
+  }, [hidden]);
   if (!hidden.length) return <p className="dnote">Every widget is on Home. Hide one from its options and it waits here.</p>;
   return (
-    <ul className="dlib">
-      {hidden.map((w) => (
+    <ul className="dlib" ref={list}>
+      {hidden.map((w, i) => (
         <li key={w.id}>
-          <button type="button" onClick={() => onAdd(w.id)}>
+          <button type="button" onClick={() => { added.current = i; onAdd(w.id); }}>
             <span><b>{KINDS[w.kind].title}</b><small>{KINDS[w.kind].blurb}</small></span>
             <i aria-hidden="true"><Plus /></i>
             <span className="sr-only">Add</span>

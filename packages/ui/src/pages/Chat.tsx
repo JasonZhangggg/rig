@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
 import { useApp, useTempText } from "../state";
@@ -96,6 +96,7 @@ function Message({ m }: { m: ChatMessage }) {
 
 function ProposalCard({ p }: { p: Proposal }) {
   const { review, declineProposal } = useApp();
+  const [reading, setReading] = useState(false);
   const n = p.calls.length;
   return (
     <div className="proposal">
@@ -108,8 +109,8 @@ function ProposalCard({ p }: { p: Proposal }) {
         <span className="faint">{n === 1 ? "1 change" : `${n} changes`} · undo anytime</span>
         {p.status === "applied" ? <a className="btn sm" href="#changes">View in Changes</a> : p.status === "declined" ? null : (
           <>
-            <button className="btn sm" type="button" onClick={() => declineProposal(p.id)}>Not now</button>
-            <button className="btn primary sm" type="button" onClick={() => review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id })}>Review and apply</button>
+            <button className="btn sm" type="button" disabled={reading} onClick={() => declineProposal(p.id)}>Not now</button>
+            <button className="btn primary sm" type="button" disabled={reading} onClick={() => { setReading(true); void review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id }).finally(() => setReading(false)); }}>{reading ? "Reading settings…" : "Review and apply"}</button>
           </>
         )}
       </div>

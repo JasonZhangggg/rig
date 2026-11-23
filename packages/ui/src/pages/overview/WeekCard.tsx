@@ -97,8 +97,9 @@ export function WeekCard({ week, recorded, name, style = "pills", days: count = 
   const sum = days.flatMap((d) => d.sessions).filter((s) => s.kind !== "background").reduce((n, s) => n + s.hours, 0);
   const key: [LegendMark, string][] = [["a", "Played"], ["b", "Ran hot"], ...(background ? [["c", "Background task"] as [LegendMark, string]] : [])];
   return (
-    <section className={`f-pane bl-week${compact ? " compact" : ""}`}>
+    <section className={`f-pane bl-week${compact ? " compact" : ""}`} aria-busy={!week || undefined}>
       <CardHead title="Evenings" note={count === 7 ? `Hours after ${sixPm}` : `Hours after ${sixPm}, last ${count} days`} figure={(total || compact) && any ? { value: `${hours(sum)} h`, label: "In all" } : undefined} />
+      {!week && <div className="pl-wait" aria-hidden="true" />}
       {week && (any ? (
         compact ? <Games days={days} /> : (
           <>

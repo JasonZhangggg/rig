@@ -116,6 +116,13 @@ function Root() {
 
   // A new page gets its own tab title, and focus moves to it so a screen reader hears the change.
   const firstRoute = useRef(true);
+  // A new page starts at its top, scrolled once it's drawn so the old page doesn't jump first. Chat keeps its place.
+  const lastRoute = useRef(ui.route);
+  useLayoutEffect(() => {
+    if (lastRoute.current === ui.route) return;
+    lastRoute.current = ui.route;
+    if (ui.route !== "chat") window.scrollTo(0, 0);
+  }, [ui.route]);
   useEffect(() => {
     const label = navItems.find(([r]) => r === ui.route)?.[1];
     document.title = label && ui.route !== "overview" ? `${label} · Rig` : "Rig";

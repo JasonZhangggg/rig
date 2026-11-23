@@ -82,6 +82,8 @@ function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number
   const [cursor, setCursor] = useState<number | null>(null);
   const [tip, setTip] = useState<number | null>(null);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  // A tap is a pick, not a hover: on touch the tip would stick after the finger lifts, and the scrolling strip clips it.
+  const touched = useRef(false);
   const tabbable = cursor ?? (selected >= 0 ? selected : DAYS - 1);
   const tipId = useId();
 
@@ -112,10 +114,11 @@ function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number
             aria-describedby={tip === i ? tipId : undefined}
             onClick={() => pickDay(i === selected ? null : d.from)}
             onKeyDown={(ev) => move(ev, i)}
-            onFocus={() => { setCursor(i); setTip(i); }}
-            onBlur={() => setTip(null)}
-            onMouseEnter={() => setTip(i)}
-            onMouseLeave={() => setTip(null)}
+            onPointerDown={(ev) => { touched.current = ev.pointerType !== "mouse"; }}
+            onFocus={() => { setCursor(i); if (!touched.current) setTip(i); }}
+            onBlur={() => { touched.current = false; setTip(null); }}
+            onPointerEnter={(ev) => { if (ev.pointerType === "mouse") setTip(i); }}
+            onPointerLeave={(ev) => { if (ev.pointerType === "mouse") setTip(null); }}
           >
             <span className="ev-dots">{d.list.slice(0, 4).map((e) => <i key={`${e.t}${e.source}${e.id}`} className={serious(e) ? "bad" : ""} />)}</span>
             <span className="ev-tick">{i === DAYS - 1 ? "Today" : i % 7 === 1 ? shortDay(d.from) : ""}</span>

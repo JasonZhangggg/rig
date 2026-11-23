@@ -18,13 +18,14 @@ function result(r: RecordingInfo, inUnit: (s: string) => string): string {
 /** The recording that's running now, with its progress and a way to stop it. */
 export function NowRecording({ r, pcName }: { r: RecordingInfo; pcName: string }) {
   const { stopRecording, openRecording } = useApp();
+  const [stopping, setStopping] = useState(false);
   return (
     <section className="card card-pad rec-now">
       <div className="rec-now-head">
         <div><span className="label">{r.state === "pending" ? `Waiting for ${pcName}` : "Recording now"}</span><h2 className="plain-h">{r.reason}</h2></div>
         <div className="gm-actions">
           <button type="button" className="btn sm" onClick={() => openRecording(r.id)}>Watch it</button>
-          <button type="button" className="btn sm" onClick={() => stopRecording(r.id)}>Stop</button>
+          <button type="button" className="btn sm" disabled={stopping} onClick={() => { setStopping(true); void stopRecording(r.id).finally(() => setStopping(false)); }}>{stopping ? "Stopping…" : "Stop"}</button>
         </div>
       </div>
       {r.state === "pending"

@@ -129,17 +129,19 @@ export function useTempText() {
   return useCallback((text: string) => tempsInText(text, unit), [unit]);
 }
 
-/** The on-screen PC's recorded history over a range. Null while it loads, empty when there is none or it couldn't be read. */
+/**
+ * The on-screen PC's recorded history over a range. Null while the PC's first range loads, empty when there is none or it
+ * couldn't be read. Moving to another range keeps the last one on screen until the new one arrives, so nothing blinks out.
+ */
 export function useHistory(range: Range): HistoryPoint[] | null {
   const { client, pc } = useApp();
-  const [points, setPoints] = useState<HistoryPoint[] | null>(null);
+  const [got, setGot] = useState<{ pc: string; points: HistoryPoint[] } | null>(null);
   useEffect(() => {
     let live = true;
-    setPoints(null);
-    client.history(pc.id, range).then((p) => live && setPoints(p)).catch(() => live && setPoints([]));
+    client.history(pc.id, range).then((p) => live && setGot({ pc: pc.id, points: p })).catch(() => live && setGot({ pc: pc.id, points: [] }));
     return () => { live = false; };
   }, [client, pc.id, range]);
-  return points;
+  return got?.pc === pc.id ? got.points : null;
 }
 
 /** What shows before a PC is on screen: still reading, no PCs, or the list couldn't be read (with a way to try again). */
@@ -209,7 +211,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   }, [data.pc, data.pcs, ui.pcId]);
 
   useEffect(() => {
-    const on = () => { set({ route: routeFromHash() }); if (routeFromHash() !== "chat") window.scrollTo(0, 0); };
+    const on = () => set({ route: routeFromHash() });
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, [set]);
@@ -218,11 +220,24 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]") !== null;
-      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) { e.preventDefault(); set({ palette: true }); }
+      if (!(((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing))) return;
+      // Not over another dialog: Escape would then close the wrong one.
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault(); set({ palette: true });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [set]);
+
+  // Actions already under way, by item: a second press while the first is still running does nothing.
+  const inFlight = useRef(new Set<string>());
+  const once = useCallback(async (key: string, run: () => Promise<void>) => {
+    if (inFlight.current.has(key)) return;
+    inFlight.current.add(key);
+    try { await run(); } finally { inFlight.current.delete(key); }
+  }, []);
+  // Where the Logs list was scrolled to when a recording opened, so going back lands there again.
+  const logsScroll = useRef(0);
 
   const timer = useRef(0);
   const toast = useCallback((msg: string, undo?: string) => {
@@ -282,18 +297,18 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         }, ab.signal)
           .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""} Check your internet connection and send it again.`.replace(/\s+/g, " ").trim() })))
           .finally(() => { edit((m) => ({ ...m, pending: false })); setData((d) => ({ ...d, answering: false })); });
-        requestAnimationFrame(() => document.querySelector(".composer")?.scrollIntoView({ block: "end" }));
+        requestAnimationFrame(() => document.querySelector(".chat-composer")?.scrollIntoView({ block: "end" }));
       },
 
       clearChat: () => { if (!data.answering) setData((d) => ({ ...d, chat: [] })); },
 
-      review: async (calls, meta) => {
+      review: (calls, meta) => once("review", async () => {
         if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pc.name}.`); return; }
         let rows: DiffRow[];
         try { rows = await client.preview(pcId, calls); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
         const title = meta.title ?? titleFor(calls);
         set({ review: { title, body: meta.body ?? "Here's exactly what will change. Nothing happens until you confirm.", rows, calls, cta: meta.cta ?? (calls.length === 1 ? "Make this change" : `Make ${calls.length} changes`), by: meta.by, why: meta.why, proposalId: meta.proposalId } });
-      },
+      }),
 
       confirmReview: async () => {
         const r = ui.review;
@@ -318,18 +333,26 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         } catch (e) { toast(e instanceof Error && e.message ? e.message : "Rig couldn't start recording. Try again, and if it keeps happening, restart Rig."); }
       },
 
-      stopRecording: async (id) => {
+      stopRecording: (id) => once(`stop:${id}`, async () => {
         try {
           await client.stopRecording(pcId, id);
           if (!client.caps.local) toast(`${pc.name} stops recording the next time its Rig app checks in.`);
         } catch (e) { toast(`Rig couldn't stop the recording. ${e instanceof Error ? e.message : ""} Try Stop again in a moment.`.replace(/\s+/g, " ").trim()); }
-      },
+      }),
 
-      openRecording: (id) => { set({ recordingId: id }); if (id && location.hash !== "#logs") location.hash = "logs"; window.scrollTo(0, 0); },
+      openRecording: (id) => {
+        const back = id == null && ui.recordingId != null && ui.route === "logs";
+        if (id != null && ui.route === "logs" && ui.recordingId == null) logsScroll.current = window.scrollY;
+        set({ recordingId: id });
+        if (id && location.hash !== "#logs") location.hash = "logs";
+        // Back to the list lands where it was; a recording opens at its top.
+        if (back) requestAnimationFrame(() => window.scrollTo(0, logsScroll.current));
+        else window.scrollTo(0, 0);
+      },
 
       declineProposal: (proposalId) => { patchProposal(proposalId, { status: "declined" }); toast("Okay, nothing was changed."); },
 
-      approveScript: async (messageId) => {
+      approveScript: (messageId) => once(`script:${messageId}`, async () => {
         const m = data.chat.find((x) => x.id === messageId);
         const sc = m?.script;
         const rec = host.recorder;
@@ -345,10 +368,10 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         } catch (e) {
           patchScript(messageId, { error: e instanceof Error ? e.message : "Rig couldn't approve the script." });
         }
-      },
+      }),
       declineScript: (messageId) => { patchScript(messageId, { status: "declined" }); toast("Okay, the script won't run."); },
 
-      toggleChange: async (id) => {
+      toggleChange: (id) => once(`change:${id}`, async () => {
         const c = data.changes.find((x) => x.id === id);
         if (!c) return;
         if (!client.caps.applyChanges) { toast(`Undo works from the Rig app on ${pc.name}.`); return; }
@@ -359,10 +382,10 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         } catch (e) {
           toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }
-      },
+      }),
     };
     return ctx;
-  }, [client, host, ui, data, pcId, set, toast]);
+  }, [client, host, ui, data, pcId, set, toast, once]);
 
   const retry = () => { setLoaded(false); setFailed(null); setAttempt((n) => n + 1); };
   if (!value) return <>{fallback(!loaded ? "loading" : failed !== null ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry, failed)}</>;

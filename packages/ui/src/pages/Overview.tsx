@@ -138,12 +138,37 @@ export function Overview() {
   }, [editing, views, week, pc.name, pc.fans]);
 
   const list = mode === "phone";
-  const done = () => { setEditing(false); setPanel(null); announce("Done customizing. Your layout is saved."); document.getElementById("f-customize")?.focus(); };
-  const edit = (id?: string) => {
+  // Finishing puts focus back without scrolling: on the widget it was finished from (its handle, the one part of it that
+  // takes focus outside customizing), or on Customize Home.
+  const refocus = useRef<string | null | undefined>(undefined);
+  const done = (from?: string) => { refocus.current = from ?? null; setEditing(false); setPanel(null); announce("Done customizing. Your layout is saved."); };
+  // On a phone the list opens up for each tile's buttons when customizing starts, so the tile that was pressed, or the first
+  // one on screen, is measured first and the page scrolls by however far it moved, keeping it under the finger.
+  const anchor = useRef<{ id: string; top: number } | null>(null);
+  const edit = (id?: string, held?: string) => {
+    if (list) {
+      const tiles = [...document.querySelectorAll<HTMLElement>(".dash .dg")];
+      const el = tiles.find((t) => t.dataset.id === (held ?? id)) ?? tiles.find((t) => t.getBoundingClientRect().bottom > 0);
+      anchor.current = el ? { id: el.dataset.id!, top: el.getBoundingClientRect().top } : null;
+    }
     setEditing(true);
     announce(list ? "Customizing Home. Use the up and down buttons on a widget, or the arrow keys, to change the order." : "Customizing Home. Drag a widget or use the arrow keys to move it.");
     if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus({ preventScroll: true }));
   };
+  useLayoutEffect(() => {
+    const a = anchor.current, from = refocus.current;
+    anchor.current = null;
+    refocus.current = undefined;
+    if (editing && a) {
+      const el = document.querySelector<HTMLElement>(`.dash .dg[data-id="${a.id}"]`);
+      const by = el ? el.getBoundingClientRect().top - a.top : 0;
+      if (Math.abs(by) >= 1) window.scrollBy({ top: by, behavior: "instant" });
+    }
+    if (!editing && from !== undefined) {
+      const tile = from ? document.querySelector<HTMLElement>(`.dash .dg[data-id="${from}"] .dw-grip`) : null;
+      (tile ?? document.getElementById("f-customize"))?.focus({ preventScroll: true });
+    }
+  }, [editing]);
   const hide = (id: string) => {
     const w = shown.find((x) => x.id === id);
     board.hide(id);
@@ -180,6 +205,8 @@ export function Overview() {
       : { add: barAdd, dash: barLayout, reset: barReset }[panel.type].current;
     setPanel(next ? { ...panel, at: next } : null);
   });
+  /** The bar's buttons open their panel, and shut it when pressed again. */
+  const toggle = (type: "add" | "dash" | "reset", at: HTMLElement) => setPanel((p) => (p?.type === type ? null : { type, at }));
   const current = panel?.type === "widget" ? shown.find((w) => w.id === panel.id) : undefined;
 
   // On a grid, a widget's options also size and move it, so dragging is never the only way.
@@ -196,6 +223,11 @@ export function Overview() {
         const [pw, ph] = presetCells(w.kind, k as SizeName, n);
         board.setCells(bp, resizeFlow(now, w.id, pw, ph, n));
         changed(`${title} is now ${SIZE_LABEL[k as SizeName]}.`);
+      },
+      canMove: (dir: Dir) => {
+        const to = stepTarget(now, w.id, dir, n);
+        const next = to && dragFlow(now, w.id, to.x, to.y, n);
+        return !!next && next.some((c) => { const o = now.find((x) => x.i === c.i); return !o || o.x !== c.x || o.y !== c.y || o.w !== c.w || o.h !== c.h; });
       },
       onMove: (dir: Dir) => {
         const to = stepTarget(now, w.id, dir, n);
@@ -262,10 +294,10 @@ export function Overview() {
             <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
               <p><b>Customizing Home</b><span>{list ? "Use the arrows on a widget to move it up or down." : "Drag widgets to move them and pull an edge to resize, or use a widget's options."}</span></p>
               <div className="dash-bar-tools">
-                <button type="button" ref={barAdd} className="dbtn" onClick={(e) => setPanel({ type: "add", at: e.currentTarget })}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
-                <button type="button" ref={barLayout} className="dbtn" onClick={(e) => setPanel({ type: "dash", at: e.currentTarget })}>Layout</button>
-                <button type="button" ref={barReset} className="dbtn" onClick={(e) => setPanel({ type: "reset", at: e.currentTarget })}>Reset</button>
-                <button type="button" className="dbtn primary" onClick={done}>Done</button>
+                <button type="button" ref={barAdd} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "add"} onClick={(e) => toggle("add", e.currentTarget)}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
+                <button type="button" ref={barLayout} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "dash"} onClick={(e) => toggle("dash", e.currentTarget)}>Layout</button>
+                <button type="button" ref={barReset} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "reset"} onClick={(e) => toggle("reset", e.currentTarget)}>Reset</button>
+                <button type="button" className="dbtn primary" onClick={() => done()}>Done</button>
               </div>
             </div>
           )}

@@ -23,7 +23,8 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const version = `${info.id}|${info.state}|${Math.floor(info.sampleCount / 6)}`;
   useEffect(() => {
     let live = true;
-    client.recording(pc.id, info.id).then((r) => live && setRec(r)).catch(() => live && setRec(null));
+    // A failed refetch keeps what's already on screen; the error shows only if nothing loaded yet.
+    client.recording(pc.id, info.id).then((r) => live && setRec(r)).catch(() => live && setRec((r) => r ?? null));
     return () => { live = false; };
   }, [client, pc.id, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -40,6 +41,8 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const stat = (k: "cpu" | "gpu") => sum?.stats[k];
   const top = sum?.offenders[0];
   const [more, setMore] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const stop = () => { setStopping(true); void stopRecording(info.id).finally(() => setStopping(false)); };
 
   return (
     <div className="page">
@@ -52,7 +55,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
         </div>
         <div className="gm-actions">
           <StateChip state={info.state} />
-          {active && <button type="button" className="btn" onClick={() => stopRecording(info.id)}>Stop recording</button>}
+          {active && <button type="button" className="btn" disabled={stopping} onClick={stop}>{stopping ? "Stopping…" : "Stop recording"}</button>}
         </div>
       </div>
 

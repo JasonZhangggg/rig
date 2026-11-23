@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { categoryState, drawWith, fitOf, gainOf, makersIn, matchesQuery, photoOf, priceOf, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
 import { useApp } from "../../state";
-import { issueGo, partIcon } from "../shared";
-import { useUpgrades } from "./PCUpgrades";
+import { partIcon } from "../shared";
+import type { PCUpgrades } from "./PCUpgrades";
 
 const money = (n: number) => `$${n.toLocaleString("en-US", n % 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {})}`;
 
@@ -60,25 +60,37 @@ function usePrefs(pcId: string) {
   };
 }
 
+type Got = { id: string; shop: Shop | null; failed: boolean };
+/** The last parts list read for each PC, so coming back to the tab shows it at once while a fresh one loads. */
+const lastShop = new WeakMap<object, Map<string, Got>>();
+
 function useShop() {
   const { pc, client } = useApp();
-  const [got, setGot] = useState<{ id: string; shop: Shop | null; failed: boolean } | null>(null);
+  const [got, setGot] = useState<Got | null>(() => lastShop.get(client)?.get(pc.id) ?? null);
   useEffect(() => {
     let live = true;
-    client.shop(pc.id).then((shop) => live && setGot({ id: pc.id, shop, failed: false }), () => live && setGot({ id: pc.id, shop: null, failed: true }));
+    const keep = (g: Got) => {
+      if (!g.failed) { const m = lastShop.get(client) ?? new Map<string, Got>(); m.set(g.id, g); lastShop.set(client, m); }
+      // A failed refresh keeps the list already on screen.
+      if (live) setGot((old) => (g.failed && old?.id === g.id && old.shop ? old : g));
+    };
+    const kept = lastShop.get(client)?.get(pc.id);
+    if (kept) setGot(kept);
+    client.shop(pc.id).then((shop) => keep({ id: pc.id, shop, failed: false }), () => keep({ id: pc.id, shop: null, failed: true }));
     return () => { live = false; };
   }, [client, pc.id]);
   return got?.id === pc.id ? got : null;
 }
 
-export function UpgradesTab() {
+/** My PC's upgrade ideas come in from the page, which keeps them while you move between its tabs. */
+export function UpgradesTab({ ups }: { ups: PCUpgrades }) {
   const { pc, ui, set } = useApp();
   const got = useShop();
-  const ups = useUpgrades();
   const store = usePrefs(pc.id);
   const { prefs } = store;
   const [q, setQ] = useState("");
-  if (!got) return <p className="muted" role="status">Looking at what fits {pc.name}…</p>;
+  // Wait for Rig's pick too, so the kind of part it starts on doesn't change under the person once it arrives.
+  if (!got || (!ups.list && !ups.failed)) return <p className="muted" role="status">Looking at what fits {pc.name}…</p>;
   if (!got.shop) return <p className="muted">{got.failed ? "Couldn't load parts just now. Check your internet connection, then open Upgrades again." : `Rig hasn't read ${pc.name}'s parts yet. Parts that fit show up once it has.`}</p>;
   const { facts, items, demo, retailFrom } = got.shop;
   const states = shopCategories.map((c) => categoryState(c.key, facts, prefs.psuW));
@@ -127,10 +139,17 @@ export function UpgradesTab() {
 }
 
 /** The top of the tab: a free fix before any purchase, and the one upgrade Rig would start with. */
-function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () => void; pickText: ReturnType<typeof useUpgrades>["pick"] }) {
+function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () => void; pickText: PCUpgrades["pick"] }) {
   const ctx = useApp();
   const { pc, ask } = ctx;
   const free = pc.issues?.find((i) => i.id.startsWith("hz-") && i.fix);
+  // Rig reads the current settings before the review opens, which can take a moment.
+  const [checking, setChecking] = useState(false);
+  const fix = async () => {
+    if (!free?.fix || checking) return;
+    setChecking(true);
+    try { await ctx.review(free.fix, { by: "you", why: free.title }); } finally { setChecking(false); }
+  };
   if (!pickText && !free) return null;
   return (
     <div className="shop-lead">
@@ -139,7 +158,7 @@ function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () =
           <span className="label">Free, before you buy anything</span>
           <b>{free.title}</b>
           <span className="muted">{free.body}</span>
-          <div><button type="button" className="btn sm" onClick={() => issueGo(free, pc, ctx)}>{free.action}</button></div>
+          <div><button type="button" className="btn sm" disabled={checking} onClick={() => void fix()}>{checking ? "Checking…" : free.action}</button></div>
         </div>
       )}
       {pickText && (
