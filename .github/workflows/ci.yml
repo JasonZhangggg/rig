@@ -37,6 +37,10 @@ jobs:
         with:
           name: rig-windows-installer
           path: ${{ steps.build.outputs.installer }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rig-windows-setup
+          path: ${{ steps.build.outputs.setup }}
       # The background recorder: record briefly in a plain process, then install
       # Rig silently, check the RigRecorder service runs and writes its log, and
       # uninstall it again and check the service is gone.

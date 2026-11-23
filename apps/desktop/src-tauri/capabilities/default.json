@@ -13,8 +13,6 @@
     "autostart:allow-is-enabled",
     "notification:default",
     "updater:default",
-    "dialog:allow-ask",
-    "dialog:allow-message",
     "log:default"
   ]
 }

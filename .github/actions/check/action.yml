@@ -31,6 +31,9 @@ runs:
       shell: bash
     - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
       shell: bash
+    - name: Setup window's tests (apps/setup)
+      run: cargo test --locked --manifest-path apps/setup/Cargo.toml
+      shell: bash
 
     - uses: actions/setup-dotnet@v4
       with: { dotnet-version: 8.0.x }

@@ -14,10 +14,20 @@
 ; board fans are read through, when it's missing or older than the bundled one
 ; (see helper/RigHelper/PawnIOSetup.cs). Uninstalling removes PawnIO only if
 ; Rig installed it and no other Rig install remains.
+;
+; Rig's own setup window (apps/setup) runs this installer silently. When the
+; build has it (tools/setup.mjs puts it in src-tauri/setup), a copy goes into
+; Rig's folder and Settings, Apps opens it to uninstall, so uninstalling looks
+; like Rig too. It runs uninstall.exe silently in turn.
 
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Setting up Rig's background recorder and PawnIO..."
   ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--install-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
+  !if /FileExists "${__FILEDIR__}\..\setup\rig-setup.exe"
+    File "/oname=$INSTDIR\rig-setup.exe" "${__FILEDIR__}\..\setup\rig-setup.exe"
+    WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" '"$INSTDIR\rig-setup.exe" --uninstall'
+    WriteRegStr SHCTX "${UNINSTKEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
+  !endif
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -27,5 +37,13 @@
     ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR"' SW_HIDE
   ${Else}
     ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  ; An update puts it straight back. Otherwise, it was the last thing in Rig's folder.
+  ${If} $UpdateMode <> 1
+    Delete "$INSTDIR\rig-setup.exe"
+    RMDir "$INSTDIR"
   ${EndIf}
 !macroend
