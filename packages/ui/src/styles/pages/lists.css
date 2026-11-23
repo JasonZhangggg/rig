@@ -37,10 +37,32 @@
 .ch-how { display: flex; flex-direction: column; gap: 4px; max-width: 72ch; padding-top: 8px; font-size: 13px; }
 .ch-how-h { color: var(--text); font: var(--t-title); }
 
-.ch-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 0 0; }
-.ch-empty-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--text); }
-.ch-empty-icon svg { width: 24px; height: 24px; }
-.ch-empty-text { display: flex; flex-direction: column; gap: 8px; max-width: 60ch; }
+/* Empty: what will show up here, a picture of one, then the way to the first fix.
+   Alone on the page it sits in the middle of the space under the title; under waiting fixes it follows them. */
+.page.ch-is-empty { min-height: calc(100dvh - 50px); margin-bottom: -60px; }
+.ch-is-empty .ch-empty { flex: 1; justify-content: center; padding: 0 0 12vh; }
+.ch-empty { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 36px 0 8px; text-align: center; }
+.ch-empty-text { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 54ch; }
+.ch-empty-text h2 { font: var(--t-title); font-size: 22px; letter-spacing: -.02em; }
+.ch-empty-text p { text-wrap: balance; line-height: 1.55; }
+.ch-fake { pointer-events: none; gap: 6px; }
+.ch-fake svg { color: var(--text-2); }
+
+/* One example change, as it will look */
+.ch-sample { position: relative; width: min(460px, 100%); margin: 16px 0 6px; text-align: left; }
+.ch-sample-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 12px 32px rgba(27, 27, 31, .08), 0 1px 2px rgba(27, 27, 31, .05); }
+.ch-sample-back { position: absolute; inset: 0; transform: translateY(-16px) scale(.92); transform-origin: top center; background: var(--surface-2); box-shadow: none; }
+.ch-sample-top { display: flex; align-items: center; justify-content: space-between; color: var(--text-3); font-size: 12.5px; }
+.ch-sample-tag { padding: 2px 8px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; }
+.ch-sample-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.ch-sample-row > div { display: flex; flex-direction: column; gap: 2px; }
+.ch-sample-row b { font-weight: 600; }
+.ch-sample-row span { color: var(--text-3); font-size: 13px; }
+.ch-sample-diff { display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13.5px; }
+.ch-sample-diff > span:first-child { flex: 1; color: var(--text-2); }
+.ch-sample-diff s { color: var(--text-3); text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
+.ch-sample-diff i { color: var(--text-3); font-style: normal; }
+.ch-sample-diff b { font-weight: 600; }
 
 /* ---------- Upgrade meters (My PC) ---------- */
 .up-row-room { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
@@ -63,6 +85,7 @@
   .ch-entry,
   .ch-timeline > .ch-entry { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
   .ch-time { padding: 0; }
-  .ch-empty { padding: 22px 0 0; }
+  .page.ch-is-empty { min-height: 0; margin-bottom: 0; }
+  .ch-is-empty .ch-empty, .ch-empty { padding: 28px 0 8px; }
   .game { grid-template-columns: 1fr; }
 }
