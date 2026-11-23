@@ -18,7 +18,10 @@ vi.mock("../src/boardScene", async (real) => ({
   createBoardScene: (_el: HTMLElement, _shape: unknown, opts: { onHover?: (h: BoardHover | null) => void }) => {
     board.point = opts.onHover ?? null;
     const rec = (name: string) => (arg?: unknown) => { board.calls.push([name, arg]); };
-    return { highlight: rec("highlight"), hover: rec("hover"), reset: rec("reset"), setUsage: rec("setUsage"), dispose: rec("dispose"), stats: () => ({ frames: 0 }) };
+    return {
+      highlight: rec("highlight"), hover: rec("hover"), reset: rec("reset"), setUsage: rec("setUsage"), dispose: rec("dispose"), stats: () => ({ frames: 0 }),
+      setCables: rec("setCables"), hoverCable: rec("hoverCable"), focusCable: rec("focusCable"),
+    };
   },
 }));
 
@@ -108,5 +111,35 @@ describe("The motherboard on My PC", () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
     expect(board.calls.at(-1)?.[0]).toBe("reset");
+  });
+
+  it("has a Cables tab with each power cable in the order to plug them in, drawn on the board", async () => {
+    await openBoard();
+    fireEvent.click(screen.getByRole("tab", { name: "Cables" }));
+    const rows = within(screen.getByRole("list", { name: "Power cables" })).getAllByRole("button");
+    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
+      "1. Processor power (CPU_PWR1): 8-pin CPU cable from the supply's CPU port. Show on the board",
+      "2. Second processor power (CPU_PWR2): 4-pin CPU cable from the supply's CPU port. Show on the board",
+      "3. Board power (ATX_PWR1): 24-pin cable from the supply's MB or ATX port. Show on the board",
+      "4. Graphics card power: 16-pin or 8-pin cable from the supply's PCIe or VGA port. Show on the board",
+    ]);
+    expect(within(rows[1]).getByText("Optional")).toBeTruthy();
+    expect(within(rows[3]).getByText("Usual spot")).toBeTruthy();
+    expect(screen.getByText(/wired differently/)).toBeTruthy();
+    const drawn = board.calls.filter(([n]) => n === "setCables").at(-1)?.[1] as { id: string; to: string | null; card?: unknown }[];
+    expect(drawn.map((c) => [c.id, c.to])).toEqual([["eps", "eps"], ["eps2", "eps2"], ["atx24", "atx24"], ["gpu", null]]);
+    expect(drawn[3].card).toMatchObject({ length: 270, height: 125, thick: 50 });
+  });
+
+  it("lights a cable on the board while its row is pointed at, zooms to its plug on a click, and takes the cables off on leaving the tab", async () => {
+    await openBoard();
+    fireEvent.click(screen.getByRole("tab", { name: "Cables" }));
+    const gpu = screen.getByRole("button", { name: /^4\. Graphics card power/ });
+    fireEvent.pointerEnter(gpu);
+    expect(board.calls.at(-1)).toEqual(["hoverCable", "gpu"]);
+    fireEvent.click(gpu);
+    expect(board.calls.at(-1)).toEqual(["focusCable", "gpu"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Slots" }));
+    expect(board.calls.filter(([n]) => n === "setCables").at(-1)).toEqual(["setCables", null]);
   });
 });

@@ -12,6 +12,7 @@ import { arrowKeys } from "../components/modal";
 import { Warm } from "../components/common";
 import { BoardView } from "./board/BoardView";
 import { BoardUsage } from "./board/BoardUsage";
+import { BoardCables } from "./board/BoardCables";
 import { boardStage } from "./board/boardStage";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
@@ -207,7 +208,7 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   const part = pc.parts![id];
   const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
   // The motherboard opens on what's plugged into it.
-  const tabs: [string, string][] = [...(id === "motherboard" ? [["slots", "Slots"] as [string, string]] : []), ["specs", "Specs"], ["manual", "Manual"]];
+  const tabs: [string, string][] = [...(id === "motherboard" ? [["slots", "Slots"], ["cables", "Cables"]] as [string, string][] : []), ["specs", "Specs"], ["manual", "Manual"]];
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
   const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : tabs[0][0];
@@ -274,6 +275,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const inUnit = useTempText();
   if (tab === "manual") return <PartManual id={id} about={part.name} />;
   if (tab === "slots") return <BoardUsage />;
+  if (tab === "cables") return <BoardCables />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));
