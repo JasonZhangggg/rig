@@ -66,6 +66,9 @@ export function realMaterial(color: THREE.ColorRepresentation, o: MatOpts = {}):
 
 // ---------- textures ----------
 const texCache = new Map<string, THREE.Texture>();
+const shared = new Set<THREE.Texture>();
+/** Painted textures are kept for every build that uses them; a model being freed leaves them alone. */
+export const isSharedTexture = (t: THREE.Texture) => shared.has(t);
 type Draw = (g: CanvasRenderingContext2D, w: number, h: number) => void;
 
 /** A texture painted on a canvas once and shared. Data maps (roughness, alpha) skip the color space. */
@@ -80,6 +83,7 @@ export function canvasTex(key: string, w: number, h: number, draw: Draw, o: { da
     if (!o.data) t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 8;
     texCache.set(key, t);
+    shared.add(t);
   }
   if (!o.repeat) return t;
   const r = t.clone();
@@ -401,6 +405,8 @@ export function makeFan(kit: Kit, size: number, thick: number, look: FanLook) {
 }
 
 const hitMaterial = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+// Every fan shares it, so rebuilding the PC leaves it be.
+hitMaterial.userData.shared = true;
 /**
  * A still disc over a fan's blades that's never drawn but catches the pointer. Without it the pointer falls through the
  * gaps between spinning blades, and the fan lights up and goes dark over and over while it's pointed at.

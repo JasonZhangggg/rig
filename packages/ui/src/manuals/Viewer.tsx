@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useModal } from "../components/modal";
 import type { Manual, ManualPage } from "@rig/core";
-import { useApp } from "../state";
+import { useActions, useData, useStillPC } from "../state";
 import { getCopy, putCopy } from "./cache";
 import { closePdf, isCancelled, renderPage } from "./pdf";
 import { HitList, useManualSearch } from "./Search";
@@ -21,7 +21,9 @@ export function ManualViewer() {
 type File = { state: "loading" } | { state: "ready"; bytes: ArrayBuffer } | { state: "elsewhere" } | { state: "error"; message: string };
 
 function Viewer({ manualId, page }: { manualId: string; page: number }) {
-  const { client, pc, ask, data } = useApp();
+  const { client, ask } = useActions();
+  const pc = useStillPC();
+  const data = useData("answering");
   const { manuals } = useManuals();
   const manual = manuals?.find((m) => m.id === manualId);
   const [file, setFile] = useState<File>({ state: "loading" });
@@ -177,7 +179,8 @@ function Rail({ manual, page, go }: { manual: Manual; page: number; go: (n: numb
 }
 
 function PageView({ manual, page, zoom, file, onCount, retry }: { manual: Manual; page: number; zoom: number; file: File; onCount: (n: number) => void; retry: () => void }) {
-  const { client, pc } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);

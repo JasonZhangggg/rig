@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Route } from "@rig/core";
-import { useApp, useUpdates } from "../state";
+import { useActions, useAppSelector, useUI, useUpdates } from "../state";
 import { updateWhat } from "../pages/settings/UpdatesSection";
 import { DiffTable } from "./common";
 import { useModal } from "./modal";
@@ -24,7 +24,9 @@ export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" 
 
 /** Shows exactly what will change, before anything does. */
 export function ReviewSheet() {
-  const { ui, pc, set, confirmReview } = useApp();
+  const { set, confirmReview } = useActions();
+  const ui = useUI();
+  const pc = { name: useAppSelector((c) => c.pc.name) };
   const r = ui.review;
   useEffect(() => {
     if (!r) return;
@@ -61,7 +63,8 @@ export function ReviewSheet() {
 }
 
 export function Toast() {
-  const { ui, set, toggleChange } = useApp();
+  const { set, toggleChange } = useActions();
+  const ui = useUI();
   const t = ui.toast;
   return (
     <div className="toast-region" role="status">
@@ -80,7 +83,7 @@ export function Toast() {
  * until Rig restarts or a newer version comes out, and Settings, Updates always has the same button.
  */
 export function UpdateNotice() {
-  const { host } = useApp();
+  const { host } = useActions();
   const s = useUpdates(host);
   const [hidden, setHidden] = useState<string | null>(null);
   const version = s.kind === "ready" || s.kind === "installing" ? s.version : s.kind === "failed" && s.step === "install" ? s.version ?? null : null;

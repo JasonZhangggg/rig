@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { snippetParts, type ManualHit } from "@rig/core";
-import { useApp } from "../state";
+import { useActions, useStillPC } from "../state";
 
 /** Searches the PC's manuals (or one of them) as the person types. */
 export function useManualSearch(query: string, manualId?: string) {
-  const { client, pc } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const [hits, setHits] = useState<ManualHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const q = query.trim();

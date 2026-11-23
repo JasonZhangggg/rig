@@ -1,9 +1,10 @@
-import { useApp } from "../../state";
+import { useActions, useStillPC } from "../../state";
 
 /** Changes with nothing in it yet: a picture of one change as it will look, what the page is for, and the way to the first fix.
  *  With fixes waiting above, their Review buttons are the next step, so this drops its own. */
 export function NoChanges({ quiet }: { quiet: boolean }) {
-  const { go, pc } = useApp();
+  const { go } = useActions();
+  const pc = useStillPC();
   return (
     <section className="ch-empty" aria-labelledby="ch-empty-h">
       <div className="ch-sample" aria-hidden="true">

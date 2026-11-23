@@ -6,8 +6,8 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { findDiagrams, MANUAL_MAX_BYTES, type Manual, type ManualTarget, type RigClient } from "@rig/core";
-import { useApp } from "../state";
-import { dropCopy, getCopy, putCopy } from "./cache";
+import { useActions, useStillPC } from "../state";
+import { dropCopy, getCopy, hasCopy, putCopy } from "./cache";
 import { readPdf } from "./pdf";
 
 export type Job =
@@ -60,7 +60,7 @@ export class ManualStore {
   load(): Promise<void> {
     this.loading ??= this.client.manuals(this.pcId).then(async (manuals) => {
       const added = manuals.filter((m) => m.source === "added");
-      const here = (await Promise.all(added.map(async (m) => ((await getCopy(m.id)) ? m.id : null)))).filter((x): x is string => !!x);
+      const here = (await Promise.all(added.map(async (m) => ((await hasCopy(m.id)) ? m.id : null)))).filter((x): x is string => !!x);
       this.patch((s) => ({ manuals, loadError: null, onDevice: [...new Set([...s.onDevice, ...here])] }));
     }, (e) => this.patch({ loadError: message(e, "Rig couldn't load the manuals just now. Check your internet connection, then open Manuals again."), manuals: this.state.manuals ?? [] }))
       .finally(() => { this.loading = null; });
@@ -154,7 +154,8 @@ export function manualStore(client: RigClient, pcId: string): ManualStore {
 
 /** The on-screen PC's manuals and what's happening to them. Loads the list when first used on a screen. */
 export function useManuals(): ManualsState & { store: ManualStore } {
-  const { client, pc } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const store = manualStore(client, pc.id);
   const state = useSyncExternalStore(store.subscribe, store.get, store.get);
   useEffect(() => { void store.load(); }, [store]);

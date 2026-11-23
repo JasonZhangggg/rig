@@ -5,6 +5,7 @@ import { SimulatedLink, fixtures } from "@rig/core/demo";
 import { RigApp } from "@rig/ui";
 import { inTauri, openLogs, tauriAutostart, tauriLink, tauriRecorder, tauriStore, tauriToken } from "./tauri";
 import { notifyAlerts, notifyRecording } from "./notify";
+import { quietWhenHidden } from "./quiet";
 import { tauriUpdates, watchForUpdates } from "./update";
 import { log, logUncaught } from "./log";
 import { installContextMenu } from "./contextmenu";
@@ -36,7 +37,7 @@ pickLink().then((link) => {
   const recorder = inTauri && link === tauriLink ? tauriRecorder : null;
   const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording, recorder, log } : { log });
   root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api, openLogs, updates: tauriUpdates, ...(recorder ? { recorder } : {}) } : undefined} />);
-  if (inTauri) client.start().then(() => notifyAlerts(client), () => {});
+  if (inTauri) { quietWhenHidden(client); client.start().then(() => notifyAlerts(client), () => {}); }
 }).catch((e: unknown) => {
   root.render(
     <div className="splash" role="alert">

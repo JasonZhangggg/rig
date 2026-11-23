@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } from "@rig/core";
-import { useApp, useHistory } from "../state";
+import { gameLibrary, insightContext, type Game, type HistoryPoint, type StillPC } from "@rig/core";
+import { useActions, useHistory, useStillPC } from "../state";
 import { Detail } from "./games/Detail";
 import { Library, type GameSort } from "./games/Library";
 import { RecentSessions } from "./games/Summary";
@@ -11,7 +11,7 @@ type GameRange = "7d" | "30d";
 const rangeWords: Record<GameRange, string> = { "7d": "this week", "30d": "this month" };
 
 /** The games in the history, in the viewer's local time. Null while history loads. */
-function useLibrary(pc: PC, points: HistoryPoint[] | null) {
+function useLibrary(pc: StillPC, points: HistoryPoint[] | null) {
   // The PC object is replaced on every live reading, so the memo keys on the fields the library reads.
   const { kind } = pc;
   const cpu = pc.parts?.cpu?.limit, gpu = pc.parts?.gpu?.limit;
@@ -20,7 +20,8 @@ function useLibrary(pc: PC, points: HistoryPoint[] | null) {
 
 /** Frame rates and settings Rig has measured, looked up by game name. */
 function useTuning() {
-  const { client, pc } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const [games, setGames] = useState<Map<string, Game>>(new Map());
   useEffect(() => {
     let live = true;
@@ -32,7 +33,8 @@ function useTuning() {
 }
 
 export function Games() {
-  const { pc, ask } = useApp();
+  const { ask } = useActions();
+  const pc = useStillPC();
   const [range, setRange] = useState<GameRange>("7d");
   const [open, setOpen] = useState<string | null>(null);
   const [sort, setSort] = useState<GameSort>("played");

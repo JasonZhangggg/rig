@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { DELETE_WORD } from "@rig/core";
-import { useApp } from "../../state";
+import { useActions, useAppSelector } from "../../state";
 import { SettingRow } from "./parts";
 
 export function AccountSection() {
-  const { data, client, go, toast } = useApp();
-  const a = data.account;
+  const { client, go, toast } = useActions();
+  const a = useAppSelector((c) => c.data.account);
   const demo = client.kind === "demo";
   const [leaving, setLeaving] = useState(false);
   const signOut = () => {
@@ -43,12 +43,12 @@ export function AccountSection() {
 }
 
 function DeleteAccount() {
-  const { data, client } = useApp();
+  const { client } = useActions();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pcs = data.pcs.length;
+  const pcs = useAppSelector((c) => c.data.pcs.length);
   const ready = typed.trim() === DELETE_WORD && !busy;
   const close = () => { setOpen(false); setTyped(""); setError(null); };
 

@@ -4,7 +4,7 @@ import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { Figure } from "../../components/Figure";
 import { Row, RowFigure, Rows } from "../../components/Rows";
-import { useApp, useTempUnit } from "../../state";
+import { useActions, useStillPC, useTempUnit } from "../../state";
 import { headroomWords, sessionCount } from "./Library";
 import { Tuning } from "./Tuning";
 import { ago, cap, day, hours, longDay, moment, noteText, partName, temp, timeRange } from "./words";
@@ -22,7 +22,8 @@ interface Props {
 
 /** One game over the range: its temperatures and each session on a chart. */
 export function Detail({ game, library, tuning, when, range, onBack }: Props) {
-  const { pc, ask } = useApp();
+  const { ask } = useActions();
+  const pc = useStillPC();
   const unit = useTempUnit();
   const part = partName(library.subject);
   const { sessions } = game;

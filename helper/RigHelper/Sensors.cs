@@ -3,6 +3,7 @@
 // need admin rights and the PawnIO driver; graphics, drives and battery work
 // without them.
 
+using System.Runtime.CompilerServices;
 using LibreHardwareMonitor.Hardware;
 
 namespace Rig.Helper;
@@ -29,19 +30,49 @@ public sealed class Sensors : IDisposable
 
     public IEnumerable<IHardware> Hardware { get { lock (gate) return pc.Hardware.ToList(); } }
 
-    public SnapshotDto Snapshot()
+    public SnapshotDto Snapshot() =>
+        new(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Readings(), Foreground.Game(), Elevated, CachedDriver());
+
+    // Whether this process runs as admin can't change while it runs; the driver only changes when PawnIO is set up,
+    // so it's looked at once a minute rather than with every reading.
+    static readonly bool Elevated = Native.IsAdmin();
+    static DriverDto? driver;
+    static long driverAt;
+    static DriverDto CachedDriver()
+    {
+        long now = Environment.TickCount64;
+        if (driver == null || now - driverAt > 60_000) { driver = Driver(); driverAt = now; }
+        return driver;
+    }
+
+    /// Just the sensors, for the background recorder, which has no use for the game in front or the driver's version.
+    public List<SensorDto> Readings()
     {
         var list = new List<SensorDto>();
         lock (gate)
         {
             foreach (var h in pc.Hardware) Read(h, null, list);
         }
-        return new SnapshotDto(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), list, Foreground.Game(), Native.IsAdmin(), Driver());
+        return list;
+    }
+
+    /// Sensors that would keep their own history of readings in memory. Rig wants none.
+    public int KeepingHistory()
+    {
+        int n = 0;
+        void Count(IHardware h) { n += h.Sensors.Count(s => s.ValuesTimeWindow != TimeSpan.Zero); foreach (var sub in h.SubHardware) Count(sub); }
+        lock (gate) foreach (var h in pc.Hardware) Count(h);
+        return n;
     }
 
     /// PawnIO is the driver LibreHardwareMonitor reads processor temperatures and board fans through.
     public static DriverDto Driver() =>
         LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled ? new(true, LibreHardwareMonitor.PawnIo.PawnIo.Version?.ToString()) : new(false, null);
+
+    // A sensor's id never changes, but LibreHardwareMonitor builds it afresh each time it's asked for.
+    // Held weakly, so a part that goes away takes its ids with it.
+    static readonly ConditionalWeakTable<ISensor, string> ids = new();
+    static string IdOf(ISensor s) => ids.GetValue(s, x => x.Identifier.ToString());
 
     static void Read(IHardware h, IHardware? parent, List<SensorDto> list)
     {
@@ -49,9 +80,12 @@ public sealed class Sensors : IDisposable
         string kind = Kind(parent?.HardwareType ?? h.HardwareType);
         foreach (var s in h.Sensors)
         {
+            // LibreHardwareMonitor keeps a day of every sensor's readings by default, about 250 KB a sensor.
+            // Rig keeps its own history, so it needs none of that.
+            if (s.ValuesTimeWindow != TimeSpan.Zero) s.ValuesTimeWindow = TimeSpan.Zero;
             string? type = Type(s.SensorType);
             if (type == null) continue;
-            list.Add(new SensorDto(s.Identifier.ToString(), kind, parent?.Name ?? h.Name, type, s.Name, Round(s.Value), Round(s.Min), Round(s.Max)));
+            list.Add(new SensorDto(IdOf(s), kind, parent?.Name ?? h.Name, type, s.Name, Round(s.Value), Round(s.Min), Round(s.Max)));
         }
         foreach (var sub in h.SubHardware) Read(sub, parent ?? h, list);
     }

@@ -1,6 +1,8 @@
 // The copy of each manual's PDF kept on this device, by manual id. A file the
 // person added only exists here, so this is where it lives. IndexedDB when the
-// browser allows it, otherwise memory for as long as the app is open.
+// browser allows it, otherwise memory for as long as the app is open. Files
+// in IndexedDB are read when they're needed and not held in memory: a manual
+// can be 60 MB, and a few of them would otherwise stay loaded all day.
 
 const DB = "rig-manuals";
 const STORE = "files";
@@ -41,13 +43,20 @@ export async function getCopy(id: string): Promise<ArrayBuffer | null> {
   const mem = memory.get(id);
   if (mem) return mem;
   const v = await run<unknown>("readonly", (s) => s.get(id));
-  if (v instanceof ArrayBuffer) { memory.set(id, v); return v; }
-  return null;
+  return v instanceof ArrayBuffer ? v : null;
+}
+
+/** Whether this device has the file, without loading it. */
+export async function hasCopy(id: string): Promise<boolean> {
+  if (memory.has(id)) return true;
+  return (await run<IDBValidKey | undefined>("readonly", (s) => s.getKey(id))) !== undefined;
 }
 
 export async function putCopy(id: string, bytes: ArrayBuffer): Promise<void> {
-  memory.set(id, bytes);
-  await run("readwrite", (s) => s.put(bytes, id));
+  // Kept in memory only when IndexedDB couldn't take it.
+  const saved = await run("readwrite", (s) => s.put(bytes, id));
+  if (saved === undefined) memory.set(id, bytes);
+  else memory.delete(id);
 }
 
 export async function dropCopy(id: string): Promise<void> {
@@ -55,5 +64,3 @@ export async function dropCopy(id: string): Promise<void> {
   await run("readwrite", (s) => s.delete(id));
 }
 
-/** Whether this device has the file, without loading it. */
-export const hasCopyInMemory = (id: string) => memory.has(id);

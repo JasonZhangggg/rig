@@ -10,7 +10,7 @@ import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelPoint } from "./sceneLabels";
-import { fanHitArea, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
+import { fanHitArea, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
 
@@ -92,8 +92,10 @@ export function createScene(
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Shadows change only when parts move, so they're drawn again only then, not on every frame of a spinning fan.
+  renderer.shadowMap.autoUpdate = false;
   container.appendChild(renderer.domElement);
-  const outlined = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultKeepAlive: true });
+  const outlined = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultKeepAlive: false });
 
   // Part labels: callouts beside the PC, each joined to its part by a line (sceneLabels.ts), laid out in px each frame.
   const layer = document.createElement("div");
@@ -103,8 +105,12 @@ export function createScene(
   const labels = createSceneLabels(layer, { onPick: (id) => select(id), onHover: (id) => hoverFromScene(id) });
 
   const scene = new THREE.Scene();
+  // The room is only needed to bake the lighting, so it and the baking buffers are freed straight after.
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const room = new RoomEnvironment();
+  scene.environment = pmrem.fromScene(room, 0.04).texture;
+  room.dispose();
+  pmrem.dispose();
 
   const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 200);
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -247,7 +253,7 @@ export function createScene(
       if (o.alphaMap) { m.alphaMap = o.alphaMap; m.alphaTest = 0.5; m.transparent = false; m.depthWrite = true; }
       if (o.cutout) { m.alphaTest = 0.04; m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; m.userData.cutout = true; }
       // A see-through panel would show its own outline hull through it as a grey sheet, so glass gets none
-      m.userData.outlineParameters = { thickness: 0.0042, color: new THREE.Color(theme().trim).toArray(), visible: op >= 0.5 && !o.cutout, keepAlive: true };
+      m.userData.outlineParameters = { thickness: 0.0042, color: new THREE.Color(theme().trim).toArray(), visible: op >= 0.5 && !o.cutout };
       if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei ?? 1; if (o.emap && o.map) m.emissiveMap = o.map; }
     }
     m.userData.glow = !!o.emissive;
@@ -330,7 +336,8 @@ export function createScene(
     for (let i = 0; i < 7; i++) {
       const b = new THREE.Mesh(bladeGeo, bladeMat);
       b.rotation.x = 0.42;
-      b.castShadow = true;
+      // Shadows aren't redrawn while fans spin, so a blade casts none rather than a frozen one.
+      b.userData.noShadow = true;
       const holder = new THREE.Group();
       holder.add(b);
       holder.rotation.z = (i / 7) * Math.PI * 2;
@@ -479,13 +486,13 @@ export function createScene(
       gpu.add(card);
       const L = mm(b.gpu.length), T = mm(b.gpu.thick), Hc = mm(b.gpu.height);
       gpuAnchor = [card.position.x + L * 0.62, card.position.y - T * 0.5, Hc + 0.02];
-      if (pc.parts?.gpu?.warn) {
-        const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
-        heat.position.set(card.position.x + L / 2, card.position.y - T, Hc / 2);
-        heat.userData.pulse = true;
-        gpu.add(heat);
-        state.pulses.push(heat);
-      }
+      // The glow of a hot graphics card is always there and shown only while it's hot, so heat coming and going doesn't rebuild the PC.
+      const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
+      heat.position.set(card.position.x + L / 2, card.position.y - T, Hc / 2);
+      heat.userData.pulse = true;
+      heat.visible = !!pc.parts?.gpu?.warn;
+      gpu.add(heat);
+      state.pulses.push(heat);
       add(gpu, "gpu", [-2.4, -0.6, 1.2]);
     }
 
@@ -653,10 +660,25 @@ export function createScene(
   }
 
   // ---------- build / theme ----------
+  const keep = new Set<THREE.Texture>([blobTex, dotTex, toonRamp]);
+  /** Frees the GPU copies of a model's shapes, materials and its own textures. Shared painted textures stay for the next build. */
+  function freeTree(obj: THREE.Object3D) {
+    const textures = new Set<THREE.Texture>();
+    obj.traverse((o) => {
+      const r = o as THREE.Mesh;
+      if (!r.geometry && !r.material) return;
+      r.geometry?.dispose();
+      for (const m of ([] as THREE.Material[]).concat(r.material ?? [])) {
+        for (const v of Object.values(m)) if (v instanceof THREE.Texture) textures.add(v);
+        if (!m.userData.shared) m.dispose();
+      }
+    });
+    for (const t of textures) if (!keep.has(t) && t !== scene.environment && !isSharedTexture(t)) t.dispose();
+  }
   let framing: Framing | null = null;
   function rebuild() {
     scene.remove(root);
-    root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    freeTree(root);
     root = new THREE.Group();
     scene.add(root);
     state.entries = []; state.rotors = []; state.pickables = []; state.labels = {}; state.pulses = [];
@@ -1023,12 +1045,15 @@ export function createScene(
   // ---------- loop ----------
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
-    if (!w || !h) return;
-    stageW = w; stageH = h;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.fov = fovFor(camera.aspect);
-    camera.updateProjectionMatrix();
+    // Parked off screen between pages it isn't drawn, so it keeps its size: resizing reallocates every buffer, twice per page change.
+    if (!w || !h || container.closest(".stage-park")) return;
+    if (w !== stageW || h !== stageH) {
+      stageW = w; stageH = h;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.fov = fovFor(camera.aspect);
+      camera.updateProjectionMatrix();
+    }
     readFit();
     applyFit();
     // A part shown alone is framed again for the new size, as when the stage moves from Home onto the part's page.
@@ -1044,12 +1069,24 @@ export function createScene(
   controls.addEventListener("end", () => { dragging = false; });
   const clock = new THREE.Clock();
   // Draws only while the stage is on screen and the tab is showing, and then only when something on it changes:
-  // the camera, a part's look, the explode. A quarter second more after each change lets the labels settle. Spinning fans
-  // pulses and Home's slow sway keep it drawing, at 30 frames a second while nothing else moves. With reduced motion, a still stage draws nothing.
+  // the camera, a part's look, the explode. A quarter second more after each change lets the labels settle. Spinning fans,
+  // pulses and Home's slow sway keep it drawing at 30 frames a second, but only while the window is in front and someone
+  // has moved the pointer or typed in the last little while: a window left open, behind a game or minimised draws nothing.
+  // With reduced motion, a still stage draws nothing.
   let raf = 0, onScreen = true, tabShown = !document.hidden, built = false, gone = false;
   let settleUntil = 0, lastDraw = 0, relabel = false;
-  const SETTLE_MS = 250, AMBIENT_MS = 1000 / 30 - 1;
+  const SETTLE_MS = 250, AMBIENT_MS = 1000 / 30 - 1, IDLE_MS = 20_000;
   const live = () => built && onScreen && tabShown && !gone;
+  let focused = typeof document.hasFocus === "function" ? document.hasFocus() : true, lastInput = performance.now();
+  const awake = () => focused && performance.now() - lastInput < IDLE_MS;
+  /** Someone's using the window: wakes the fans if they had stopped. */
+  const stir = () => { const was = awake(); lastInput = performance.now(); if (!was && focused) invalidate(); };
+  const onFocus = () => { focused = true; stir(); };
+  const onBlur = () => { focused = false; };
+  const inputs = ["pointermove", "pointerdown", "keydown", "wheel"] as const;
+  for (const k of inputs) window.addEventListener(k, stir, { passive: true });
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("blur", onBlur);
   /** Draws on the next frame, never inside the caller: several changes at once make one frame, and the page paints first. */
   function wake() {
     if (raf || !live()) return;
@@ -1067,6 +1104,8 @@ export function createScene(
   }
   const io = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
     onScreen = entries[entries.length - 1].isIntersecting;
+    // Back from the park into a page whose slot happens to be the park's size gets no resize of its own.
+    if (onScreen) resize();
     invalidate();
   });
   io?.observe(container);
@@ -1086,7 +1125,7 @@ export function createScene(
       state.explodeT = target > state.explodeT ? Math.min(1, state.explodeT + step) : Math.max(0, state.explodeT - step);
       applyExplode(false);
     }
-    if (spin && !camAnim && !dragging && !reducedMotion()) {
+    if (spin && !camAnim && !dragging && !reducedMotion() && awake()) {
       spinT += dt;
       const off = Math.sin(spinT * 0.35) * SWAY;
       const d = off - spinOff;
@@ -1107,7 +1146,8 @@ export function createScene(
         rotor.rotation.z -= dt * rpm * 0.012;
       }
     }
-    if (state.pulses.length) {
+    const pulsing = state.pulses.some((sp) => sp.visible);
+    if (pulsing) {
       const k = reducedMotion() ? 0.8 : 0.65 + Math.sin(clock.elapsedTime * 2.2) * 0.35;
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
@@ -1117,10 +1157,13 @@ export function createScene(
     if (wasMoving && !inMotion) settleHover();
     const now = performance.now();
     if (moved || dragging || exploding || turning) settleUntil = now + SETTLE_MS;
-    const ambient = !still && (state.rotors.length > 0 || state.pulses.length > 0 || (spin && !dragging));
-    if (now < settleUntil || (ambient && now - lastDraw >= AMBIENT_MS)) {
+    const settling = now < settleUntil;
+    const ambient = !still && awake() && (state.rotors.length > 0 || pulsing || (spin && !dragging));
+    if (settling || (ambient && now - lastDraw >= AMBIENT_MS)) {
       lastDraw = now;
       relabel = false;
+      // Something moved: cast the shadows again. A frame that only turns the fans keeps the last ones.
+      if (settling) renderer.shadowMap.needsUpdate = true;
       outlined.render(scene, camera);
       layoutLabels();
     } else if (relabel) {
@@ -1140,7 +1183,15 @@ export function createScene(
       built = true;
       invalidate();
     },
-    update(pc) { state.pc = pc; refreshLabels(); applyHighlights(); if (state.heat) invalidate(); else labelsChanged(); },
+    update(pc) {
+      state.pc = pc;
+      refreshLabels();
+      applyHighlights();
+      const hot = !!pc.parts?.gpu?.warn;
+      let glow = false;
+      for (const sp of state.pulses) if (sp.visible !== hot) { sp.visible = hot; glow = true; }
+      if (state.heat || glow) invalidate(); else labelsChanged();
+    },
     setTheme(t) { state.theme = t; if (state.pc) rebuild(); invalidate(); },
     setExploded(v) { state.exploded = v; applyHighlights(); frame(v, false); invalidate(); },
     setHeat(v) { state.heat = v; applyHighlights(); invalidate(); },
@@ -1163,7 +1214,18 @@ export function createScene(
       ro.disconnect();
       io?.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
+      for (const k of inputs) window.removeEventListener(k, stir);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      controls.dispose();
+      labels.dispose();
+      freeTree(scene);
+      for (const t of keep) t.dispose();
+      scene.environment?.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
+      renderer.domElement.remove();
+      layer.remove();
     },
   };
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { exportFileName } from "@rig/core";
-import { useApp } from "../../state";
+import { useActions, useAppSelector } from "../../state";
 import { SettingRow } from "./parts";
 
 /** Hands the browser a file to save. */
@@ -16,7 +16,8 @@ function saveFile(name: string, text: string) {
 }
 
 export function DataSection() {
-  const { client, data, toast } = useApp();
+  const { client, toast } = useActions();
+  const data = { account: useAppSelector((c) => c.data.account) };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const thisPCOnly = client.kind === "desktop" && !data.account;

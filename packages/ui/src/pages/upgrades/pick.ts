@@ -1,4 +1,4 @@
-import type { PC, Upgrade } from "@rig/core";
+import type { PC, StillPC, Upgrade } from "@rig/core";
 import type { Room } from "./room";
 
 /** The part a room reading or an issue belongs to, by the upgrade's part name. */
@@ -11,7 +11,7 @@ const gbOf = (s?: string) => {
 };
 
 /** Why an idea matters on this PC now, from what Rig already read. Empty when nothing presses. */
-function need(u: Upgrade, pc: PC, room: Room[]): string {
+function need(u: Upgrade, pc: StillPC & { alerts?: PC["alerts"] }, room: Room[]): string {
   const flagged = [...(pc.alerts ?? []), ...(pc.issues ?? [])];
   const issue = flagged.find((i) => i.severity !== "ok" && (issuePart[i.part ?? ""] === u.part || (u.part === "Storage" && i.id.startsWith("vol-"))));
   if (issue) return `${issue.title}.`;
@@ -28,7 +28,7 @@ function need(u: Upgrade, pc: PC, room: Room[]): string {
 export interface Pick { idea: Upgrade; why: string; pressing: boolean }
 
 /** The idea Rig would start with: one that answers something it read on the PC, then one that fits as it is. */
-export function bestPick(list: Upgrade[], pc: PC, room: Room[]): Pick | null {
+export function bestPick(list: Upgrade[], pc: StillPC & { alerts?: PC["alerts"] }, room: Room[]): Pick | null {
   const scored = list
     .filter((u) => u.fit === "fits" || u.fit === "check")
     .map((u, i) => {

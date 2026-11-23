@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { probeWhen, type ProbeStatus, type RecorderStatus } from "@rig/core";
-import { useApp } from "../../state";
+import { useActions } from "../../state";
 
 const mb = (bytes: number) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
 const ago = (t: number) => {
@@ -29,7 +29,7 @@ function probeLine(p: ProbeStatus): string {
 
 /** The custom logs the recorder keeps for this account, each with a switch, and a way to turn one off for good. */
 function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () => void }) {
-  const { host, client, toast } = useApp();
+  const { host, client, toast } = useActions();
   const rec = host.recorder;
   const [busy, setBusy] = useState<string | null>(null);
   const list = status.probes?.list ?? [];
@@ -65,7 +65,7 @@ function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () =
 }
 
 export function AppSection() {
-  const { host, toast } = useApp();
+  const { host, toast } = useActions();
   const auto = host.autostart!;
   const rec = host.recorder;
   const [on, setOn] = useState<boolean | null>(null);

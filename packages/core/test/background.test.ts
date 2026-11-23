@@ -85,6 +85,45 @@ describe("Background log", () => {
     expect(recs.every((r) => isBackground(r.id))).toBe(true);
   });
 
+  it("keeps finished days thinned, and only the full readings a closer look shows", () => {
+    const DAY = 864e5;
+    const top = [{ name: "game.exe", cpu: 40, gpu: 90, memMb: 4000 }];
+    const week = (log: BackgroundLog) => {
+      const lines: unknown[] = [header(T0 - 6 * DAY)];
+      for (let t = T0 - 6 * DAY; t < T0; t += 30 * SEC) lines.push(s(t, 50, t === T0 - 3 * DAY ? 95 : 60, { top }));
+      // A closer look two days ago: a marker and readings every five seconds for a minute.
+      const look = T0 - 2 * DAY + 5 * MIN;
+      lines.push({ k: "anomaly", t: look, why: "gpu-hot", text: "The graphics card reached 91°C" });
+      for (let t = look; t <= look + MIN; t += 5 * SEC) lines.push(s(t, 70, 91, { d: 1 }));
+      log.ingest(lines.sort((a, b) => (a as { t: number }).t - (b as { t: number }).t));
+      return look;
+    };
+    const kept = new BackgroundLog();
+    const look = week(kept);
+    const now = T0;
+    const recs = backgroundRecordings(kept, "pc-1", { gpu: 90 }, now);
+
+    // The same week made from every reading, the way it was before days were settled.
+    const full = new BackgroundLog();
+    week(full);
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const byDay = (r: typeof recs) => r.filter((x) => x.id.startsWith("bg-d-") && (x.startedAt ?? 0) < today.getTime());
+    const fullRecs = backgroundRecordings(Object.assign(full, { settle: () => {} }), "pc-1", { gpu: 90 }, now);
+    expect(byDay(recs).map((r) => [r.id, r.samples.length, r.headline])).toEqual(byDay(fullRecs).map((r) => [r.id, r.samples.length, r.headline]));
+    expect(Math.max(...byDay(recs).flatMap((r) => r.samples.map((x) => x.gpu ?? 0)))).toBe(95);
+    expect(recs.find((r) => r.id === `bg-a-${look}`)?.samples[0].t).toBe(look - 5 * MIN);
+
+    // Full readings left: today's and the ones around the closer look, not the week's 17,000.
+    expect(full.samples.length).toBeGreaterThan(17_000);
+    expect(kept.samples.length).toBeLessThan(1500);
+    expect(kept.samples.every((x) => x.t >= today.getTime() || Math.abs(x.t - look) <= 3 * 3_600_000)).toBe(true);
+
+    // A new reading today makes only today's recording again: the finished days are the same objects.
+    kept.ingest([s(now + 30 * SEC, 50, 60)]);
+    const next = backgroundRecordings(kept, "pc-1", { gpu: 90 }, now + MIN);
+    for (const r of byDay(recs)) expect(next.find((x) => x.id === r.id)).toBe(r);
+  });
+
   it("thins a whole day to what a recording holds, keeping the peaks", () => {
     const day = new Date(2026, 10, 18).getTime();
     const list = Array.from({ length: 2880 }, (_, i) => ({ t: day + i * 30 * SEC, cpu: i === 1000 ? 99 : 50, gpu: null }));

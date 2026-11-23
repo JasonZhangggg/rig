@@ -3,9 +3,9 @@
 // build. The catalog and prices are demo data until Rig has a shop feed, and
 // every price on screen says so. Photos come only from that feed.
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { categoryState, drawWith, fitOf, gainOf, makersIn, matchesQuery, photoOf, priceOf, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
-import { useApp } from "../../state";
+import { useActions, useStillPC, useUI } from "../../state";
 import { partIcon } from "../shared";
 import type { PCUpgrades } from "./PCUpgrades";
 
@@ -65,7 +65,8 @@ type Got = { id: string; shop: Shop | null; failed: boolean };
 const lastShop = new WeakMap<object, Map<string, Got>>();
 
 function useShop() {
-  const { pc, client } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const [got, setGot] = useState<Got | null>(() => lastShop.get(client)?.get(pc.id) ?? null);
   useEffect(() => {
     let live = true;
@@ -83,8 +84,11 @@ function useShop() {
 }
 
 /** My PC's upgrade ideas come in from the page, which keeps them while you move between its tabs. */
-export function UpgradesTab({ ups }: { ups: PCUpgrades }) {
-  const { pc, ui, set } = useApp();
+/** Drawn again only when the ideas or the PC's parts change, not on every reading of the page around it. */
+export const UpgradesTab = memo(function UpgradesTab({ ups }: { ups: PCUpgrades }) {
+  const { set } = useActions();
+  const ui = useUI();
+  const pc = useStillPC();
   const got = useShop();
   const store = usePrefs(pc.id);
   const { prefs } = store;
@@ -136,19 +140,19 @@ export function UpgradesTab({ ups }: { ups: PCUpgrades }) {
       </div>
     </div>
   );
-}
+});
 
 /** The top of the tab: a free fix before any purchase, and the one upgrade Rig would start with. */
 function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () => void; pickText: PCUpgrades["pick"] }) {
-  const ctx = useApp();
-  const { pc, ask } = ctx;
+  const { ask, review } = useActions();
+  const pc = useStillPC();
   const free = pc.issues?.find((i) => i.id.startsWith("hz-") && i.fix);
   // Rig reads the current settings before the review opens, which can take a moment.
   const [checking, setChecking] = useState(false);
   const fix = async () => {
     if (!free?.fix || checking) return;
     setChecking(true);
-    try { await ctx.review(free.fix, { by: "you", why: free.title }); } finally { setChecking(false); }
+    try { await review(free.fix, { by: "you", why: free.title }); } finally { setChecking(false); }
   };
   if (!pickText && !free) return null;
   return (
@@ -341,7 +345,7 @@ function PsuAsk({ facts, store }: { facts: HardwareFacts; store: Store }) {
 }
 
 function ItemRow({ item, fit, facts, open, onToggle, inList, onList, demo }: { item: ShopItem; fit: Fit; facts: HardwareFacts; open: boolean; onToggle: () => void; inList: boolean; onList: () => void; demo: boolean }) {
-  const { ask } = useApp();
+  const { ask } = useActions();
   // What a part would add means nothing when it can't go in.
   const gain = fit.verdict === "no" ? null : gainOf(item, facts);
   const low = item.offers[0];
@@ -428,7 +432,7 @@ function PriceHistory({ points, demo }: { points: number[]; demo: boolean }) {
 
 function ListView({ items, own, facts, store, demo, from }: { items: ShopItem[]; own: OwnPart[]; facts: HardwareFacts; store: Store; demo: boolean; from?: string }) {
   const [clearing, setClearing] = useState(false);
-  const { ask } = useApp();
+  const { ask } = useActions();
   const psuW = store.prefs.psuW;
   if (!items.length && !own.length) {
     return (

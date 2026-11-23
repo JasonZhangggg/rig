@@ -1,0 +1,64 @@
+name: Soak
+
+# How much memory and processor Rig's helper and recorder use over a long run on
+# Windows, for this branch and a base side by side on the same runner.
+# Started by hand (Actions tab > Soak > Run workflow, or
+#   gh workflow run soak.yml --ref <branch> -f minutes=20 -f base=main)
+# and when the soak itself changes: then this branch alone, for 45 minutes.
+on:
+  push:
+    paths: [tools/soak.ps1, .github/workflows/soak.yml]
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes to run each build
+        default: "20"
+      base:
+        description: Branch or commit to compare against, or none
+        default: main
+
+env:
+  MINUTES: ${{ inputs.minutes || '45' }}
+  BASE: ${{ inputs.base || 'none' }}
+
+jobs:
+  soak:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 8.0.x }
+      - name: Build the helper
+        shell: pwsh
+        run: |
+          dotnet tool install -g dotnet-counters
+          Join-Path $env:USERPROFILE ".dotnet\tools" | Add-Content $env:GITHUB_PATH
+          dotnet publish helper/RigHelper -c Release -o out-branch
+          if ($env:BASE -eq "none") { exit 0 }
+          $ref = if (git rev-parse --verify --quiet "origin/$env:BASE") { "origin/$env:BASE" } else { $env:BASE }
+          git worktree add base-src $ref
+          dotnet publish base-src/helper/RigHelper -c Release -o out-base
+      # The base first, then this branch, one at a time so neither slows the other.
+      - name: Soak the base
+        if: env.BASE != 'none'
+        shell: pwsh
+        run: |
+          "### Base: ${{ env.BASE }}" | Add-Content $env:GITHUB_STEP_SUMMARY
+          ./tools/soak.ps1 -Helper out-base/RigHelper.exe -Minutes ${{ env.MINUTES }} -Out soak-base
+      - name: Soak this branch
+        shell: pwsh
+        run: |
+          "### This branch: ${{ github.ref_name }}" | Add-Content $env:GITHUB_STEP_SUMMARY
+          ./tools/soak.ps1 -Helper out-branch/RigHelper.exe -Minutes ${{ env.MINUTES }} -Out soak-branch
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soak
+          path: |
+            soak-base/*.csv
+            soak-base/soak.json
+            soak-branch/*.csv
+            soak-branch/soak.json
+          if-no-files-found: ignore

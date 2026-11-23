@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { isActive, type RecordingInfo } from "@rig/core";
 import { Icon } from "../../components/common";
-import { useApp, useTempText } from "../../state";
+import { useActions, useData, useTempText } from "../../state";
 import { Progress } from "./RecordingCard";
 import { minutes, stateWord, whenRan } from "./words";
 
@@ -17,7 +17,7 @@ function result(r: RecordingInfo, inUnit: (s: string) => string): string {
 
 /** The recording that's running now, with its progress and a way to stop it. */
 export function NowRecording({ r, pcName }: { r: RecordingInfo; pcName: string }) {
-  const { stopRecording, openRecording } = useApp();
+  const { stopRecording, openRecording } = useActions();
   const [stopping, setStopping] = useState(false);
   return (
     <section className="card card-pad rec-now">
@@ -37,7 +37,8 @@ export function NowRecording({ r, pcName }: { r: RecordingInfo; pcName: string }
 
 /** Recordings as results: what each watched for and what it found. Opening one shows its readings. */
 export function Recordings() {
-  const { data, startRecording, openRecording } = useApp();
+  const { startRecording, openRecording } = useActions();
+  const data = useData("recordings");
   const inUnit = useTempText();
   const [length, setLength] = useState(30);
   const [starting, setStarting] = useState(false);
@@ -79,7 +80,8 @@ export function Recordings() {
 
 /** What the background recorder kept while Rig was closed: its closer looks, each day, and any custom logs, each opening its own page. */
 export function BackgroundLogs() {
-  const { data, openRecording } = useApp();
+  const { openRecording } = useActions();
+  const data = useData("recordings");
   const inUnit = useTempText();
   const logs = data.recordings.filter((r) => r.background && !r.custom);
   const custom = data.recordings.filter((r) => r.custom);

@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
-import { alertRules, formatTemp, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
+import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "manuals", "web", "signin", "settings"];
 
@@ -134,8 +134,109 @@ export interface Ctx {
   openRecording: (id: string | null) => void;
 }
 
+/** What the screens can do: everything in Ctx but the PC, its data and the screen state. The same functions for as long as the PC on screen is. */
+export type Actions = Omit<Ctx, "ui" | "data" | "pc">;
+
 const AppCtx = createContext<Ctx | null>(null);
+const ActionsCtx = createContext<Actions | null>(null);
+const UICtx = createContext<UI | null>(null);
+const StoreCtx = createContext<Store | null>(null);
+
+/** Everything, kept current. A screen that reads it draws again on every reading (every 2 s): use the hooks below where it needn't. */
 export const useApp = () => useContext(AppCtx)!;
+/** What the screens can do. Never changes while the same PC is on screen, so it doesn't draw a screen again by itself. */
+export const useActions = () => useContext(ActionsCtx)!;
+/** The screen state (page, tab, what's open). Changes only when the person does something. */
+export const useUI = () => useContext(UICtx)!;
+
+interface Store { get(): Ctx; subscribe(fn: () => void): () => void }
+
+/** True when two values are the same, or objects or arrays with the same entries. */
+export function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  return ka.length === kb.length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+/**
+ * Part of the app's state, drawn again only when that part changes (compared entry by entry), not on every reading.
+ * Pick what the screen shows, like `(c) => c.pc.name` or `(c) => [c.pc.id, c.data.account] as const`.
+ */
+export function useAppSelector<T>(pick: (c: Ctx) => T, equal: (a: T, b: T) => boolean = shallowEqual): T {
+  const store = useContext(StoreCtx)!;
+  const last = useRef<{ value: T } | null>(null);
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+  const read = useCallback(() => {
+    const next = pickRef.current(store.get());
+    if (last.current && equal(last.current.value, next)) return last.current.value;
+    last.current = { value: next };
+    return next;
+  }, [store, equal]);
+  return useSyncExternalStore(store.subscribe, read, read);
+}
+
+/** Reads the newest state when called, as in a click, without drawing the screen again on every reading. */
+export function useLatest(): () => Ctx {
+  const store = useContext(StoreCtx)!;
+  return store.get;
+}
+
+/** Some of the app's data, like `useData("chat", "answering")`, drawn again only when one of those changes. */
+export function useData<K extends keyof Ctx["data"]>(...keys: K[]): Pick<Ctx["data"], K> {
+  return useAppSelector((c) => {
+    const out = {} as Pick<Ctx["data"], K>;
+    for (const k of keys) out[k] = c.data[k];
+    return out;
+  });
+}
+
+export type { StillPC };
+
+const stillCache = new WeakMap<PC, StillPC>();
+let lastStill: StillPC | null = null;
+export function stillOf(pc: PC): StillPC {
+  const hit = stillCache.get(pc);
+  if (hit) return hit;
+  const { health: _h, seenAt: _s, lastSync: _l, online: _o, stats: _st, breakdown: _b, fans: _f, alerts: _a, readings: _r, parts, ...rest } = pc;
+  const still: StillPC = { ...rest };
+  if (parts) {
+    still.parts = {};
+    for (const [k, { temp: _t, tempMax: _m, load: _lo, clock: _c, fan: _fa, warn: _w, ...part }] of Object.entries(parts)) still.parts[k] = { ...part, specs: part.specs.filter((row) => !liveSpec(row)) };
+  }
+  const kept = keepUnchanged(lastStill?.id === pc.id ? lastStill : null, still);
+  lastStill = kept;
+  stillCache.set(pc, kept);
+  return kept;
+}
+
+/** The on-screen PC for a screen that shows none of its live readings, drawn again only when its name, parts or issues change. */
+export function useStillPC(): StillPC {
+  return useAppSelector((c) => stillOf(c.pc), Object.is);
+}
+
+/**
+ * The new reading of a PC with every part that didn't change kept as the same object as before, so a screen that picks an unchanged
+ * part (its issues, its storage, a part's name) isn't drawn again. Only plain data, as the PC is.
+ */
+export function keepUnchanged<T>(prev: unknown, next: T): T {
+  if (Object.is(prev, next) || !prev || !next || typeof prev !== "object" || typeof next !== "object") return next;
+  if (Array.isArray(next)) {
+    if (!Array.isArray(prev)) return next;
+    const out = next.map((x, i) => keepUnchanged(prev[i], x));
+    return (out.length === prev.length && out.every((x, i) => x === prev[i]) ? prev : out) as T;
+  }
+  if (Array.isArray(prev)) return next;
+  const p = prev as Record<string, unknown>, n = next as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  let same = Object.keys(p).length === Object.keys(n).length;
+  for (const k of Object.keys(n)) {
+    out[k] = keepUnchanged(p[k], n[k]);
+    if (out[k] !== p[k]) same = false;
+  }
+  return (same ? prev : out) as T;
+}
 
 /** The temperature unit picked on this device, for code outside the screens such as notifications. */
 export function storedTempUnit(): TempUnit {
@@ -144,7 +245,7 @@ export function storedTempUnit(): TempUnit {
 }
 
 /** The viewer's temperature unit. Outside the app (as in a test of one card) it's °C. */
-export const useTempUnit = (): TempUnit => useContext(AppCtx)?.ui.tempUnit ?? "c";
+export const useTempUnit = (): TempUnit => useContext(UICtx)?.tempUnit ?? "c";
 
 /** Formats a Celsius temperature in the viewer's unit. */
 export function useTemp() {
@@ -163,7 +264,9 @@ export function useTempText() {
  * couldn't be read. Moving to another range keeps the last one on screen until the new one arrives, so nothing blinks out.
  */
 export function useHistory(range: Range): HistoryPoint[] | null {
-  const { client, pc } = useApp();
+  const { client } = useActions();
+  const pcId = useAppSelector((c) => c.pc.id);
+  const pc = { id: pcId };
   const [got, setGot] = useState<{ pc: string; points: HistoryPoint[] } | null>(null);
   useEffect(() => {
     let live = true;
@@ -227,7 +330,10 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     const id = ui.pcId;
     setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: client.conversation?.(id) ?? [], recordings: [] }));
     setUI((u) => ({ ...u, recordingId: null }));
-    const stop = client.watch(id, (pc) => setData((d) => ({ ...d, pc, pcs: d.pcs.map((p) => (p.id === pc.id ? pc : p)) })));
+    const stop = client.watch(id, (next) => setData((d) => {
+      const pc = keepUnchanged(d.pc?.id === next.id ? d.pc : null, next);
+      return pc === d.pc ? d : { ...d, pc, pcs: d.pcs.map((p) => (p.id === pc.id ? pc : p)) };
+    }));
     const stopRecordings = client.watchRecordings(id, (recordings) => setData((d) => ({ ...d, recordings })));
     client.changes(id).then((changes) => setData((d) => ({ ...d, changes }))).catch(() => {});
     return () => { stop(); stopRecordings(); };
@@ -288,9 +394,16 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   const chatAbort = useRef<AbortController | null>(null);
   const pcId = ui.pcId;
 
-  const value = useMemo<Ctx | null>(() => {
-    if (!data.pc || !pcId) return null;
-    const pc = data.pc;
+  // The actions read the newest screen state and data through these, so they stay the same functions from one reading to the next.
+  const uiNow = useRef(ui);
+  uiNow.current = ui;
+  const dataNow = useRef(data);
+  dataNow.current = data;
+
+  const actions = useMemo<Actions | null>(() => {
+    if (!pcId) return null;
+    // Read when an action runs, never when it's made.
+    const pcOf = () => dataNow.current.pc!;
 
     const patchProposal = (proposalId: string, patch: Partial<NonNullable<ChatMessage["proposal"]>>) =>
       setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...patch } } : m)) }));
@@ -298,17 +411,17 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     const patchScript = (messageId: string, patch: Partial<NonNullable<ChatMessage["script"]>>) =>
       setData((d) => ({ ...d, chat: d.chat.map((m) => (m.id === messageId && m.script ? { ...m, script: { ...m.script, ...patch } } : m)) }));
 
-    const ctx: Ctx = {
-      client, host, ui, data, pc, set, toast,
+    const ctx: Actions = {
+      client, host, set, toast,
       go: (r) => { location.hash = r; },
       pickPC: (id) => set({ pcId: id, selected: null }),
 
       ask: (q) => {
-        if (!q.trim() || data.answering) return;
+        if (!q.trim() || dataNow.current.answering) return;
         if (location.hash !== "#chat") location.hash = "chat";
         const mine: ChatMessage = { id: uid(), from: "you", text: q.trim() };
         const reply: ChatMessage = { id: uid(), from: "rig", text: "", pending: true };
-        const history = [...data.chat.filter((m) => !m.error), mine];
+        const history = [...dataNow.current.chat.filter((m) => !m.error), mine];
         setData((d) => ({ ...d, chat: [...d.chat, mine, reply], answering: true }));
         chatAbort.current?.abort();
         const ab = new AbortController();
@@ -329,10 +442,10 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         requestAnimationFrame(() => document.querySelector(".chat-composer")?.scrollIntoView({ block: "end" }));
       },
 
-      clearChat: () => { if (!data.answering) setData((d) => ({ ...d, chat: [] })); },
+      clearChat: () => { if (!dataNow.current.answering) setData((d) => ({ ...d, chat: [] })); },
 
       review: (calls, meta) => once("review", async () => {
-        if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pc.name}.`); return; }
+        if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
         let rows: DiffRow[];
         try { rows = await client.preview(pcId, calls); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
         const title = meta.title ?? titleFor(calls);
@@ -340,7 +453,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
       }),
 
       confirmReview: async () => {
-        const r = ui.review;
+        const r = uiNow.current.review;
         if (!r || r.busy) return;
         set({ review: { ...r, busy: true, error: undefined } });
         try {
@@ -358,20 +471,20 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         try {
           const info = await client.startRecording(pcId, { minutes, reason });
           setData((d) => ({ ...d, recordings: [info, ...d.recordings.filter((r) => r.id !== info.id)] }));
-          toast(info.state === "pending" ? `${pc.name} starts recording the next time its Rig app checks in.` : `Recording for ${minutes} minutes. Nothing on ${pc.name} changes.`);
+          toast(info.state === "pending" ? `${pcOf().name} starts recording the next time its Rig app checks in.` : `Recording for ${minutes} minutes. Nothing on ${pcOf().name} changes.`);
         } catch (e) { toast(e instanceof Error && e.message ? e.message : "Rig couldn't start recording. Try again, and if it keeps happening, restart Rig."); }
       },
 
       stopRecording: (id) => once(`stop:${id}`, async () => {
         try {
           await client.stopRecording(pcId, id);
-          if (!client.caps.local) toast(`${pc.name} stops recording the next time its Rig app checks in.`);
+          if (!client.caps.local) toast(`${pcOf().name} stops recording the next time its Rig app checks in.`);
         } catch (e) { toast(`Rig couldn't stop the recording. ${e instanceof Error ? e.message : ""} Try Stop again in a moment.`.replace(/\s+/g, " ").trim()); }
       }),
 
       openRecording: (id) => {
-        const back = id == null && ui.recordingId != null && ui.route === "logs";
-        if (id != null && ui.route === "logs" && ui.recordingId == null) logsScroll.current = window.scrollY;
+        const back = id == null && uiNow.current.recordingId != null && uiNow.current.route === "logs";
+        if (id != null && uiNow.current.route === "logs" && uiNow.current.recordingId == null) logsScroll.current = window.scrollY;
         set({ recordingId: id });
         if (id && location.hash !== "#logs") location.hash = "logs";
         // Back to the list lands where it was; a recording opens at its top.
@@ -382,11 +495,11 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
       declineProposal: (proposalId) => { patchProposal(proposalId, { status: "declined" }); toast("Okay, nothing was changed."); },
 
       approveScript: (messageId) => once(`script:${messageId}`, async () => {
-        const m = data.chat.find((x) => x.id === messageId);
+        const m = dataNow.current.chat.find((x) => x.id === messageId);
         const sc = m?.script;
         const rec = host.recorder;
         if (!sc || sc.status !== "waiting") return;
-        if (!rec?.probes || !rec.approveAdmin) { toast(`Scripts run in the background recorder, in the Rig app on ${pc.name}.`); return; }
+        if (!rec?.probes || !rec.approveAdmin) { toast(`Scripts run in the background recorder, in the Rig app on ${pcOf().name}.`); return; }
         const s = sc.probe.source;
         try {
           if (s.kind === "script" && s.admin) await rec.approveAdmin(sc.probe);
@@ -401,9 +514,9 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
       declineScript: (messageId) => { patchScript(messageId, { status: "declined" }); toast("Okay, the script won't run."); },
 
       toggleChange: (id) => once(`change:${id}`, async () => {
-        const c = data.changes.find((x) => x.id === id);
+        const c = dataNow.current.changes.find((x) => x.id === id);
         if (!c) return;
-        if (!client.caps.applyChanges) { toast(`Undo works from the Rig app on ${pc.name}.`); return; }
+        if (!client.caps.applyChanges) { toast(`Undo works from the Rig app on ${pcOf().name}.`); return; }
         try {
           const next = c.status === "applied" ? await client.undo(pcId, id) : await client.redo(pcId, id);
           setData((d) => ({ ...d, changes: d.changes.map((x) => (x.id === id ? next : x)), chat: d.chat.map((m) => (m.proposal?.changeId === id ? { ...m, proposal: { ...m.proposal, status: next.status === "applied" ? "applied" : "waiting" } } : m)) }));
@@ -414,11 +527,29 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
       }),
     };
     return ctx;
-  }, [client, host, ui, data, pcId, set, toast, once]);
+  }, [client, host, pcId, set, toast, once]);
+
+  const value = useMemo<Ctx | null>(() => (actions && data.pc ? { ...actions, ui, data, pc: data.pc } : null), [actions, ui, data]);
+  const store = useRef<Store & { value: Ctx | null; fns: Set<() => void> }>(null!);
+  if (!store.current) {
+    const st = { value: null as Ctx | null, fns: new Set<() => void>(), get: () => st.value!, subscribe: (fn: () => void) => { st.fns.add(fn); return () => { st.fns.delete(fn); }; } };
+    store.current = st;
+  }
+  store.current.value = value;
+  // Tell the screens that picked a part of the state once the new state is in place.
+  useLayoutEffect(() => { store.current.fns.forEach((f) => f()); }, [value]);
 
   const retry = () => { setLoaded(false); setFailed(null); setAttempt((n) => n + 1); };
-  if (!value) return <>{fallback(!loaded ? "loading" : failed !== null ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry, failed)}</>;
-  return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
+  if (!value || !actions) return <>{fallback(!loaded ? "loading" : failed !== null ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry, failed)}</>;
+  return (
+    <StoreCtx.Provider value={store.current}>
+      <ActionsCtx.Provider value={actions}>
+        <UICtx.Provider value={ui}>
+          <AppCtx.Provider value={value}>{children}</AppCtx.Provider>
+        </UICtx.Provider>
+      </ActionsCtx.Provider>
+    </StoreCtx.Provider>
+  );
 }
 
 // ----- Alert preferences, kept on this device -----

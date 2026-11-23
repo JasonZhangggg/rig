@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type Snapshot } from "../src";
+import { LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type PC, type Snapshot } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -32,6 +32,24 @@ describe("LocalClient", () => {
     client.stop();
     expect(pc.issues?.find((i) => i.id === "shutdowns")?.title).toBe("The PC turned off without shutting down twice");
     expect(pc.breakdown?.map((b) => b.label)).toContain("Crashes and errors");
+  });
+
+  it("reads only new Windows events after the first read, and keeps the earlier ones", async () => {
+    const at = new Date("2026-11-17T20:00:00").getTime();
+    const ev = (t: number, id: number) => ({ t, log: "System" as const, source: "Microsoft-Windows-Kernel-Power", id, level: "critical" as const, message: "The system has rebooted without cleanly shutting down first." });
+    const asked: number[] = [];
+    let log = [ev(at - 4 * 864e5, 41), ev(at - 864e5, 41)];
+    const { client, advance } = setup({ events: async (since) => { asked.push(since); return log.filter((e) => e.t >= since); } });
+    const id = fixtures.atlas.inv.machine.id;
+    expect(await client.events(id)).toHaveLength(2);
+    // Six minutes on, one new event: the read asks from the newest held one (less a minute), not a month back.
+    advance(6 * 60_000);
+    log = [...log, ev(at + 5 * 60_000, 6008)];
+    const all = await client.events(id);
+    client.stop();
+    expect(asked[0]).toBe(at - 30 * 864e5);
+    expect(asked[1]).toBe(at - 864e5 - 60_000);
+    expect(all.map((e) => e.t)).toEqual([at + 5 * 60_000, at - 864e5, at - 4 * 864e5]);
   });
 
   it("shows the PC when its settings can't be read", async () => {
@@ -210,5 +228,77 @@ describe("LocalClient", () => {
     expect(await on.client.exportData()).toBe(fromServer);
     await on.client.deleteAccount!();
     expect(cloud.deleteAccount).toHaveBeenCalledTimes(1);
+  });
+  it("keeps at most five days of history for the account while signed out", async () => {
+    let signedIn = false;
+    const synced: MachineSync[] = [];
+    const cloud = { signedIn: async () => signedIn, sync: async (_id: string, p: MachineSync) => { synced.push(p); }, machines: async () => [], account: async () => null } as unknown as CloudClient;
+    const { client, advance } = setup({}, cloud);
+    await client.start();
+    // About five and a half days of history windows with nobody signed in.
+    for (let n = 0; n < 1600; n++) { advance(10 * 60_000); await client.tick(); }
+    signedIn = true;
+    await client.sync();
+    client.stop();
+    expect(synced.at(-1)!.history.length).toBe(720);
+  });
+
+  it("reads less often and stays still on screen while the window is hidden, but still passes on alerts", async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      let t = new Date("2026-11-17T20:00:00").getTime();
+      let hot = false;
+      const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => t });
+      let settingsReads = 0;
+      const link: HelperLink = {
+        hello: () => sim.hello(), apply: (c) => sim.apply(c),
+        inventory: () => { settingsReads++; return sim.inventory(); },
+        facts: () => { settingsReads++; return sim.facts(); },
+        snapshot: async () => {
+          reads++;
+          const s = await sim.snapshot();
+          // The processor at its limit, for long enough to raise an alert.
+          return hot ? { ...s, sensors: s.sensors.map((x) => x.hw === "cpu" && x.type === "temperature" ? { ...x, value: 105 } : x) } : s;
+        },
+      };
+      const client = new LocalClient(link, new MemoryStore(), null, { tickMs: 2000, quietTickMs: 10_000, now: () => t });
+      const seen: PC[] = [];
+      const stop = client.watch(fixtures.atlas.inv.machine.id, (pc) => seen.push(pc));
+      await vi.waitFor(() => expect(seen.length).toBeGreaterThan(0));
+      const run = async (ms: number) => { for (let i = 0; i < ms / 1000; i++) { t += 1000; await vi.advanceTimersByTimeAsync(1000); } };
+
+      reads = 0;
+      await run(20_000);
+      expect(reads).toBe(10);
+
+      client.setQuiet(true);
+      const shown = seen.length;
+      reads = 0;
+      settingsReads = 0;
+      await run(60_000);
+      expect(reads).toBe(6);
+      expect(seen.length).toBe(shown);
+      // Settings and parts only feed the screens, so they aren't read while hidden either.
+      expect(settingsReads).toBe(0);
+
+      // An alert starting while hidden still reaches the notifications.
+      hot = true;
+      await run(4 * 60_000);
+      expect(seen.length).toBe(shown + 1);
+      expect(seen.at(-1)!.alerts?.some((a) => a.kind === "too-hot")).toBe(true);
+
+      // Shown again: the screen is brought up to date at once, then follows every reading.
+      client.setQuiet(false);
+      expect(seen.length).toBe(shown + 2);
+      expect(settingsReads).toBeGreaterThan(0);
+      reads = 0;
+      await run(10_000);
+      expect(reads).toBeGreaterThanOrEqual(5);
+      stop();
+      client.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
