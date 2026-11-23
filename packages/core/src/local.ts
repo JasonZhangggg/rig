@@ -229,8 +229,9 @@ export class LocalClient implements RigClient {
     this.busy = true;
     try {
       const now = this.o.now();
-      if (now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; }
-      if (now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
+      // Settings and parts only feed the screens too: while hidden they wait, and the first read after showing catches up.
+      if (!this.quiet && now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; }
+      if (!this.quiet && now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
       if (this.lastError) this.o.log("info", "sensors: reading again");
       this.lastError = null;
@@ -462,8 +463,13 @@ export class LocalClient implements RigClient {
       // One read at a time: the sensor loop asks every few seconds while a read can take longer.
       this.eventRead ??= (async () => {
         try {
-          const raw = await this.link.events?.(now - EVENTS_DAYS * 864e5) ?? [];
-          this.eventLog = { at: now, list: cleanEvents(raw) };
+          // After the first read, only what's newer than the newest event already held (a minute's overlap, which
+          // cleanEvents drops as repeats): formatting a month of Windows' events every five minutes is slow.
+          const oldest = now - EVENTS_DAYS * 864e5;
+          const held = this.eventLog?.list.filter((e) => e.t >= oldest) ?? [];
+          const since = held.length ? Math.max(oldest, held[0].t - 60_000) : oldest;
+          const raw = await this.link.events?.(since) ?? [];
+          this.eventLog = { at: now, list: cleanEvents([...raw, ...held]) };
         } finally { this.eventRead = null; }
       })();
       await this.eventRead;

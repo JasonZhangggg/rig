@@ -30,7 +30,19 @@ public sealed class Sensors : IDisposable
     public IEnumerable<IHardware> Hardware { get { lock (gate) return pc.Hardware.ToList(); } }
 
     public SnapshotDto Snapshot() =>
-        new(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Readings(), Foreground.Game(), Native.IsAdmin(), Driver());
+        new(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Readings(), Foreground.Game(), Elevated, CachedDriver());
+
+    // Whether this process runs as admin can't change while it runs; the driver only changes when PawnIO is set up,
+    // so it's looked at once a minute rather than with every reading.
+    static readonly bool Elevated = Native.IsAdmin();
+    static DriverDto? driver;
+    static long driverAt;
+    static DriverDto CachedDriver()
+    {
+        long now = Environment.TickCount64;
+        if (driver == null || now - driverAt > 60_000) { driver = Driver(); driverAt = now; }
+        return driver;
+    }
 
     /// Just the sensors, for the background recorder, which has no use for the game in front or the driver's version.
     public List<SensorDto> Readings()
