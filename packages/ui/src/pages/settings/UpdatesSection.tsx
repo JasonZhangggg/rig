@@ -1,4 +1,4 @@
-import { useApp, useUpdates, type UpdateState } from "../../state";
+import { useActions, useUpdates, type UpdateState } from "../../state";
 import { rigVersion } from "../../version";
 import { SettingRow } from "./parts";
 
@@ -24,7 +24,7 @@ function line(s: UpdateState): string {
 
 /** The version this is, whether a newer one is ready, and the buttons to check and update. Only the desktop app has this. */
 export function UpdatesSection() {
-  const { host } = useApp();
+  const { host } = useActions();
   const s = useUpdates(host);
   const u = host.updates!;
   const button = s.kind === "ready" || (s.kind === "failed" && s.step === "install")

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent as ClickEvent, type ReactNode } from "react";
 import type { Route } from "@rig/core";
-import { useApp } from "../state";
+import { useActions, useApp, useAppSelector, useUI } from "../state";
 import { Icon } from "./common";
 import { homeOf, navItems } from "./Shell";
 import { arrowKeys, focusFirstItem, useModal } from "./modal";
@@ -56,12 +56,13 @@ function PCMenu({ onPick }: { onPick: () => void }) {
 
 /** Setup steps that are still open, worked out from the PC itself. */
 function useSetup() {
-  const { pc, data, client, go, set } = useApp();
+  const { client, go, set } = useActions();
+  const { issues, kind, name, account } = useAppSelector((c) => ({ issues: c.pc.issues, kind: c.pc.kind, name: c.pc.name, account: c.data.account }));
   const [skipped, setSkipped] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("rig.setupSkipped") ?? "[]"); } catch { return []; } });
   const steps: { id: string; title: string; body: string; cta: string; run: () => void; done: boolean }[] = [
-    { id: "sensors", title: "Allow temperature readings", body: pc.issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "Ask how", run: () => go("chat"), done: !pc.issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
-    { id: "name", title: `Name ${pc.kind === "laptop" ? "your laptop" : "your PC"}`, body: "Pick a name and a color. It marks this PC everywhere you see it.", cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: pc.name !== "My PC" },
-    { id: "account", title: "Sign in to sync", body: "See this PC from any browser and keep its history if you reinstall.", cta: "Sign in", run: () => go("signin"), done: !!data.account || client.kind === "demo" },
+    { id: "sensors", title: "Allow temperature readings", body: issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "Ask how", run: () => go("chat"), done: !issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
+    { id: "name", title: `Name ${kind === "laptop" ? "your laptop" : "your PC"}`, body: "Pick a name and a color. It marks this PC everywhere you see it.", cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: name !== "My PC" },
+    { id: "account", title: "Sign in to sync", body: "See this PC from any browser and keep its history if you reinstall.", cta: "Sign in", run: () => go("signin"), done: !!account || client.kind === "demo" },
   ];
   const open = steps.filter((s) => !s.done && !skipped.includes(s.id));
   const skip = (id: string) => { const next = [...skipped, id]; setSkipped(next); try { localStorage.setItem("rig.setupSkipped", JSON.stringify(next)); } catch { /* storage unavailable */ } };
@@ -90,10 +91,11 @@ const Caret = () => <svg className="fp-me-caret" viewBox="0 0 20 20" aria-hidden
 
 /** Account pinned to the bottom of the sidebar. */
 function AccountBlock() {
-  const { data, client, ui, go, toast } = useApp();
+  const { client, go, toast } = useActions();
+  const ui = useUI();
+  const a = useAppSelector((c) => c.data.account);
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
-  const a = data.account;
   return (
     <div className="fp-foot" ref={box}>
       <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={a ? `Account, ${a.name}` : "Account, not signed in"} title={ui.sideMini ? a?.name ?? "Not signed in" : undefined}>
@@ -171,32 +173,37 @@ function usePhoneMenu() {
 }
 
 export function Sidebar({ children }: { children: ReactNode }) {
-  const { ui, pc, data, set } = useApp();
+  const { set } = useActions();
+  const ui = useUI();
+  // Only what the sidebar shows, so a new reading doesn't draw it (or the page inside it) again.
+  const { name, nickname, issues, changes, recording } = useAppSelector((c) => ({
+    name: c.pc.name, nickname: c.pc.nickname, issues: c.pc.issues, changes: c.data.changes.length, recording: c.data.recordings.some((x) => x.state === "recording"),
+  }));
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
   const phone = usePhoneMenu();
   const mini = ui.sideMini;
-  const warn = (pc.issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
+  const warn = (issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
   const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count">{warn}</em>
-    : r === "changes" && data.changes.length ? <em className="fp-count">{data.changes.length}</em>
-    : r === "logs" && data.recordings.some((x) => x.state === "recording") ? <em className="fp-count" title="Recording now">●</em> : null;
+    : r === "changes" && changes ? <em className="fp-count">{changes}</em>
+    : r === "logs" && recording ? <em className="fp-count" title="Recording now">●</em> : null;
   return (
     <div className={`shell-fpanel${mini ? " mini" : ""}`}>
       <div className="fp-frame">
         <header className="fp-top">
           <span className="fp-logo" aria-hidden="true">R<i /></span>
-          <span className="fp-brand-txt"><b>{label(homeOf(ui.route))}</b><small>{pc.name} · {pc.nickname}</small></span>
+          <span className="fp-brand-txt"><b>{label(homeOf(ui.route))}</b><small>{name} · {nickname}</small></span>
           <button type="button" className="fp-menu-btn" ref={phone.button} onClick={phone.show} aria-label="Open menu" aria-expanded={phone.shown}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
-            {warn + data.changes.length > 0 && <i className="fp-menu-dot" />}
+            {warn + changes > 0 && <i className="fp-menu-dot" />}
           </button>
         </header>
         <aside className={`fp-side${phone.shown ? " open" : ""}`} aria-label="Main" ref={phone.side} {...(phone.shown ? { role: "dialog", "aria-modal": true } : {})}>
           <div className="fp-nav">
             <div className="fp-brand" ref={box}>
-              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Rig, ${pc.name}, switch PC`}>
+              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Rig, ${name}, switch PC`}>
                 <span className="fp-logo">R<i /></span>
-                <span className="fp-brand-txt"><b>Rig</b><small>{pc.name} · {pc.nickname}</small></span>
+                <span className="fp-brand-txt"><b>Rig</b><small>{name} · {nickname}</small></span>
               </button>
               <button type="button" className="fp-collapse" onClick={() => set({ sideMini: !mini })} aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}>
                 <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 4v12" stroke="currentColor" strokeWidth="1.5" /><path d={mini ? "M11.5 8.5 13 10l-1.5 1.5" : "M13 8.5 11.5 10l1.5 1.5"} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>

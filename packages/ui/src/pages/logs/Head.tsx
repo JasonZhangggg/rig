@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Route } from "@rig/core";
-import { useApp } from "../../state";
+import { useUI } from "../../state";
 
 /** The views of the Logs page, each its own address so a link opens the right one. */
 export const logViews: [Route, string][] = [["logs", "Events"], ["history", "Performance"]];
@@ -8,7 +8,7 @@ export const isLogView = (r: Route) => logViews.some(([v]) => v === r);
 
 /** The Logs page head, shared by its views: what this view shows, and a row to switch views. */
 export function LogsHead({ sub, right }: { sub: string; right?: ReactNode }) {
-  const { ui } = useApp();
+  const ui = useUI();
   return (
     <div className="lg-head">
       <div className="page-head">

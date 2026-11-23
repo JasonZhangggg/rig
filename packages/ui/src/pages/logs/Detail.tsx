@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { isActive, limitsOf, summarise, type HistoryPoint, type Recording, type RecordingInfo } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
-import { useApp, useTemp, useTempText } from "../../state";
+import { useActions, useData, useStillPC, useTemp, useTempText } from "../../state";
 import { CustomLogDetail } from "./CustomLog";
 import { Rows } from "../../components/Rows";
 import { EventRow } from "./Events";
@@ -16,7 +16,9 @@ export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => vo
 
 /** One recording: what Rig found, the readings with those moments marked, the busiest apps and the Windows events inside it. */
 function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
-  const { client, pc, ask, stopRecording, data } = useApp();
+  const { client, ask, stopRecording } = useActions();
+  const pc = useStillPC();
+  const data = useData("answering");
   const temp = useTemp();
   const inUnit = useTempText();
   const [rec, setRec] = useState<Recording | null | undefined>(undefined);

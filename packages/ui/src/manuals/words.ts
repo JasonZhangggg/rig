@@ -1,4 +1,4 @@
-import { kindLabel, manualTargets, type DiagramKind, type Manual, type ManualDiagram, type PC, type PartTarget } from "@rig/core";
+import { kindLabel, manualTargets, type DiagramKind, type Manual, type ManualDiagram, type PartTarget, type StillPC } from "@rig/core";
 import type { Job, ManualsState } from "./useManuals";
 
 export const jobText = (j: Job): string =>
@@ -60,7 +60,7 @@ export const targetOf = (m: Manual): PartTarget => ({ part: m.part, kind: m.kind
 export interface Row { target: PartTarget; manual?: Manual; job?: Job }
 
 /** One row per part: the detected parts first, then the parts the person named, each with its newest manual. */
-export function manualRows(pc: PC, s: Pick<ManualsState, "manuals" | "jobs" | "extras">): Row[] {
+export function manualRows(pc: StillPC, s: Pick<ManualsState, "manuals" | "jobs" | "extras">): Row[] {
   const rows: Row[] = [];
   const seen = new Set<string>();
   const push = (target: PartTarget) => {

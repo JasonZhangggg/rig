@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
 import { DiffTable, Icon, StatusChip } from "../components/common";
-import { useApp } from "../state";
+import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { bySeverity, issueGo } from "./shared";
 
@@ -27,7 +27,9 @@ function byDay(list: Change[]) {
 }
 
 export function Changes() {
-  const { data, pc } = useApp();
+  // What this page shows changes only when a change is made or a finding comes or goes, not with every reading.
+  const { changes, issues, name } = useAppSelector((c) => ({ changes: c.data.changes, issues: c.pc.issues, name: c.pc.name }));
+  const data = { changes }, pc = { issues, name };
   const [filter, setFilter] = useState<Filter>("all");
   const any = data.changes.length > 0;
   const list = data.changes.filter((c) => filter === "all" || c.status === filter);
@@ -59,7 +61,8 @@ export function Changes() {
 
 /** What each waiting fix would change, fetched once per set of fixes. */
 function usePreviews(fixes: Issue[]) {
-  const { pc, client } = useApp();
+  const { client } = useActions();
+  const pc = { id: useAppSelector((c) => c.pc.id) };
   const [rows, setRows] = useState<Record<string, DiffRow[]>>({});
   // The PC object is replaced on every live reading, so the preview keys on the fixes themselves.
   const ids = fixes.map((i) => i.id).join(" ");
@@ -83,10 +86,11 @@ function Day({ changes }: { changes: Change[] }) {
 
 /** Fixes Rig found but hasn't made. Each opens the review sheet; the before and after wait behind Details. */
 function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow[]> }) {
-  const { pc, set, go, ask, review } = useApp();
+  const { set, go, ask, review } = useActions();
+  const latest = useLatest();
   const [reading, setReading] = useState<string | null>(null);
   const open = (i: Issue) => {
-    if (!i.fix) { issueGo(i, pc, { set, go, ask, review }); return; }
+    if (!i.fix) { issueGo(i, latest().pc, { set, go, ask, review }); return; }
     setReading(i.id);
     void review(i.fix, { by: "you", why: i.title }).finally(() => setReading(null));
   };
@@ -126,7 +130,7 @@ function Row({ title, meta, time, status, action, children }: { title: string; m
 }
 
 function Entry({ c }: { c: Change }) {
-  const { toggleChange, client } = useApp();
+  const { toggleChange, client } = useActions();
   const [busy, setBusy] = useState(false);
   const toggle = () => { setBusy(true); void toggleChange(c.id).finally(() => setBusy(false)); };
   const word = c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
@@ -141,7 +145,8 @@ function Entry({ c }: { c: Change }) {
 }
 
 function NoChanges({ quiet }: { quiet: boolean }) {
-  const { go, pc } = useApp();
+  const { go } = useActions();
+  const pc = { name: useAppSelector((c) => c.pc.name) };
   return (
     <section className="card ch-empty">
       <span className="ch-empty-icon" aria-hidden="true"><Icon d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2" /></span>

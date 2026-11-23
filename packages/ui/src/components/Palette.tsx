@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Game, Route, Upgrade } from "@rig/core";
-import { useApp, useTemp } from "../state";
+import { useApp, useTemp, useUI } from "../state";
 import { focusSection, settingsSections } from "../pages/settings/sections";
 import { minutes, stateWord, whenRan } from "../pages/logs/words";
 import { navItems } from "./Shell";
@@ -43,7 +43,12 @@ const icon: Record<Kind, string> = {
 };
 
 // Ctrl K search across the PC: parts, changes, games, upgrades and recordings, plus "Ask Rig".
+// Only there while it's open, so it isn't drawn again on every reading while it's closed.
 export function Palette() {
+  return useUI().palette ? <OpenPalette /> : null;
+}
+
+function OpenPalette() {
   const ctx = useApp();
   const { ui, pc, data, set, go, ask, client, openRecording } = ctx;
   const temp = useTemp();
@@ -125,7 +130,6 @@ export function Palette() {
     if (ui.palette) box.current?.querySelector<HTMLElement>('.pal-item[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
   }, [ui.palette, idx]);
 
-  if (!ui.palette) return null;
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setActive((idx + 1) % total); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((idx - 1 + total) % total); }

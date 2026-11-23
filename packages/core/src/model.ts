@@ -95,6 +95,14 @@ export interface PC {
   build?: BuildShape;
 }
 
+/** What a PC reads moment to moment: these change with nearly every reading. */
+export type LivePCKey = "health" | "seenAt" | "lastSync" | "online" | "stats" | "breakdown" | "fans" | "alerts" | "readings";
+export type LivePartKey = "temp" | "tempMax" | "load" | "clock" | "fan" | "warn";
+/** A part without its live readings. */
+export type StillPart = Omit<Part, LivePartKey>;
+/** A PC without its live readings: its name, parts, issues and settings, for screens that show nothing live. */
+export type StillPC = Omit<PC, LivePCKey | "parts"> & { parts?: Record<string, StillPart> };
+
 /** The kinds of alert Rig raises. Each one can be turned off on a device. */
 export type AlertKind = "too-hot" | "fan-stopped" | "drive-full" | "drive-wearing" | "hotter-than-usual";
 

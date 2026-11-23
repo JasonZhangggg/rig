@@ -2,7 +2,7 @@
 // section is one entry here: the page, its side list and the Ctrl K search all read this list.
 
 import type { ComponentType } from "react";
-import type { Ctx } from "../../state";
+import type { Actions } from "../../state";
 import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
 import { AppSection } from "./AppSection";
@@ -25,7 +25,7 @@ export interface SettingsSectionDef {
   /** Rarely needed: folded to one line at the bottom until it's opened. */
   folded?: boolean;
   /** Leave out to always show. */
-  show?: (ctx: Ctx) => boolean;
+  show?: (ctx: Actions) => boolean;
   Body: ComponentType;
 }
 

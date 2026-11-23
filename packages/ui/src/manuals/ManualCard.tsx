@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { DiagramKind, Manual, PartTarget } from "@rig/core";
-import { useApp } from "../state";
+import { useActions } from "../state";
 import { MoreMenu } from "../components/MoreMenu";
 import { openManual } from "./viewerState";
 import { ManualSections, OpenManualIcon } from "./ManualOutline";
@@ -87,7 +87,7 @@ export function ManualJumps({ manual, only, prefer, count = 4, heading = "Jump t
  * the manual opens from its name or the icon beside it, and its sections fold open in groups.
  */
 export function ManualCard({ row, store, compact, prefer, outline }: { row: Row; store: ManualStore; compact?: boolean; prefer?: DiagramKind[]; outline?: boolean }) {
-  const { client } = useApp();
+  const { client } = useActions();
   const { target, manual: m, job } = row;
   const [form, setForm] = useState<null | "exact" | "again">(null);
   const [confirm, setConfirm] = useState(false);

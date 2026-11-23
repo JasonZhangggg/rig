@@ -1,10 +1,10 @@
 import type { Game } from "@rig/core";
 import { DiffTable } from "../../components/common";
-import { useApp } from "../../state";
+import { useActions } from "../../state";
 
 /** Measured frame rates and the settings that would run better. Only for a game with measurements. */
 export function Tuning({ game }: { game: Game }) {
-  const { ask } = useApp();
+  const { ask } = useActions();
   const max = Math.max(game.tuned?.avg ?? 0, game.now?.avg ?? 0);
   const Bar = ({ v, tuned }: { v: number; tuned?: boolean }) => <div className={`bar${tuned ? " tuned" : ""}`}><i style={{ width: `${(v / max) * 100}%` }} /></div>;
   return (

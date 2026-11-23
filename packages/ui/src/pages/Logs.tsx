@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { isActive, type PCEvent } from "@rig/core";
-import { useApp } from "../state";
+import { useActions, useData, useStillPC, useUI } from "../state";
 import { Detail } from "./logs/Detail";
 import { Counters, Events, MINOR, onDay, type EventPick } from "./logs/Events";
 import { BackgroundLogs, NowRecording, Recordings } from "./logs/Recordings";
@@ -10,7 +10,10 @@ import { LogsHead } from "./logs/Head";
 
 /** What the Windows logs say about this PC lately: a count per thing that went wrong, the events behind each, and the recordings Rig made to find out why. */
 export function Logs() {
-  const { client, pc, data, ui, openRecording } = useApp();
+  const { client, openRecording } = useActions();
+  const ui = useUI();
+  const pc = useStillPC();
+  const data = useData("recordings");
   const [events, setEvents] = useState<PCEvent[] | null>(null);
   const [pick, setPick] = useState<EventPick>(null);
   const [day, setDay] = useState<number | null>(null);

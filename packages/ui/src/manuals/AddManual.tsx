@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { extraPartKey, manualKinds, type ManualKind, type PartTarget } from "@rig/core";
-import { useApp } from "../state";
+import { useActions } from "../state";
 import { PickPdf } from "./ManualCard";
 import { useManuals } from "./useManuals";
 
@@ -23,7 +23,7 @@ export function AddManual({ part, kind: fixed, kinds, maker: knownMaker = "", mo
   onDone?: () => void;
 }) {
   const { store } = useManuals();
-  const { client } = useApp();
+  const { client } = useActions();
   const [kind, setKind] = useState<ManualKind>(fixed ?? kinds?.[0] ?? "other");
   const [maker, setMaker] = useState(knownMaker);
   const [model, setModel] = useState(knownModel);

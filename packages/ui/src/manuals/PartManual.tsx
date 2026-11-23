@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ManualKind } from "@rig/core";
-import { useApp } from "../state";
+import { useStillPC } from "../state";
 import { AddManual } from "./AddManual";
 import { ManualCard } from "./ManualCard";
 import { AskManual, ManualSections, OpenManualIcon } from "./ManualOutline";
@@ -18,7 +18,7 @@ const askFirst = new Set(["case", "psu"]);
  * and a box at the bottom to ask about the part.
  */
 export function PartManual({ id, about }: { id: string; about: string }) {
-  const { pc } = useApp();
+  const pc = useStillPC();
   const state = useManuals();
   const [adding, setAdding] = useState(false);
   if (state.manuals == null) return <p className="muted" role="status">Loading manuals…</p>;

@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import type { DiagramKind, Manual } from "@rig/core";
-import { useApp } from "../state";
+import { useActions } from "../state";
 import { openManual } from "./viewerState";
 import { groupedJumps, jumpGroups, jumpPages, manualJumps, type Jump } from "./words";
 
@@ -73,7 +73,7 @@ function grow(el: HTMLTextAreaElement) {
 
 /** Ask about the part: the answer comes in the chat, naming the manual page when one helped. */
 export function AskManual({ about, fromManual }: { about: string; fromManual: boolean }) {
-  const { ask } = useApp();
+  const { ask } = useActions();
   const [q, setQ] = useState("");
   const text = q.trim();
   return (

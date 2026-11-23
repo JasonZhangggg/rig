@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import type { PC, Upgrade } from "@rig/core";
 import { ManualRef } from "../../manuals/ManualRef";
-import { useApp } from "../../state";
+import { useActions, useAppSelector, useStillPC } from "../../state";
 import { bestPick, roomPart, type Pick } from "./pick";
 import { roomIn, type Room } from "./room";
 
@@ -24,7 +24,8 @@ export interface PCUpgrades { list: Upgrade[] | null; failed: boolean; pick: Pic
 
 /** The upgrade ideas for the PC on screen and Rig's pick among them. */
 export function useUpgrades(): PCUpgrades {
-  const { pc, client } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const [got, setGot] = useState<{ id: string; list: Upgrade[]; failed: boolean } | null>(null);
   useEffect(() => {
     let live = true;
@@ -32,12 +33,14 @@ export function useUpgrades(): PCUpgrades {
     return () => { live = false; };
   }, [client, pc.id]);
   const list = got?.id === pc.id ? got.list : null;
+  const alerts = useAppSelector((c) => c.pc.alerts);
   const room = roomIn(pc);
-  return { list, failed: !!(got?.id === pc.id && got.failed), pick: list ? bestPick(list, pc, room) : null, room };
+  return { list, failed: !!(got?.id === pc.id && got.failed), pick: list ? bestPick(list, { ...pc, alerts }, room) : null, room };
 }
 
 function AskBuy({ u, primary }: { u: Upgrade; primary?: boolean }) {
-  const { pc, ask } = useApp();
+  const { ask } = useActions();
+  const pc = useStillPC();
   if (u.price) return <span className="up-price">{u.price}</span>;
   if (u.fit === "no") return null;
   return <button className={`btn sm${primary ? " primary" : ""}`} type="button" onClick={() => ask(`${u.title}: what exactly should I buy for ${pc.name}, and will it fit?`)}>Ask what to buy</button>;
