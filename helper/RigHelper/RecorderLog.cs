@@ -109,7 +109,27 @@ public static class LogSensors
 {
     static readonly HashSet<string> Kept = ["temperature", "load", "fan", "power", "level", "control"];
     public static List<SensorDto> Pick(IEnumerable<SensorDto> all) => all.Where(s => Kept.Contains(s.Type)).ToList();
-    public static string Key(IEnumerable<SensorDto> list) => string.Join("|", list.Select(s => s.Id));
+}
+
+/// The key of the sensor list the recorder last saw, built again only when the list changes.
+/// The ids come from Sensors, which hands out the same string for a sensor every time, so most checks are reference compares.
+public sealed class SensorKey
+{
+    string[] ids = [];
+    string key = "";
+
+    public string Of(IReadOnlyList<SensorDto> list)
+    {
+        if (list.Count == ids.Length)
+        {
+            int i = 0;
+            while (i < ids.Length && string.Equals(list[i].Id, ids[i], StringComparison.Ordinal)) i++;
+            if (i == ids.Length) return key;
+        }
+        ids = new string[list.Count];
+        for (int i = 0; i < ids.Length; i++) ids[i] = list[i].Id;
+        return key = string.Join("|", ids);
+    }
 }
 
 /// The few numbers the recorder watches to decide when to take a closer look.

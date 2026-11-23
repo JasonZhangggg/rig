@@ -78,6 +78,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
     readonly LogWriter log = new(RecorderPaths.Logs(dataDir));
     readonly Watch watch = new();
     readonly Ring ring = new(60);
+    readonly SensorKey sensorKey = new();
     readonly object gate = new();
     readonly HashSet<string> seenEvents = [];
     readonly List<EventLogWatcher> watchers = [];
@@ -141,7 +142,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                 {
                     var sensors = hw.Readings();
                     var kept = LogSensors.Pick(sensors);
-                    string key = LogSensors.Key(kept);
+                    string key = sensorKey.Of(kept);
                     if (key != header || headerFile != log.FileNumber)
                     {
                         // A new sensor list (a part woke up, a new day's file): readers need it before the next reading.

@@ -44,6 +44,9 @@ public static class Program
                 Processes.Top(5, fresh: false);
                 if (Processes.GpuReads != reads) problems.Add($"the recorder's app list read the graphics counters {Processes.GpuReads - reads} more times within five minutes");
             }
+            // Each sensor's id is worked out once, not with every reading.
+            var (r1, r2) = (hw0.Readings(), hw0.Readings());
+            if (r1.Count == r2.Count && r1.Zip(r2).Any(x => !ReferenceEquals(x.First.Id, x.Second.Id))) problems.Add("sensor ids are built again with every reading");
             if (problems.Count > 0) all["checks"] = new JsonObject { ["error"] = string.Join("; ", problems) };
             await File.WriteAllTextAsync(outFile, all.ToJsonString(new JsonSerializerOptions(Json.Options) { WriteIndented = true }));
             return all.Any(kv => kv.Value is JsonObject o && o["error"] != null) ? 1 : 0;
@@ -164,6 +167,15 @@ public static class Program
 
         var w = new Watch();
         SensorDto S(string hw, string type, string name, double? v) => new($"/{hw}/{name}", hw, hw, type, name, v, null, null);
+
+        // The sensor list's key is built once, and again only when a sensor comes or goes.
+        var keys = new SensorKey();
+        var two = new List<SensorDto> { S("cpu", "load", "CPU Total", 5), S("gpu", "temperature", "GPU Core", 50) };
+        string k1 = keys.Of(two), k2 = keys.Of(two.Select(x => x with { Value = 9 }).ToList());
+        if (k1 != "/cpu/CPU Total|/gpu/GPU Core" || !ReferenceEquals(k1, k2)) yield return "the recorder builds its sensor list key again on every reading";
+        if (keys.Of([.. two, S("gpu", "load", "GPU Load", 1)]) != "/cpu/CPU Total|/gpu/GPU Core|/gpu/GPU Load" || keys.Of([two[1], two[0]]) != "/gpu/GPU Core|/cpu/CPU Total" || keys.Of([]) != "")
+            yield return "the recorder missed a change in its sensor list";
+
         var r = Reading.From(now, [S("cpu", "temperature", "Core Max", 70), S("cpu", "temperature", "CPU Core #1 Distance to TjMax", 30), S("gpu", "temperature", "GPU Hot Spot", 99), S("gpu", "temperature", "GPU Core", 60)]);
         if (r.Cpu != 70 || r.Gpu != 60) yield return $"recorder picks the wrong temperatures: {r.Cpu} {r.Gpu}";
         r = r with { Gpu = 70 };
