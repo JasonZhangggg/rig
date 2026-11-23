@@ -31,11 +31,11 @@ export function AccountSection() {
           <span aria-hidden="true">{a.name[0]?.toUpperCase()}</span>
           <div className="set-text"><b>{a.name}</b><p className="muted">{a.email}</p></div>
         </div>
-        {!demo && <div className="set-control"><button className="btn sm" type="button" onClick={signOut} disabled={leaving}>{leaving ? "Signing out…" : "Sign out"}</button></div>}
+        {!demo && <div className="set-control"><button className="btn ghost sm" type="button" onClick={signOut} disabled={leaving}>{leaving ? "Signing out…" : "Sign out"}</button></div>}
       </div>
       {demo ? (
         <SettingRow title="Delete account" body="This is the demo account, so it can't be deleted. On your own account, this removes it with every PC and its history.">
-          <button className="btn sm" type="button" disabled>Delete account</button>
+          <button className="btn ghost sm" type="button" disabled>Delete account</button>
         </SettingRow>
       ) : client.deleteAccount ? <DeleteAccount /> : null}
     </>
@@ -68,7 +68,7 @@ function DeleteAccount() {
   if (!open) {
     return (
       <SettingRow title="Delete account" body="Removes the account and everything on it. This can't be undone.">
-        <button className="btn sm" type="button" onClick={() => setOpen(true)}>Delete account…</button>
+        <button className="btn ghost sm" type="button" onClick={() => setOpen(true)}>Delete account…</button>
       </SettingRow>
     );
   }
@@ -90,7 +90,7 @@ function DeleteAccount() {
       </div>
       {error && <div className="callout" role="alert">{error}</div>}
       <div className="set-actions">
-        <button className="btn sm" type="button" onClick={close} disabled={busy}>Cancel</button>
+        <button className="btn ghost sm" type="button" onClick={close} disabled={busy}>Cancel</button>
         <button className="btn sm primary" type="button" onClick={run} disabled={!ready}>{busy ? "Deleting…" : "Delete my account"}</button>
       </div>
     </div>

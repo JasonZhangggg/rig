@@ -361,7 +361,7 @@ function ItemRow({ item, fit, facts, open, onToggle, inList, onList, demo }: { i
           <span className="shop-price"><b className="num">{money(priceOf(item))}</b><span className="faint">{live ? live.shop : demo ? "demo price" : low.shop}</span></span>
           <svg className="shop-chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
-        <button type="button" className="btn sm shop-add" aria-pressed={inList} onClick={onList} disabled={fit.verdict === "no" && !inList} aria-label={inList ? `Remove ${item.name} from your list` : `Add ${item.name} to your list`}>{inList ? "On your list" : "Add"}</button>
+        <button type="button" className="btn ghost sm shop-add" aria-pressed={inList} onClick={onList} disabled={fit.verdict === "no" && !inList} aria-label={inList ? `Remove ${item.name} from your list` : `Add ${item.name} to your list`}>{inList ? "On your list" : "Add"}</button>
       </div>
       {open && (
         <div className="shop-detail" id={id}>
@@ -500,7 +500,7 @@ function ListView({ items, own, facts, store, demo, from }: { items: ShopItem[];
         <div className="shop-actions">
           <button type="button" className="btn primary sm" onClick={() => ask(`Check this upgrade list for ${facts.name}: ${text}. Will it all work together, and what order should I install it in?`)}>Ask Rig to check this list</button>
           {clearing
-            ? <><span className="muted">Remove all {items.length + own.length} parts{own.length ? ", including the ones you added" : ""}?</span><button type="button" className="btn sm" onClick={() => setClearing(false)} autoFocus>Keep them</button><button type="button" className="btn sm" onClick={() => { setClearing(false); store.clear(); }}>Clear list</button></>
+            ? <><span className="muted">Remove all {items.length + own.length} parts{own.length ? ", including the ones you added" : ""}?</span><button type="button" className="btn ghost sm" onClick={() => setClearing(false)} autoFocus>Keep them</button><button type="button" className="btn sm" onClick={() => { setClearing(false); store.clear(); }}>Clear list</button></>
             : <button type="button" className="btn ghost sm" onClick={() => setClearing(true)}>Clear list</button>}
         </div>
       </div>

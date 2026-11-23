@@ -26,7 +26,7 @@ export function CustomLogDetail({ info, onBack }: { info: RecordingInfo; onBack:
         </div>
         <div className="gm-actions">
           <span className={`chip ${tone}`}>{word}</span>
-          <a className="btn" href="#settings">{c.active ? "Pause or turn off" : "Settings"}</a>
+          <a className="btn ghost" href="#settings">{c.active ? "Pause or turn off" : "Settings"}</a>
         </div>
       </div>
 

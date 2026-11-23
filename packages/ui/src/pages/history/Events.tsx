@@ -70,7 +70,7 @@ export function Events({ points, range, pinned, onPin }: { points: HistoryPoint[
         </section>
       ))}
       {list.length > SHOWN && (
-        <button type="button" className="btn sm hi-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${list.length}`}</button>
+        <button type="button" className="btn ghost sm hi-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${list.length}`}</button>
       )}
     </section>
   );

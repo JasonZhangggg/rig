@@ -84,7 +84,7 @@ export function Games() {
               Leave Rig open while you play and each game shows up here with how long you played and how warm {pc.name} ran.
             </p>
             <div className="gm-actions">
-              {recorded && range === "7d" && <button className="btn" type="button" onClick={() => setRange("30d")}>Show the month</button>}
+              {recorded && range === "7d" && <button className="btn ghost" type="button" onClick={() => setRange("30d")}>Show the month</button>}
               <button className="btn" type="button" onClick={() => ask("What settings should I use for my games?")}>Ask about game settings</button>
             </div>
           </div>

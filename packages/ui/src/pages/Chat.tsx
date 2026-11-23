@@ -109,9 +109,9 @@ function ProposalCard({ p }: { p: Proposal }) {
       <DiffTable rows={p.rows} />
       <div className="proposal-foot">
         <span className="faint">{n === 1 ? "1 change" : `${n} changes`} · undo anytime</span>
-        {p.status === "applied" ? <a className="btn sm" href="#changes">View in Changes</a> : p.status === "declined" ? null : (
+        {p.status === "applied" ? <a className="btn ghost sm" href="#changes">View in Changes</a> : p.status === "declined" ? null : (
           <>
-            <button className="btn sm" type="button" disabled={reading} onClick={() => declineProposal(p.id)}>Not now</button>
+            <button className="btn ghost sm" type="button" disabled={reading} onClick={() => declineProposal(p.id)}>Not now</button>
             <button className="btn primary sm" type="button" disabled={reading} onClick={() => { setReading(true); void review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id }).finally(() => setReading(false)); }}>{reading ? "Reading settings…" : "Review and apply"}</button>
           </>
         )}

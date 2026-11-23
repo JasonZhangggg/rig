@@ -6,7 +6,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { findDiagrams, MANUAL_MAX_BYTES, type Manual, type ManualTarget, type RigClient } from "@rig/core";
-import { useApp } from "../state";
+import { useActions, useStillPC } from "../state";
 import { dropCopy, getCopy, hasCopy, putCopy } from "./cache";
 import { readPdf } from "./pdf";
 
@@ -154,7 +154,8 @@ export function manualStore(client: RigClient, pcId: string): ManualStore {
 
 /** The on-screen PC's manuals and what's happening to them. Loads the list when first used on a screen. */
 export function useManuals(): ManualsState & { store: ManualStore } {
-  const { client, pc } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
   const store = manualStore(client, pc.id);
   const state = useSyncExternalStore(store.subscribe, store.get, store.get);
   useEffect(() => { void store.load(); }, [store]);

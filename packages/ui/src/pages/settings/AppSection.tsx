@@ -56,7 +56,7 @@ function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () =
           <button type="button" className="switch" role="switch" aria-checked={p.state !== "paused"} disabled={busy === p.id} onClick={() => void edit(p.id, p.state === "paused" ? "resume" : "pause")}>
             <span><b>{p.label}</b><small>{probeLine(p)}</small></span><i />
           </button>
-          <button type="button" className="btn sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Remove</button>
+          <button type="button" className="btn ghost sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Remove</button>
         </div>
       ))}
       {status.probes?.problems?.map((x) => <p key={x} className="faint">{x}</p>)}
@@ -129,7 +129,7 @@ export function AppSection() {
           <b id="rec-off-h">Turn off the background log?</b>
           <p>This deletes everything it wrote on this PC while Rig was closed. You can't undo this.</p>
           <div className="set-actions">
-            <button type="button" className="btn sm" onClick={() => setAsking(false)} autoFocus>Keep it on</button>
+            <button type="button" className="btn ghost sm" onClick={() => setAsking(false)} autoFocus>Keep it on</button>
             <button type="button" className="btn sm primary" onClick={() => void flipRecorder()}>Turn off and delete</button>
           </div>
         </div>

@@ -15,3 +15,5 @@ apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/pawnio/
 helper-out/
+apps/desktop/src-tauri/setup/
+apps/setup/target/

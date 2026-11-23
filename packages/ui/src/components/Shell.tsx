@@ -54,7 +54,7 @@ export function ReviewSheet() {
         {r.error ? <div className="callout warn" role="alert">{r.error}</div>
           : <p className="note faint" style={{ fontSize: 12.5 }}>Rig saves the current values first. You can undo this from Changes at any time.</p>}
         <div className="sheet-foot">
-          <button className="btn" type="button" aria-disabled={r.busy} onClick={() => { if (!r.busy) set({ review: null }); }} autoFocus>Cancel</button>
+          <button className="btn ghost" type="button" aria-disabled={r.busy} onClick={() => { if (!r.busy) set({ review: null }); }} autoFocus>Cancel</button>
           <button className="btn primary" type="button" aria-disabled={r.busy} onClick={() => { if (!r.busy) confirmReview(); }}>{r.busy ? "Making the change…" : r.cta}</button>
         </div>
       </div>
@@ -97,7 +97,7 @@ export function UpdateNotice() {
       </div>
       {s.kind !== "installing" && (
         <div className="update-notice-actions">
-          <button className="btn sm" type="button" onClick={() => setHidden(version)}>Not now</button>
+          <button className="btn ghost sm" type="button" onClick={() => setHidden(version)}>Not now</button>
           <button className="btn sm primary" type="button" onClick={() => void u.install()}>{s.kind === "failed" ? "Try again" : "Update"}</button>
         </div>
       )}

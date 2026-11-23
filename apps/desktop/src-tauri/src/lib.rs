@@ -4,6 +4,7 @@
 //! the keychain, start with Windows when the person turns that on, read
 //! the background recorder's log, and install updates.
 
+mod clipboard;
 mod helper;
 mod recorder;
 mod secrets;
@@ -96,6 +97,13 @@ fn open_logs(app: tauri::AppHandle) -> R<()> {
     app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// The text on the clipboard, for Paste in Rig's own right-click menu
+/// (src/contextmenu.ts). The page can't read the clipboard by itself.
+#[tauri::command]
+fn clipboard_text() -> Option<String> {
+    clipboard::text()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -115,7 +123,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().app_name("Rig").build())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Only installer builds carry the updater's key and address (the windows-installer
             // action adds them), so a copy run from the code never replaces itself with a release.
@@ -132,7 +139,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             helper_call, kv_get, kv_set, history_add, history_since, changes_list, change_put, token_get, token_set,
-            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script, open_logs
+            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script, open_logs, clipboard_text
         ])
         .run(tauri::generate_context!())
         .expect("Rig couldn't start");

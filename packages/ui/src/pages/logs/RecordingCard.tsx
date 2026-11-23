@@ -58,7 +58,7 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
         <span className="faint">Only reads · changes nothing on {pc.name}</span>
         {finished ? (
           <>
-            <button className="btn sm" type="button" onClick={() => openRecording(request.id)}>Open the recording</button>
+            <button className="btn ghost sm" type="button" onClick={() => openRecording(request.id)}>Open the recording</button>
             <button className="btn primary sm" type="button" disabled={data.answering} onClick={() => ask("The recording finished. What did it find?")}>See what Rig found</button>
           </>
         ) : state !== "failed" && <button className="btn sm" type="button" disabled={stopping} onClick={() => { setStopping(true); void stopRecording(request.id).finally(() => setStopping(false)); }}>{stopping ? "Stopping…" : "Stop"}</button>}

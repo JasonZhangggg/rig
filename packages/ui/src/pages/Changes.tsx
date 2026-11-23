@@ -1,8 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import type { Change, DiffRow, Issue } from "@rig/core";
-import { DiffTable, Icon, StatusChip } from "../components/common";
+import { DiffTable, StatusChip } from "../components/common";
+import { DayLabel, Row, Rows } from "../components/Rows";
 import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
+import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
@@ -38,7 +40,7 @@ export function Changes() {
   // A filter that would leave the list empty, like Undone after the last undo is redone, falls back to everything.
   useEffect(() => { if (filter !== "all" && !list.length) setFilter("all"); }, [filter, list.length]);
   return (
-    <div className="page pg-focus">
+    <div className={`page pg-focus${!any && !fixes.length ? " ch-is-empty" : ""}`}>
       <div className="page-head">
         <div><h1>Changes</h1><p className="sub">Everything changed on {pc.name}, with the old values saved.</p></div>
       </div>
@@ -54,7 +56,7 @@ export function Changes() {
           {byDay(list).map(([date, day]) => <Day key={date} changes={day} />)}
         </section>
       )}
-      <HowChangesWork />
+      {any && <HowChangesWork />}
     </div>
   );
 }
@@ -78,8 +80,8 @@ function Day({ changes }: { changes: Change[] }) {
   const label = dayLabel(changes[0].at);
   return (
     <section className="ch-day" aria-label={label}>
-      <p className="ch-day-label">{label}<span>{changes.length === 1 ? "1 change" : `${changes.length} changes`}</span></p>
-      <ol className={`ch-timeline${changes.length > 1 ? " ch-line" : ""}`}>{changes.map((c) => <Entry key={c.id} c={c} />)}</ol>
+      <DayLabel day={label} count={changes.length} one="change" many="changes" />
+      <Rows timeline>{changes.map((c) => <Entry key={c.id} c={c} />)}</Rows>
     </section>
   );
 }
@@ -97,35 +99,17 @@ function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow
   return (
     <section className="card ch-next" aria-labelledby="ch-next-h">
       <div className="card-head"><h2 id="ch-next-h">Waiting for review <span className="faint num">{fixes.length}</span></h2></div>
-      <ul className="ch-next-list">
+      <Rows>
         {fixes.map((i) => (
-          <Row key={i.id} title={i.title} meta="Nothing changes until you say yes."
-            action={<button className="btn sm" type="button" aria-label={`Review: ${i.title}`} disabled={reading === i.id} onClick={() => open(i)}>{reading === i.id ? "Reading settings…" : "Review"}</button>}>
-            <p className="muted">{i.body}</p>
-            {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
-          </Row>
+          <Row key={i.id} name={i.title} title={i.title} meta="Nothing changes until you say yes."
+            action={<button className="btn sm" type="button" aria-label={`Review: ${i.title}`} disabled={reading === i.id} onClick={() => open(i)}>{reading === i.id ? "Reading settings…" : "Review"}</button>}
+            details={<>
+              <p className="muted">{i.body}</p>
+              {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
+            </>} />
         ))}
-      </ul>
+      </Rows>
     </section>
-  );
-}
-
-/** One line with its button, and the rest behind Details. */
-function Row({ title, meta, time, status, action, children }: { title: string; meta: string; time?: string; status?: Change["status"]; action?: JSX.Element | false; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <li className={`ch-entry${status ? ` ${status}` : ""}`}>
-      {time && <time className="ch-time num" dateTime={time}>{clock(time)}</time>}
-      <div className="ch-body">
-        <div className="change-name"><h3>{title}</h3>{status === "undone" && <StatusChip status="undone" />}</div>
-        <p className="faint ch-meta">{meta}</p>
-        {open && <div className="change">{children}</div>}
-      </div>
-      <div className="ch-acts">
-        <button type="button" className="btn ghost sm" aria-expanded={open} aria-label={`Details: ${title}`} onClick={() => setOpen(!open)}>{open ? "Hide" : "Details"}</button>
-        {action}
-      </div>
-    </li>
   );
 }
 
@@ -136,25 +120,12 @@ function Entry({ c }: { c: Change }) {
   const word = c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
   const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${c.status === "applied" ? "Old values saved." : "Old values put back."}`;
   return (
-    <Row title={c.title} meta={meta} time={c.at} status={c.status}
-      action={client.caps.applyChanges && <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>}>
-      {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
-      {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
-    </Row>
-  );
-}
-
-function NoChanges({ quiet }: { quiet: boolean }) {
-  const { go } = useActions();
-  const pc = { name: useAppSelector((c) => c.pc.name) };
-  return (
-    <section className="card ch-empty">
-      <span className="ch-empty-icon" aria-hidden="true"><Icon d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2" /></span>
-      <div className="ch-empty-text">
-        <h2 className="plain-h">No changes yet</h2>
-        <p className="muted">Every change Rig makes on {pc.name} shows up here with the before and after, and an Undo button that puts the old values back.</p>
-      </div>
-      <div><button className={`btn${quiet ? "" : " primary"}`} type="button" onClick={() => go("chat")}>Ask Rig what to fix</button></div>
-    </section>
+    <Row name={c.title} title={c.title} meta={meta} time={clock(c.at)} at={c.at}
+      mark={c.status === "undone" ? "hollow" : "dot"} tag={c.status === "undone" && <StatusChip status="undone" />}
+      action={client.caps.applyChanges && <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>}
+      details={<>
+        {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
+        {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
+      </>} />
   );
 }

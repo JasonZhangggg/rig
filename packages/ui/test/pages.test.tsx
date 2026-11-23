@@ -30,9 +30,12 @@ describe("Changes", () => {
     await show("changes");
     const waiting = await screen.findByRole("region", { name: /^Waiting for review/ });
     expect(within(waiting).getByText(/runs at 60 Hz but can do 165 Hz/)).toBeTruthy();
-    expect(within(waiting).queryByText("60 Hz")).toBeNull();
-    fireEvent.click(within(waiting).getAllByRole("button", { name: /^Details:/ })[0]);
-    await within(waiting).findByText("60 Hz");
+    const more = within(waiting).getAllByRole("button", { name: /^Details:/ })[0];
+    const body = document.getElementById(more.getAttribute("aria-controls")!)!;
+    expect(body.hidden).toBe(true);
+    fireEvent.click(more);
+    expect(body.hidden).toBe(false);
+    await within(body).findByText("60 Hz");
 
     const counts = screen.getByRole("group", { name: "Show only" });
     expect(within(counts).getByRole("button", { name: /Applied/ }).textContent).toBe("1Applied");
@@ -40,9 +43,12 @@ describe("Changes", () => {
 
     const day = screen.getByRole("region", { name: dayLabel(new Date(Date.now() - 5 * 864e5).toISOString()) });
     expect(within(day).getByText("Turned off NVIDIA Broadcast at startup")).toBeTruthy();
-    expect(within(day).queryByText("Starts with Windows")).toBeNull();
-    fireEvent.click(within(day).getByRole("button", { name: "Details: Turned off NVIDIA Broadcast at startup" }));
-    expect(within(day).getByText("Starts with Windows")).toBeTruthy();
+    const details = within(day).getByRole("button", { name: "Details: Turned off NVIDIA Broadcast at startup" });
+    const change = document.getElementById(details.getAttribute("aria-controls")!)!;
+    expect(change.hidden).toBe(true);
+    fireEvent.click(details);
+    expect(change.hidden).toBe(false);
+    expect(within(change).getByText("Starts with Windows")).toBeTruthy();
 
     fireEvent.click(within(waiting).getAllByRole("button", { name: /^Review:/ })[0]);
     expect(await screen.findByRole("dialog")).toBeTruthy();
@@ -72,12 +78,26 @@ describe("Changes", () => {
   it("says what will show up when nothing has changed yet", async () => {
     const client = new DemoClient();
     client.changes = async () => [];
+    const watch = client.watch.bind(client);
+    client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, issues: (pc.issues ?? []).filter((i) => !i.fix?.length) }));
     await show("changes", client);
-    expect(await screen.findByText("No changes yet")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
-    expect(screen.getByText("How changes work")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Ask Rig what to fix" }));
+    const empty = await screen.findByRole("region", { name: "Every change, with an Undo" });
+    expect(within(empty).getByText(/When you say yes to a fix, it shows up here/)).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Show only" })).toBeNull();
+    // The example change is a picture: nothing in it can be pressed or read out as a real change.
+    expect(within(empty).queryByRole("button", { name: "Undo" })).toBeNull();
+    fireEvent.click(within(empty).getByRole("button", { name: "Ask Rig what to fix" }));
     await waitFor(() => expect(location.hash).toBe("#chat"));
+  });
+
+  it("points to the waiting fixes when nothing has changed yet but some wait for review", async () => {
+    const client = new DemoClient();
+    client.changes = async () => [];
+    await show("changes", client);
+    await screen.findByRole("region", { name: /^Waiting for review/ });
+    const empty = screen.getByRole("region", { name: "Every change, with an Undo" });
+    expect(within(empty).getByText(/Once you say yes to a fix above/)).toBeTruthy();
+    expect(within(empty).queryByRole("button")).toBeNull();
   });
 
   it("names days the way people say them", () => {
