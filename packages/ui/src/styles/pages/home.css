@@ -82,10 +82,11 @@
 }
 /* In the phone's list the stage starts right under the buttons (dash.css), so the PC can use all of it. */
 .dash[data-cols="1"] .f-pc .stage-slot { --fit-inset: 10px 0 26px 0; }
-.dw.tone-dark .scene-pin .part-label { background: color-mix(in srgb, var(--surface-2) 92%, transparent); }
+/* On a graphite tile the dots and line halos turn dark, so they read on the dark ground. */
+.dw.tone-dark .callouts[data-mode="callouts"] { --co-ink: #F4F3F0; --co-halo: rgba(27, 27, 31, .7); }
 /* On Home the parts' labels would crowd the PC and its name, and the temperatures already read large under it,
-   so only a part you pick keeps its label. The 3D view shows them all. */
-.f-pc .scene-pin:not(.is-selected) { display: none !important; }
+   so only a part you pick keeps its label (scene.ts reads --labels). The 3D view shows them all. */
+.f-pc .stage-slot { --labels: picked; }
 
 /* The model names stand once, beside the PC; the temperatures read large under it, by part kind only. */
 .f-specs { display: none; margin: 0; }

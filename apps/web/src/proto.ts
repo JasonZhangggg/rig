@@ -1,4 +1,5 @@
 // Real-PC 3D prototype: /proto/?build=<preset> for the PC, /proto/?board=<item kind or id> for the board.
+// &hot=gpu makes one part read hot.
 import "@rig/ui/styles.css";
 import { coolers, gpus, layoutFromReading, resolveBuild, type BuildInput, type LayoutReading, type PC } from "@rig/core";
 import msiRead from "../../../packages/core/test/fixtures/layout-msi-pro-b650-a.json";
@@ -110,7 +111,9 @@ async function main() {
   const preset = presets[q.get("build") ?? "generic"] ?? presets.generic;
   const t0 = performance.now();
   const build = resolveBuild(preset.input);
-  const pc: PC = { ...atlas, build };
+  const hot = q.get("hot");
+  const parts = hot && atlas.parts?.[hot] ? { ...atlas.parts, [hot]: { ...atlas.parts[hot], temp: 88, warn: true } } : atlas.parts;
+  const pc: PC = { ...atlas, parts, build };
   const scene = createScene(stage);
   scene.setPC(pc, { ...sceneTheme, finish: q.has("ink") ? "ink" : "real" });
   if (q.has("exploded")) scene.setExploded(true);

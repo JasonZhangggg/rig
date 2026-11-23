@@ -1,59 +1,92 @@
 import { describe, expect, it } from "vitest";
-import { placeLabels, type Pin } from "../src/sceneLabels";
+import { calloutsFit, createSceneLabels, relax, roomFor, splitSides, spreadColumn } from "../src/sceneLabels";
 
-const box = (p: ReturnType<typeof placeLabels>[number], pin: Pin) => ({ x0: p.x, y0: p.y, x1: p.x + pin.w * p.scale, y1: p.y + pin.h * p.scale });
-const pin = (id: string, x: number, y: number, depth = 0.5, w = 120): Pin => ({ id, x, y, depth, w, h: 26 });
+const items = [
+  { id: "cpu", title: "CPU", value: "52°" },
+  { id: "gpu", title: "GPU", value: "88°", warn: true },
+  { id: "ram", title: "Memory" },
+];
+const points = [
+  { id: "cpu", x: 500, y: 200 },
+  { id: "gpu", x: 520, y: 420 },
+  { id: "ram", x: 560, y: 180 },
+];
+const box = { x0: 380, y0: 100, x1: 760, y1: 620 };
 
-describe("3D part labels", () => {
-  const stage = { width: 700, height: 500, cx: 350 };
-
-  it("hangs each label out to the side of the PC its part is on", () => {
-    const [left, right] = placeLabels([pin("ram", 250, 200), pin("gpu", 450, 200)], stage);
-    expect(left.side).toBe(-1);
-    expect(left.x + 120 * left.scale).toBeLessThan(250);
-    expect(right.side).toBe(1);
-    expect(right.x).toBeGreaterThan(450);
-    expect(right.ex).toBe(right.x);
-    expect(left.ex).toBeCloseTo(left.x + 120 * left.scale);
+describe("part labels", () => {
+  it("keeps a column of callouts in order, apart and on the stage", () => {
+    // Three parts close together near the top: their labels stack down without touching.
+    const y = spreadColumn([20, 24, 30], [30, 30, 30], 10, 400, 12);
+    expect(y[0]).toBeGreaterThanOrEqual(10);
+    expect(y[1] - y[0]).toBeGreaterThanOrEqual(42);
+    expect(y[2] - y[1]).toBeGreaterThanOrEqual(42);
+    // Near the bottom, they stack up instead of running off.
+    const z = spreadColumn([390, 395], [30, 30], 10, 400, 12);
+    expect(z[1] + 30).toBeLessThanOrEqual(400);
+    expect(z[1] - z[0]).toBeGreaterThanOrEqual(42);
   });
 
-  it("never lets two labels overlap, even when their parts sit close together", () => {
-    const pins = [pin("a", 420, 200), pin("b", 430, 205), pin("c", 425, 210), pin("d", 440, 198)];
-    const placed = placeLabels(pins, stage);
-    const boxes = placed.map((p, i) => box(p, pins[i]));
-    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-      const a = boxes[i], b = boxes[j];
-      const overlap = a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
-      expect(overlap).toBe(false);
-    }
+  it("splits callouts between the two sides evenly", () => {
+    const pts = [0, 1, 2, 3, 4, 5].map((i) => ({ id: `p${i}`, x: 100 + i * 5, y: i * 40 }));
+    const side = splitSides(pts, 300);
+    const left = Object.values(side).filter((s) => s < 0).length;
+    expect(Math.abs(left - (pts.length - left))).toBeLessThanOrEqual(1);
   });
 
-  it("keeps labels on the stage, switching sides when one side has no room", () => {
-    const pins = [pin("edge", 690, 10), pin("left", 12, 490)];
-    const placed = placeLabels(pins, stage);
-    placed.forEach((p, i) => {
-      const b = box(p, pins[i]);
-      expect(b.x0).toBeGreaterThanOrEqual(0);
-      expect(b.y0).toBeGreaterThanOrEqual(0);
-      expect(b.x1).toBeLessThanOrEqual(700);
-      expect(b.y1).toBeLessThanOrEqual(500);
-    });
-    expect(placed[0].side).toBe(-1);
-    expect(placed[1].side).toBe(1);
+  it("pushes overlapping phone markers apart", () => {
+    const [a, b] = relax([{ x: 100, y: 100, w: 24, h: 24 }, { x: 104, y: 104, w: 24, h: 24 }], 3);
+    const apart = a.y + a.h + 3 <= b.y + 0.01 || b.y + b.h + 3 <= a.y + 0.01 || a.x + a.w + 3 <= b.x + 0.01 || b.x + b.w + 3 <= a.x + 0.01;
+    expect(apart).toBe(true);
   });
 
-  it("draws nearer parts' labels a little larger and their pins stronger", () => {
-    const [near, far] = placeLabels([pin("near", 200, 100, 0), pin("far", 200, 400, 1)], stage);
-    expect(near.scale).toBeGreaterThan(far.scale);
-    expect(near.opacity).toBeGreaterThan(far.opacity);
-    expect(far.opacity).toBeGreaterThanOrEqual(0.6);
+  it("uses columns on a wide stage and a numbered list on a phone", () => {
+    expect(calloutsFit(1200)).toBe(true);
+    expect(calloutsFit(390)).toBe(false);
+    expect(roomFor(1200, 7).l).toBeGreaterThan(100);
+    expect(roomFor(390, 7).b).toBeGreaterThan(150);
   });
 
-  it("keeps a label on its side while its part sways across the middle", () => {
-    const sides: Record<string, -1 | 1> = {};
-    sides.cpu = placeLabels([pin("cpu", 340, 200)], stage)[0].side;
-    expect(sides.cpu).toBe(-1);
-    expect(placeLabels([pin("cpu", 355, 200)], stage, sides)[0].side).toBe(-1);
-    expect(placeLabels([pin("cpu", 380, 200)], stage, sides)[0].side).toBe(1);
+  it("shows each part's name and temperature beside the model, joined by a line", () => {
+    const layer = document.createElement("div");
+    const labels = createSceneLabels(layer);
+    labels.setItems(items);
+    labels.layout(points, { width: 1200, height: 720, box });
+    const shown = [...layer.querySelectorAll<HTMLElement>(".co-label:not(.is-off)")];
+    expect(shown.map((l) => l.textContent)).toEqual(["CPU52°", "GPU88°", "Memory"]);
+    expect(layer.querySelector(".co-value.is-warn")?.textContent).toBe("88°");
+    expect([...layer.querySelectorAll(".co-line")].every((p) => p.getAttribute("d")?.startsWith("M"))).toBe(true);
+    expect(layer.querySelector<HTMLElement>(".callouts")!.dataset.mode).toBe("callouts");
+  });
+
+  it("on a phone, numbers each part and lists what the numbers are", () => {
+    const layer = document.createElement("div");
+    const labels = createSceneLabels(layer);
+    labels.setItems(items);
+    labels.layout(points, { width: 390, height: 600, box });
+    expect(layer.querySelector<HTMLElement>(".callouts")!.dataset.mode).toBe("numbers");
+    expect([...layer.querySelectorAll<HTMLElement>(".co-mark")].map((m) => m.dataset.n)).toEqual(["1", "2", "3"]);
+    expect([...layer.querySelectorAll(".co-legend li b")].map((b) => b.textContent)).toEqual(["CPU", "GPU", "Memory"]);
+  });
+
+  it("can show only the picked part's label, with no room kept for the others", () => {
+    const layer = document.createElement("div");
+    const labels = createSceneLabels(layer);
+    labels.setItems(items);
+    labels.setPickedOnly(true);
+    expect(labels.room(1200)).toBeNull();
+    labels.layout(points, { width: 1200, height: 720, box, selected: "gpu" });
+    expect([...layer.querySelectorAll<HTMLElement>(".co-label:not(.is-off)")].map((l) => l.dataset.part)).toEqual(["gpu"]);
+    labels.layout(points, { width: 1200, height: 720, box });
+    expect(layer.querySelectorAll(".co-label:not(.is-off)").length).toBe(0);
+  });
+
+  it("names the part a label points at, for pointing and picking", () => {
+    const layer = document.createElement("div");
+    const picked: string[] = [];
+    const labels = createSceneLabels(layer, { onPick: (id) => picked.push(id) });
+    labels.setItems(items);
+    labels.layout(points, { width: 1200, height: 720, box });
+    layer.querySelector<HTMLButtonElement>('.co-label[data-part="ram"]')!.click();
+    expect(picked).toEqual(["ram"]);
   });
 });
