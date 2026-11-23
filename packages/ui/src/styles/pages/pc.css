@@ -4,7 +4,8 @@
 .pc-view { --stage-h: clamp(420px, calc(100dvh - 200px), 900px); display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: clamp(32px, 4vw, 64px); align-items: start; }
 .pc-page.is-part .pc-view { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
 /* The 3D view is a picture, not a section: one flat tint, no gradient. */
-.stage-card { position: relative; isolation: isolate; min-height: 420px; height: var(--stage-h); overflow: hidden; border-radius: var(--r); background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
+/* --stage-foot keeps the parts list and labels clear of the view buttons along the bottom. */
+.stage-card { --stage-foot: 60px; position: relative; isolation: isolate; min-height: 420px; height: var(--stage-h); overflow: hidden; border-radius: var(--r); background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
 .stage-tools { position: absolute; z-index: 2; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none; display: flex; gap: 6px; padding: 6px; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 
 .customize { position: absolute; z-index: 5; top: 16px; right: 16px; width: 260px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-lg); }
@@ -236,10 +237,5 @@
 .mt-add > :not(.mt-add-btn) { padding: 18px 20px; }
 .mt-add-btn { width: 100%; min-height: 132px; display: grid; place-content: center; gap: 4px; padding: 18px 20px; border: 0; border-radius: var(--r); background: transparent; color: var(--text); font: inherit; text-align: center; cursor: pointer; transition: transform .16s var(--ease-out); }
 .mt-add-btn:active { transform: scale(.98); }
-.mt-drivers { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.mt-drv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.mt-drv-what { display: grid; gap: 2px; min-width: 0; }
-.mt-drv-ver { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .mt-note { margin: 10px 0 0; font-size: 13px; }
 @media (hover: hover) and (pointer: fine) { .mt-add-btn:hover { background: var(--surface-2); } }
-@media (max-width: 700px) { .mt-drv { grid-template-columns: 1fr; gap: 8px; } }

@@ -4,6 +4,7 @@ import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { useApp, useTemp, useTempText } from "../../state";
 import { CustomLogDetail } from "./CustomLog";
+import { Rows } from "../../components/Rows";
 import { EventRow } from "./Events";
 import { Progress, StateChip } from "./RecordingCard";
 import { clock, clockSec, gb, whenRan } from "./words";
@@ -153,7 +154,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
                   <section className="rec-events">
                     <h2>Windows events during the recording</h2>
                     {rec.events.length === 0 ? <p className="muted">{active ? "Rig reads the event log when the recording ends." : "Windows logged no errors while Rig recorded."}</p>
-                      : <div><ul className="ev-list">{rec.events.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} seconds />)}</ul></div>}
+                      : <Rows timeline>{rec.events.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} seconds />)}</Rows>}
                   </section>
                 </div>
               ) : <p className="faint">The hottest readings, the busiest apps and what Windows logged while Rig recorded.</p>}

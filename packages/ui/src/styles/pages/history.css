@@ -98,28 +98,9 @@
 
 /* What happened in the range, under it all. */
 .hi-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
-.hi-panel { align-self: stretch; display: flex; flex-direction: column; gap: 16px; }
+.hi-panel { align-self: stretch; display: flex; flex-direction: column; gap: 4px; }
+.hi-more { margin-top: 12px; }
 
-.hi-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.hi-events li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
-.hi-events li:first-child { border-top-color: transparent; }
-.hi-events li > .btn { margin-right: 0; }
-/* The line runs to the content edge; a row's hover fill reaches a little past it. */
-.hi-events .hi-ev { margin-left: -10px; }
-.hi-ev {
-  flex: 1; min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px;
-  padding: 9px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
-}
-@media (hover: hover) and (pointer: fine) { .hi-ev:hover { background: var(--surface-2); } }
-.hi-ev[aria-pressed="true"] { background: var(--sel); }
-.hi-ev-ico { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: var(--text-3); }
-.hi-ev-ico.look { color: var(--look-text); }
-.hi-ev-ico svg { width: 18px; height: 18px; }
-.hi-ev-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
-.hi-ev-main b { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.hi-ev-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
-.hi-ev-fig b { color: var(--text); font-size: 14px; font-weight: 500; }
-.hi-ev-fig.look :is(b, span) { color: var(--look-text); }
 .hi-more { align-self: flex-start; }
 
 .hi-empty { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; padding: 28px 0 0; }
@@ -138,8 +119,4 @@
   .pf-part { flex: 0 0 min(148px, 40%); scroll-snap-align: start; grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "now" "spark"; }
   .hi-empty { grid-template-columns: minmax(0, 1fr); padding: 22px 0 0; }
   .hi-empty-list { padding: 22px 0 0; border-left: 0; border-top: 1px solid var(--line); }
-  .hi-events li { flex-wrap: wrap; }
-  .hi-events li > .btn { margin: 0 0 8px 58px; }
-  .hi-ev { flex-basis: 100%; grid-template-columns: 36px minmax(0, 1fr); }
-  .hi-ev-fig { grid-column: 2; flex-direction: row; align-items: baseline; gap: 6px; }
 }
