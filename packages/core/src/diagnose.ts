@@ -616,6 +616,30 @@ export function diagnose(input: HealthInput, add: Add) {
   drives(input, add);
   memory(input, add);
   firmware(input, now, add);
-  restingHeat(input, now, add);
-  stability(input, now, add);
+  for (const f of slowChecks(input, now)) add(f);
+}
+
+/** How long the checks over days of history and weeks of Windows events may reuse their answer while nothing they read changed. */
+export const SLOW_CHECKS_MS = 60_000;
+
+type Found = Parameters<Add>[0];
+interface SlowEntry { inv: HealthInput["inv"]; events: HealthInput["events"]; history: HealthInput["history"]; length: number; last: number | undefined; lim: number; at: number; found: Found[] }
+const slow = new WeakMap<object, SlowEntry>();
+
+/**
+ * The checks that read the history and the Windows events. They're the costly part of a reading, and their inputs change only every few
+ * minutes (history every ten, events every five), so the answer is kept until the inventory, the events, the history or the processor's
+ * limit changes, or a minute has passed.
+ */
+function slowChecks(input: HealthInput, now: number): Found[] {
+  const { inv, events, history } = input;
+  const lim = cpuLimit(inv.cpu.name, input.snap);
+  const key = events ?? history ?? inv;
+  const e = slow.get(key);
+  if (e && e.inv === inv && e.events === events && e.history === history && e.length === (history?.length ?? 0) && e.last === history?.[history.length - 1]?.t && e.lim === lim && now >= e.at && now - e.at < SLOW_CHECKS_MS) return e.found;
+  const found: Found[] = [];
+  restingHeat(input, now, (f) => found.push(f));
+  stability(input, now, (f) => found.push(f));
+  slow.set(key, { inv, events, history, length: history?.length ?? 0, last: history?.[history.length - 1]?.t, lim, at: now, found });
+  return found;
 }

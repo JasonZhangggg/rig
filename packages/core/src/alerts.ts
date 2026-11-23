@@ -222,34 +222,54 @@ const hotterThanUsual: AlertRule = {
   check: ({ inv, history, now, holding }) => watched(inv, null).flatMap((p): AlertFinding[] => {
     const id = `hotter-than-usual:${p.key}`;
     const need = holding.has(id) ? USUAL.clear : USUAL.warmer;
-    const read = (x: HistoryPoint) => x[p.key]!;
-    const games = new Map<string, { recent: HistoryPoint[]; before: HistoryPoint[] }>();
-    for (const x of history) {
-      if (!x.busy || !x.game || x[p.key] == null || x.t > now) continue;
-      const age = now - x.t;
-      const slot = age < USUAL.recentDays * DAY ? "recent" : age >= USUAL.baselineTo * DAY && age < USUAL.baselineFrom * DAY ? "before" : null;
-      if (!slot) continue;
-      const g = games.get(x.game) ?? { recent: [], before: [] };
-      g[slot].push(x);
-      games.set(x.game, g);
-    }
-    let best: { game: string; lately: number; usual: number; recent: HistoryPoint[] } | null = null;
-    for (const [game, g] of games) {
-      if (g.recent.length < USUAL.minWindows || g.before.length < USUAL.minWindows) continue;
-      const lately = median(g.recent.map(read)), usual = median(g.before.map(read));
-      if (lately - usual >= need && (!best || g.recent.length > best.recent.length)) best = { game, lately, usual, recent: g.recent };
-    }
-    if (!best) return [];
-    const lately = round(best.lately), usual = round(best.usual);
-    return [{
-      id, part: p.key, severity: "warn",
-      title: `${p.name} runs hotter than it used to`,
-      detail: `In ${best.game} it's been at ${lately}°C lately, up from its usual ${usual}°C. Dust on the filters and fans is the usual cause.`,
-      ask: `My ${p.name.toLowerCase()} runs at ${lately}°C in ${best.game}, up from ${usual}°C a few weeks ago. Why, and what should I do?`,
-      since: warmSince(best.recent, read, best.usual + need),
-    }];
+    return usualFor(history, `${p.key}|${need}`, inv, now, () => compareUsual(p, id, need, history, now));
   }),
 };
+
+/** How long a "hotter than usual" answer is reused while the history it read hasn't changed. History gains a point every ten minutes. */
+export const USUAL_REUSE_MS = 60_000;
+interface UsualEntry { inv: Inventory; length: number; last: number | undefined; at: number; found: AlertFinding[] }
+const usualCache = new WeakMap<readonly HistoryPoint[], Map<string, UsualEntry>>();
+
+/** The comparison over a month of history runs on every reading, so its answer is kept until the history or the inventory changes, or a minute passes. */
+function usualFor(history: readonly HistoryPoint[], key: string, inv: Inventory, now: number, run: () => AlertFinding[]): AlertFinding[] {
+  let byKey = usualCache.get(history);
+  if (!byKey) usualCache.set(history, (byKey = new Map()));
+  const e = byKey.get(key), last = history[history.length - 1]?.t;
+  if (e && e.inv === inv && e.length === history.length && e.last === last && now >= e.at && now - e.at < USUAL_REUSE_MS) return e.found;
+  const found = run();
+  byKey.set(key, { inv, length: history.length, last, at: now, found });
+  return found;
+}
+
+function compareUsual(p: Watched, id: string, need: number, history: readonly HistoryPoint[], now: number): AlertFinding[] {
+  const read = (x: HistoryPoint) => x[p.key]!;
+  const games = new Map<string, { recent: HistoryPoint[]; before: HistoryPoint[] }>();
+  for (const x of history) {
+    if (!x.busy || !x.game || x[p.key] == null || x.t > now) continue;
+    const age = now - x.t;
+    const slot = age < USUAL.recentDays * DAY ? "recent" : age >= USUAL.baselineTo * DAY && age < USUAL.baselineFrom * DAY ? "before" : null;
+    if (!slot) continue;
+    const g = games.get(x.game) ?? { recent: [], before: [] };
+    g[slot].push(x);
+    games.set(x.game, g);
+  }
+  let best: { game: string; lately: number; usual: number; recent: HistoryPoint[] } | null = null;
+  for (const [game, g] of games) {
+    if (g.recent.length < USUAL.minWindows || g.before.length < USUAL.minWindows) continue;
+    const lately = median(g.recent.map(read)), usual = median(g.before.map(read));
+    if (lately - usual >= need && (!best || g.recent.length > best.recent.length)) best = { game, lately, usual, recent: g.recent };
+  }
+  if (!best) return [];
+  const lately = round(best.lately), usual = round(best.usual);
+  return [{
+    id, part: p.key, severity: "warn",
+    title: `${p.name} runs hotter than it used to`,
+    detail: `In ${best.game} it's been at ${lately}°C lately, up from its usual ${usual}°C. Dust on the filters and fans is the usual cause.`,
+    ask: `My ${p.name.toLowerCase()} runs at ${lately}°C in ${best.game}, up from ${usual}°C a few weeks ago. Why, and what should I do?`,
+    since: warmSince(best.recent, read, best.usual + need),
+  }];
+}
 
 /** Every alert Rig raises, in the order Settings lists them. */
 export const alertRules: readonly AlertRule[] = [tooHot, fanStopped, hotterThanUsual, driveFull, driveWearing];
