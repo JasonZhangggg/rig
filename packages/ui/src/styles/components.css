@@ -10,7 +10,7 @@
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); font-weight: 500; }
 @media (hover: hover) and (pointer: fine) { .btn.primary:not(:disabled, [aria-disabled="true"]):hover { background: var(--graphite-2); border-color: var(--graphite-2); } }
 .btn.ghost { border-color: transparent; background: transparent; }
-@media (hover: hover) and (pointer: fine) { .btn.ghost:hover { background: var(--surface-2); } }
+@media (hover: hover) and (pointer: fine) { .btn.ghost:not([aria-pressed="true"]):hover { background: var(--surface-2); } }
 .btn[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
 .linkish { padding: 0; border: 0; background: none; color: var(--text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 

@@ -28,7 +28,7 @@ export function Web() {
               <p className="muted" style={{ fontSize: ".93em" }}>{x.summary}</p>
               <div className="row">
                 <span className={`chip${x.online ? " ok" : ""}`}>{seenLabel(x)}</span>
-                <button className="btn sm" type="button" onClick={() => {
+                <button className="btn ghost sm" type="button" onClick={() => {
                   if (!x.parts) { toast(`${x.name} hasn't sent its details yet. Open Rig on it once.`); return; }
                   pickPC(x.id); go("overview");
                 }}>Open</button>

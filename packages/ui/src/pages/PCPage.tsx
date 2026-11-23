@@ -53,7 +53,7 @@ export function PCPage() {
         <>
           <div className="page-head">
             <div><h1>{pc.name}</h1><p className="sub">{sub}</p></div>
-            {view === "pc" && <button ref={customizeBtn} className="btn sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>}
+            {view === "pc" && <button ref={customizeBtn} className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>}
           </div>
           <nav className="lg-views pc-views" aria-label="My PC">
             {pcViews.map(([r, label]) => <a key={r} href={`#${r}`} aria-current={view === r ? "page" : undefined}>{label}</a>)}
@@ -66,8 +66,8 @@ export function PCPage() {
           <StageSlot id="pc-stage" />
           {customize && !picked && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
-            {!picked && <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>}
-            <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => set({ heat: !ui.heat })}>Heat</button>
+            {!picked && <button className="btn ghost sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>}
+            <button className="btn ghost sm" type="button" aria-pressed={ui.heat} onClick={() => set({ heat: !ui.heat })}>Heat</button>
             <button className="btn ghost sm" type="button" onClick={() => getStage().scene.resetView()}>Reset view</button>
           </div>
         </section>
@@ -255,7 +255,7 @@ function DustClean() {
   return (
     <div className="callout dust">
       <p>{days == null ? "Tell Rig when you clean the dust out and it will remind you when it's due." : days === 0 ? `Cleaned today. Rig will remind you in ${CLEAN_EVERY} days.` : `Last cleaned ${days} ${days === 1 ? "day" : "days"} ago. Rig suggests every ${CLEAN_EVERY} days.`}</p>
-      {days !== 0 && <button type="button" className="btn sm" onClick={cleaned}>I cleaned it today</button>}
+      {days !== 0 && <button type="button" className="btn ghost sm" onClick={cleaned}>I cleaned it today</button>}
     </div>
   );
 }
@@ -318,7 +318,7 @@ function Readings({ part, id }: { part: Part; id: string }) {
       {part.warn && (
         <div className="callout warn part-warn">
           <span>{inUnit(pc.issues?.find((i) => i.part === id)?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</span>
-          <a className="btn sm" href="#chat">Ask what to do</a>
+          <a className="btn ghost sm" href="#chat">Ask what to do</a>
         </div>
       )}
       {part.soldered && <div className="callout">Soldered to the board, so it can't be upgraded.</div>}
