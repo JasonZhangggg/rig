@@ -7,7 +7,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { boardKey, layoutFromReading, manualTargets, type BoardLayout, type BoardShape, type Manual, type ManualTarget, type RigClient } from "@rig/core";
-import { useApp } from "../state";
+import { useActions, useData, useStillPC } from "../state";
 import { getCopy, putCopy } from "./cache";
 import { manualStore, type ManualStore } from "./useManuals";
 
@@ -131,7 +131,9 @@ const announce = (key: string, l: BoardLayout | null) => { shown.set(key, l); li
  * signed in, and gives back the layout once there is one.
  */
 export function useBoardLayout(): BoardLayout | null {
-  const { client, pc, data } = useApp();
+  const { client } = useActions();
+  const pc = useStillPC();
+  const data = useData("account");
   const target = manualTargets(pc).find((t) => t.kind === "motherboard");
   const key = target ? `${pc.id}|${boardKey(target.maker, target.model)}` : "";
   const signedIn = !!data.account;

@@ -1,9 +1,9 @@
 import { NotificationSettings } from "../../components/NotificationSettings";
-import { setRecordingNotice, useApp, useRecordingNoticeOn } from "../../state";
+import { setRecordingNotice, useActions, useRecordingNoticeOn } from "../../state";
 import { SettingRow } from "./parts";
 
 export function NotificationsSection() {
-  const { client } = useApp();
+  const { client } = useActions();
   const recordingOn = useRecordingNoticeOn();
   return (
     <>

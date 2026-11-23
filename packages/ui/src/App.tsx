@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Account, RigClient } from "@rig/core";
-import { AppProvider, useApp, useAppearance, type AppHost } from "./state";
+import { AppProvider, useApp, useAppearance, useUI, type AppHost } from "./state";
 import { applyAppearance } from "./appearance";
 import { getStage } from "./components/Stage";
 import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
@@ -86,7 +86,8 @@ function Splash({ text, detail, retry }: { text: string; detail?: string; retry?
   );
 }
 
-function Root() {
+/** Feeds the 3D view each reading. Kept apart from the pages so a new reading draws only what shows it. */
+function SceneFeed() {
   const { ui, pc, set, go } = useApp();
   const { scene } = getStage();
   // The board's layout is read from its manual once Rig knows the board, without the person asking.
@@ -100,7 +101,7 @@ function Root() {
   const themeKey = JSON.stringify(sceneThemeFor(look));
   const theme = useMemo(() => JSON.parse(themeKey) as SceneTheme, [themeKey]);
   const built = useRef(theme);
-  const shape = `${pc.id}|${pc.kind}|${pc.parts?.gpu?.warn ?? ""}|${Object.keys(pc.parts ?? {}).join()}`;
+  const shape = `${pc.id}|${pc.kind}|${Object.keys(pc.parts ?? {}).join()}`;
   useEffect(() => { built.current = theme; scene.setPC(pc, theme); }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (built.current !== theme) { built.current = theme; scene.setTheme(theme); } }, [theme, scene]);
   useEffect(() => { scene.update(pc); }, [pc, scene]);
@@ -114,6 +115,11 @@ function Root() {
     if (ui.route === "pc" && ui.selected) scene.select(ui.selected);
     else if (ui.route !== "pc") scene.select(null);
   }, [ui.route, pc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+function Root() {
+  const ui = useUI();
 
   // A new page gets its own tab title, and focus moves to it so a screen reader hears the change.
   const firstRoute = useRef(true);
@@ -134,6 +140,7 @@ function Root() {
   const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: PCPage, games: Games, history: History, logs: Logs, manuals: PCPage, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (
     <>
+      <SceneFeed />
       <Sidebar><Page /></Sidebar>
       <ReviewSheet />
       <ManualViewer />

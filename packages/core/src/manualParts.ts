@@ -3,7 +3,7 @@
 
 import type { ManualKind, ManualTarget } from "./manuals";
 import { manualKinds } from "./manuals";
-import type { PC } from "./model";
+import type { StillPC } from "./model";
 
 /** A detected part to find a manual for. */
 export interface PartTarget extends ManualTarget {
@@ -56,7 +56,7 @@ export const kindLabel = (k: ManualKind) => manualKinds.find((x) => x.kind === k
  * itself) and a separate graphics card, plus a case or power supply once Rig
  * knows its model. Generic stand-ins like "Your case" are left out.
  */
-export function manualTargets(pc: PC): PartTarget[] {
+export function manualTargets(pc: StillPC): PartTarget[] {
   const parts = pc.parts ?? {};
   const out: PartTarget[] = [];
   const add = (part: string, kind: ManualKind, maker: string | undefined, model: string | undefined, extra: Partial<PartTarget> = {}) => {

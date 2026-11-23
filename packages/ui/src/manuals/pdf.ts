@@ -100,7 +100,16 @@ export const isCancelled = (e: unknown) => e instanceof Error && e.name === "Ren
  * side is at most `maxSide` pixels.
  */
 export async function renderForReading(bytes: ArrayBuffer, n: number, maxSide = 1568): Promise<{ image: string; mediaType: "image/png"; width: number; height: number }> {
-  const doc = await open(bytes);
+  // Its own copy of the file, closed straight after: this runs once per board, in the background, and nothing else needs the document kept open.
+  const task = load(await loadPdfjs(), bytes);
+  try {
+    return await drawForReading(await task.promise, n, maxSide);
+  } finally {
+    void task.destroy();
+  }
+}
+
+async function drawForReading(doc: PDFDocumentProxy, n: number, maxSide: number) {
   const page = await doc.getPage(Math.min(Math.max(1, n), doc.numPages));
   const base = page.getViewport({ scale: 1 });
   const view = page.getViewport({ scale: (maxSide * 1.5) / Math.max(base.width, base.height) });
@@ -136,5 +145,8 @@ export async function renderForReading(bytes: ArrayBuffer, n: number, maxSide = 
   o.imageSmoothingQuality = "high";
   o.drawImage(big, x0, y0, cw, ch, 0, 0, out.width, out.height);
   const url = out.toDataURL("image/png");
-  return { image: url.slice(url.indexOf(",") + 1), mediaType: "image/png", width: out.width, height: out.height };
+  const size = { width: out.width, height: out.height };
+  // Both canvases are large; giving them no size frees their pixels now rather than whenever they're collected.
+  big.width = big.height = out.width = out.height = 0;
+  return { image: url.slice(url.indexOf(",") + 1), mediaType: "image/png" as const, ...size };
 }

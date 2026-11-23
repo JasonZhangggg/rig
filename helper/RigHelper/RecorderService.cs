@@ -9,6 +9,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
+using System.Runtime;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text;
@@ -67,6 +68,11 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
     const int StatusEveryMs = 60_000;
     const int PruneEveryMs = 6 * 3600_000;
     const int WatchdogEveryMs = 30 * 60_000;
+    /// The garbage collector sizes its youngest generation from the processor's cache, often tens of megabytes, so the
+    /// recorder's small, steady garbage would grow its memory for a long while before the first collection. Collecting
+    /// that generation now and then (a millisecond or so) keeps it flat. A forced one is needed: an "optimized" one
+    /// skips until the generation is nearly full.
+    const int YoungGcEveryMs = 5 * 60_000;
     /// Events from before the recorder's first start: this many days back.
     const int BackfillDays = 30;
     const int BackfillPerQuery = 400;
@@ -77,6 +83,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
     readonly LogWriter log = new(RecorderPaths.Logs(dataDir));
     readonly Watch watch = new();
     readonly Ring ring = new(60);
+    readonly SensorKey sensorKey = new();
     readonly object gate = new();
     readonly HashSet<string> seenEvents = [];
     readonly List<EventLogWatcher> watchers = [];
@@ -113,15 +120,21 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         Sensors? hw = null;
         try { hw = new Sensors(storage: false); }
         catch (Exception e) { Note($"Couldn't open the sensors: {e.Message}"); }
+        // Closed when the recorder stops, so the sensor driver is let go of too.
+        using var closeSensors = hw;
 
         StartEvents();
         PowerNow();
         probes = new ProbeEngine(dataDir, Note, () => WriteStatus(state));
         probes.Start();
+        // Opening the sensors and reading back a month of Windows' events leaves a few megabytes of garbage behind.
+        // Hand it back once, so the recorder sits at its running size from the start rather than its startup peak.
+        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
 
         string header = "";
         int headerId = 0, headerFile = -1;
-        long lastSample = 0, lastApps = 0, lastStatus = Now, lastPrune = Now, lastWatchdog = Now, detailFrom = 0, detailUntil = 0, lastRound = 0;
+        long lastSample = 0, lastApps = 0, lastStatus = Now, lastPrune = Now, lastWatchdog = Now, lastYoungGc = Now, detailFrom = 0, detailUntil = 0, lastRound = 0;
         int failures = 0;
 
         while (!stop.IsCancellationRequested)
@@ -132,9 +145,9 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
             {
                 if (hw != null)
                 {
-                    var snap = hw.Snapshot();
-                    var kept = LogSensors.Pick(snap.Sensors);
-                    string key = LogSensors.Key(kept);
+                    var sensors = hw.Readings();
+                    var kept = LogSensors.Pick(sensors);
+                    string key = sensorKey.Of(kept);
                     if (key != header || headerFile != log.FileNumber)
                     {
                         // A new sensor list (a part woke up, a new day's file): readers need it before the next reading.
@@ -144,7 +157,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                         headerFile = log.FileNumber;
                     }
                     var reading = Reading.From(now, kept);
-                    probes?.Publish(new ProbeEngine.Snap(now, snap.Sensors, reading));
+                    probes?.Publish(new ProbeEngine.Snap(now, sensors, reading));
                     lastReading = (kept, reading);
                 }
                 // The sensors are read every second while a custom log wants them that often; the recorder's own rounds stay five seconds apart.
@@ -156,7 +169,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                     bool detail = now < detailUntil;
                     bool wantApps = detail || now - lastApps >= AppsEveryMs;
                     bool due = detail || now - lastSample >= SampleEveryMs;
-                    List<ProcessDto>? top = due && wantApps ? SafeTop() : null;
+                    List<ProcessDto>? top = due && wantApps ? SafeTop(fresh: detail) : null;
                     if (top != null) lastApps = now;
                     var entry = new Ring.Entry(now, values, top, headerId);
 
@@ -172,7 +185,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                         if (fired is { } hit) Marker(now, hit.Why, hit.Text);
                         // What led up to it: the readings held in memory that aren't in the log yet.
                         foreach (var e in ring.TakeUnwritten(headerId, before: now)) log.Write(LogLine.Sample(e.T, e.Values, e.Top, detail: true));
-                        if (top == null) { top = SafeTop(); if (top != null) lastApps = now; entry = entry with { Top = top }; }
+                        if (top == null) { top = SafeTop(fresh: true); if (top != null) lastApps = now; entry = entry with { Top = top }; }
                         detail = true;
                     }
 
@@ -195,14 +208,16 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
             if (now - lastStatus >= StatusEveryMs) { lastStatus = now; WriteStatus("running"); PowerNow(); }
             if (now - lastPrune >= PruneEveryMs) { lastPrune = now; Prune(); }
             if (now - lastWatchdog >= WatchdogEveryMs) { lastWatchdog = now; if (Watchdog()) return; }
+            if (now - lastYoungGc >= YoungGcEveryMs) { lastYoungGc = now; GC.Collect(0, GCCollectionMode.Forced, blocking: false); }
 
             stop.WaitHandle.WaitOne(probes?.WantsFastSensors == true ? 1000 : TickMs);
         }
     }
 
-    List<ProcessDto>? SafeTop()
+    /// fresh: false is the regular once-a-minute list, which may reuse a graphics share from a few minutes ago; a closer look reads it now.
+    List<ProcessDto>? SafeTop(bool fresh)
     {
-        try { return Processes.Top(5); } catch { return null; }
+        try { return Processes.Top(5, fresh); } catch { return null; }
     }
 
     /// The line that says a closer look started, and why.
@@ -495,11 +510,12 @@ static class Efficiency
 {
     public static void Apply()
     {
-        try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+        using var me = Process.GetCurrentProcess();
+        try { me.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
         try
         {
             var state = new Native.PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = 1, StateMask = 1 };
-            Native.SetProcessInformation(Process.GetCurrentProcess().Handle, Native.ProcessPowerThrottling, ref state, Marshal.SizeOf<Native.PROCESS_POWER_THROTTLING_STATE>());
+            Native.SetProcessInformation(me.Handle, Native.ProcessPowerThrottling, ref state, Marshal.SizeOf<Native.PROCESS_POWER_THROTTLING_STATE>());
         }
         catch { }
     }

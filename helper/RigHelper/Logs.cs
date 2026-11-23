@@ -95,19 +95,31 @@ public static class EventLogs
 public static class Processes
 {
     public const int MaxTop = 15;
+    /// Windows' graphics counters cost up to a second and a few megabytes to read, so the background recorder's
+    /// once-a-minute list reuses each app's graphics share for this long. A closer look, a recording and the Logs
+    /// screen read them fresh every time.
+    public static readonly TimeSpan GpuEvery = TimeSpan.FromMinutes(5);
     static readonly HashSet<string> NoExe = new(StringComparer.OrdinalIgnoreCase) { "System", "Registry", "Memory Compression", "Secure System" };
     static readonly object gate = new();
     static Dictionary<int, TimeSpan>? lastCpu;
     static long lastAt;
     static Dictionary<string, CounterSample>? lastGpu;
+    static Dictionary<int, double>? gpuShare;
+    // When gpuShare was worked out; 0 until there's a share to reuse.
+    static long gpuShareAt;
 
-    record Seen(int Pid, string Name, TimeSpan Cpu, long Bytes);
+    /// How many times the graphics counters have been read, for the self-test.
+    public static int GpuReads { get; private set; }
+
+    record struct Seen(int Pid, string Name, TimeSpan Cpu, long Bytes);
 
     static List<Seen> Sample()
     {
-        var list = new List<Seen>();
-        foreach (var p in Process.GetProcesses())
+        var all = Process.GetProcesses();
+        var list = new List<Seen>(all.Length);
+        foreach (var p in all)
         {
+            // Each one holds a handle once asked for its processor time; let it go straight away.
             using (p)
             {
                 if (p.Id == 0) continue;
@@ -118,29 +130,52 @@ public static class Processes
         return list;
     }
 
+    static Dictionary<int, TimeSpan> CpuByPid(List<Seen> list)
+    {
+        var d = new Dictionary<int, TimeSpan>(list.Count);
+        foreach (var s in list) d[s.Pid] = s.Cpu;
+        return d;
+    }
+
     /// The busiest apps since the last call (or over a short pause on the first), grouped by name:
-    /// the top few by processor share plus the biggest by memory.
-    public static List<ProcessDto> Top(int top)
+    /// the top few by processor share plus the biggest by memory. fresh: false lets the graphics share be
+    /// up to GpuEvery old, for the background recorder's regular list.
+    public static List<ProcessDto> Top(int top, bool fresh = true)
     {
         top = Math.Clamp(top, 1, MaxTop);
         lock (gate)
         {
             if (lastCpu == null || Stopwatch.GetElapsedTime(lastAt) > TimeSpan.FromMinutes(2))
             {
-                lastCpu = Sample().ToDictionary(s => s.Pid, s => s.Cpu);
+                lastCpu = CpuByPid(Sample());
                 lastAt = Stopwatch.GetTimestamp();
-                Gpu();
+                // A share needs two readings of the graphics counters; take the first now unless one can be reused.
+                if (fresh || !GpuReusable()) Gpu();
                 Thread.Sleep(400);
             }
             var now = Sample();
             double elapsed = Stopwatch.GetElapsedTime(lastAt).TotalMilliseconds;
-            var gpu = Gpu();
+            var gpu = GpuShare(fresh);
             var rows = Rank(now.Select(s => (s.Name, s.Bytes, Ms: lastCpu.TryGetValue(s.Pid, out var before) ? (s.Cpu - before).TotalMilliseconds : 0, Gpu: gpu != null && gpu.TryGetValue(s.Pid, out double g) ? g : (double?)null)),
                 elapsed, Environment.ProcessorCount, top);
-            lastCpu = now.ToDictionary(s => s.Pid, s => s.Cpu);
+            lastCpu = CpuByPid(now);
             lastAt = Stopwatch.GetTimestamp();
             return rows;
         }
+    }
+
+    static bool GpuReusable() => gpuShareAt != 0 && Stopwatch.GetElapsedTime(gpuShareAt) < GpuEvery;
+
+    /// Each app's graphics share: read now, or the last one while it's recent enough and fresh isn't asked for.
+    static Dictionary<int, double>? GpuShare(bool fresh)
+    {
+        if (!fresh && GpuReusable()) return gpuShare;
+        bool hadFirst = lastGpu != null;
+        gpuShare = Gpu();
+        // A first reading gives no share yet, so it isn't kept; nor is one that failed after a good one.
+        // When the counters can't be read at all (no first reading either), that's kept, so they aren't retried every call.
+        if (gpuShare != null || !hadFirst && lastGpu == null) gpuShareAt = Stopwatch.GetTimestamp();
+        return gpuShare;
     }
 
     /// Pure part of Top: turns per-process processor time over a stretch into shares of the whole processor.
@@ -157,24 +192,34 @@ public static class Processes
         return byCpu.Union(byMem).OrderByDescending(p => p.Cpu).ThenByDescending(p => p.MemMb).Take(MaxTop).ToList();
     }
 
-    /// Share of the graphics card's 3D engine per process id, from Windows' own counters. Null when they aren't there.
+    /// The process id in a GPU Engine instance name ("pid_1234_luid_..._engtype_3D"), or -1.
+    public static int GpuPid(string instance)
+    {
+        if (!instance.StartsWith("pid_", StringComparison.Ordinal)) return -1;
+        var rest = instance.AsSpan(4);
+        int end = rest.IndexOf('_');
+        return end > 0 && int.TryParse(rest[..end], System.Globalization.NumberStyles.None, null, out int pid) ? pid : -1;
+    }
+
+    /// Share of the graphics card's 3D engine per process id, from Windows' own counters, since the last reading.
+    /// Null on the first reading and when the counters aren't there.
     static Dictionary<int, double>? Gpu()
     {
         try
         {
+            GpuReads++;
             var data = new PerformanceCounterCategory("GPU Engine").ReadCategory();
             if (data["Utilization Percentage"] is not InstanceDataCollection util) return null;
-            var now = new Dictionary<string, CounterSample>();
+            var now = new Dictionary<string, CounterSample>(lastGpu?.Count ?? 64);
             var use = new Dictionary<int, double>();
             foreach (InstanceData inst in util.Values)
             {
                 if (!inst.InstanceName.EndsWith("engtype_3D", StringComparison.OrdinalIgnoreCase)) continue;
                 now[inst.InstanceName] = inst.Sample;
-                var m = Regex.Match(inst.InstanceName, @"^pid_(\d+)_");
-                if (!m.Success || lastGpu == null || !lastGpu.TryGetValue(inst.InstanceName, out var before)) continue;
+                int pid = GpuPid(inst.InstanceName);
+                if (pid < 0 || lastGpu == null || !lastGpu.TryGetValue(inst.InstanceName, out var before)) continue;
                 double v = CounterSample.Calculate(before, inst.Sample);
                 if (double.IsNaN(v) || v <= 0) continue;
-                int pid = int.Parse(m.Groups[1].Value);
                 use[pid] = use.GetValueOrDefault(pid) + v;
             }
             bool first = lastGpu == null;

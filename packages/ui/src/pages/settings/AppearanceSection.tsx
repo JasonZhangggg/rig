@@ -3,7 +3,7 @@ import {
   brass, chromeOf, chromes, colorsOf, cornerSets, densities, FILL_INK, fillProblems, isDefaultAppearance, isHex, lightenForInk, motions, pageTones, palettes,
   textSizes, type Appearance, type DataColors,
 } from "../../appearance";
-import { resetAppearance, setAppearance, useApp, useAppearance } from "../../state";
+import { resetAppearance, setAppearance, useActions, useAppearance } from "../../state";
 import { MoreToggle, SettingRow } from "./parts";
 import { onFocusSection, peekFocusSection } from "./focus";
 
@@ -15,7 +15,7 @@ const roles: { key: keyof DataColors; name: string; about: string }[] = [
 
 export function AppearanceSection() {
   const look = useAppearance();
-  const { toast } = useApp();
+  const { toast } = useActions();
   const [more, setMore] = useState(() => peekFocusSection() === "appearance");
   useEffect(() => onFocusSection((id) => { if (id === "appearance") setMore(true); }), []);
   const named = <T extends { id: string; name: string }>(list: readonly T[], id: string) => list.find((x) => x.id === id)?.name ?? "";

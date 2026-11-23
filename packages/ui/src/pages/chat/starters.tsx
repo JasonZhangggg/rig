@@ -1,6 +1,6 @@
-import type { ChatMessage, Issue, PC } from "@rig/core";
+import type { ChatMessage, Issue, StillPC } from "@rig/core";
 import { Icon } from "../../components/common";
-import { useApp, useTempText } from "../../state";
+import { useActions, useData, useStillPC, useTempText } from "../../state";
 import { useManuals } from "../../manuals/useManuals";
 import { partIcon } from "../shared";
 
@@ -10,7 +10,7 @@ const askPath = "M4 5h12v8H9l-4 3v-3H4z";
 
 const partOf = (i: Issue) => i.part ?? (i.id.startsWith("vol-") ? "ssd" : undefined);
 
-function generic(pc: PC): Starter[] {
+function generic(pc: StillPC): Starter[] {
   return [
     { q: `Why is ${pc.name} loud?`, why: "Noise usually comes from fans working harder than they need to.", part: "fans" },
     { q: "Why is startup slow?", why: "Apps that start with Windows add up over time.", part: "ssd", topic: "startup" },
@@ -21,7 +21,7 @@ function generic(pc: PC): Starter[] {
 
 /** Questions to start with: open issues that come with a question first, then everyday ones. */
 export function useStarters(): Starter[] {
-  const { pc } = useApp();
+  const pc = useStillPC();
   const inUnit = useTempText();
   const fromIssues = (pc.issues ?? []).filter((i) => i.ask).slice(0, 2)
     .map((i): Starter => ({ q: inUnit(i.ask!), why: inUnit(i.title), part: partOf(i), topic: i.id }));
@@ -47,7 +47,8 @@ export function StarterIcon({ part }: { part?: string }) {
 }
 
 export function StarterGrid({ starters }: { starters: Starter[] }) {
-  const { ask, data } = useApp();
+  const { ask } = useActions();
+  const data = useData("answering");
   return (
     <ul className="starters" aria-label="Questions to start with">
       {starters.slice(0, 4).map((s) => (
@@ -63,7 +64,7 @@ export function StarterGrid({ starters }: { starters: Starter[] }) {
 }
 
 export function FollowUps({ starters }: { starters: Starter[] }) {
-  const { ask } = useApp();
+  const { ask } = useActions();
   if (!starters.length) return null;
   return (
     <div className="followups" aria-label="Ask next">

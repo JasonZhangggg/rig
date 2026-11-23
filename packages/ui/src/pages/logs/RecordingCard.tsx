@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { RecordingInfo, RecordingRequest } from "@rig/core";
-import { useApp, useTempText } from "../../state";
+import { useActions, useData, useStillPC, useTempText } from "../../state";
 import { clock, minutes, stateWord } from "./words";
 
 /** The clock, ticking once a second while something on screen counts down. */
@@ -33,7 +33,9 @@ export const StateChip = ({ state }: { state: RecordingInfo["state"] }) =>
 
 /** A recording inside a chat answer. It follows the recording live: waiting, running, then what it found. */
 export function RecordingCard({ request }: { request: RecordingRequest }) {
-  const { data, pc, ask, stopRecording, openRecording } = useApp();
+  const { ask, stopRecording, openRecording } = useActions();
+  const pc = useStillPC();
+  const data = useData("answering", "recordings");
   const inUnit = useTempText();
   const [stopping, setStopping] = useState(false);
   const live = data.recordings.find((r) => r.id === request.id);

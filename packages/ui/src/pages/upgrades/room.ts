@@ -1,4 +1,4 @@
-import type { PC } from "@rig/core";
+import type { StillPC } from "@rig/core";
 
 /** How much room a part has left, read from what Rig found in the PC. */
 export interface Room {
@@ -13,10 +13,10 @@ export interface Room {
   meter?: { kind: "slots"; used: number; total: number } | { kind: "share"; value: number; of: number };
 }
 
-const spec = (pc: PC, part: string, name: string) => pc.parts?.[part]?.specs.find(([k]) => k === name)?.[1];
+const spec = (pc: StillPC, part: string, name: string) => pc.parts?.[part]?.specs.find(([k]) => k === name)?.[1];
 const size = (gb: number) => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${Math.round(gb)} GB`);
 
-export function roomIn(pc: PC): Room[] {
+export function roomIn(pc: StillPC): Room[] {
   const out: Room[] = [];
 
   const ram = pc.parts?.ram;

@@ -1,7 +1,7 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { eventTitle, type PCEvent } from "@rig/core";
 import { DayLabel, Row, Rows } from "../../components/Rows";
-import { useApp } from "../../state";
+import { useActions, useData, useStillPC } from "../../state";
 import { serious, type Highlight } from "./summary";
 import { clock, clockSec, dayName, kindWord, shortDay } from "./words";
 
@@ -42,7 +42,9 @@ const lastWhen = (t: number) => { const d = dayName(t); return d === "Today" || 
 
 /** One Windows event: when and what, with what Windows wrote behind Details and a button that asks about it. */
 export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {
-  const { pc, ask, data } = useApp();
+  const { ask } = useActions();
+  const pc = useStillPC();
+  const data = useData("answering");
   const title = eventTitle(e);
   const question = `Windows logged "${title}" on ${pc.name} on ${shortDay(e.t)} at ${clock(e.t)} (${e.source}, event ${e.id}). What does it mean, and should I do anything?`;
   return (

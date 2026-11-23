@@ -11,14 +11,16 @@
 //! so after the first read the app asks only for what was added since.
 
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use serde_json::{json, Value};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-/// One read returns at most this many lines, so the app never waits long on a big log.
-pub const MAX_RECORDS: usize = 20_000;
-pub const MAX_BYTES: u64 = 16 << 20;
+/// One read returns at most this many lines, so the app never waits long on a big log, and never holds much of it at once.
+/// The first read of a week takes several pages; the app thins each finished day as it goes.
+pub const MAX_RECORDS: usize = 5_000;
+pub const MAX_BYTES: u64 = 2 << 20;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Cursor {
@@ -28,7 +30,8 @@ pub struct Cursor {
 
 #[derive(Debug, Serialize)]
 pub struct Page {
-    pub records: Vec<Value>,
+    /// Each line as it was written, checked to be a JSON object but not decoded: the app decodes it once, on its side.
+    pub records: Vec<Box<RawValue>>,
     /// Where the next read carries on. None when there's no log yet.
     pub cursor: Option<Cursor>,
     /// True when it stopped early; read again with the cursor for the rest.
@@ -114,7 +117,7 @@ pub fn read(folder: &Path, from: i64, cursor: Option<Cursor>, max_records: usize
         while let Some(nl) = buf[used..].iter().position(|b| *b == b'\n') {
             let line = &buf[used..used + nl];
             used += nl + 1;
-            if let Ok(v @ Value::Object(_)) = serde_json::from_slice::<Value>(line) {
+            if let Some(v) = object_line(line) {
                 page.records.push(v);
             }
             if page.records.len() >= max_records {
@@ -130,6 +133,15 @@ pub fn read(folder: &Path, from: i64, cursor: Option<Cursor>, max_records: usize
         }
     }
     page
+}
+
+/// A line that holds one JSON object, kept as written.
+fn object_line(line: &[u8]) -> Option<Box<RawValue>> {
+    let text = std::str::from_utf8(line).ok()?.trim();
+    if !text.starts_with('{') {
+        return None;
+    }
+    RawValue::from_string(text.to_owned()).ok()
 }
 
 /// What Settings shows: whether the service is there and running, when it last wrote, and how much the log takes.
@@ -346,6 +358,10 @@ mod tests {
 
     const NOV17: i64 = 1_794_916_800_000; // 2026-11-17T12:00:00Z
 
+    fn t_of(line: &str) -> i64 {
+        serde_json::from_str::<Value>(line).unwrap()["t"].as_i64().unwrap()
+    }
+
     #[test]
     fn names_days_in_utc() {
         assert_eq!(day_file(NOV17), "2026-11-17.jsonl");
@@ -364,8 +380,11 @@ mod tests {
 
         // From Nov 17: the day before is left out, junk and half-written lines are skipped.
         let p = read(&d.join("logs"), NOV17, None, 100, MAX_BYTES);
-        let ts: Vec<i64> = p.records.iter().map(|r| r["t"].as_i64().unwrap()).collect();
+        let ts: Vec<i64> = p.records.iter().map(|r| t_of(r.get())).collect();
         assert_eq!(ts, vec![2, 3]);
+        // The lines go to the app as written: objects, not strings, and not decoded here.
+        let sent = serde_json::to_string(&p).unwrap();
+        assert!(sent.starts_with(r#"{"records":[{"k":"start","t":2},{"k":"s","t":3}],"#), "{sent}");
         assert!(!p.more);
         let c = p.cursor.clone().unwrap();
         assert_eq!(c.file, "2026-11-17.jsonl");
@@ -379,7 +398,7 @@ mod tests {
         append(&d, "2026-11-17.jsonl", "4}\n");
         append(&d, "2026-11-18.jsonl", "{\"k\":\"s\",\"t\":5}\n");
         let next = read(&d.join("logs"), NOV17, Some(c), 100, MAX_BYTES);
-        let ts: Vec<i64> = next.records.iter().map(|r| r["t"].as_i64().unwrap()).collect();
+        let ts: Vec<i64> = next.records.iter().map(|r| t_of(r.get())).collect();
         assert_eq!(ts, vec![4, 5]);
         assert_eq!(next.cursor.unwrap().file, "2026-11-18.jsonl");
         let _ = std::fs::remove_dir_all(&d);

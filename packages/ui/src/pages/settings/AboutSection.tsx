@@ -1,9 +1,9 @@
-import { useApp } from "../../state";
+import { useActions } from "../../state";
 import { rigVersion } from "../../version";
 import { SettingRow } from "./parts";
 
 export function AboutSection() {
-  const { host } = useApp();
+  const { host } = useActions();
   return (
     <>
       <SettingRow title="Version" body={`Rig ${rigVersion}`} />

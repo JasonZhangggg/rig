@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { reducedMotion } from "../../appearance";
-import { useApp } from "../../state";
+import { useActions } from "../../state";
 import { FoldedSection, SettingsSection, onFocusSection, peekFocusSection, sectionAnchor, settingsSections, takeFocusSection } from "./sections";
 
 export function Settings() {
-  const ctx = useApp();
+  const ctx = useActions();
   const shown = settingsSections.filter((s) => s.show?.(ctx) ?? true);
   const main = shown.filter((s) => !s.folded), folded = shown.filter((s) => s.folded);
   const [open, setOpen] = useState<string[]>(() => { const id = peekFocusSection(); return id ? [id] : []; });

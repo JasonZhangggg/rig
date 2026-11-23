@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
 import { DiffTable } from "../components/common";
-import { useApp, useTempText } from "../state";
+import { useActions, useData, useStillPC, useTempText } from "../state";
 import { RecordingCard } from "./logs/RecordingCard";
 import { ChatBar } from "./chat/ChatBar";
 import { ProbeNote, ScriptCard } from "./chat/ScriptCard";
@@ -10,7 +10,9 @@ import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
 import { openManualLink } from "../manuals/viewerState";
 
 export function Chat() {
-  const { data, pc, client, clearChat } = useApp();
+  const { client, clearChat } = useActions();
+  const pc = useStillPC();
+  const data = useData("answering", "chat");
   const starters = useStarters();
   const box = useRef<HTMLTextAreaElement>(null);
   const empty = data.chat.length === 0;
@@ -95,7 +97,7 @@ function Message({ m }: { m: ChatMessage }) {
 }
 
 function ProposalCard({ p }: { p: Proposal }) {
-  const { review, declineProposal } = useApp();
+  const { review, declineProposal } = useActions();
   const [reading, setReading] = useState(false);
   const n = p.calls.length;
   return (

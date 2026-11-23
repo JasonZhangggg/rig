@@ -1,11 +1,13 @@
 import { forwardRef, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { useApp } from "../../state";
+import { useActions, useData, useStillPC } from "../../state";
 
 const MAX = 220;
 
 /** The message box. Enter sends, Shift and Enter starts a new line. */
 export const Composer = forwardRef<HTMLTextAreaElement, { big?: boolean }>(function Composer({ big }, outer) {
-  const { ask, data, pc } = useApp();
+  const { ask } = useActions();
+  const pc = useStillPC();
+  const data = useData("answering");
   const [q, setQ] = useState("");
   const own = useRef<HTMLTextAreaElement | null>(null);
   const answering = data.answering;

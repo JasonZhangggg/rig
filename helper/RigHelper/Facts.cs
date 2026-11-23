@@ -30,8 +30,11 @@ public static class Facts
     }
 
     /// Task Manager's on/off flag: first byte even means on. A missing value means on.
-    static bool IsOn(RegistryKey hive, string approvedKey, string name) =>
-        hive.OpenSubKey(Approved + approvedKey)?.GetValue(name) is not byte[] b || b.Length == 0 || (b[0] & 1) == 0;
+    static bool IsOn(RegistryKey hive, string approvedKey, string name)
+    {
+        using var k = hive.OpenSubKey(Approved + approvedKey);
+        return k?.GetValue(name) is not byte[] b || b.Length == 0 || (b[0] & 1) == 0;
+    }
 
     public static List<StartupEntry> StartupEntries()
     {
@@ -66,10 +69,17 @@ public static class Facts
     }
 
     public const string GameBar = @"Software\Microsoft\GameBar";
-    public static bool GameMode() => Registry.CurrentUser.OpenSubKey(GameBar)?.GetValue("AutoGameModeEnabled") is not int v || v != 0;
+    public static bool GameMode() => UserValue(GameBar, "AutoGameModeEnabled") is not int v || v != 0;
+
+    /// Reads one value and closes the key again, so reading settings every half minute leaves no open keys behind.
+    static object? UserValue(string key, string name)
+    {
+        using var k = Registry.CurrentUser.OpenSubKey(key);
+        return k?.GetValue(name);
+    }
 
     public const string Effects = @"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects";
-    public static string VisualEffects() => (Registry.CurrentUser.OpenSubKey(Effects)?.GetValue("VisualFXSetting") as int?) switch
+    public static string VisualEffects() => (UserValue(Effects, "VisualFXSetting") as int?) switch
     {
         1 => "appearance",
         2 => "performance",
