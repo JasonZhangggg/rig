@@ -500,6 +500,8 @@ export class LocalClient implements RigClient {
         for (let i = 0; i < BACKGROUND_PAGES; i++) {
           const page = await rec.read(from, this.bgCursor);
           this.bg.ingest(page.records);
+          // A week's first read comes in many pages: finished days are thinned as they arrive, so they're never all held in full.
+          this.bg.settle(now);
           added += page.records.length;
           this.bgCursor = page.cursor ?? this.bgCursor;
           if (!page.more) break;
