@@ -96,6 +96,13 @@
   .part-list button:hover, .detail-back:hover { background: var(--surface-2); color: var(--text); }
 }
 
+/* On a wide window the 3D view is as tall as the space left under the title (--fit-h, worked out in PCPage),
+   so the page fits the window and only scrolls when the side column really is longer. */
+@media (min-width: 1101px) {
+  .fp-main:has(.pc-view) { padding-bottom: 26px; }
+  .pc-view[style*="--fit-h"] .stage-card { height: var(--fit-h); }
+}
+
 @media (max-width: 1100px) {
   .pc-view, .pc-page.is-part .pc-view { grid-template-columns: 1fr; }
   .pc-view { --stage-h: clamp(360px, 60dvh, 620px); gap: 28px; }

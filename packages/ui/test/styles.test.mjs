@@ -24,4 +24,25 @@ describe("stylesheet", () => {
     }
     expect([...unused]).toEqual([]);
   });
+
+  // A row that scrolls sideways but is a pixel taller than itself (a tab's underline pulled down over the line)
+  // gets a vertical scroll bar too, and Windows draws its arrows beside the tabs.
+  it("lets tab rows scroll only sideways, with nothing hanging below them", () => {
+    const rules = new Map();
+    for (const file of cssFiles(stylesDir)) {
+      postcss.parse(readFileSync(file, "utf8")).walkRules((rule) => {
+        const decls = rules.get(rule.selector) ?? {};
+        rule.walkDecls((d) => { decls[d.prop] = d.value; });
+        rules.set(rule.selector, decls);
+      });
+    }
+    for (const [row, item] of [[".tabs", ".tabs button"], [".lg-views", ".lg-views a"]]) {
+      const r = rules.get(row);
+      expect(r, row).toBeTruthy();
+      const y = r["overflow-y"] ?? r.overflow?.split(/\s+/)[1] ?? r.overflow;
+      expect(y, `${row} overflow-y`).toMatch(/hidden|clip/);
+      expect(rules.get(item)?.["margin-bottom"] ?? "0", `${item} margin-bottom`).not.toMatch(/^-/);
+    }
+  });
 });
+

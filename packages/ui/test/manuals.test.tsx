@@ -72,15 +72,31 @@ describe("Manuals", () => {
     expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
   });
 
-  it("shows Atlas's board manual as read, with its diagram pages, and lets it be replaced or removed", async () => {
+  it("shows Atlas's board manual as read, with one Open manual button and Replace and Remove under the dots", async () => {
     await partTab("Motherboard");
     const board = await card(/^Motherboard:/);
     expect(board.getByText("12 pages")).toBeTruthy();
-    const chips = within(board.getByRole("list", { name: /Diagrams in the/ })).getAllByRole("button").map((b) => b.textContent);
-    expect(chips).toEqual(expect.arrayContaining(["Board layout · p. 4", "Front panel header · p. 9"]));
-    expect(board.getByRole("button", { name: "Replace" })).toBeTruthy();
-    fireEvent.click(board.getByRole("button", { name: "Remove" }));
+    expect(board.getAllByRole("button", { name: /^Open/ }).map((b) => b.textContent)).toEqual(["Open manual"]);
+    expect(board.queryByRole("button", { name: "Replace" })).toBeNull();
+    expect(board.queryByRole("button", { name: "Remove" })).toBeNull();
+    fireEvent.click(board.getByRole("button", { name: /^More for the/ }));
+    const menu = within(board.getByRole("menu"));
+    expect(menu.getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Replace with another PDF", "Remove this manual"]);
+    fireEvent.click(menu.getByRole("menuitem", { name: "Remove this manual" }));
+    expect(board.queryByRole("menu")).toBeNull();
     expect(board.getByText(/Its pages leave search and the chat/)).toBeTruthy();
+  });
+
+  it("lists four sections of the board manual to jump to, and every section grouped a click away", async () => {
+    await partTab("Motherboard");
+    const board = await card(/^Motherboard:/);
+    const names = (list: HTMLElement) => within(list).getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    expect(names(board.getByRole("list", { name: /^Sections of the/ }))).toEqual(["Board layout, page 4", "Front panel header, page 9", "Fan headers, page 10", "Memory slot order, page 7"]);
+    fireEvent.click(board.getByRole("button", { name: "All 11 sections" }));
+    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in", "Fitting parts", "About the board"]);
+    expect(board.getAllByRole("list").flatMap(names)).toHaveLength(11);
+    fireEvent.click(board.getByRole("button", { name: "Show fewer" }));
+    expect(board.getByRole("list", { name: /^Sections of the/ })).toBeTruthy();
   });
 
   it("asks for the graphics card's exact model, and offers a PDF when the maker has none", async () => {
@@ -103,7 +119,7 @@ describe("Manuals", () => {
     expect(laptop.getByText("Rig hasn't looked for this one yet.")).toBeTruthy();
     fireEvent.click(laptop.getByRole("button", { name: "Find manual" }));
     expect(await laptop.findByText("6 pages", {}, { timeout: 3000 })).toBeTruthy();
-    expect(laptop.getByRole("button", { name: /Inside view · p\. \d/ })).toBeTruthy();
+    expect(laptop.getByRole("button", { name: /^Inside view, page \d/ })).toBeTruthy();
   });
 
   it("asks which case it is before looking, since Windows can't see the case", async () => {
@@ -157,7 +173,7 @@ describe("Manuals", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Manual" }));
     const part = await card(/^Motherboard:/);
     expect(part.getByText("12 pages")).toBeTruthy();
-    fireEvent.click(part.getByRole("button", { name: "Memory slot order · p. 7" }));
+    fireEvent.click(part.getByRole("button", { name: "Memory slot order, page 7" }));
     const v = await viewer();
     expect((v.getByLabelText("Page number") as HTMLInputElement).value).toBe("7");
   });
@@ -167,7 +183,7 @@ describe("Manuals", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Memory/ }));
     fireEvent.click(await screen.findByRole("tab", { name: "Manual" }));
     expect(await screen.findByText(/^In the /)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Memory slot order · p. 7" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Memory slot order, page 7" })).toBeTruthy();
   });
 
   it("opens a manual source from a chat answer at its page", async () => {

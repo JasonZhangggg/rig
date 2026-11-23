@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ManualKind } from "@rig/core";
 import { useApp } from "../state";
 import { AddManual } from "./AddManual";
-import { DiagramChips, ManualCard } from "./ManualCard";
+import { ManualCard, ManualJumps } from "./ManualCard";
 import { useManuals } from "./useManuals";
 import { helpsWith, manualRows } from "./words";
 
@@ -30,12 +30,12 @@ export function PartManual({ id }: { id: string }) {
     : null;
   return (
     <div className="mn-part">
-      {row && <ManualCard row={row} store={state.store} compact />}
+      {row && <ManualCard row={row} store={state.store} compact prefer={helpsWith[id]} />}
       {add}
       {related && (
         <div className="mn-related">
           <span className="label">In the {related.title}</span>
-          <DiagramChips manual={related} only={helpsWith[id]} />
+          <ManualJumps manual={related} only={helpsWith[id]} prefer={helpsWith[id]} heading={null} />
         </div>
       )}
       {kind && !row && !add && <button type="button" className="linkish" onClick={() => setAdding(true)}>Add this {name}'s own manual</button>}
