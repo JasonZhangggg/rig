@@ -87,12 +87,13 @@ function Splash({ text, detail, retry }: { text: string; detail?: string; retry?
 }
 
 function Root() {
-  const { ui, pc, set } = useApp();
+  const { ui, pc, set, go } = useApp();
   const { scene } = getStage();
   // The board's layout is read from its manual once Rig knows the board, without the person asking.
   useBoardLayout();
 
-  useEffect(() => { getStage().onSelect = (id) => set({ selected: id, tab: "live" }); }, [set]);
+  // Picking a part in any 3D view opens its page, where it's shown alone.
+  useEffect(() => { getStage().onSelect = (id) => { set({ selected: id, tab: "live" }); if (id && ui.route !== "pc") go("pc"); }; }, [set, go, ui.route]);
 
   // Rebuild the 3D model only when its shape or colors change; otherwise just feed it new readings.
   const look = useAppearance();

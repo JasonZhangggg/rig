@@ -10,7 +10,7 @@ import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelPoint } from "./sceneLabels";
-import { isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
+import { fanHitArea, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
 
@@ -101,11 +101,7 @@ export function createScene(
   const layer = document.createElement("div");
   layer.className = "scene-labels";
   container.appendChild(layer);
-  // A soft frame around the part being pointed at or picked, so it's plain which shape a label means.
-  const focusBox = document.createElement("div");
-  focusBox.className = "part-box";
-  layer.appendChild(focusBox);
-  // Pointing at a label lights its part and frames it, as pointing at the part does.
+  // Pointing at a label lights its part, as pointing at the part does.
   const labels = createSceneLabels(layer, { onPick: (id) => select(id), onHover: (id) => hoverFromScene(id) });
 
   const scene = new THREE.Scene();
@@ -225,6 +221,8 @@ export function createScene(
     theme: null as SceneTheme | null,
     exploded: false, heat: false,
     selected: null as string | null, hovered: null as string | null,
+    /** The part shown alone: the picked one. Everything else is put away until it's let go. */
+    solo: null as string | null,
     explodeT: 0,
     entries: [] as Entry[],
     rotors: [] as { rotor: THREE.Object3D; partId: string }[],
@@ -347,6 +345,7 @@ export function createScene(
     }
     g.add(rotor);
     g.userData.rotor = rotor;
+    g.add(fanHitArea(s * 0.44));
     return g;
   }
 
@@ -671,7 +670,7 @@ export function createScene(
       r.geometry?.dispose();
       for (const m of ([] as THREE.Material[]).concat(r.material ?? [])) {
         for (const v of Object.values(m)) if (v instanceof THREE.Texture) textures.add(v);
-        m.dispose();
+        if (!m.userData.shared) m.dispose();
       }
     });
     for (const t of textures) if (!keep.has(t) && t !== scene.environment && !isSharedTexture(t)) t.dispose();
@@ -754,7 +753,7 @@ export function createScene(
   const fitCam = new THREE.PerspectiveCamera();
   let fit: { t: number; r: number; b: number; l: number; x: number } | null = null;
   let fitD = 0;
-  let stageW = 0, stageH = 0;
+  let stageW = 0, stageH = 0, foot = 0;
   const SWAY = 0.32;
 
   function readFit() {
@@ -762,12 +761,15 @@ export function createScene(
     const raw = cs.getPropertyValue("--fit-inset").trim();
     // A page can ask for only the picked part's label (--labels: picked), as Home does. Otherwise the callout
     // columns, or a phone's list, get room beside the PC.
-    labels.setPickedOnly(cs.getPropertyValue("--labels").trim() === "picked");
+    // A part shown alone gets no labels at all: the page's title already names it.
+    labels.setPickedOnly(cs.getPropertyValue("--labels").trim() === "picked" || !!state.solo);
+    // The page's buttons along the stage's bottom edge (--stage-foot, in px) are kept clear too.
+    foot = parseFloat(cs.getPropertyValue("--stage-foot")) || 0;
     const room = labels.room(container.clientWidth);
     if (!raw && !room) { fit = null; return; }
     const [t, r = t, b = t, l = r] = raw ? raw.split(/\s+/).map(parseFloat) : [36, 36, 36, 36];
     const x = parseFloat(cs.getPropertyValue("--fit-x"));
-    fit = { t: t + (room?.t ?? 0), r: r + (room?.r ?? 0), b: b + (room?.b ?? 0), l: l + (room?.l ?? 0), x: Number.isFinite(x) ? x : 0.5 };
+    fit = { t: t + (room?.t ?? 0), r: r + (room?.r ?? 0), b: b + (room?.b ?? 0) + (room ? foot : 0), l: l + (room?.l ?? 0), x: Number.isFinite(x) ? x : 0.5 };
   }
 
   // The PC's outline on screen from a camera dist away along dir, over the whole of the slow sway.
@@ -793,7 +795,7 @@ export function createScene(
     if (!fit || !framing || !fitPts.length || !stageW) {
       fitD = 0;
       camera.clearViewOffset();
-      if (wasFit && framing) { camAnim = null; camera.position.copy(wantPos(state.exploded)); }
+      if (wasFit && framing && !state.solo) { camAnim = null; camera.position.copy(wantPos(state.exploded)); }
       return;
     }
     const w = stageW, h = stageH;
@@ -809,6 +811,8 @@ export function createScene(
     fitD = dist;
     const ox = fit.l + (bw - (o.x1 - o.x0)) * fit.x - o.x0, oy = fit.t + (bh - (o.y1 - o.y0)) / 2 - o.y0;
     camera.setViewOffset(w, h, -ox, -oy, w, h);
+    // A part shown alone keeps its own framing (focusOn).
+    if (state.solo) return;
     if (camAnim) camAnim.to = wantPos(state.exploded);
     else {
       const k = state.exploded ? explodedRatio() : 1;
@@ -841,8 +845,11 @@ export function createScene(
     for (const e of mine) _box.union(_part.setFromObject(e.obj));
     _box.getBoundingSphere(_sphere);
     const dir = camera.position.clone().sub(controls.target).normalize();
-    const fit = Math.max(_sphere.radius, 0.45) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 1.6;
-    const dist = Math.min(fit, camera.position.distanceTo(controls.target));
+    // Alone, the part fills the stage; the camera may come as close as it needs for a small one.
+    const alone = state.solo === id;
+    controls.minDistance = alone ? 1 : 4;
+    const fit = Math.max(_sphere.radius, 0.45) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * (alone ? 1.3 : 1.6);
+    const dist = alone ? fit : Math.min(fit, camera.position.distanceTo(controls.target));
     camAnim = { from: camera.position.clone(), to: _sphere.center.clone().addScaledVector(dir, dist), t: 0, look: { from: controls.target.clone(), to: _sphere.center.clone() } };
     wake();
   }
@@ -870,11 +877,12 @@ export function createScene(
             m.emissiveIntensity = 0.85;
           }
         }
+        // The part pointed at, or picked, takes the highlight color. A part shown alone needs none.
         const isSel = state.selected === e.partId;
         const isHov = state.hovered === e.partId;
-        if ((isSel || isHov) && !m.userData.glow) {
+        if ((isSel || isHov) && !state.solo && !m.userData.glow) {
           m.emissive.set(theme().highlight);
-          m.emissiveIntensity = isSel ? 0.5 : 0.4;
+          m.emissiveIntensity = isSel ? 0.6 : 0.5;
         }
         // Case panels go see-through in heat view so internals show
         let op = m.userData.baseOpacity;
@@ -892,8 +900,13 @@ export function createScene(
     for (const e of state.entries) {
       const { basePos, offset } = e.obj.userData;
       e.obj.position.copy(basePos).addScaledVector(offset, t);
-      if (e.fadeWhenExploded) e.obj.visible = t < 0.98;
+      e.obj.visible = (!state.solo || e.partId === state.solo) && !(e.fadeWhenExploded && t >= 0.98);
     }
+    // A part shown alone floats free of the turntable; the case or laptop body still stands on it.
+    const standing = !state.solo || state.solo === "case" || state.solo === "chassis";
+    pedestal.visible = !!theme().pedestal && standing;
+    blob.visible = contact.visible = !!theme().transparent && standing;
+    floor.visible = !theme().transparent && standing;
   }
   const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
 
@@ -901,45 +914,80 @@ export function createScene(
   const ray = new THREE.Raycaster();
   const ptr = new THREE.Vector2();
   let downAt: [number, number] | null = null;
-  function pick(ev: PointerEvent): string | null {
+  function pick(ev: { clientX: number; clientY: number }): string | null {
     const r = renderer.domElement.getBoundingClientRect();
     ptr.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
     ptr.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
     ray.setFromCamera(ptr, camera);
-    const hit = ray.intersectObjects(state.pickables, false)[0];
+    const hit = ray.intersectObjects(state.pickables, false).find((h) => shown(h.object));
     return hit ? (hit.object.userData.part as string) : null;
+  }
+  /** On screen: neither it nor anything holding it is put away. */
+  function shown(o: THREE.Object3D | null) {
+    for (; o; o = o.parent) if (!o.visible) return false;
+    return true;
   }
   renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
   renderer.domElement.addEventListener("pointerup", (e) => {
     if (!downAt) return;
     const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]);
     downAt = null;
-    if (moved > 5) return;
+    // A part shown alone stays until the page lets it go (its back button or Escape), so a stray click can't close it.
+    if (moved > 5 || state.solo) return;
     const id = pick(e);
     select(id);
   });
   renderer.domElement.addEventListener("pointermove", (e) => {
-    if (e.pointerType !== "mouse") return;
+    if (e.pointerType !== "mouse" || inMotion) return;
     const id = pick(e);
     renderer.domElement.style.cursor = id ? "pointer" : "grab";
     hoverFromScene(id);
   });
 
+  // Where the mouse is over the stage, so that once the view stops moving the part under it can be found again.
+  let pointer: { clientX: number; clientY: number } | null = null;
+  container.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") pointer = { clientX: e.clientX, clientY: e.clientY }; });
+  container.addEventListener("pointerleave", () => { pointer = null; });
+  // While the view moves (a part being framed, the PC pulled apart, a drag), parts and labels slide under a still
+  // mouse. Lighting each one it passes makes the highlight jump about, so pointing is ignored until the view stops.
+  let inMotion = false;
+
+  /** The view has stopped: light whatever is under the mouse now, a label or a part, or nothing. */
+  function settleHover() {
+    if (!pointer) return;
+    const el = document.elementFromPoint(pointer.clientX, pointer.clientY);
+    if (!el || !container.contains(el)) return hoverFromScene(null);
+    const label = el.closest<HTMLElement>("[data-part], [data-id]");
+    if (label && container.contains(label)) return hoverFromScene(label.dataset.part ?? label.dataset.id ?? null);
+    hoverFromScene(el === renderer.domElement ? pick(pointer) : null);
+  }
+
   /** The pointer is over a part, or its label, in the 3D view itself: light it and tell the page, so a list can light its row. */
   function hoverFromScene(id: string | null) {
-    if (id === state.hovered) return;
+    if (inMotion || id === state.hovered) return;
     state.hovered = id;
     applyHighlights();
     onHover?.(id);
     invalidate();
   }
 
+  /** Picking a part shows it alone, framed to fill the stage; letting go brings the whole PC back. */
   function select(id: string | null) {
     const was = state.selected;
     state.selected = id && parts()[id] ? id : null;
-    if (state.selected && state.selected !== was) focusOn(state.selected);
-    else if (!state.selected && was) frame(state.exploded, false);
+    state.solo = state.selected;
+    if (state.hovered && state.solo) { state.hovered = null; onHover?.(null); }
+    applyExplode(false);
+    if (state.selected && state.selected !== was) {
+      readFit(); applyFit();
+      focusOn(state.selected);
+    } else if (!state.selected && was) {
+      controls.minDistance = 4;
+      frame(state.exploded, false);
+      readFit(); applyFit();
+    }
     applyHighlights();
+    invalidate();
     onSelect?.(state.selected);
   }
 
@@ -947,12 +995,10 @@ export function createScene(
   let labelFrame = 0;
   const _a = new THREE.Vector3(), _l = new THREE.Vector3(), _s = new THREE.Vector3();
   const occluder = new THREE.Raycaster();
-  const px = (v: number) => Math.round(v * 10) / 10;
 
   function layoutLabels() {
-    if (stageW) placeFocusBox(stageW, stageH);
-    const all = Object.entries(state.labels);
-    if (!all.length || !stageW) return;
+    const all = state.solo ? [] : Object.entries(state.labels);
+    if (!stageW) return;
     const w = stageW, h = stageH;
     // Every few frames, anchors behind something solid get a hollow dot.
     const look = labelFrame++ % 6 === 0;
@@ -965,7 +1011,7 @@ export function createScene(
         occluder.far = dist - 0.05;
         const hit = occluder.intersectObjects(state.pickables, false).find((x) => {
           const m = (x.object as THREE.Mesh).material as THREE.Material;
-          return x.object.userData.part !== id && x.object.visible && m.opacity >= 0.5;
+          return x.object.userData.part !== id && m.visible && m.opacity >= 0.5 && shown(x.object);
         });
         l.hidden = !!hit;
       }
@@ -973,7 +1019,7 @@ export function createScene(
       const x = (_s.x + 1) / 2 * w, y = (1 - _s.y) / 2 * h;
       points.push({ id, x, y, behind: l.hidden, off: _s.z > 1 || x < -0.05 * w || x > 1.05 * w || y < -0.05 * h || y > 1.05 * h });
     }
-    labels.layout(points, { width: w, height: h, box: modelBox(w, h), hovered: state.hovered, selected: state.selected });
+    labels.layout(points, { width: w, height: h, box: modelBox(w, h), hovered: state.hovered, selected: state.selected, foot });
   }
   document.fonts?.ready.then(() => { refreshLabels(); invalidate(); });
 
@@ -993,32 +1039,8 @@ export function createScene(
     return { x0, y0, x1, y1 };
   }
 
-  // The part's outline on screen: its 3D bounds projected, padded a little, and drawn as a frame.
-  const _box = new THREE.Box3(), _part = new THREE.Box3(), _c = new THREE.Vector3();
-  let boxAt = "";
-  function placeFocusBox(w: number, h: number) {
-    const id = state.hovered ?? state.selected;
-    const mine = id && id !== "case" && id !== "chassis" ? state.entries.filter((e) => e.partId === id && e.obj.visible) : [];
-    if (!mine.length) { if (focusBox.style.opacity !== "0") focusBox.style.opacity = "0"; return; }
-    _box.makeEmpty();
-    for (const e of mine) _box.union(_part.setFromObject(e.obj));
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (let k = 0; k < 8; k++) {
-      _c.set(k & 1 ? _box.max.x : _box.min.x, k & 2 ? _box.max.y : _box.min.y, k & 4 ? _box.max.z : _box.min.z).project(camera);
-      const sx = (_c.x + 1) / 2 * w, sy = (1 - _c.y) / 2 * h;
-      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
-    }
-    const pad = 6;
-    x0 = Math.max(2, x0 - pad); y0 = Math.max(2, y0 - pad); x1 = Math.min(w - 2, x1 + pad); y1 = Math.min(h - 2, y1 + pad);
-    // It's laid out after every frame, so it asks for another only when it actually moved: asking every time kept the view drawing at full speed.
-    const tf = `translate(${px(x0)}px, ${px(y0)}px)`;
-    const bw = `${px(Math.max(0, x1 - x0))}px`, bh = `${px(Math.max(0, y1 - y0))}px`;
-    const at = `${tf} ${bw} ${bh}`;
-    if (at === boxAt && focusBox.style.opacity === "1") return;
-    boxAt = at;
-    Object.assign(focusBox.style, { transform: tf, width: bw, height: bh, opacity: "1" });
-    invalidate();
-  }
+  // A part's bounds, for framing it.
+  const _box = new THREE.Box3(), _part = new THREE.Box3();
 
   // ---------- loop ----------
   function resize() {
@@ -1034,6 +1056,8 @@ export function createScene(
     }
     readFit();
     applyFit();
+    // A part shown alone is framed again for the new size, as when the stage moves from Home onto the part's page.
+    if (state.solo) focusOn(state.solo);
     invalidate();
   }
   const ro = new ResizeObserver(resize);
@@ -1128,6 +1152,9 @@ export function createScene(
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
     const moved = controls.update();
+    const wasMoving = inMotion;
+    inMotion = !!camAnim || dragging || exploding || moved;
+    if (wasMoving && !inMotion) settleHover();
     const now = performance.now();
     if (moved || dragging || exploding || turning) settleUntil = now + SETTLE_MS;
     const settling = now < settleUntil;
@@ -1151,7 +1178,7 @@ export function createScene(
   return {
     stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls }),
     setPC(pc, t) {
-      state.pc = pc; state.theme = t; state.selected = null;
+      state.pc = pc; state.theme = t; state.selected = null; state.solo = null; controls.minDistance = 4;
       rebuild(); resize(); frame(state.exploded, true);
       built = true;
       invalidate();
@@ -1176,7 +1203,7 @@ export function createScene(
       applyHighlights();
       invalidate();
     },
-    resetView() { frame(state.exploded, false); invalidate(); },
+    resetView() { if (state.solo) focusOn(state.solo); else frame(state.exploded, false); invalidate(); },
     setZoomable(v) { controls.enableZoom = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; invalidate(); },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); invalidate(); },

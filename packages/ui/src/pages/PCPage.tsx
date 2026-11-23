@@ -64,7 +64,7 @@ export function PCPage() {
           <StageSlot id="pc-stage" />
           {customize && !picked && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
-            <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>
+            {!picked && <button className="btn sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>}
             <button className="btn sm" type="button" aria-pressed={ui.heat} onClick={() => set({ heat: !ui.heat })}>Heat</button>
             <button className="btn ghost sm" type="button" onClick={() => getStage().scene.resetView()}>Reset view</button>
           </div>

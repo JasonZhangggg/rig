@@ -80,7 +80,19 @@ describe("part labels", () => {
     expect(layer.querySelectorAll(".co-label:not(.is-off)").length).toBe(0);
   });
 
-  it("names the part a label points at, for pointing and picking", () => {
+  it("keeps labels clear of the view's buttons along the bottom", () => {
+    const layer = document.createElement("div");
+    const labels = createSceneLabels(layer);
+    labels.setItems(items);
+    // Every part sits low, where the Exploded view, Heat and Reset view buttons are.
+    const low = items.map((it, i) => ({ id: it.id, x: 500 + i * 20, y: 690 }));
+    labels.layout(low, { width: 1200, height: 720, box: { ...box, y1: 715 }, foot: 60 });
+    const tops = [...layer.querySelectorAll<HTMLElement>(".co-label")].map((l) => Number(/translate\([^,]+,\s*([-\d.]+)px\)/.exec(l.style.transform)![1]));
+    expect(tops.length).toBe(3);
+    for (const y of tops) expect(y).toBeLessThanOrEqual(720 - 60);
+  });
+
+    it("names the part a label points at, for pointing and picking", () => {
     const layer = document.createElement("div");
     const picked: string[] = [];
     const labels = createSceneLabels(layer, { onPick: (id) => picked.push(id) });

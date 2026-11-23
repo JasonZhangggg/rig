@@ -1,5 +1,5 @@
 // Finding your way: the sidebar names pages the way the pages name themselves, and search finds any page by everyday words.
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
 
@@ -10,6 +10,7 @@ vi.mock("../src/scene", () => ({
 vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
+const { getStage } = await import("../src/components/Stage");
 
 describe("navigation", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; });
@@ -41,7 +42,19 @@ describe("navigation", () => {
     expect(screen.getByRole("link", { name: /^Logs/ }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("opens Upgrades and Manuals as tabs of My PC, each at its own address", async () => {
+  it("opens a part's own page when it's picked in Home's 3D view", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    act(() => getStage().scene.select("gpu"));
+    expect(await screen.findByRole("heading", { level: 1, name: "NVIDIA GeForce RTX 4070 SUPER" })).toBeTruthy();
+    expect(location.hash).toBe("#pc");
+    // The part is shown alone, so there's nothing to pull apart.
+    const tools = within(screen.getByRole("toolbar", { name: "View" }));
+    expect(tools.queryByRole("button", { name: "Exploded view" })).toBeNull();
+    expect(tools.getByRole("button", { name: "Reset view" })).toBeTruthy();
+  });
+
+    it("opens Upgrades and Manuals as tabs of My PC, each at its own address", async () => {
     location.hash = "#upgrades";
     render(<RigApp client={new DemoClient()} />);
     expect(await screen.findByRole("heading", { level: 1, name: "Atlas" })).toBeTruthy();
