@@ -138,15 +138,28 @@ impl Helper {
     }
 }
 
-/// One line per helper call. Sensor reads run every two seconds, so only slow or failed ones are logged.
+/// One line per helper call. Calls run every few seconds, so only slow or failed ones reach the log file;
+/// the rest are debug lines, which it leaves out.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn log_call(method: &str, waited: Duration, took: Duration, result: &Result<Value, CallError>) {
     let (w, t) = (waited.as_millis(), took.as_millis());
+    let level = call_level(method, waited, took, result);
     match result {
-        Ok(_) if method == "snapshot" && t < 1000 && w < 1000 => {}
-        Ok(_) => log::info!("helper: {method} took {t} ms (waited {w} ms for the previous call)"),
-        Err(CallError::Remote(m)) => log::warn!("helper: {method} failed after {t} ms (waited {w} ms): {m}"),
-        Err(CallError::Broken(m)) => log::error!("helper: {method} broke after {t} ms (waited {w} ms): {m}"),
+        Ok(_) => log::log!(level, "helper: {method} took {t} ms (waited {w} ms for the previous call)"),
+        Err(CallError::Remote(m)) => log::log!(level, "helper: {method} failed after {t} ms (waited {w} ms): {m}"),
+        Err(CallError::Broken(m)) => log::log!(level, "helper: {method} broke after {t} ms (waited {w} ms): {m}"),
+    }
+}
+
+/// How loud a call's line is: sensor reads over a second, other calls over two seconds, and failures are worth reading.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn call_level(method: &str, waited: Duration, took: Duration, result: &Result<Value, CallError>) -> log::Level {
+    let slow = Duration::from_millis(if method == "snapshot" { 1000 } else { 2000 });
+    match result {
+        Ok(_) if took < slow && waited < slow => log::Level::Debug,
+        Ok(_) => log::Level::Info,
+        Err(CallError::Remote(_)) => log::Level::Warn,
+        Err(CallError::Broken(_)) => log::Level::Error,
     }
 }
 
@@ -326,6 +339,20 @@ mod tests {
         assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
         assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
         assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Broken(_))));
+    }
+
+    #[test]
+    fn only_slow_or_failed_calls_reach_the_log_file() {
+        let ms = Duration::from_millis;
+        let ok: Result<Value, CallError> = Ok(Value::Null);
+        assert_eq!(call_level("snapshot", ms(0), ms(300), &ok), log::Level::Debug);
+        assert_eq!(call_level("snapshot", ms(0), ms(1500), &ok), log::Level::Info);
+        assert_eq!(call_level("processes", ms(0), ms(1500), &ok), log::Level::Debug);
+        assert_eq!(call_level("facts", ms(1200), ms(100), &ok), log::Level::Debug);
+        assert_eq!(call_level("processes", ms(0), ms(2500), &ok), log::Level::Info);
+        assert_eq!(call_level("events", ms(2500), ms(100), &ok), log::Level::Info);
+        assert_eq!(call_level("apply", ms(0), ms(10), &Err(CallError::Remote("no".into()))), log::Level::Warn);
+        assert_eq!(call_level("facts", ms(0), ms(10), &Err(CallError::Broken("gone".into()))), log::Level::Error);
     }
 
     #[tokio::test]
