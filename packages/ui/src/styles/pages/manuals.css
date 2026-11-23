@@ -133,3 +133,53 @@ button.source { font: inherit; font-size: 12.5px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .mn-progress .bar i { transition: none; } }
 
 /* On My PC, under the parts: manuals for things Rig can't see. */
+
+/* ---------- A part's Manual tab: three layouts to pick from (ManualLayouts.tsx) ---------- */
+.mn-top { display: flex; align-items: center; gap: 8px; }
+.mn-top .mn-open { flex: none; height: 46px; padding-inline: 22px; }
+.mn-top .ask-inline { flex: 1; min-width: 0; }
+.mn-read { align-self: flex-start; }
+.mn-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mn-two .btn { height: 44px; font-size: 15px; }
+.mn-count { color: var(--text-3); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mn-chev { width: 16px; height: 16px; flex: none; color: var(--text-3); transition: transform 160ms var(--ease-out); }
+.mn-chev.open { transform: rotate(90deg); }
+
+/* A section: its name, then its page on the right. */
+.mn-secs { list-style: none; margin: 0 -10px; padding: 0; }
+.mn-sec { width: 100%; display: flex; align-items: baseline; gap: 12px; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.mn-sec-name { flex: 1; min-width: 0; }
+.mn-sec-p { flex: none; color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) { .mn-sec:hover { background: var(--surface-2); } }
+
+/* Outline: groups that fold open, sections set in under them. */
+.mn-outline { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.mn-og { border-bottom: 1px solid var(--line); }
+.mn-og-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 11px 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.mn-og-head .mn-count { margin-left: auto; }
+.mn-secs.indent { margin-left: 14px; padding-bottom: 8px; }
+
+/* Contents: a book's contents page, dotted leaders out to the page numbers. */
+.mn-contents { columns: 2; column-gap: 28px; }
+.mn-cg { break-inside: avoid; padding-bottom: 12px; }
+.mn-cg-h { margin: 0 0 2px; color: var(--text-2); font-size: 12.5px; font-weight: 600; }
+.mn-sec.toc { padding-block: 5px; font-size: 13.5px; }
+.mn-contents .mn-secs { margin-inline: -8px; }
+.mn-contents .mn-sec { padding-inline: 8px; gap: 8px; }
+.mn-sec.toc .mn-sec-name { flex: none; max-width: 78%; }
+.mn-leader { flex: 1; min-width: 12px; border-bottom: 1.5px dotted var(--line-strong); transform: translateY(-4px); }
+.mn-foot { display: flex; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.mn-foot .ask-inline { flex: 1; min-width: 0; }
+.mn-foot > .btn { height: 46px; }
+
+/* Step in: a card for each group, then its sections with a path back. */
+.mn-steps { display: flex; flex-direction: column; gap: 6px; }
+.mn-sg-list { list-style: none; margin: 0; padding: 0; gap: 8px; }
+.mn-sg { width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 14px 13px 16px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.mn-sg-txt { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.mn-sg-txt b { font-size: 14.5px; font-weight: 600; }
+.mn-sg-txt small { overflow: hidden; color: var(--text-3); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) { .mn-sg:hover { border-color: var(--line-strong); background: var(--surface-2); } }
+.mn-crumbs { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; color: var(--text-2); font-size: 13.5px; }
+.mn-crumb { padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.mn-crumbs [aria-current] { color: var(--text); font-weight: 600; }

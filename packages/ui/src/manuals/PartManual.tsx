@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { ManualKind } from "@rig/core";
 import { useApp } from "../state";
 import { AddManual } from "./AddManual";
-import { ManualCard, ManualJumps } from "./ManualCard";
+import { ManualCard } from "./ManualCard";
+import { ManualFooter, OpenAndAsk, ManualSections, OpenOrAsk, manualLayout } from "./ManualLayouts";
 import { useManuals } from "./useManuals";
 import { helpsWith, manualRows } from "./words";
 
@@ -12,7 +13,7 @@ const ownKind: Record<string, ManualKind> = { case: "case", psu: "psu", cpu: "co
 const askFirst = new Set(["case", "psu"]);
 
 /** The Manual tab of a part on My PC: its own manual, and the pages of the board's manual about it. */
-export function PartManual({ id }: { id: string }) {
+export function PartManual({ id, about }: { id: string; about: string }) {
   const { pc } = useApp();
   const state = useManuals();
   const [adding, setAdding] = useState(false);
@@ -28,18 +29,27 @@ export function PartManual({ id }: { id: string }) {
     ? <AddManual key={id} part={key} kind={kind} maker={part?.maker} model={part?.model} onDone={adding ? () => setAdding(false) : undefined}
       intro={askFirst.has(id) ? `Windows can't see which ${name} this is. Tell Rig the model and it finds the maker's manual.` : `Tell Rig the model of the ${name} and it finds the maker's manual.`} />
     : null;
+  const layout = manualLayout();
+  const own = row?.manual;
+  const openable = own ?? related ?? undefined;
+  // The card puts its own Open and Ask at its top; otherwise they go here, at the top or (Contents) the bottom.
+  const actionsInCard = !!own && layout !== "contents";
+  const actions = actionsInCard || layout === "contents" ? null
+    : layout === "steps" ? <OpenOrAsk manual={openable} about={about} /> : <OpenAndAsk manual={openable} about={about} />;
   return (
-    <div className="mn-part">
-      {row && <ManualCard row={row} store={state.store} compact prefer={helpsWith[id]} />}
+    <div className={`mn-part is-${layout}`}>
+      {row && <ManualCard row={row} store={state.store} compact prefer={helpsWith[id]} layout={layout} about={about} />}
       {add}
+      {actions}
       {related && (
         <div className="mn-related">
           <span className="label">In the {related.title}</span>
-          <ManualJumps manual={related} only={helpsWith[id]} prefer={helpsWith[id]} heading={null} />
+          <ManualSections manual={related} layout={layout} only={helpsWith[id]} prefer={helpsWith[id]} />
         </div>
       )}
       {kind && !row && !add && <button type="button" className="linkish" onClick={() => setAdding(true)}>Add this {name}'s own manual</button>}
-      {!row && !related && !kind && <p className="muted">Rig doesn't keep a manual for this part. Ask below and Rig answers from what it knows about it.</p>}
+      {!row && !related && !kind && <p className="muted">Rig doesn't keep a manual for this part. Ask a question and Rig answers from what it knows about it.</p>}
+      {layout === "contents" && <ManualFooter manual={openable} about={about} />}
     </div>
   );
 }

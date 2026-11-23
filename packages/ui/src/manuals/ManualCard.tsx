@@ -3,6 +3,7 @@ import type { DiagramKind, Manual, PartTarget } from "@rig/core";
 import { useApp } from "../state";
 import { MoreMenu } from "../components/MoreMenu";
 import { openManual } from "./viewerState";
+import { OpenAndAsk, ManualSections, OpenOrAsk, type ManualLayout } from "./ManualLayouts";
 import type { ManualStore } from "./useManuals";
 import { busy, groupedJumps, jobText, jumpPages, keyJumps, manualJumps, modelName, pagesText, partName, type Jump, type Row } from "./words";
 
@@ -82,7 +83,7 @@ export function ManualJumps({ manual, only, prefer, count = 4, heading = "Jump t
 }
 
 /** One part and its manual: what's happening and the one thing to do next. */
-export function ManualCard({ row, store, compact, prefer }: { row: Row; store: ManualStore; compact?: boolean; prefer?: DiagramKind[] }) {
+export function ManualCard({ row, store, compact, prefer, layout, about }: { row: Row; store: ManualStore; compact?: boolean; prefer?: DiagramKind[]; layout?: ManualLayout; about?: string }) {
   const { client } = useApp();
   const { target, manual: m, job } = row;
   const [form, setForm] = useState<null | "exact" | "again">(null);
@@ -140,13 +141,16 @@ export function ManualCard({ row, store, compact, prefer }: { row: Row; store: M
           <span>{m.source === "added" ? "Added from a file" : m.host ? `From ${m.host}` : "From the maker"}</span>
         </p>
         {fileElsewhere && <p className="mn-note">The file is on the device it was added on. {m.indexed ? "Search and the chat still use it." : "Open Rig there to read it."}</p>}
-        {(canOpen || !m.indexed) && (
+        {!m.indexed && !fileElsewhere && layout && <button type="button" className="btn sm mn-read" onClick={() => void store.read(m)}>Read it so search and the chat can use it</button>}
+        {layout === "outline" ? <OpenAndAsk manual={canOpen ? m : undefined} about={about ?? modelName(target)} />
+        : layout === "steps" ? <OpenOrAsk manual={canOpen ? m : undefined} about={about ?? modelName(target)} />
+        : layout ? null : (canOpen || !m.indexed) && (
           <div className="mn-open-row">
             {canOpen && <button type="button" className="btn primary mn-open" onClick={() => openManual(m.id)}>Open manual</button>}
             {!m.indexed && !fileElsewhere && <button type="button" className="btn" onClick={() => void store.read(m)}>Read it</button>}
           </div>
         )}
-        <ManualJumps manual={m} prefer={prefer} />
+        {layout ? <ManualSections manual={m} layout={layout} prefer={prefer} /> : <ManualJumps manual={m} prefer={prefer} />}
       </>
     );
   } else {
