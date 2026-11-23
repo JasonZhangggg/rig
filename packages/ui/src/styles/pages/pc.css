@@ -60,9 +60,6 @@
 .source-badge .chip.chip { height: auto; padding: 0; background: none; color: var(--text-2); font-size: 13px; font-weight: 600; }
 .source-badge .chip::after { content: "·"; margin-left: 6px; color: var(--text-3); font-weight: 500; }
 .part-warn { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.ask-inline { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }
-.ask-inline:focus-within { box-shadow: 0 0 0 1.5px var(--text-2); }
-.ask-inline input { flex: 1; min-width: 0; height: 34px; border: 0; outline: none; background: transparent; }
 
 .space { display: flex; flex-direction: column; gap: 10px; }
 .space-head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -96,6 +93,17 @@
 @media (hover: hover) and (pointer: fine) {
   .part-list button:hover, .detail-back:hover { background: var(--surface-2); color: var(--text); }
 }
+
+/* On a wide window the 3D view is as tall as the space left under the title (--fit-h, worked out in PCPage),
+   so the page fits the window and only scrolls when the side column really is longer. */
+@media (min-width: 1101px) {
+  .fp-main:has(.pc-view) { padding-bottom: 26px; }
+  .pc-view[style*="--fit-h"] .stage-card { height: var(--fit-h); }
+  /* The side column runs as tall as the 3D view, so the Manual tab's ask box lines up with its bottom. */
+  .pc-page.is-part .pc-side { align-self: stretch; }
+}
+.pc-side > .part-detail { flex: 1; }
+.part-detail:has(> .detail-body .mn-part) .detail-body { flex: 1; padding-bottom: 0; }
 
 @media (max-width: 1100px) {
   .pc-view, .pc-page.is-part .pc-view { grid-template-columns: 1fr; }

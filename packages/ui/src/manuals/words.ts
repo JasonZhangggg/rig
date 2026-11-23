@@ -11,7 +11,46 @@ export const jobText = (j: Job): string =>
 
 export const busy = (j: Job | undefined) => !!j && j.step !== "notfound" && j.step !== "error";
 
-export const chipText = (d: ManualDiagram) => `${d.label} · p. ${d.page}`;
+/** A section of a manual worth jumping to: what it shows and the pages it's on. */
+export interface Jump { kind: DiagramKind; label: string; pages: number[] }
+
+/** Sections in the order someone building or fixing a PC reaches for them, in three groups. */
+export const jumpGroups: [string, DiagramKind[]][] = [
+  ["Plugging things in", ["front-panel", "fan-headers", "power-connectors", "usb-headers", "rgb-headers"]],
+  ["Fitting parts", ["memory-slots", "m2-slots", "installation"]],
+  ["About the board", ["board-layout", "rear-io", "specs", "dimensions"]],
+];
+
+/** What most people open a manual for, first. */
+const keyOrder: DiagramKind[] = ["board-layout", "front-panel", "fan-headers", "memory-slots", "power-connectors", "m2-slots", "usb-headers", "rgb-headers", "installation", "rear-io", "specs", "dimensions"];
+
+/** Each section once: diagrams with the same name are one section with all its pages. */
+export function manualJumps(diagrams: ManualDiagram[]): Jump[] {
+  const out: Jump[] = [];
+  for (const d of diagrams) {
+    const same = out.find((j) => j.kind === d.kind && j.label.toLowerCase() === d.label.toLowerCase());
+    if (same) { if (!same.pages.includes(d.page)) same.pages.push(d.page); }
+    else out.push({ kind: d.kind, label: d.label, pages: [d.page] });
+  }
+  out.forEach((j) => j.pages.sort((a, b) => a - b));
+  return out;
+}
+
+/** The few sections to show before "All sections": the ones this part needs first, then the usual ones. */
+export function keyJumps(jumps: Jump[], prefer: DiagramKind[] = [], count = 4): Jump[] {
+  const rank = (k: DiagramKind) => { const p = prefer.indexOf(k); return p >= 0 ? p : prefer.length + keyOrder.indexOf(k); };
+  return [...jumps].sort((a, b) => rank(a.kind) - rank(b.kind) || a.pages[0] - b.pages[0]).slice(0, count);
+}
+
+/** Every section under its group, in page order within the group. */
+export function groupedJumps(jumps: Jump[]): [string, Jump[]][] {
+  return jumpGroups
+    .map(([name, kinds]): [string, Jump[]] => [name, jumps.filter((j) => kinds.includes(j.kind)).sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || a.pages[0] - b.pages[0])])
+    .filter(([, list]) => list.length > 0);
+}
+
+/** "p. 12", or "p. 8, 13" when a section is on more than one page. */
+export const jumpPages = (j: Jump) => `p. ${j.pages.join(", ")}`;
 
 export const pagesText = (m: Manual) => (m.pageCount ? `${m.pageCount} ${m.pageCount === 1 ? "page" : "pages"}` : "Not read yet");
 
