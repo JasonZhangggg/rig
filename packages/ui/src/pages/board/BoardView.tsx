@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { boardUsage, type BoardItem, type BoardShape, type PC, type SlotUse } from "@rig/core";
-import { createBoardScene, pinGroups, pinNumber, type BoardHover, type BoardScene, type PinPalette } from "../../boardScene";
+import { createBoardScene, pinGroups, pinNumber, type BoardHover, type BoardScene } from "../../boardScene";
 import { paletteOf } from "../../appearance";
 import { useApp, useAppearance } from "../../state";
 import { boardStage, useBoardShape } from "./boardStage";
@@ -54,12 +54,9 @@ export function BoardView() {
   const at = useRef({ x: 0, y: 0 });
   const [tip, setTip] = useState<{ id: string; pin?: number } | null>(null);
   const [no3d, setNo3d] = useState(false);
-  // The board's marks and pins in the app's data colors, so they follow Settings, Appearance.
+  // The glow on a picked or pointed-at slot is the app's own highlight, so it follows Settings, Appearance.
   const look = useAppearance();
-  const colorKey = useMemo(() => {
-    const p = paletteOf(look);
-    return JSON.stringify({ good: p.colors.good, look: p.colors.look, expected: p.colors.expected, goodMark: p.goodMark, lookText: p.lookText });
-  }, [look]);
+  const accent = useMemo(() => paletteOf(look).colors.good, [look]);
   const sceneRef = useRef<BoardScene | null>(null);
   // Slots Rig can place get a mark on the board: filled when in use, an outline when free.
   const marks = useMemo(() => {
@@ -78,11 +75,8 @@ export function BoardView() {
     };
     let s: ReturnType<typeof createBoardScene>;
     try {
-      const pins = JSON.parse(colorKey) as PinPalette;
       s = createBoardScene(host.current!, board, {
-        accent: pins.good,
-        used: pins.good,
-        pins,
+        accent,
         dragToPan: true,
         landmarks: false,
         onHover: (h) => {
@@ -100,7 +94,7 @@ export function BoardView() {
     sceneRef.current = s;
     boardStage.attach(s);
     return () => { sceneRef.current = null; boardStage.attach(null); boardStage.pointed(null); s.dispose(); };
-  }, [board, colorKey]);
+  }, [board, accent]);
 
   // Beside the pointer, flipped to its left where it would run under the pin map or off the view.
   function placeTip() {

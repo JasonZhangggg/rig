@@ -1,6 +1,6 @@
 /* My PC with the motherboard open: the board close up in the 3D view's place, and its slots beside it.
-   In use is the app's settled data color (pale gold by default) on the board, its key and the Slots tab. */
-.pc-view { --in-use: var(--good); --in-use-ink: var(--s-ink); }
+   In use is the same soft sage on the board (boardScene's IN_USE), its key and the Slots tab. */
+.pc-view { --in-use: #8FA88A; --in-use-ink: #1B1B1F; }
 .board-stage { position: absolute; inset: 0; touch-action: none; }
 .board-stage > canvas { display: block; }
 .board-top { position: absolute; z-index: 1; top: 14px; left: 16px; right: 16px; display: grid; gap: 8px; justify-items: start; pointer-events: none; }
