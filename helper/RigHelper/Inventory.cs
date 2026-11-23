@@ -21,7 +21,8 @@ public static class Inventory
             // A slow WMI provider (the Storage one is the usual suspect) gives up instead of holding Rig on its loading screen.
             var options = new System.Management.EnumerationOptions { Timeout = QueryTimeout, ReturnImmediately = true, Rewindable = false };
             using var s = new ManagementObjectSearcher(new ManagementScope(scope), new ObjectQuery(wql), options);
-            return s.Get().Cast<ManagementBaseObject>().ToList();
+            using var found = s.Get();
+            return found.Cast<ManagementBaseObject>().ToList();
         }
         catch { return []; }
     }
@@ -39,7 +40,7 @@ public static class Inventory
         var battery = Battery();
 
         string build = os != null ? Str(os, "BuildNumber") : Environment.OSVersion.Version.Build.ToString();
-        var cv = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+        using var cv = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
         if (cv?.GetValue("UBR") is int ubr) build = $"{build}.{ubr}";
         string osName = (os != null ? Str(os, "Caption") : "Windows").Replace("Microsoft ", "");
         // Windows 11 still reports itself as 10 in some places; the build number settles it.
@@ -72,7 +73,8 @@ public static class Inventory
     /// A stable id that doesn't reveal the Windows machine GUID itself.
     static string MachineId()
     {
-        string guid = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography")?.GetValue("MachineGuid")?.ToString() ?? Environment.MachineName;
+        using var crypto = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography");
+        string guid = crypto?.GetValue("MachineGuid")?.ToString() ?? Environment.MachineName;
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("rig:" + guid)))[..20].ToLowerInvariant();
     }
 

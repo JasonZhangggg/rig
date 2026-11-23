@@ -49,6 +49,8 @@ export interface LocalStore {
 export interface LocalOptions {
   /** How often to read sensors. */
   tickMs?: number;
+  /** How often to read sensors while Rig's window is minimised or hidden (setQuiet), unless a recording runs. */
+  quietTickMs?: number;
   /** One history point per this many milliseconds (highest temperatures in the window). */
   historyEveryMs?: number;
   /** Upload to the account this often while signed in. */
@@ -69,6 +71,8 @@ export interface LocalOptions {
 }
 
 const EVENTS_DAYS = 30;
+/** History points kept for the account while signed out or offline: five days. Older ones were never going to be sent. */
+const UNSYNCED_MAX = 720;
 const BACKGROUND_PAGES = 30;
 const EVENTS_EVERY_MS = 5 * 60_000;
 
@@ -95,6 +99,11 @@ export class LocalClient implements RigClient {
   private unsynced: HistoryPoint[] = [];
   private listeners = new Set<(pc: PC) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
+  private ticker: { every: number; timer: ReturnType<typeof setInterval> } | null = null;
+  private running = false;
+  /** Rig's window is minimised or hidden: read less often, and only tell the screens when the alerts change. */
+  private quiet = false;
+  private emitted = "";
   private ready: Promise<void> | null = null;
   /** What start() is waiting on, so a stalled first read can say where it's stuck. */
   private step: string | null = null;
@@ -119,7 +128,7 @@ export class LocalClient implements RigClient {
   private probeStatus: ProbeStatus[] | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, ...opts };
+    this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, ...opts };
     this.recorder = new Recorder({
       pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
       onChange: () => this.emitRecordings(),
@@ -157,7 +166,8 @@ export class LocalClient implements RigClient {
       await this.stage("taking the first sensor reading", () => this.tick());
       this.step = null;
       this.o.log("info", `start: done in ${Math.round(performance.now() - began)} ms${this.lastError ? `, but sensors failed: ${this.lastError}` : ""}`);
-      this.timers.push(setInterval(() => void this.tick(), this.o.tickMs));
+      this.running = true;
+      this.schedule();
       if (this.cloud) {
         this.timers.push(setInterval(() => void this.sync(), this.o.syncEveryMs));
         void this.sync();
@@ -168,7 +178,35 @@ export class LocalClient implements RigClient {
     return ready;
   }
 
-  stop() { this.timers.forEach(clearInterval); this.timers = []; this.ready = null; }
+  stop() {
+    this.timers.forEach(clearInterval);
+    this.timers = [];
+    if (this.ticker) clearInterval(this.ticker.timer);
+    this.ticker = null;
+    this.running = false;
+    this.ready = null;
+  }
+
+  /**
+   * Rig's window was minimised or hidden (true), or shown again (false). While quiet the sensors are read less often
+   * (unless a recording runs), the background log and Windows' event log wait, and the screens hear only of alerts
+   * starting or ending, so notifications still go out. Showing again brings the screens up to date at once.
+   */
+  setQuiet(quiet: boolean) {
+    if (quiet === this.quiet) return;
+    this.quiet = quiet;
+    this.schedule();
+    if (!quiet) { this.emit(); void this.tick(); }
+  }
+
+  /** The sensor timer at the pace for now: quick while shown or recording, slower while quiet. */
+  private schedule() {
+    if (!this.running) return;
+    const every = this.quiet && !this.recorder.active() ? this.o.quietTickMs : this.o.tickMs;
+    if (this.ticker?.every === every) return;
+    if (this.ticker) clearInterval(this.ticker.timer);
+    this.ticker = { every, timer: setInterval(() => void this.tick(), every) };
+  }
 
   /** One step of the first read: named for a stalled screen, and timed in the log. */
   private async stage<T>(step: string, work: () => Promise<T>): Promise<T> {
@@ -201,9 +239,12 @@ export class LocalClient implements RigClient {
       await this.record(now);
       await this.watchAlerts(now);
       await this.recorder.tick(this.snap);
-      void this.readBackground();
-      // The crash checks read Windows' event log; it's cached, so this reads it at most every few minutes.
-      if (this.link.events) void this.windowsEvents().catch(() => {});
+      // Both only feed the screens, so they wait while the window is hidden; showing it again catches up.
+      if (!this.quiet) {
+        void this.readBackground();
+        // The crash checks read Windows' event log; it's cached, so this reads it at most every few minutes.
+        if (this.link.events) void this.windowsEvents().catch(() => {});
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg !== this.lastError) this.o.log("warn", `sensors: ${msg}`);
@@ -212,6 +253,7 @@ export class LocalClient implements RigClient {
       this.busy = false;
     }
     this.emit();
+    this.schedule();
   }
 
   private async record(now: number) {
@@ -225,7 +267,8 @@ export class LocalClient implements RigClient {
       const keep = now - USUAL.baselineFrom * 864e5;
       if (this.recent[0]?.t < keep) this.recent = this.recent.filter((x) => x.t >= keep);
       this.unsynced.push(p);
-      await this.store.set("unsynced", this.unsynced.slice(-720));
+      if (this.unsynced.length > UNSYNCED_MAX) this.unsynced = this.unsynced.slice(-UNSYNCED_MAX);
+      await this.store.set("unsynced", this.unsynced);
     }
   }
 
@@ -249,7 +292,15 @@ export class LocalClient implements RigClient {
     return pc;
   }
 
-  private emit() { if (this.inv) { const pc = this.view(); this.listeners.forEach((cb) => cb(pc)); } }
+  private emit() {
+    if (!this.inv) return;
+    const alerts = this.alerts.map((a) => `${a.id}@${a.since}`).sort().join();
+    // Hidden, nobody sees the readings move: only an alert starting or ending is passed on, for the notifications.
+    if (this.quiet && alerts === this.emitted) return;
+    this.emitted = alerts;
+    const pc = this.view();
+    this.listeners.forEach((cb) => cb(pc));
+  }
   /** Waits for this PC's parts first: until then its id isn't known, and a saved id would look like another PC's. */
   private async isLocal(id: string) { await this.start().catch(() => {}); return id === this.id; }
   /** Subscribes to this PC or the account's copy of another, once it's known which the id is. */
@@ -542,6 +593,7 @@ export class LocalClient implements RigClient {
 
   private async begin(req: RecordingRequest): Promise<RecordingInfo> {
     const info = await this.recorder.start(req);
+    this.schedule();
     void this.sendRecording(req.id);
     return info;
   }

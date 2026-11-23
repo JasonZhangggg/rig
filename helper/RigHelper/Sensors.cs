@@ -29,14 +29,27 @@ public sealed class Sensors : IDisposable
 
     public IEnumerable<IHardware> Hardware { get { lock (gate) return pc.Hardware.ToList(); } }
 
-    public SnapshotDto Snapshot()
+    public SnapshotDto Snapshot() =>
+        new(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Readings(), Foreground.Game(), Native.IsAdmin(), Driver());
+
+    /// Just the sensors, for the background recorder, which has no use for the game in front or the driver's version.
+    public List<SensorDto> Readings()
     {
         var list = new List<SensorDto>();
         lock (gate)
         {
             foreach (var h in pc.Hardware) Read(h, null, list);
         }
-        return new SnapshotDto(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), list, Foreground.Game(), Native.IsAdmin(), Driver());
+        return list;
+    }
+
+    /// Sensors that would keep their own history of readings in memory. Rig wants none.
+    public int KeepingHistory()
+    {
+        int n = 0;
+        void Count(IHardware h) { n += h.Sensors.Count(s => s.ValuesTimeWindow != TimeSpan.Zero); foreach (var sub in h.SubHardware) Count(sub); }
+        lock (gate) foreach (var h in pc.Hardware) Count(h);
+        return n;
     }
 
     /// PawnIO is the driver LibreHardwareMonitor reads processor temperatures and board fans through.
@@ -49,6 +62,9 @@ public sealed class Sensors : IDisposable
         string kind = Kind(parent?.HardwareType ?? h.HardwareType);
         foreach (var s in h.Sensors)
         {
+            // LibreHardwareMonitor keeps a day of every sensor's readings by default, about 250 KB a sensor.
+            // Rig keeps its own history, so it needs none of that.
+            if (s.ValuesTimeWindow != TimeSpan.Zero) s.ValuesTimeWindow = TimeSpan.Zero;
             string? type = Type(s.SensorType);
             if (type == null) continue;
             list.Add(new SensorDto(s.Identifier.ToString(), kind, parent?.Name ?? h.Name, type, s.Name, Round(s.Value), Round(s.Min), Round(s.Max)));

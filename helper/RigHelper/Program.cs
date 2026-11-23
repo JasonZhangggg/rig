@@ -34,7 +34,9 @@ public static class Program
             {
                 try { all[m] = h.Handle(m, p); } catch (Exception e) { all[m] = new JsonObject { ["error"] = e.ToString() }; }
             }
-            if (SelfChecks(all, weekAgo).ToList() is { Count: > 0 } problems) all["checks"] = new JsonObject { ["error"] = string.Join("; ", problems) };
+            var problems = SelfChecks(all, weekAgo).ToList();
+            if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
+            if (problems.Count > 0) all["checks"] = new JsonObject { ["error"] = string.Join("; ", problems) };
             await File.WriteAllTextAsync(outFile, all.ToJsonString(new JsonSerializerOptions(Json.Options) { WriteIndented = true }));
             return all.Any(kv => kv.Value is JsonObject o && o["error"] != null) ? 1 : 0;
         }

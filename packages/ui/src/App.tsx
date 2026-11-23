@@ -99,7 +99,7 @@ function Root() {
   const themeKey = JSON.stringify(sceneThemeFor(look));
   const theme = useMemo(() => JSON.parse(themeKey) as SceneTheme, [themeKey]);
   const built = useRef(theme);
-  const shape = `${pc.id}|${pc.kind}|${pc.parts?.gpu?.warn ?? ""}|${Object.keys(pc.parts ?? {}).join()}`;
+  const shape = `${pc.id}|${pc.kind}|${Object.keys(pc.parts ?? {}).join()}`;
   useEffect(() => { built.current = theme; scene.setPC(pc, theme); }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (built.current !== theme) { built.current = theme; scene.setTheme(theme); } }, [theme, scene]);
   useEffect(() => { scene.update(pc); }, [pc, scene]);

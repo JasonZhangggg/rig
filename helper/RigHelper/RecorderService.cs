@@ -9,6 +9,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
+using System.Runtime;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text;
@@ -113,11 +114,17 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         Sensors? hw = null;
         try { hw = new Sensors(storage: false); }
         catch (Exception e) { Note($"Couldn't open the sensors: {e.Message}"); }
+        // Closed when the recorder stops, so the sensor driver is let go of too.
+        using var closeSensors = hw;
 
         StartEvents();
         PowerNow();
         probes = new ProbeEngine(dataDir, Note, () => WriteStatus(state));
         probes.Start();
+        // Opening the sensors and reading back a month of Windows' events leaves a few megabytes of garbage behind.
+        // Hand it back once, so the recorder sits at its running size from the start rather than its startup peak.
+        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
 
         string header = "";
         int headerId = 0, headerFile = -1;
@@ -132,8 +139,8 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
             {
                 if (hw != null)
                 {
-                    var snap = hw.Snapshot();
-                    var kept = LogSensors.Pick(snap.Sensors);
+                    var sensors = hw.Readings();
+                    var kept = LogSensors.Pick(sensors);
                     string key = LogSensors.Key(kept);
                     if (key != header || headerFile != log.FileNumber)
                     {
@@ -144,7 +151,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                         headerFile = log.FileNumber;
                     }
                     var reading = Reading.From(now, kept);
-                    probes?.Publish(new ProbeEngine.Snap(now, snap.Sensors, reading));
+                    probes?.Publish(new ProbeEngine.Snap(now, sensors, reading));
                     lastReading = (kept, reading);
                 }
                 // The sensors are read every second while a custom log wants them that often; the recorder's own rounds stay five seconds apart.
@@ -495,11 +502,12 @@ static class Efficiency
 {
     public static void Apply()
     {
-        try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+        using var me = Process.GetCurrentProcess();
+        try { me.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
         try
         {
             var state = new Native.PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = 1, StateMask = 1 };
-            Native.SetProcessInformation(Process.GetCurrentProcess().Handle, Native.ProcessPowerThrottling, ref state, Marshal.SizeOf<Native.PROCESS_POWER_THROTTLING_STATE>());
+            Native.SetProcessInformation(me.Handle, Native.ProcessPowerThrottling, ref state, Marshal.SizeOf<Native.PROCESS_POWER_THROTTLING_STATE>());
         }
         catch { }
     }

@@ -7,7 +7,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { findDiagrams, MANUAL_MAX_BYTES, type Manual, type ManualTarget, type RigClient } from "@rig/core";
 import { useApp } from "../state";
-import { dropCopy, getCopy, putCopy } from "./cache";
+import { dropCopy, getCopy, hasCopy, putCopy } from "./cache";
 import { readPdf } from "./pdf";
 
 export type Job =
@@ -60,7 +60,7 @@ export class ManualStore {
   load(): Promise<void> {
     this.loading ??= this.client.manuals(this.pcId).then(async (manuals) => {
       const added = manuals.filter((m) => m.source === "added");
-      const here = (await Promise.all(added.map(async (m) => ((await getCopy(m.id)) ? m.id : null)))).filter((x): x is string => !!x);
+      const here = (await Promise.all(added.map(async (m) => ((await hasCopy(m.id)) ? m.id : null)))).filter((x): x is string => !!x);
       this.patch((s) => ({ manuals, loadError: null, onDevice: [...new Set([...s.onDevice, ...here])] }));
     }, (e) => this.patch({ loadError: message(e, "Rig couldn't load the manuals just now. Check your internet connection, then open Manuals again."), manuals: this.state.manuals ?? [] }))
       .finally(() => { this.loading = null; });
