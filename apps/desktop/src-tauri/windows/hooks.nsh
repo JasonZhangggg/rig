@@ -20,11 +20,15 @@
 ; Rig's folder and Settings, Apps opens it to uninstall, so uninstalling looks
 ; like Rig too. It runs uninstall.exe silently in turn.
 
+; Read here, not inside a macro: a macro's ${__FILEDIR__} is the folder of the
+; file it's used in, which is Tauri's installer.nsi in the build folder.
+!define RIG_SETUP_EXE "${__FILEDIR__}\..\setup\rig-setup.exe"
+
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Setting up Rig's background recorder and PawnIO..."
   ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--install-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
-  !if /FileExists "${__FILEDIR__}\..\setup\rig-setup.exe"
-    File "/oname=$INSTDIR\rig-setup.exe" "${__FILEDIR__}\..\setup\rig-setup.exe"
+  !if /FileExists "${RIG_SETUP_EXE}"
+    File "/oname=$INSTDIR\rig-setup.exe" "${RIG_SETUP_EXE}"
     WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" '"$INSTDIR\rig-setup.exe" --uninstall'
     WriteRegStr SHCTX "${UNINSTKEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   !endif
