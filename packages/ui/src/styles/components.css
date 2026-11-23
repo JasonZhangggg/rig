@@ -155,12 +155,26 @@
 }
 @starting-style { .toast { opacity: 0; transform: translate(-50%, 8px); } }
 .toast .btn { height: 28px; border-color: color-mix(in srgb, var(--bg) 35%, transparent); background: transparent; color: inherit; }
+/* A new version of Rig is ready: a small card in the corner that never covers the page or takes focus. */
+.update-notice {
+  position: fixed; z-index: 55; right: 20px; bottom: max(20px, env(safe-area-inset-bottom, 0px)); width: min(340px, calc(100vw - 40px));
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--shadow-lg);
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+@starting-style { .update-notice { opacity: 0; transform: translateY(8px); } }
+.update-notice-text { display: flex; flex-direction: column; gap: 4px; }
+.update-notice-text b { font: var(--t-label); font-size: 14px; }
+.update-notice-text p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.45; }
+.update-notice-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @media (prefers-reduced-motion: reduce) {
   .sh-menu { transition: opacity 160ms var(--ease-out) !important; }
   .toast { transition: opacity 200ms var(--ease-out) !important; }
+  .update-notice { transition: opacity 200ms var(--ease-out) !important; }
   @starting-style {
     .sh-menu { opacity: 0; transform: none; }
     .toast { opacity: 0; transform: translateX(-50%); }
+    .update-notice { opacity: 0; transform: none; }
   }
 }
 

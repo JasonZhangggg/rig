@@ -5,7 +5,7 @@ import { SimulatedLink, fixtures } from "@rig/core/demo";
 import { RigApp } from "@rig/ui";
 import { inTauri, openLogs, tauriAutostart, tauriLink, tauriRecorder, tauriStore, tauriToken } from "./tauri";
 import { notifyAlerts, notifyRecording } from "./notify";
-import { watchForUpdates } from "./update";
+import { tauriUpdates, watchForUpdates } from "./update";
 import { log, logUncaught } from "./log";
 
 // The Rig server. An installer build fails without VITE_RIG_API (see vite.config.ts); an empty one counts as missing.
@@ -34,7 +34,7 @@ pickLink().then((link) => {
   // The background recorder only exists with the Windows helper, not with the pretend PC.
   const recorder = inTauri && link === tauriLink ? tauriRecorder : null;
   const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording, recorder, log } : { log });
-  root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api, openLogs, ...(recorder ? { recorder } : {}) } : undefined} />);
+  root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api, openLogs, updates: tauriUpdates, ...(recorder ? { recorder } : {}) } : undefined} />);
   if (inTauri) client.start().then(() => notifyAlerts(client), () => {});
 }).catch((e: unknown) => {
   root.render(
