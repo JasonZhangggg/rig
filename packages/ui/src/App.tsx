@@ -3,7 +3,7 @@ import type { Account, RigClient } from "@rig/core";
 import { AppProvider, useApp, useAppearance, type AppHost } from "./state";
 import { applyAppearance } from "./appearance";
 import { getStage } from "./components/Stage";
-import { ReviewSheet, Toast, navItems } from "./components/Shell";
+import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
 import { sceneThemeFor } from "./themes";
@@ -138,6 +138,7 @@ function Root() {
       <ReviewSheet />
       <ManualViewer />
       <Palette />
+      <UpdateNotice />
       <Toast />
     </>
   );

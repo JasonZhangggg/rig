@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { formatTemp, type Part, type Route, type TempUnit } from "@rig/core";
 import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
@@ -39,6 +39,8 @@ export function PCPage() {
   const unit = useTempUnit();
   const parts = pc.parts ?? {};
   const view = pcViews.some(([r]) => r === ui.route) ? ui.route : "pc";
+  const viewRef = useRef<HTMLDivElement>(null);
+  useFitStage(viewRef, `${view}:${ui.selected ?? ""}`);
   // A picked part takes over the page: its name is the title and its readings get the room the list had.
   const picked = view === "pc" && ui.selected && parts[ui.selected] ? ui.selected : null;
   const list = Object.entries(parts);
@@ -59,7 +61,7 @@ export function PCPage() {
         </>
       )}
       {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : (
-      <div className="pc-view">
+      <div className="pc-view" ref={viewRef}>
         <section className="stage-card" aria-label="3D view">
           <StageSlot id="pc-stage" />
           {customize && !picked && <Customize onDone={closeCustomize} />}
@@ -74,6 +76,40 @@ export function PCPage() {
       )}
     </div>
   );
+}
+
+/** Wide windows only: the 3D view's height is the window's, less what sits above and below it. */
+const wideQuery = "(min-width: 1101px)";
+const [STAGE_MIN, STAGE_MAX] = [420, 900];
+
+/**
+ * Sizes the 3D view to the space left in the window, so the page fits without scrolling.
+ * Worked out here, not by stretching it in CSS, so a long side column scrolls the page without making the 3D view taller.
+ */
+function useFitStage(view: RefObject<HTMLDivElement | null>, page: string) {
+  useLayoutEffect(() => {
+    const el = view.current;
+    if (!el || typeof ResizeObserver === "undefined" || typeof matchMedia !== "function") return;
+    const wide = matchMedia(wideQuery);
+    const fit = () => {
+      if (!wide.matches) { el.style.removeProperty("--fit-h"); return; }
+      const main = el.closest("main");
+      const shell = main?.parentElement?.parentElement;
+      const padBelow = (e: Element | null | undefined) => (e ? parseFloat(getComputedStyle(e).paddingBottom) || 0 : 0);
+      const below = padBelow(main) + padBelow(shell);
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const h = Math.round(Math.min(STAGE_MAX, Math.max(STAGE_MIN, window.innerHeight - top - below)));
+      el.style.setProperty("--fit-h", `${h}px`);
+    };
+    fit();
+    // The title above can change height (a long name wraps, the sidebar folds), so watch it as well as the window.
+    const ro = new ResizeObserver(fit);
+    const head = el.parentElement?.querySelector(".page-head");
+    if (head) ro.observe(head);
+    window.addEventListener("resize", fit);
+    wide.addEventListener("change", fit);
+    return () => { ro.disconnect(); window.removeEventListener("resize", fit); wide.removeEventListener("change", fit); };
+  }, [view, page]);
 }
 
 function Customize({ onDone }: { onDone: () => void }) {
@@ -233,19 +269,7 @@ function SourceBadge({ part }: { part: Part }) {
 function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const { ask } = useApp();
   const inUnit = useTempText();
-  const [q, setQ] = useState("");
-  if (tab === "manual") {
-    return (
-      <>
-        <PartManual id={id} />
-        <form className="ask-inline" onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(`About my ${part.name}: ${q.trim()}`); }}>
-          <input id="ask-manual" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask this manual a question" aria-label="Ask this manual a question" />
-          <button className="btn sm">Ask</button>
-        </form>
-        <p className="faint detail-note">Answers name the manual and page they came from.</p>
-      </>
-    );
-  }
+  if (tab === "manual") return <PartManual id={id} about={part.name} />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));

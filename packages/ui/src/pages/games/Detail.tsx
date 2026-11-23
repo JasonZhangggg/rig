@@ -3,6 +3,7 @@ import { type Game, type GameLibrary, type GameNote, type GameSession, type Game
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { Figure } from "../../components/Figure";
+import { Row, RowFigure, Rows } from "../../components/Rows";
 import { useApp, useTempUnit } from "../../state";
 import { headroomWords, sessionCount } from "./Library";
 import { Tuning } from "./Tuning";
@@ -69,19 +70,16 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
           </div>
         </div>
         <SessionChart s={shown} subject={library.subject} limit={library.limit} at={picked.at} />
-        <ul className="gm-sess-list" aria-label="Sessions">
-          {sessions.map((s, i) => ({ s, i })).reverse().map(({ s, i }) => (
-            <li key={s.from}>
-              <button type="button" className="gm-sess" aria-pressed={s === shown} onClick={() => setPicked({ i })}>
-                <span>{day(s.from)}</span>
-                <span className="muted">{timeRange(s.from, s.to)}</span>
-                <span className="num">{hours(s.hours)}</span>
-                <span className="muted">{temp(s.typical, unit)} typical, peak {temp(s.peak, unit)}</span>
-                <span>{s.hot && <span className="chip warn">Ran hot</span>}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="gm-sess-list">
+          <Rows label="Sessions">
+            {sessions.map((s, i) => ({ s, i })).reverse().map(({ s, i }) => (
+              <Row key={s.from} name={day(s.from)} title={day(s.from)} meta={`${timeRange(s.from, s.to)}, ${hours(s.hours)}.`}
+                tag={s.hot && <span className="chip warn">Ran hot</span>}
+                figure={<RowFigure value={temp(s.typical, unit)} word={`typical, peak ${temp(s.peak, unit)}`} />}
+                pick={{ pressed: s === shown, onPick: () => setPicked({ i }) }} />
+            ))}
+          </Rows>
+        </div>
         {game.notes.length > 0 && (
           <div className="gm-notes">
             <span className="label">What Rig noticed</span>
