@@ -81,13 +81,17 @@ export function AppSection() {
   const refresh = useCallback(() => rec?.status().then(setStatus, () => setStatus({ supported: false })), [rec]);
   useEffect(() => { void refresh(); }, [refresh]);
 
+  const [starting, setStarting] = useState(false);
   const flip = async () => {
-    if (on == null) return;
+    if (on == null || starting) return;
     const next = !on;
     setOn(next);
+    setStarting(true);
     try { await auto.set(next); } catch (e) {
       setOn(!next);
       toast(`Couldn't change that. ${e instanceof Error ? e.message : ""} Try again, and choose Yes if Windows asks for permission.`.replace(/\s+/g, " ").trim());
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -109,8 +113,8 @@ export function AppSection() {
 
   return (
     <div className="switch-list set-switches">
-      <button type="button" className="switch" role="switch" aria-checked={!!on} disabled={on == null} onClick={flip}>
-        <span><b>Start Rig with Windows</b><small>Rig opens when you sign in to Windows. Windows asks for permission each time, as it does when you open Rig.</small></span><i />
+      <button type="button" className="switch" role="switch" aria-checked={!!on} disabled={on == null || starting} onClick={flip}>
+        <span><b>Start Rig with Windows</b><small>Rig opens when you sign in to Windows. Windows asks for permission each time, as it does when you open Rig.{starting ? " Waiting for Windows…" : ""}</small></span><i />
       </button>
       {rec && status?.supported && (
         <button type="button" className="switch" role="switch" aria-checked={recording} disabled={busy} onClick={() => (recording ? setAsking(true) : void flipRecorder())}>

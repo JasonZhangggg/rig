@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Game, Route, Upgrade } from "@rig/core";
 import { useApp, useTemp } from "../state";
 import { focusSection, settingsSections } from "../pages/settings/sections";
@@ -119,6 +119,11 @@ export function Palette() {
   const runAsk = () => { ask(words ? q.trim() : `What's going on with ${pc.name}?`); close(); };
   const total = shown.length + 1;
   const idx = Math.min(active, total - 1);
+
+  // The arrow keys keep the highlighted line in view as it moves past the edge of the list.
+  useLayoutEffect(() => {
+    if (ui.palette) box.current?.querySelector<HTMLElement>('.pal-item[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [ui.palette, idx]);
 
   if (!ui.palette) return null;
   const onKey = (e: React.KeyboardEvent) => {

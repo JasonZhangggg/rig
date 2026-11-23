@@ -23,7 +23,7 @@ function byDay(list: Change[]) {
     const k = midnight(new Date(c.at));
     days.set(k, [...(days.get(k) ?? []), c]);
   }
-  return [...days.values()];
+  return [...days.entries()];
 }
 
 export function Changes() {
@@ -48,7 +48,8 @@ export function Changes() {
             <h2 id="ch-log-h">{filter === "applied" ? "Applied" : filter === "undone" ? "Undone" : "Recent changes"}</h2>
             <Counts changes={data.changes} filter={filter} onFilter={setFilter} />
           </div>
-          {byDay(list).map((day) => <Day key={day[0].at} changes={day} />)}
+          {/* Keyed by the date, so an entry moving in or out of a day doesn't close what's open in it. */}
+          {byDay(list).map(([date, day]) => <Day key={date} changes={day} />)}
         </section>
       )}
       <HowChangesWork />
@@ -83,13 +84,19 @@ function Day({ changes }: { changes: Change[] }) {
 /** Fixes Rig found but hasn't made. Each opens the review sheet; the before and after wait behind Details. */
 function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow[]> }) {
   const { pc, set, go, ask, review } = useApp();
+  const [reading, setReading] = useState<string | null>(null);
+  const open = (i: Issue) => {
+    if (!i.fix) { issueGo(i, pc, { set, go, ask, review }); return; }
+    setReading(i.id);
+    void review(i.fix, { by: "you", why: i.title }).finally(() => setReading(null));
+  };
   return (
     <section className="card ch-next" aria-labelledby="ch-next-h">
       <div className="card-head"><h2 id="ch-next-h">Waiting for review <span className="faint num">{fixes.length}</span></h2></div>
       <ul className="ch-next-list">
         {fixes.map((i) => (
           <Row key={i.id} title={i.title} meta="Nothing changes until you say yes."
-            action={<button className="btn sm" type="button" aria-label={`Review: ${i.title}`} onClick={() => issueGo(i, pc, { set, go, ask, review })}>Review</button>}>
+            action={<button className="btn sm" type="button" aria-label={`Review: ${i.title}`} disabled={reading === i.id} onClick={() => open(i)}>{reading === i.id ? "Reading settings…" : "Review"}</button>}>
             <p className="muted">{i.body}</p>
             {rows[i.id]?.length ? <div className="diff-wrap"><DiffTable rows={rows[i.id]} /></div> : null}
           </Row>
@@ -120,10 +127,13 @@ function Row({ title, meta, time, status, action, children }: { title: string; m
 
 function Entry({ c }: { c: Change }) {
   const { toggleChange, client } = useApp();
+  const [busy, setBusy] = useState(false);
+  const toggle = () => { setBusy(true); void toggleChange(c.id).finally(() => setBusy(false)); };
+  const word = c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
   const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${c.status === "applied" ? "Old values saved." : "Old values put back."}`;
   return (
     <Row title={c.title} meta={meta} time={c.at} status={c.status}
-      action={client.caps.applyChanges && <button className="btn sm" type="button" onClick={() => toggleChange(c.id)}>{c.status === "applied" ? "Undo" : "Redo"}</button>}>
+      action={client.caps.applyChanges && <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>}>
       {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
       {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
     </Row>

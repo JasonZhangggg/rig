@@ -121,12 +121,15 @@ export function FansCard({ fans, trend: full, style = "dots", days = 4, live = t
   const stats = headlines(shown);
   const trend = full && recent(full, days * 4);
   const rings = style === "rings" && !compact;
+  // While history loads the chart's room is kept, so the page doesn't grow under the reader when it arrives.
+  const loading = !full && !rings && (!compact || stats.length > 0);
   const note = rings ? "Each fan against its top speed" : trend?.scale != null && !compact ? "Fastest fan every six hours, rpm" : "rpm";
   const empty = <EmptyNote ghost={!!fans?.length}>{fans?.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>;
   return (
-    <section className={`f-pane bl-fans${compact ? " compact" : ""}`}>
+    <section className={`f-pane bl-fans${compact ? " compact" : ""}`} aria-busy={loading || undefined}>
       <CardHead title="Fans" note={note} />
       {(live || compact) && !rings && stats.length > 0 && <div className="pl-stats">{stats.map((s) => <Stat key={s.fan.label} {...s} />)}</div>}
+      {loading && <div className="pl-wait" aria-hidden="true" />}
       {rings
         ? (shown.length ? <Rings fans={shown} /> : empty)
         : !compact && trend && (trend.scale != null

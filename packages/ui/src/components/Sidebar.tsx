@@ -14,10 +14,20 @@ function useOutside(open: boolean, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const c = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) close(); };
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    // Escape closes just this menu: it's heard first and used up, so the page under it keeps its open part.
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      // Something open over the menu, like Ctrl K search, handles its own Escape.
+      const over = e.target instanceof Element ? e.target.closest('[aria-modal="true"]') : null;
+      if (over && box.current && !over.contains(box.current)) return;
+      e.preventDefault();
+      const menu = box.current?.querySelector(".sh-menu");
+      if (menu && menu.contains(document.activeElement)) box.current?.querySelector<HTMLElement>(".fp-brand-btn, .fp-me")?.focus();
+      close();
+    };
     document.addEventListener("click", c);
-    document.addEventListener("keydown", k);
-    return () => { document.removeEventListener("click", c); document.removeEventListener("keydown", k); };
+    document.addEventListener("keydown", k, true);
+    return () => { document.removeEventListener("click", c); document.removeEventListener("keydown", k, true); };
   }, [open, close]);
   return box;
 }
@@ -136,7 +146,7 @@ function usePhoneMenu() {
     side.current?.querySelector<HTMLElement>(".fp-close")?.focus();
     const back = () => setOpen(false);
     // Escape closes an open PC or account menu first, then the whole menu.
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !side.current?.querySelector(".sh-menu")) close(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented && !side.current?.querySelector(".sh-menu")) close(); };
     const root = document.documentElement;
     root.style.overflow = "hidden";
     window.addEventListener("popstate", back);

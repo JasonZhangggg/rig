@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { gameLibrary, insightContext, type Game, type HistoryPoint, type PC } from "@rig/core";
 import { useApp, useHistory } from "../state";
 import { Detail } from "./games/Detail";
@@ -41,7 +41,17 @@ export function Games() {
   const tuning = useTuning();
   const when = rangeWords[range];
   useEffect(() => setOpen(null), [pc.id]);
-  const show = (name: string | null) => { setOpen(name); window.scrollTo(0, 0); };
+  // A game opens at the top; All games goes back to where the list was.
+  const listY = useRef<number | null>(null);
+  const show = (name: string | null) => {
+    if (name) { listY.current = window.scrollY; window.scrollTo(0, 0); }
+    setOpen(name);
+  };
+  useLayoutEffect(() => {
+    if (open || listY.current == null) return;
+    window.scrollTo(0, listY.current);
+    listY.current = null;
+  }, [open]);
 
   const seg = (
     <div className="seg" role="group" aria-label="Range">

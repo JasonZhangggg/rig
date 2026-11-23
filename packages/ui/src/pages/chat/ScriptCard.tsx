@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { probeWhen, type ChatMessage } from "@rig/core";
 import { useApp } from "../../state";
 
@@ -6,6 +7,7 @@ const day = (t: number) => new Date(t).toLocaleString(undefined, { weekday: "sho
 /** A script Rig proposed for the background recorder: the exact text, who it runs as and when. Only the person's press of Approve sets it up. */
 export function ScriptCard({ m }: { m: ChatMessage }) {
   const { approveScript, declineScript } = useApp();
+  const [approving, setApproving] = useState(false);
   const sc = m.script!;
   const p = sc.probe;
   if (p.source.kind !== "script") return null;
@@ -28,8 +30,9 @@ export function ScriptCard({ m }: { m: ChatMessage }) {
         <span className="faint">Runs only if you approve · turn it off in Settings</span>
         {sc.status === "waiting" && (
           <>
-            <button className="btn sm" type="button" onClick={() => declineScript(m.id)}>Not now</button>
-            <button className="btn primary sm" type="button" onClick={() => void approveScript(m.id)}>Approve script</button>
+            <button className="btn sm" type="button" disabled={approving} onClick={() => declineScript(m.id)}>Not now</button>
+            {/* The Windows permission prompt can stay up a while; the button says it's waiting on it. */}
+            <button className="btn primary sm" type="button" disabled={approving} onClick={() => { setApproving(true); void approveScript(m.id).finally(() => setApproving(false)); }}>{approving ? "Approving…" : "Approve script"}</button>
           </>
         )}
       </div>

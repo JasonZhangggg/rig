@@ -165,8 +165,9 @@ export function TempsCard({ temps, name, style = "caps", days: count = 7, show, 
   const Chart = compact ? PeakStrip : charts[style];
   const note = compact ? `${columns[subject][leadOf(series)]} each day, ${tempMark(unit)}` : count === 7 ? `Each day, ${tempMark(unit)}` : `Last ${count} days, ${tempMark(unit)}`;
   return (
-    <section className={`f-pane bl-temps${compact ? " compact" : ""}`}>
+    <section className={`f-pane bl-temps${compact ? " compact" : ""}`} aria-busy={!temps || undefined}>
       <CardHead title="Temperatures" note={note} figure={figure && any && peak != null ? { value: temp(peak), label: "Hottest", tone: "look" } : undefined} />
+      {!temps && <div className="pl-wait" aria-hidden="true" />}
       {temps && (any ? (
         <>
           <Chart days={days} subject={subject} series={series} peak={peak} grow={grow} />

@@ -27,10 +27,15 @@ export function ReviewSheet() {
   const r = ui.review;
   useEffect(() => {
     if (!r) return;
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !r.busy) set({ review: null }); };
+    // Escape that something open over the sheet already used, like Ctrl K search, leaves the sheet open.
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || r.busy || ui.palette) return;
+      e.preventDefault();
+      set({ review: null });
+    };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
-  }, [r, set]);
+  }, [r, set, ui.palette]);
   const box = useRef<HTMLDivElement>(null);
   useModal(box, !!r);
   if (!r) return null;
@@ -55,14 +60,14 @@ export function ReviewSheet() {
 }
 
 export function Toast() {
-  const { ui, toggleChange } = useApp();
+  const { ui, set, toggleChange } = useApp();
   const t = ui.toast;
   return (
     <div className="toast-region" role="status">
       {t && (
         <div className="toast">
           <span>{t.msg}</span>
-          {t.undo && <button className="btn sm" type="button" onClick={() => toggleChange(t.undo!)}>Undo</button>}
+          {t.undo && <button className="btn sm" type="button" onClick={() => { const id = t.undo!; set({ toast: null }); void toggleChange(id); }}>Undo</button>}
         </div>
       )}
     </div>

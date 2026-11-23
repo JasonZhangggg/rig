@@ -47,28 +47,40 @@ export function Popover({ anchor, label, onClose, children, width = 360 }: { anc
     return () => cancelAnimationFrame(frame);
   }, [anchor, width]);
 
+  // The latest control and close, so a control that changes under an open panel (the empty Home's Add widget button giving
+  // way to the bar's) neither pulls focus back to the panel's first button nor drops it.
+  const at = useRef(anchor), shut = useRef(onClose);
+  at.current = anchor; shut.current = onClose;
+
+  // Focus goes into the panel once, when it opens, and back to the control that opened it when it closes.
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>(focusable)?.focus();
+    return () => { const a = at.current; if (a.isConnected) a.focus({ preventScroll: true }); };
+  }, []);
+
+  useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
+      if (e.key === "Escape") { e.stopPropagation(); shut.current(); return; }
       const el = ref.current;
       if (e.key !== "Tab" || !el) return;
       const all = [...el.querySelectorAll<HTMLElement>(focusable)];
       if (!all.length) return;
-      const first = all[0], last = all[all.length - 1], at = document.activeElement;
-      const inside = !!at && el.contains(at);
-      if (e.shiftKey && (at === first || !inside)) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && (at === last || !inside)) { e.preventDefault(); first.focus(); }
+      const first = all[0], last = all[all.length - 1], now = document.activeElement;
+      const inside = !!now && el.contains(now);
+      if (e.shiftKey && (now === first || !inside)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (now === last || !inside)) { e.preventDefault(); first.focus(); }
     };
-    const down = (e: PointerEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !anchor.contains(t)) onClose(); };
+    // A press outside a panel beside its control shuts it. The phone's sheet shuts on a tap of the dimmed page instead,
+    // once the tap is over, so the tap never lands on whatever was under the dimming.
+    const down = (e: PointerEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !at.current.contains(t)) shut.current(); };
     document.addEventListener("keydown", key, true);
-    document.addEventListener("pointerdown", down, true);
-    return () => { document.removeEventListener("keydown", key, true); document.removeEventListener("pointerdown", down, true); if (anchor.isConnected) anchor.focus(); };
-  }, [anchor, onClose]);
+    if (!sheet) document.addEventListener("pointerdown", down, true);
+    return () => { document.removeEventListener("keydown", key, true); document.removeEventListener("pointerdown", down, true); };
+  }, [sheet]);
 
   return createPortal(
     <>
-      {sheet && <div className="dpop-scrim" aria-hidden="true" />}
+      {sheet && <div className="dpop-scrim" aria-hidden="true" onClick={onClose} />}
       <div
         ref={ref} role="dialog" aria-modal={sheet || undefined} aria-label={label} className={`dpop${sheet ? " sheet" : ""}`}
         style={sheet ? undefined : { top: pos?.top ?? -9999, left: pos?.left ?? 0, width, maxHeight: pos?.maxHeight }}

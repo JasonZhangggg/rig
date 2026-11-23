@@ -4,10 +4,18 @@ import { useApp } from "../../state";
 import { SettingRow } from "./parts";
 
 export function AccountSection() {
-  const { data, client, go } = useApp();
+  const { data, client, go, toast } = useApp();
   const a = data.account;
   const demo = client.kind === "demo";
-  const signOut = () => client.signOut().then(() => { go("signin"); location.reload(); });
+  const [leaving, setLeaving] = useState(false);
+  const signOut = () => {
+    if (leaving) return;
+    setLeaving(true);
+    client.signOut().then(() => { go("signin"); location.reload(); }, () => {
+      setLeaving(false);
+      toast("Couldn't sign out just now. Check your internet connection and try again.");
+    });
+  };
 
   if (!a) {
     return (
@@ -23,7 +31,7 @@ export function AccountSection() {
           <span aria-hidden="true">{a.name[0]?.toUpperCase()}</span>
           <div className="set-text"><b>{a.name}</b><p className="muted">{a.email}</p></div>
         </div>
-        {!demo && <div className="set-control"><button className="btn sm" type="button" onClick={signOut}>Sign out</button></div>}
+        {!demo && <div className="set-control"><button className="btn sm" type="button" onClick={signOut} disabled={leaving}>{leaving ? "Signing out…" : "Sign out"}</button></div>}
       </div>
       {demo ? (
         <SettingRow title="Delete account" body="This is the demo account, so it can't be deleted. On your own account, this removes it with every PC and its history.">

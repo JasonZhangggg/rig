@@ -33,20 +33,25 @@
 .f-date span { color: var(--text-2); font-size: 12.5px; font-weight: 500; line-height: 1.3; }
 .f-cta {
   display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 6px 0 20px; border: 0; border-radius: var(--r-pill);
-  background: var(--surface); color: var(--text); font: 500 15px/1 var(--font); white-space: nowrap; cursor: pointer; transition: transform .12s;
+  background: var(--surface); color: var(--text); font: 500 15px/1 var(--font); white-space: nowrap; cursor: pointer; transition: transform .12s, background-color .15s;
 }
 .f-cta:active { transform: scale(.98); }
-.f-cta i { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; }
+.f-cta i { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; transition: transform .15s var(--ease-out); }
 .f-cta svg { width: 18px; height: 18px; }
 .f-cta em { min-width: 26px; height: 26px; margin-left: -4px; padding: 0 8px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--look); color: var(--graphite); font: 600 13px var(--font); font-style: normal; }
-.f-round { width: 52px; height: 52px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface); color: var(--text); cursor: pointer; transition: transform .12s; }
+.f-round { width: 52px; height: 52px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface); color: var(--text); cursor: pointer; transition: transform .12s, background-color .15s; }
 .f-round:active { transform: scale(.96); }
 .f-round svg { width: 18px; height: 18px; }
 .f-mic svg { width: 22px; height: 22px; }
 @media (prefers-reduced-motion: reduce) {
-  .f-cta, .f-round { transition: none; }
+  .f-cta, .f-round, .f-cta i { transition: none; }
 }
 .f-custom[aria-pressed="true"] { background: var(--graphite); color: #FFFFFF; }
+@media (hover: hover) and (pointer: fine) {
+  .f-cta:hover, .f-round:not([aria-pressed="true"]):hover { background: color-mix(in srgb, var(--text) 8%, var(--surface)); }
+  .f-custom[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--graphite) 85%, #FFFFFF); }
+  .f-cta:hover i { transform: translateX(2px); }
+}
 
 /* ----- Your PC: the model on a soft light of its own, its name over it and its temperatures large under it. ----- */
 .f-pc {

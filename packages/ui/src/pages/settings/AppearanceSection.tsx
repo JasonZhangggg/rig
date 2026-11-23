@@ -5,7 +5,7 @@ import {
 } from "../../appearance";
 import { resetAppearance, setAppearance, useApp, useAppearance } from "../../state";
 import { MoreToggle, SettingRow } from "./parts";
-import { peekFocusSection } from "./focus";
+import { onFocusSection, peekFocusSection } from "./focus";
 
 const roles: { key: keyof DataColors; name: string; about: string }[] = [
   { key: "good", name: "Settled", about: "Running well, the usual reading" },
@@ -17,6 +17,7 @@ export function AppearanceSection() {
   const look = useAppearance();
   const { toast } = useApp();
   const [more, setMore] = useState(() => peekFocusSection() === "appearance");
+  useEffect(() => onFocusSection((id) => { if (id === "appearance") setMore(true); }), []);
   const named = <T extends { id: string; name: string }>(list: readonly T[], id: string) => list.find((x) => x.id === id)?.name ?? "";
   const summary = `${named(chromes, look.chrome)} menu, ${named(pageTones, look.page).toLowerCase()} page, ${named(cornerSets, look.corners).toLowerCase()} corners, ${named(densities, look.density).toLowerCase()} spacing`;
   return (

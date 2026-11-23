@@ -12,7 +12,7 @@ import { NotificationsSection } from "./NotificationsSection";
 import { UnitsSection } from "./UnitsSection";
 
 export { FoldedSection, SettingRow, SettingsSection, sectionAnchor } from "./parts";
-export { focusSection, peekFocusSection, takeFocusSection } from "./focus";
+export { focusSection, onFocusSection, peekFocusSection, takeFocusSection } from "./focus";
 
 export interface SettingsSectionDef {
   id: string;

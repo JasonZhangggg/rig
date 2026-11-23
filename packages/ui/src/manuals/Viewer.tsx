@@ -63,6 +63,8 @@ function Viewer({ manualId, page }: { manualId: string; page: number }) {
   // Esc closes; the arrow keys turn pages unless the person is typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Keys typed in something open over the viewer, like Ctrl K search, are that one's to handle.
+      if (e.target instanceof Node && e.target !== document.body && !box.current?.contains(e.target)) return;
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable]") !== null;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeManual(); }
       else if (!typing && (e.key === "ArrowRight" || e.key === "PageDown")) { e.preventDefault(); go(page + 1); }

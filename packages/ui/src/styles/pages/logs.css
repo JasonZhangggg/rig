@@ -78,6 +78,8 @@
 .ev-tip.end { translate: calc(-100% + 12px) 0; }
 .ev-tip span { overflow: hidden; text-overflow: ellipsis; }
 .ev-tip .faint { color: inherit; opacity: .65; }
+/* The strip scrolls sideways on phones, which would clip the tip; each day's label says the same. */
+@media (max-width: 760px) { .ev-tip { display: none; } }
 
 /* Each event: one line that opens in place to what Windows wrote. */
 .ev-group { padding: 10px 0 4px; }

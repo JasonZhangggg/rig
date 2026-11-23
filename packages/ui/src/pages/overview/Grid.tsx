@@ -34,8 +34,10 @@ export interface GridProps {
   onPhone: (order: string[], said: string) => void;
   onHide: (id: string) => void;
   onOptions: (id: string, from: HTMLElement) => void;
-  onEdit: (id?: string) => void;
-  onDone: () => void;
+  /** Starts customizing, focusing the widget `id`. `held` is the widget a long press picked up, to keep it under the finger. */
+  onEdit: (id?: string, held?: string) => void;
+  /** Finishes customizing; `from` is the widget it was finished from, which keeps focus. */
+  onDone: (from?: string) => void;
   announce: (text: string) => void;
   /** Which grid shows, so size choices apply to it. */
   onMode?: (mode: Mode) => void;
@@ -475,8 +477,27 @@ export function Grid(p: GridProps) {
     const m = new Map<string, DOMRect>();
     wrap.current?.querySelectorAll<HTMLElement>(".dg").forEach((el) => m.set(el.dataset.id!, el.getBoundingClientRect()));
     flip.current = m;
+    // Moving a tile down moves its element, which drops focus, and a step button at the end of the list turns off; either
+    // way focus comes back to the same control on the moved tile, or the step button that still works, or the tile.
+    const now = document.activeElement, item = wrap.current?.querySelector<HTMLElement>(`.dg[data-id="${id}"]`);
+    keep.current = item && now instanceof HTMLElement && item.contains(now)
+      ? { id, which: now.classList.contains("dw") ? "tile" : now.closest(".dw-steps") ? (now === now.parentElement!.firstElementChild ? "up" : "down") : "tile" }
+      : null;
     props.onPhone(order, `${props.titleOf(w)} moved to place ${to + 1} of ${order.length}.`);
   };
+  const keep = useRef<{ id: string; which: "tile" | "up" | "down" } | null>(null);
+  useLayoutEffect(() => {
+    const k = keep.current;
+    keep.current = null;
+    const item = k && wrap.current?.querySelector<HTMLElement>(`.dg[data-id="${k.id}"]`);
+    if (!k || !item) return;
+    const [up, down] = item.querySelectorAll<HTMLButtonElement>(".dw-steps button");
+    const tile = item.querySelector<HTMLElement>(".dw");
+    const want = k.which === "up" ? up : k.which === "down" ? down : tile;
+    const other = k.which === "up" ? down : up;
+    const to = want instanceof HTMLButtonElement && want.disabled ? (other && !other.disabled ? other : tile) : want;
+    if (to && document.activeElement !== to) to.focus({ preventScroll: true });
+  });
   useLayoutEffect(() => {
     const from = flip.current;
     flip.current = null;
@@ -580,7 +601,7 @@ export function Grid(p: GridProps) {
     s.timer = window.setTimeout(() => {
       s.fired = true;
       navigator.vibrate?.(10);
-      latest.current.p.onEdit();
+      latest.current.p.onEdit(undefined, item.dataset.id);
       // A mouse still held carries straight on into a drag, as on a phone's home screen.
       if (!start.mouse || latest.current.mode === "phone") return;
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -630,7 +651,7 @@ export function Grid(p: GridProps) {
         else moveKey(w, dir);
       } else if (e.key === "Enter" || e.key === "Escape") {
         e.preventDefault();
-        latest.current.p.onDone();
+        latest.current.p.onDone(w.id);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         hide(w.id);

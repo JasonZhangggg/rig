@@ -284,10 +284,10 @@ describe("Games", () => {
 
 describe("History", () => {
   const readout = (name = "Graphics card, temperature") => screen.getByRole("img", { name }).parentElement!.querySelector("[aria-live]")!.textContent!;
-  /** Opens the list at the top of the part and picks what to chart, by its exact label. */
+  /** Opens the menu at the top of the part and picks the kind of sensor to chart, by its exact label. */
   const chart = (name: string) => {
-    fireEvent.click(document.querySelector(".pf-pick-btn")!);
-    fireEvent.click(within(screen.getByRole("dialog", { name: "What to chart" })).getByRole("button", { name }));
+    fireEvent.click(screen.getByRole("button", { name: /^What to chart/ }));
+    fireEvent.click(within(screen.getByRole("menu", { name: "What to chart" })).getByRole("menuitem", { name: new RegExp(`^${name}\\b`) }));
   };
 
   it("gives each part its own entry, with its own charts and every sensor it reports", async () => {
@@ -299,7 +299,7 @@ describe("History", () => {
     await screen.findByRole("img", { name: "Graphics card, temperature" });
     // One chart at a time: usage is a pick away, not drawn alongside.
     expect(screen.queryByRole("img", { name: "Graphics card, usage" })).toBeNull();
-    chart("All usage");
+    chart("Usage");
     expect(screen.getByRole("img", { name: "Graphics card, usage" })).toBeTruthy();
     expect(screen.queryByRole("img", { name: "Graphics card, temperature" })).toBeNull();
 
@@ -307,7 +307,7 @@ describe("History", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Memory" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Memory, in use" })).toBeTruthy();
     expect(screen.queryByRole("img", { name: /temperature/ })).toBeNull();
-    chart("All data");
+    chart("Data");
     const sensors = screen.getByRole("table", { name: "Memory, data" });
     expect(within(sensors).getByRole("rowheader", { name: "Memory Used" })).toBeTruthy();
     expect(within(sensors).queryByRole("rowheader", { name: "Virtual Memory" })).toBeNull();
@@ -321,7 +321,7 @@ describe("History", () => {
     expect(fan.textContent).toMatch(/\d rpm.*\d rpm.*\d rpm/);
   });
 
-  it("charts one kind or one sensor at a time, picked from a list grouped by kind", async () => {
+  it("charts one kind at a time from a short menu, and one sensor from its row", async () => {
     await show("history");
     fireEvent.click(within(await screen.findByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
     const now = screen.getByLabelText("Now");
@@ -330,29 +330,39 @@ describe("History", () => {
     expect(screen.getByRole("table", { name: "Processor, temperatures" }).textContent).not.toMatch(/Thread/);
     expect(screen.queryByRole("region", { name: /^Cores/ })).toBeNull();
 
-    fireEvent.click(document.querySelector(".pf-pick-btn")!);
-    const list = screen.getByRole("dialog", { name: "What to chart" });
-    expect(within(list).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Temperatures", "Usage", "Speeds", "Power", "Voltages"]);
-    fireEvent.change(within(list).getByRole("searchbox", { name: "Filter sensors" }), { target: { value: "core 3" } });
-    const names = within(list).getAllByRole("button").map((b) => b.textContent!).filter((n) => !n.startsWith("All "));
-    expect(names.length).toBeGreaterThan(2);
-    expect(names.every((n) => /#3\b/.test(n))).toBe(true);
-    fireEvent.keyDown(list, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "What to chart" })).toBeNull();
+    // The menu lists only the kinds of sensor, however many sensors the processor reports, with focus on the one shown.
+    const button = screen.getByRole("button", { name: /^What to chart/ });
+    fireEvent.click(button);
+    const menu = screen.getByRole("menu", { name: "What to chart" });
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((b) => b.textContent!.replace(/\d+$/, ""))).toEqual(["Temperatures", "Usage", "Speeds", "Power", "Voltages"]);
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "What to chart" })).toBeNull();
+    expect(document.activeElement).toBe(button);
 
-    chart("All usage");
+    chart("Usage");
     expect(within(screen.getByRole("table", { name: "Processor, usage" })).getByRole("rowheader", { name: "CPU Core #3 Thread #2" })).toBeTruthy();
     const cores = screen.getByRole("region", { name: /^Cores/ });
     expect(within(cores).getAllByRole("listitem")).toHaveLength(8);
     expect(cores.textContent).toMatch(/one temperature for each group of cores/);
     expect(within(cores).getAllByRole("listitem")[0].textContent).toMatch(/^Core 1\d+%.*GHz/);
 
-    // One sensor on its own: it's marked in the table, and charts from the readings that come in.
-    chart("Core (SVI2 TFN)");
-    const row = within(screen.getByRole("table", { name: "Processor, voltages" })).getByRole("rowheader", { name: "Core (SVI2 TFN)" }).parentElement!;
+    // One sensor on its own, picked from its row: it's marked in the table, and charts from the readings that come in.
+    chart("Voltages");
+    const table = () => screen.getByRole("table", { name: "Processor, voltages" });
+    fireEvent.click(within(table()).getByRole("button", { name: "Core (SVI2 TFN)" }));
+    const row = within(table()).getByRole("rowheader", { name: "Core (SVI2 TFN)" }).parentElement!;
     expect(row.textContent).toMatch(/\d\.\d{3} V/);
     expect(row.className).toBe("pf-picked");
     expect(screen.getByRole("heading", { level: 3, name: "Core (SVI2 TFN)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^What to chart/ }).getAttribute("aria-label")).toBe("What to chart: Voltages, Core (SVI2 TFN)");
+    // The same row again charts the whole kind.
+    fireEvent.click(within(table()).getByRole("button", { name: "Core (SVI2 TFN)" }));
+    expect(screen.getByRole("heading", { level: 3, name: "All voltages" })).toBeTruthy();
+    fireEvent.click(within(table()).getByRole("button", { name: "Core (SVI2 TFN)" }));
 
     // The kind stays picked on the next part that has it.
     fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Motherboard/ }));
@@ -371,6 +381,10 @@ describe("History", () => {
 
     fireEvent.change(find, { target: { value: "hot spot" } });
     expect(within(screen.getByRole("table", { name: /hot spot/ })).getByRole("rowheader", { name: "GPU Hot Spot" })).toBeTruthy();
+    // A sensor in the results opens its part with that sensor charted.
+    fireEvent.click(within(screen.getByRole("table", { name: /hot spot/ })).getByRole("button", { name: "GPU Hot Spot" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Graphics card" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3, name: "GPU Hot Spot" })).toBeTruthy();
     fireEvent.change(find, { target: { value: "usage" } });
     const usage = screen.getByRole("table", { name: /usage/ });
     fireEvent.click(within(usage).getByRole("button", { name: "Open graphics card" }));

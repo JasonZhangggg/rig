@@ -58,7 +58,7 @@ export function PCPage() {
           </nav>
         </>
       )}
-      {view === "upgrades" ? <UpgradesTab /> : view === "manuals" ? <ManualsTab /> : (
+      {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : (
       <div className="pc-view">
         <section className="stage-card" aria-label="3D view">
           <StageSlot id="pc-stage" />
@@ -79,10 +79,13 @@ export function PCPage() {
 function Customize({ onDone }: { onDone: () => void }) {
   const { pc, client, toast } = useApp();
   const [name, setName] = useState(pc.name);
-  const update = (patch: { name?: string; accent?: string }) => client.rename(pc.id, patch).catch(() => toast("Couldn't save that. Try again."));
+  // The name last sent, so leaving the field and then pressing Done saves it once.
+  const sent = useRef(pc.name);
+  const update = (patch: { name?: string; accent?: string }) => client.rename(pc.id, patch).catch(() => { if (patch.name) sent.current = pc.name; toast("Couldn't save that. Try again."); });
+  const saveName = () => { const n = name.trim(); if (n && n !== pc.name && n !== sent.current) { sent.current = n; void update({ name: n }); } };
   return (
     <div className="card customize" role="dialog" aria-label="Customize">
-      <div className="field"><label className="label" htmlFor="pc-name">Name</label><input className="input" id="pc-name" autoFocus value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== pc.name && update({ name: name.trim() })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} /></div>
+      <div className="field"><label className="label" htmlFor="pc-name">Name</label><input className="input" id="pc-name" autoFocus value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} /></div>
       <div className="field">
         <span className="label">Accent color</span>
         <div className="swatches">
@@ -90,7 +93,7 @@ function Customize({ onDone }: { onDone: () => void }) {
         </div>
       </div>
       <p className="faint customize-note">The accent marks this PC in your list of PCs.</p>
-      <div className="customize-foot"><button className="btn primary sm" type="button" onClick={() => { if (name.trim() && name !== pc.name) update({ name: name.trim() }); onDone(); }}>Done</button></div>
+      <div className="customize-foot"><button className="btn primary sm" type="button" onClick={() => { saveName(); onDone(); }}>Done</button></div>
     </div>
   );
 }
