@@ -1,6 +1,6 @@
 /* My PC with the motherboard open: the board close up in the 3D view's place, and its slots beside it.
-   In use is the same green on the board (boardScene's USED), its key and the Slots tab. */
-.pc-view { --in-use: #4cc274; --in-use-ink: #0d2616; }
+   In use is the app's settled data color (pale gold by default) on the board, its key and the Slots tab. */
+.pc-view { --in-use: var(--good); --in-use-ink: var(--s-ink); }
 .board-stage { position: absolute; inset: 0; touch-action: none; }
 .board-stage > canvas { display: block; }
 .board-top { position: absolute; z-index: 1; top: 14px; left: 16px; right: 16px; display: grid; gap: 8px; justify-items: start; pointer-events: none; }
@@ -11,7 +11,7 @@
   background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--text-2); font-size: 12px;
 }
 .board-key i { position: relative; display: inline-block; width: 18px; height: 14px; margin-right: -6px; border-radius: 4px; background: #26282b; }
-.board-key i::after { content: ""; position: absolute; inset: 3px; border-radius: 2px; box-shadow: inset 0 0 0 1.5px var(--in-use); background: color-mix(in srgb, var(--in-use) 50%, transparent); }
+.board-key i::after { content: ""; position: absolute; inset: 3px; border-radius: 2px; box-shadow: inset 0 0 0 1.5px var(--in-use); background: color-mix(in srgb, var(--in-use) 55%, transparent); }
 .board-key i.is-free::after { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5); background: none; }
 @media (hover: none) { .board-hint { display: none; } }
 

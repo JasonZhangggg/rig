@@ -9,7 +9,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { BoardItem, BoardShape } from "@rig/core";
 import { makeBoard, pinNumber, type BoardNode } from "./board3d";
 import { canvasTex, isSharedTexture, realMaterial, type Kit } from "./parts3d";
-import { reducedMotion } from "./appearance";
+import { contrast, reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelItem, type LabelPoint } from "./sceneLabels";
 
 export { pinNumber } from "./board3d";
@@ -39,15 +39,22 @@ export interface PinGroup {
 }
 
 // The colors the wires themselves usually have, so the map matches the plug in the person's hand.
-const wireColor: Record<string, string> = {
-  Ground: "#3a3b3f", "+12V": "#e3b324", Speed: "#3f9f58", PWM: "#3b78d0", "+5V": "#d4483b", Data: "#3f9f58",
-  Red: "#d4483b", Green: "#3f9f58", Blue: "#3b78d0",
-  "Power switch": "#d4673b", Reset: "#e3b324", "Power LED": "#3f9f58", "HDD LED": "#3b78d0", Reserved: "#9a9890",
+/** The app's data colors that pins are drawn in, so the pin map follows Settings, Appearance. */
+export interface PinPalette { good: string; look: string; expected: string; goodMark: string; lookText: string }
+const brassPins: PinPalette = { good: "#E6D3A3", look: "#D9804F", expected: "#A7A39B", goodMark: "#7C6A3A", lookText: "#A4471C" };
+const GROUND = "#3a3b3f";
+/** Each kind of wire in one of the palette's colors: power warm, signals pale, ground dark, spare pins grey. */
+const wireRole: Record<string, keyof PinPalette | "ground"> = {
+  Ground: "ground", "+12V": "look", "+5V": "look", Speed: "good", PWM: "goodMark", Data: "good",
+  Red: "lookText", Green: "good", Blue: "goodMark",
+  "Power switch": "look", Reset: "lookText", "Power LED": "good", "HDD LED": "goodMark", Reserved: "expected",
 };
-const spare = ["#3b78d0", "#3f9f58", "#d4673b", "#a45cc2", "#e3b324", "#9a9890"];
+const spareRoles: (keyof PinPalette)[] = ["goodMark", "look", "expected", "good", "lookText"];
+/** Dark ink on a light pin, white on a dark one. */
+export const pinInk = (hex: string) => (contrast(hex, "#1B1B1F") >= contrast(hex, "#FFFFFF") ? "#1B1B1F" : "#FFFFFF");
 
 /** A header's pins grouped by what plugs into them, in the order of their lowest pin number. */
-export function pinGroups(item: BoardItem): PinGroup[] {
+export function pinGroups(item: BoardItem, pal: PinPalette = brassPins): PinGroup[] {
   const p = item.pins;
   if (!p?.names) return [];
   const missing = p.missing ?? [];
@@ -56,7 +63,8 @@ export function pinGroups(item: BoardItem): PinGroup[] {
     if (!raw || missing.includes(i)) return;
     const m = /^(.*?)\s*([+−-])$/.exec(raw);
     const name = m ? m[1] : raw, sign = m ? (m[2] === "+" ? "+" : "−") : "";
-    if (!by.has(name)) by.set(name, { name, color: wireColor[name] ?? spare[by.size % spare.length], pins: [] });
+    const role = wireRole[name] ?? spareRoles[by.size % spareRoles.length];
+    if (!by.has(name)) by.set(name, { name, color: role === "ground" ? GROUND : pal[role], pins: [] });
     by.get(name)!.pins.push({ index: i, number: pinNumber(item, i), sign });
   });
   const out = [...by.values()];
@@ -89,6 +97,10 @@ export function createBoardScene(
   board: BoardShape,
   opts: {
     accent?: string;
+    /** Slots in use are marked in this color; the accent when left out. */
+    used?: string;
+    /** The data colors pins are drawn in. */
+    pins?: PinPalette;
     onPick?: (id: string | null) => void;
     /** The item (and pin) under the pointer, with the pointer's place in the view, or null when it leaves the board. */
     onHover?: (h: BoardHover | null) => void;
@@ -237,7 +249,7 @@ export function createBoardScene(
   // ---------- in use / free ----------
   // A filled frame around each slot in use and a thin outline around each free one, so the board reads like the Slots tab.
   let usageMarks: THREE.Mesh[] = [], usageKey = "";
-  const USED = 0x4cc274; // the same green as .board-key
+  const USED = new THREE.Color(opts.used ?? accent); // the same color as .board-key and the Slots tab
   const rounded = (w: number, h: number, r: number, path: THREE.Path = new THREE.Shape()) => {
     const x = -w / 2, y = -h / 2;
     r = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -262,7 +274,7 @@ export function createBoardScene(
       const frame = rounded(w, h, r) as THREE.Shape;
       frame.holes.push(rounded(w - t * 2, h - t * 2, r - t, new THREE.Path()));
       const parts: [THREE.Shape, number][] = [[frame, used ? 1 : 0.45]];
-      if (used) parts.push([rounded(w - t * 2, h - t * 2, r - t) as THREE.Shape, 0.5]);
+      if (used) parts.push([rounded(w - t * 2, h - t * 2, r - t) as THREE.Shape, 0.55]);
       for (const [shape, opacity] of parts) {
         const m = new THREE.Mesh(new THREE.ShapeGeometry(shape, 6), new THREE.MeshBasicMaterial({ color: used ? USED : 0xffffff, transparent: true, opacity, depthWrite: false, toneMapped: false }));
         m.position.z = n.top + 0.002;
@@ -329,7 +341,7 @@ export function createBoardScene(
       else {
         const g = groupOf.get(i), sign = signOf.get(i);
         c.textContent = labeled && sign ? sign : String(pinNumber(it, i));
-        if (g) c.style.setProperty("--c", g.color); else c.classList.add("is-unused");
+        if (g) { c.style.setProperty("--c", g.color); c.style.color = pinInk(g.color); } else c.classList.add("is-unused");
         if (pinNumber(it, i) === 1) c.classList.add("is-first");
       }
       cells.push(c);
@@ -423,7 +435,7 @@ export function createBoardScene(
     }
     for (const n of focus) addHalo(n);
     const one = focus.length === 1 ? focus[0] : null;
-    const groups = one ? pinGroups(one.item) : [];
+    const groups = one ? pinGroups(one.item, opts.pins) : [];
     if (one && groups.length) {
       for (const g of groups) {
         const m = realMaterial(g.color, { metal: 0.35, rough: 0.32, emissive: g.color, ei: 0.45 });

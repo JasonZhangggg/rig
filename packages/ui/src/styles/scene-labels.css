@@ -85,9 +85,9 @@
 .po-pin.is-unused { background: #4a4c50; color: #b9bab6; }
 .po-pin.is-empty { background: none; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .14); }
 .po-grid.has-lit .po-pin:not(.is-lit):not(.is-empty) { opacity: .3; }
-.po-pin.is-lit { transform: scale(1.1); }
+.po-pin.is-lit { transform: scale(1.06); }
 /* Names right on the map: a colored bracket along the pins it names, the name on the far side of it. */
-.po-grid.is-labeled { column-gap: 10px; row-gap: 5px; padding: 10px 14px; }
+.po-grid.is-labeled { column-gap: 11px; row-gap: 12px; padding: 12px 14px; }
 .po-tag {
   display: flex; justify-content: center; min-width: 0; color: #e9e8e4; font: 600 11px/1.2 var(--font);
   text-align: center; white-space: nowrap; cursor: default;
@@ -111,4 +111,5 @@
   .pinout { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .po-pin { transition: none; } }
-.po-pin.is-hover { transform: scale(1.18); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+/* The pin under the pointer: a ring that stays inside the gap, so it never runs into a name. */
+.po-pin.is-hover { transform: scale(1.06); box-shadow: 0 0 0 2px #1d1f22, 0 0 0 3.5px #fff; }
