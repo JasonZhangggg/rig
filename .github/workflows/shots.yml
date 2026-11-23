@@ -1,0 +1,92 @@
+# Temporary: real Windows screenshots of the stock installer and Rig Setup
+# for PR review. Lives only on claude/themed-setup-screens.
+name: Setup screenshots
+on:
+  push:
+    branches: [claude/themed-setup-screens]
+    paths: [.github/workflows/shots.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  shots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: rig-windows-installer, path: dl/nsis, run-id: 45233413044, github-token: "${{ github.token }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: rig-windows-setup, path: dl/setup, run-id: 45233413044, github-token: "${{ github.token }}" }
+      - name: Screenshots
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @"
+          using System; using System.Runtime.InteropServices;
+          public struct RECT { public int L, T, R, B; }
+          public static class W {
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+            [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+          }
+          "@
+          [W]::SetProcessDPIAware() | Out-Null
+          New-Item -ItemType Directory -Force shots | Out-Null
+          function Snap($proc, $name, $wait = 6) {
+            Start-Sleep -Seconds $wait
+            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+            $h = if ($p) { $p.MainWindowHandle } else { [IntPtr]::Zero }
+            if ($h -eq [IntPtr]::Zero) {
+              # NSIS uninstallers hand over to a copy of themselves.
+              $p = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -match "Rig" } | Select-Object -First 1
+              $h = if ($p) { $p.MainWindowHandle } else { [IntPtr]::Zero }
+            }
+            $r = New-Object RECT
+            if ($h -ne [IntPtr]::Zero) {
+              [W]::SetForegroundWindow($h) | Out-Null
+              Start-Sleep -Milliseconds 600
+              # The visible frame, without the invisible resize border.
+              if ([W]::DwmGetWindowAttribute($h, 9, [ref]$r, 16) -ne 0) { [W]::GetWindowRect($h, [ref]$r) | Out-Null }
+            } else { $r.L = 0; $r.T = 0; $r.R = 1024; $r.B = 768 }
+            $pad = 24
+            $x = [Math]::Max(0, $r.L - $pad); $y = [Math]::Max(0, $r.T - $pad)
+            $w = $r.R - $r.L + 2 * $pad; $hgt = $r.B - $r.T + 2 * $pad
+            $bmp = New-Object System.Drawing.Bitmap $w, $hgt
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size)
+            $bmp.Save("shots/$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            "$name.png: $w x $hgt"
+          }
+          $nsis = (Get-ChildItem dl/nsis/*.exe)[0].FullName
+          $setup = (Get-ChildItem dl/setup/*.exe)[0].FullName
+          $dir = Join-Path $env:LOCALAPPDATA "Rig"
+
+          # Before: the stock wizard, then its uninstaller.
+          $p = Start-Process $nsis -PassThru
+          Snap $p "before-install"
+          Stop-Process -Id $p.Id -Force
+          Start-Process $nsis -ArgumentList "/S" -Wait
+          $p = Start-Process (Join-Path $dir "uninstall.exe") -PassThru
+          Snap $p "before-uninstall"
+          Get-Process | Where-Object { $_.Path -like "*Un_*" -or $_.MainWindowTitle -match "Rig" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S", "_?=$dir" -Wait
+          Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+
+          # After: Rig Setup's real window.
+          $p = Start-Process $setup -PassThru
+          Snap $p "after-install" 8
+          Stop-Process -Id $p.Id -Force
+          foreach ($s in "working", "done", "update", "uninstall", "uninstalled") {
+            $p = Start-Process $setup -ArgumentList "--preview", $s -PassThru
+            Snap $p "after-$s" 6
+            Stop-Process -Id $p.Id -Force
+          }
+      - name: Save them on this branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898099+github-actions[bot]@users.noreply.github.com"
+          git add shots
+          git commit -m "Setup screenshots from windows-latest"
+          git push
