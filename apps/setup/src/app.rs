@@ -286,7 +286,7 @@ fn window(kind: Kind, exe: &Path) -> i32 {
                         if auto {
                             match &kind {
                                 // Leave the switches as people first see them.
-                                Kind::Install(_) => { let _ = proxy.send_event(Msg::Page(r#"{"type":"install"}"#.into())); }
+                                Kind::Install(_) => { let _ = proxy.send_event(Msg::Page(r#"{"type":"install","desktop":true}"#.into())); }
                                 Kind::Uninstall(_) => { let _ = proxy.send_event(Msg::Page(r#"{"type":"uninstall"}"#.into())); }
                                 Kind::Broken(_) => leave(flow, 1),
                                 Kind::Preview(_) => {}

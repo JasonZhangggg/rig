@@ -150,7 +150,8 @@ runs:
         $uninstall = (Get-ItemProperty $rig).UninstallString
         "Windows uninstalls Rig with: $uninstall"
         if ($uninstall -notmatch 'rig-setup\.exe" --uninstall$') { throw "Rig's uninstall entry doesn't open Rig's window" }
-        if (Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "Rig.lnk")) { throw "Rig Setup made a desktop shortcut, though that's off unless someone turns it on" }
+        $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Rig.lnk"
+        if (-not (Test-Path $lnk)) { throw "Rig Setup didn't add Rig to the desktop, though that switch starts on" }
         if (-not (Test-Path (Join-Path $dir "pawnio\PawnIO_setup.exe"))) { throw "PawnIO's setup isn't in $dir" }
         if (-not (Test-Path $key)) { throw "Installing Rig didn't install PawnIO" }
         "PawnIO $((Get-ItemProperty $key).DisplayVersion) installed with Rig"
@@ -167,6 +168,7 @@ runs:
         if (Get-Process -Name rig-uninstall -ErrorAction SilentlyContinue) { throw "Rig's uninstall window was still open after 3 minutes" }
         if (Test-Path $key) { throw "Uninstalling Rig left PawnIO behind, though Rig installed it" }
         if (Test-Path $rig) { throw "Uninstalling Rig left its entry in Installed apps" }
+        if (Test-Path $lnk) { throw "Uninstalling Rig left its desktop shortcut" }
         "Uninstalling Rig removed PawnIO"
         if (Test-Path $dir) { throw "Uninstalling Rig left $dir behind: $((Get-ChildItem -Recurse $dir | Select-Object -ExpandProperty FullName) -join ', ')" }
 
