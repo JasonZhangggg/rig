@@ -1,0 +1,18 @@
+/* Rig's right-click menu (contextmenu.ts), in the app's own tokens. */
+.rig-menu {
+  position: fixed; z-index: 1000; min-width: 196px; padding: 6px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow-lg); font: 500 14px/1 var(--font);
+  animation: rig-menu-in .14s var(--ease-out);
+}
+@keyframes rig-menu-in { from { opacity: 0; transform: scale(.97); } }
+.rig-menu button {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px; width: 100%; height: 34px; padding: 0 12px;
+  border: 0; border-radius: calc(var(--r-sm) - 6px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rig-menu button:disabled { color: var(--text-3); opacity: .55; cursor: default; }
+.rig-menu button:focus-visible { outline: none; background: var(--sel); }
+@media (hover: hover) and (pointer: fine) { .rig-menu button:not(:disabled):hover { background: var(--sel); } }
+.rig-menu kbd { color: var(--text-3); font: 500 12.5px var(--font); }
+@media (prefers-reduced-motion: reduce) { .rig-menu { animation: none; } }
+:root[data-motion="reduce"] .rig-menu { animation: none; }

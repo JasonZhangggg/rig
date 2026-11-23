@@ -2,7 +2,9 @@ import { useState } from "react";
 import type { ManualKind } from "@rig/core";
 import { useApp } from "../state";
 import { AddManual } from "./AddManual";
-import { DiagramChips, ManualCard } from "./ManualCard";
+import { ManualCard } from "./ManualCard";
+import { AskManual, ManualSections, OpenManualIcon } from "./ManualOutline";
+import { openManual } from "./viewerState";
 import { useManuals } from "./useManuals";
 import { helpsWith, manualRows } from "./words";
 
@@ -11,8 +13,11 @@ const ownKind: Record<string, ManualKind> = { case: "case", psu: "psu", cpu: "co
 /** Parts that need their model typed in before they have a manual: Windows can't see them at all. */
 const askFirst = new Set(["case", "psu"]);
 
-/** The Manual tab of a part on My PC: its own manual, and the pages of the board's manual about it. */
-export function PartManual({ id }: { id: string }) {
+/**
+ * The Manual tab of a part on My PC: its own manual, the pages of the board's manual about it,
+ * and a box at the bottom to ask about the part.
+ */
+export function PartManual({ id, about }: { id: string; about: string }) {
   const { pc } = useApp();
   const state = useManuals();
   const [adding, setAdding] = useState(false);
@@ -30,16 +35,20 @@ export function PartManual({ id }: { id: string }) {
     : null;
   return (
     <div className="mn-part">
-      {row && <ManualCard row={row} store={state.store} compact />}
+      {row && <ManualCard row={row} store={state.store} compact prefer={helpsWith[id]} outline />}
       {add}
       {related && (
-        <div className="mn-related">
-          <span className="label">In the {related.title}</span>
-          <DiagramChips manual={related} only={helpsWith[id]} />
-        </div>
+        <section className="mn-related" aria-label={`In the ${related.title}`}>
+          <div className="mn-title-row">
+            <h3 className="mn-rel-title"><button type="button" className="mn-title-link" onClick={() => openManual(related.id)}>In the {related.title}</button></h3>
+            <OpenManualIcon manual={related} />
+          </div>
+          <ManualSections manual={related} only={helpsWith[id]} prefer={helpsWith[id]} />
+        </section>
       )}
-      {kind && !row && !add && <button type="button" className="linkish" onClick={() => setAdding(true)}>Add this {name}'s own manual</button>}
-      {!row && !related && !kind && <p className="muted">Rig doesn't keep a manual for this part. Ask below and Rig answers from what it knows about it.</p>}
+      {kind && !row && !add && <button type="button" className="linkish mn-add-own" onClick={() => setAdding(true)}>Add this {name}'s own manual</button>}
+      {!row && !related && !kind && <p className="muted">Rig doesn't keep a manual for this part.</p>}
+      <AskManual about={about} fromManual={!!(row?.manual?.indexed || related)} />
     </div>
   );
 }

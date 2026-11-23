@@ -85,19 +85,25 @@ jobs:
           api-url: ${{ vars.RIG_API_URL }}
           updater-key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           updater-key-password: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - name: Give the installer a stable name
+      # People download Rig Setup, with Rig's own window. Installed copies update
+      # with the plain installer inside it, which is what the signature is for.
+      - name: Give the setup and the update stable names
         shell: bash
         env:
+          SETUP: ${{ steps.build.outputs.setup }}
           INSTALLER: ${{ steps.build.outputs.installer }}
           SIGNATURE: ${{ steps.build.outputs.signature }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          mkdir -p release
-          cp "$INSTALLER" "release/Rig-Setup-$VERSION-x64.exe"
-          [ -z "$SIGNATURE" ] || cp "$SIGNATURE" "release/Rig-Setup-$VERSION-x64.exe.sig"
-          ls -l release
+          mkdir -p release update
+          cp "$SETUP" "release/Rig-Setup-$VERSION-x64.exe"
+          cp "$INSTALLER" "update/Rig-Setup-$VERSION-x64.exe"
+          [ -z "$SIGNATURE" ] || cp "$SIGNATURE" "update/Rig-Setup-$VERSION-x64.exe.sig"
+          ls -l release update
       - uses: actions/upload-artifact@v4
         with: { name: rig-release, path: release/, if-no-files-found: error, overwrite: true }
+      - uses: actions/upload-artifact@v4
+        with: { name: rig-update, path: update/, if-no-files-found: error, overwrite: true }
 
   publish:
     needs: [version, windows]
@@ -156,11 +162,11 @@ jobs:
       # The tools from the branch this runs on, so a fixed upload step can send a release that's already tagged.
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { name: rig-release, path: release }
+        with: { name: rig-update, path: update }
       - name: Check there's a signed update to send
         id: sig
         run: |
-          if [ -f "release/Rig-Setup-$VERSION-x64.exe.sig" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"
+          if [ -f "update/Rig-Setup-$VERSION-x64.exe.sig" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"
           else echo "::warning::No TAURI_SIGNING_PRIVATE_KEY secret, so installed copies won't get $VERSION. See docs/releasing.md."; fi
       - uses: pnpm/action-setup@v4
         if: steps.sig.outputs.ok
@@ -171,4 +177,4 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Send it to installed copies, keeping the latest three
         if: steps.sig.outputs.ok
-        run: node tools/publish-update.mjs "$VERSION" "release/Rig-Setup-$VERSION-x64.exe" "release/Rig-Setup-$VERSION-x64.exe.sig"
+        run: node tools/publish-update.mjs "$VERSION" "update/Rig-Setup-$VERSION-x64.exe" "update/Rig-Setup-$VERSION-x64.exe.sig"

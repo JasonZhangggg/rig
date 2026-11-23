@@ -101,12 +101,12 @@ function Viewer({ manualId, page }: { manualId: string; page: number }) {
             <div className="mv-main">
               <div className="mv-tools" role="toolbar" aria-label="Pages">
                 <div className="mv-pager">
-                  <button type="button" className="btn sm" onClick={() => go(page - 1)} disabled={page <= 1} aria-label="Previous page">‹</button>
+                  <button type="button" className="mv-icon" onClick={() => go(page - 1)} disabled={page <= 1} aria-label="Previous page"><Chev dir="left" /></button>
                   <PageBox page={page} last={count} go={go} />
-                  <button type="button" className="btn sm" onClick={() => go(page + 1)} disabled={count > 0 && page >= count} aria-label="Next page">›</button>
+                  <button type="button" className="mv-icon" onClick={() => go(page + 1)} disabled={count > 0 && page >= count} aria-label="Next page"><Chev dir="right" /></button>
                 </div>
                 {file.state === "ready" && <Zoom z={zoom} setZ={setZoom} />}
-                <button type="button" className="btn sm mv-ask" onClick={askPage} disabled={data.answering}>Ask about this page</button>
+                <button type="button" className="mv-text-btn mv-ask" onClick={askPage} disabled={data.answering}>Ask about this page</button>
               </div>
               <PageView manual={manual} page={page} zoom={zoom} file={file} onCount={setCount} retry={() => setAttempt((n) => n + 1)} />
             </div>
@@ -117,13 +117,17 @@ function Viewer({ manualId, page }: { manualId: string; page: number }) {
   );
 }
 
+const Chev = ({ dir }: { dir: "left" | "right" }) => (
+  <svg viewBox="0 0 20 20" aria-hidden="true"><path d={dir === "left" ? "M12 5l-5 5 5 5" : "M8 5l5 5-5 5"} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
 function Zoom({ z, setZ }: { z: number; setZ: (z: number) => void }) {
   const i = zooms.indexOf(z);
   return (
     <div className="mv-zoom" role="group" aria-label="Zoom">
-      <button type="button" className="btn sm" onClick={() => setZ(zooms[Math.max(0, i - 1)])} disabled={i <= 0} aria-label="Zoom out">−</button>
-      <button type="button" className="btn ghost sm mv-zoom-level" onClick={() => setZ(1)} title="Fit to width">{z === 1 ? "Fit" : `${Math.round(z * 100)}%`}</button>
-      <button type="button" className="btn sm" onClick={() => setZ(zooms[Math.min(zooms.length - 1, i + 1)])} disabled={i >= zooms.length - 1} aria-label="Zoom in">+</button>
+      <button type="button" className="mv-icon" onClick={() => setZ(zooms[Math.max(0, i - 1)])} disabled={i <= 0} aria-label="Zoom out">−</button>
+      <button type="button" className="mv-text-btn mv-zoom-level" onClick={() => setZ(1)} title="Fit to width">{z === 1 ? "Fit" : `${Math.round(z * 100)}%`}</button>
+      <button type="button" className="mv-icon" onClick={() => setZ(zooms[Math.min(zooms.length - 1, i + 1)])} disabled={i >= zooms.length - 1} aria-label="Zoom in">+</button>
     </div>
   );
 }
@@ -135,7 +139,7 @@ function PageBox({ page, last, go }: { page: number; last: number; go: (n: numbe
   return (
     <label className="mv-pagebox">
       <span className="sr-only">Page</span>
-      <input className="input num" inputMode="numeric" value={v} onChange={(e) => setV(e.target.value.replace(/\D/g, ""))} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); }} aria-label="Page number" />
+      <input className="num" inputMode="numeric" value={v} onChange={(e) => setV(e.target.value.replace(/\D/g, ""))} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); }} aria-label="Page number" />
       <span className="faint">{last ? `of ${last}` : ""}</span>
     </label>
   );
@@ -148,7 +152,7 @@ function Rail({ manual, page, go }: { manual: Manual; page: number; go: (n: numb
   return (
     <aside className="mv-rail" aria-label="In this manual">
       <div className="mv-find">
-        <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find in this manual" aria-label="Find in this manual" />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find in this manual" aria-label="Find in this manual" />
         {error && <p className="muted">{error}</p>}
         {hits && hits.length === 0 && !error && <p className="muted mv-none">Not in this manual.</p>}
         {hits && hits.length > 0 && <HitList hits={hits} showTitle={false} onOpen={(h) => { go(h.page); }} />}

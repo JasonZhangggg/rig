@@ -15,6 +15,35 @@ export interface AppHost {
   recorder?: Pick<RecorderLink, "status" | "set" | "probes" | "approveAdmin">;
   /** Opens the folder with Rig's debug log. */
   openLogs?: () => Promise<void>;
+  /** Rig's own updates: checked quietly in the background, installed only when the person picks Update. */
+  updates?: UpdatesHost;
+}
+
+/** Where Rig's own update stands. */
+export type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "current"; checkedAt: number }
+  | { kind: "ready"; version: string; checkedAt: number }
+  | { kind: "installing"; version: string }
+  | { kind: "failed"; step: "check" | "install"; error: string; version?: string };
+
+export interface UpdatesHost {
+  get(): UpdateState;
+  /** Calls back whenever the state changes; returns the unsubscribe. */
+  subscribe(fn: () => void): () => void;
+  check(): Promise<void>;
+  /** Downloads and installs the version that's ready. Rig closes while the installer runs. */
+  install(): Promise<void>;
+}
+
+const idle: UpdateState = { kind: "idle" };
+const noUpdates: UpdatesHost = { get: () => idle, subscribe: () => () => {}, check: async () => {}, install: async () => {} };
+
+/** The update state, kept current. Idle when the app has no updater (the website, the demo). */
+export function useUpdates(host: AppHost): UpdateState {
+  const u = host.updates ?? noUpdates;
+  return useSyncExternalStore(u.subscribe, u.get);
 }
 
 /** The review sheet shown before any change is made. */

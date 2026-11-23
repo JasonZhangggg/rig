@@ -1,5 +1,6 @@
 # Builds the helper, runs its self-test, bundles it into the Tauri app and
-# builds the NSIS installer. Runs on windows-latest after actions/checkout.
+# builds the NSIS installer, then wraps that in Rig's own setup window
+# (apps/setup). Runs on windows-latest after actions/checkout.
 # Shared by CI and Release so both make the installer the same way.
 name: Windows installer
 description: The helper self-test and the Rig installer for Windows.
@@ -14,8 +15,11 @@ inputs:
     description: The updater key's password, if it has one.
     required: false
 outputs:
+  setup:
+    description: Path of Rig Setup (.exe), the setup people download. It shows Rig's own window and runs the installer inside it.
+    value: ${{ steps.pack.outputs.setup }}
   installer:
-    description: Path of the built installer (.exe).
+    description: Path of the plain NSIS installer (.exe). Installed copies update with this one, quietly.
     value: ${{ steps.find.outputs.installer }}
   signature:
     description: Path of the installer's updater signature (.sig), empty when the build has no updater.
@@ -65,7 +69,10 @@ runs:
       shell: pwsh
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-      with: { workspaces: apps/desktop/src-tauri }
+      with:
+        workspaces: |
+          apps/desktop/src-tauri
+          apps/setup
     - name: Fetch PawnIO, the driver for processor temperatures (pinned, hash-checked)
       shell: pwsh
       run: |
@@ -84,9 +91,14 @@ runs:
         [ -f "$pub" ] || { echo "::error::There's an updater key but no $pub. Commit the public key that goes with it (see docs/releasing.md)."; exit 1; }
         conf="$RUNNER_TEMP/updater.conf.json"
         jq -n --arg pubkey "$(tr -d '\r\n' < "$pub")" --arg url "$RIG_API_URL/updates/{{target}}/{{arch}}/{{current_version}}" \
-          '{bundle: {createUpdaterArtifacts: true}, plugins: {updater: {pubkey: $pubkey, endpoints: [$url], windows: {installMode: "passive"}}}}' > "$conf"
+          '{bundle: {createUpdaterArtifacts: true}, plugins: {updater: {pubkey: $pubkey, endpoints: [$url], windows: {installMode: "quiet"}}}}' > "$conf"
         echo "UPDATER_CONFIG=$conf" >> "$GITHUB_ENV"
         echo "This build updates from $RIG_API_URL/updates"
+    - name: Build Rig's setup window (the installer copies it in as Rig's uninstaller)
+      shell: pwsh
+      run: |
+        node tools/setup.mjs stub
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - name: Build the installer
       shell: pwsh
       run: |
@@ -112,17 +124,34 @@ runs:
           node tools/updater-sig.mjs "${files[0]}" "${files[0]}.sig" apps/desktop/src-tauri/updater.pub
           echo "signature=${files[0]}.sig" >> "$GITHUB_OUTPUT"
         fi
+    - name: Wrap the installer in Rig's setup window
+      id: pack
+      shell: bash
+      run: |
+        out=apps/desktop/src-tauri/target/release/bundle/setup/Rig-Setup.exe
+        node tools/setup.mjs pack "${{ steps.find.outputs.installer }}" "$out"
+        echo "setup=$out" >> "$GITHUB_OUTPUT"
 
-    - name: Install, check PawnIO and the helper, then uninstall
+    - name: Install with Rig Setup, check PawnIO and the helper, then uninstall
       shell: pwsh
       env:
+        SETUP: ${{ steps.pack.outputs.setup }}
         INSTALLER: ${{ steps.find.outputs.installer }}
       run: |
         $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
+        $rig = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Rig'
         if (Test-Path $key) { throw "PawnIO is already on this runner, so the test can't tell who installed it" }
-        $p = Start-Process $env:INSTALLER -ArgumentList "/S" -Wait -PassThru
-        if ($p.ExitCode -ne 0) { throw "Installer exited with $($p.ExitCode)" }
+        # RIG_SETUP_AUTO presses Install in Rig's window and exits with the result.
+        $env:RIG_SETUP_AUTO = "1"
+        $p = Start-Process $env:SETUP -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Rig Setup exited with $($p.ExitCode)" }
         $dir = Join-Path $env:LOCALAPPDATA "Rig"
+        if (-not (Test-Path (Join-Path $dir "Rig.exe"))) { throw "Rig Setup didn't put Rig.exe in $dir" }
+        $uninstall = (Get-ItemProperty $rig).UninstallString
+        "Windows uninstalls Rig with: $uninstall"
+        if ($uninstall -notmatch 'rig-setup\.exe" --uninstall$') { throw "Rig's uninstall entry doesn't open Rig's window" }
+        $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Rig.lnk"
+        if (-not (Test-Path $lnk)) { throw "Rig Setup didn't add Rig to the desktop, though that switch starts on" }
         if (-not (Test-Path (Join-Path $dir "pawnio\PawnIO_setup.exe"))) { throw "PawnIO's setup isn't in $dir" }
         if (-not (Test-Path $key)) { throw "Installing Rig didn't install PawnIO" }
         "PawnIO $((Get-ItemProperty $key).DisplayVersion) installed with Rig"
@@ -131,7 +160,23 @@ runs:
         $driver = (Get-Content installed-selftest.json | ConvertFrom-Json).snapshot.driver
         "Helper sees PawnIO: installed=$($driver.installed) version=$($driver.version)"
         if (-not $driver.installed) { throw "The installed helper can't see PawnIO" }
+        # Like Settings, Apps: the copy in Rig's folder hands over to one in the temp folder and exits.
+        $p = Start-Process (Join-Path $dir "rig-setup.exe") -ArgumentList "--uninstall" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Rig's uninstall window exited with $($p.ExitCode)" }
+        Start-Sleep -Seconds 1
+        Wait-Process -Name rig-uninstall -Timeout 180 -ErrorAction SilentlyContinue
+        if (Get-Process -Name rig-uninstall -ErrorAction SilentlyContinue) { throw "Rig's uninstall window was still open after 3 minutes" }
+        if (Test-Path $key) { throw "Uninstalling Rig left PawnIO behind, though Rig installed it" }
+        if (Test-Path $rig) { throw "Uninstalling Rig left its entry in Installed apps" }
+        if (Test-Path $lnk) { throw "Uninstalling Rig left its desktop shortcut" }
+        "Uninstalling Rig removed PawnIO"
+        if (Test-Path $dir) { throw "Uninstalling Rig left $dir behind: $((Get-ChildItem -Recurse $dir | Select-Object -ExpandProperty FullName) -join ', ')" }
+
+        # Scripts and IT tools still get the plain flags: /S installs with no window.
+        Remove-Item Env:RIG_SETUP_AUTO
+        $p = Start-Process $env:SETUP -ArgumentList "/S" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Rig Setup /S exited with $($p.ExitCode)" }
+        if (-not (Test-Path (Join-Path $dir "Rig.exe"))) { throw "Rig Setup /S didn't install Rig" }
         $p = Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S", "_?=$dir" -Wait -PassThru
         if ($p.ExitCode -ne 0) { throw "Uninstaller exited with $($p.ExitCode)" }
-        if (Test-Path $key) { throw "Uninstalling Rig left PawnIO behind, though Rig installed it" }
-        "Uninstalling Rig removed PawnIO"
+        "Rig Setup /S and uninstall.exe /S work too"

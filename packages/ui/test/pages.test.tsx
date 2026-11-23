@@ -425,7 +425,7 @@ describe("History", () => {
     fireEvent.click(hottest);
     expect(readout()).toBe("");
 
-    const events = screen.getByRole("list", { name: "Busy times" });
+    const events = screen.getByRole("region", { name: "Busy times" });
     const row = within(events).getAllByRole("button", { pressed: false })[0];
     fireEvent.click(row);
     expect(row.getAttribute("aria-pressed")).toBe("true");
@@ -434,10 +434,10 @@ describe("History", () => {
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
     await screen.findByRole("img", { name: "Graphics card, temperature" });
     expect(readout()).toBe("");
-    const month = await screen.findByRole("list", { name: "Busy times" });
+    const month = await screen.findByRole("region", { name: "Busy times" });
     const before = within(month).getAllByRole("listitem").length;
     fireEvent.click(screen.getByRole("button", { name: /^Show all \d+$/ }));
-    expect(within(screen.getByRole("list", { name: "Busy times" })).getAllByRole("listitem").length).toBeGreaterThan(before);
+    expect(within(screen.getByRole("region", { name: "Busy times" })).getAllByRole("listitem").length).toBeGreaterThan(before);
   });
 
   it("shows readings as they come in when Live is picked, and the logged range again after", async () => {
