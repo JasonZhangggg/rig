@@ -159,13 +159,15 @@ runs:
         $driver = (Get-Content installed-selftest.json | ConvertFrom-Json).snapshot.driver
         "Helper sees PawnIO: installed=$($driver.installed) version=$($driver.version)"
         if (-not $driver.installed) { throw "The installed helper can't see PawnIO" }
+        # Like Settings, Apps: the copy in Rig's folder hands over to one in the temp folder and exits.
         $p = Start-Process (Join-Path $dir "rig-setup.exe") -ArgumentList "--uninstall" -Wait -PassThru
         if ($p.ExitCode -ne 0) { throw "Rig's uninstall window exited with $($p.ExitCode)" }
+        Start-Sleep -Seconds 1
+        Wait-Process -Name rig-uninstall -Timeout 180 -ErrorAction SilentlyContinue
+        if (Get-Process -Name rig-uninstall -ErrorAction SilentlyContinue) { throw "Rig's uninstall window was still open after 3 minutes" }
         if (Test-Path $key) { throw "Uninstalling Rig left PawnIO behind, though Rig installed it" }
         if (Test-Path $rig) { throw "Uninstalling Rig left its entry in Installed apps" }
         "Uninstalling Rig removed PawnIO"
-        # Rig's folder goes a few seconds after the window closes.
-        for ($i = 0; $i -lt 20 -and (Test-Path $dir); $i++) { Start-Sleep -Milliseconds 500 }
         if (Test-Path $dir) { throw "Uninstalling Rig left $dir behind: $((Get-ChildItem -Recurse $dir | Select-Object -ExpandProperty FullName) -join ', ')" }
 
         # Scripts and IT tools still get the plain flags: /S installs with no window.

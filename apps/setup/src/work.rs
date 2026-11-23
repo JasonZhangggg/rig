@@ -96,8 +96,16 @@ pub fn uninstall(dir: &Path, wipe: bool, notify: impl Fn(Step, f64)) -> Result<(
     if code != 0 {
         return Err(failed(code, false));
     }
-    // Run in place, the uninstaller can't delete itself.
+    // Run in place, the uninstaller can't delete itself. The hook deletes
+    // rig-setup.exe, unless the copy Windows started hadn't quite exited yet.
     let _ = std::fs::remove_file(&un);
+    let setup = dir.join("rig-setup.exe");
+    for _ in 0..20 {
+        if !setup.exists() || std::fs::remove_file(&setup).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
     let _ = std::fs::remove_dir(dir);
     if wipe {
         // What the stock uninstaller's "Delete the application data" box removes.

@@ -109,12 +109,8 @@ fn from_a_copy(exe: &Path, dir: &Path) -> Option<i32> {
     let mut line = std::ffi::OsString::from("--uninstall --dir \"");
     line.push(dir.as_os_str());
     line.push("\" --from-temp");
-    let mut child = std::process::Command::new(&copy).raw_arg(&line).spawn().ok()?;
-    // CI waits for the uninstall to finish; Windows' own Settings doesn't.
-    if std::env::var_os("RIG_SETUP_AUTO").is_some() {
-        return Some(child.wait().map_or(2, |s| s.code().unwrap_or(2)));
-    }
-    Some(0)
+    // Exits straight away, as Windows' Settings expects, so this exe can be deleted too.
+    std::process::Command::new(&copy).raw_arg(&line).spawn().ok().map(|_| 0)
 }
 
 /// Without WebView2 (rare: it ships with Windows 10 and 11), setup can't draw
