@@ -892,7 +892,7 @@ export function createScene(
   const ray = new THREE.Raycaster();
   const ptr = new THREE.Vector2();
   let downAt: [number, number] | null = null;
-  function pick(ev: PointerEvent): string | null {
+  function pick(ev: { clientX: number; clientY: number }): string | null {
     const r = renderer.domElement.getBoundingClientRect();
     ptr.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
     ptr.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
@@ -916,15 +916,33 @@ export function createScene(
     select(id);
   });
   renderer.domElement.addEventListener("pointermove", (e) => {
-    if (e.pointerType !== "mouse") return;
+    if (e.pointerType !== "mouse" || inMotion) return;
     const id = pick(e);
     renderer.domElement.style.cursor = id ? "pointer" : "grab";
     hoverFromScene(id);
   });
 
+  // Where the mouse is over the stage, so that once the view stops moving the part under it can be found again.
+  let pointer: { clientX: number; clientY: number } | null = null;
+  container.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") pointer = { clientX: e.clientX, clientY: e.clientY }; });
+  container.addEventListener("pointerleave", () => { pointer = null; });
+  // While the view moves (a part being framed, the PC pulled apart, a drag), parts and labels slide under a still
+  // mouse. Lighting each one it passes makes the highlight jump about, so pointing is ignored until the view stops.
+  let inMotion = false;
+
+  /** The view has stopped: light whatever is under the mouse now, a label or a part, or nothing. */
+  function settleHover() {
+    if (!pointer) return;
+    const el = document.elementFromPoint(pointer.clientX, pointer.clientY);
+    if (!el || !container.contains(el)) return hoverFromScene(null);
+    const label = el.closest<HTMLElement>("[data-part], [data-id]");
+    if (label && container.contains(label)) return hoverFromScene(label.dataset.part ?? label.dataset.id ?? null);
+    hoverFromScene(el === renderer.domElement ? pick(pointer) : null);
+  }
+
   /** The pointer is over a part, or its label, in the 3D view itself: light it and tell the page, so a list can light its row. */
   function hoverFromScene(id: string | null) {
-    if (id === state.hovered) return;
+    if (inMotion || id === state.hovered) return;
     state.hovered = id;
     applyHighlights();
     onHover?.(id);
@@ -1094,6 +1112,9 @@ export function createScene(
       for (const sp of state.pulses) (sp.material as THREE.SpriteMaterial).opacity = sp.userData.baseOpacity * k;
     }
     const moved = controls.update();
+    const wasMoving = inMotion;
+    inMotion = !!camAnim || dragging || exploding || moved;
+    if (wasMoving && !inMotion) settleHover();
     const now = performance.now();
     if (moved || dragging || exploding || turning) settleUntil = now + SETTLE_MS;
     const ambient = !still && (state.rotors.length > 0 || state.pulses.length > 0 || (spin && !dragging));

@@ -175,6 +175,7 @@ export function createSceneLabels(
         label.className = "co-label";
         label.dataset.part = it.id;
         const row = document.createElement("li");
+        row.dataset.id = it.id;
         const halo = document.createElementNS(SVG, "path"), line = document.createElementNS(SVG, "path");
         halo.setAttribute("class", "co-halo"); line.setAttribute("class", "co-line");
         svg.append(halo, line);
