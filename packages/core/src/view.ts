@@ -4,7 +4,8 @@
 
 import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageSlice } from "./model";
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
-import { findSensor, type Inventory, type Sensor, type Snapshot, type SystemFacts } from "./telemetry";
+import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageScan, type SystemFacts } from "./telemetry";
+import { driveMaps } from "./drives";
 
 export interface Identity { name?: string; accent?: string; cleanedAt?: string }
 
@@ -62,12 +63,16 @@ export function livePoint(pc: PC, t: number): HistoryPoint {
 }
 
 /** What else the checks can read: Windows events (the crash checks run only when these are given) and recorded history. */
-export type Evidence = Pick<HealthInput, "events" | "history" | "now">;
+export type Evidence = Pick<HealthInput, "events" | "history" | "now"> & {
+  /** The helper's last folder scan, for what fills each drive. Missing: the map shows used and free only. */
+  scan?: StorageScan | null;
+};
 
 export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}, more: Evidence = {}): PC & { findings: Finding[] } {
   const laptop = inv.machine.kind === "laptop";
   const parts: Record<string, Part> = {};
-  const fs = findings({ inv, snap, facts, ...more });
+  const { scan, ...evidence } = more;
+  const fs = findings({ inv, snap, facts, ...evidence });
   const cpuLim = cpuLimit(inv.cpu.name, snap);
   const warnPart = new Set(fs.filter((f) => f.severity === "warn" || f.severity === "bad").map((f) => f.part).filter(Boolean));
 
@@ -223,6 +228,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     summary: summaryLine(health, fs),
     stats, issues, fans,
     storage: { slices, totalGb: Math.round(totalGb) },
+    drives: driveMaps(inv, scan, snap),
     model: { source: "generic", label: laptop ? "Built from your laptop's size" : "Built from your parts' sizes" },
     parts,
     settings: facts ? { gameMode: facts.gameMode, visualEffects: facts.visualEffects, powerPlans: facts.powerPlans, startupOn: facts.startupApps.filter((a) => a.enabled).length } : undefined,

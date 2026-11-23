@@ -1,0 +1,59 @@
+/* The storage map: each drive as a block split by what fills it, with its health beside it.
+   The shares use the same soft hues as the board's pins (boardScene's soft palette), so they sit quietly in light and dark. */
+.sm-map {
+  --f-windows: #7E95B0; --f-apps: #8FA88A; --f-games: #C9A45C; --f-files: #C27B5C; --f-system: #9C849F; --f-other: #A7A39B; --f-used: #A7A39B;
+  display: flex; flex-direction: column; gap: 6px; container-type: inline-size;
+}
+.sm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sm-when { margin: 0; font-size: 13px; line-height: 1.4; }
+.sm-drives { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.sm-drive { display: grid; gap: 10px; padding: 16px 0; }
+.sm-drive + .sm-drive { border-top: 1px solid var(--line); }
+
+.sm-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sm-title h3 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.sm-title p { margin: 2px 0 0; font-size: 13px; }
+.sm-title .chip { flex: none; margin-top: 1px; }
+
+/* The block: one share per kind, in proportion, free space as an outline. */
+.sm-block { display: flex; gap: 2px; height: 40px; overflow: hidden; border-radius: 10px; }
+.sm-block i { min-width: 4px; background: var(--f-other); transition: filter .16s var(--ease-out), opacity .16s var(--ease-out); }
+.sm-block i:first-child { border-radius: 10px 0 0 10px; }
+.sm-block i:last-child { border-radius: 0 10px 10px 0; }
+.sm-block i:only-child { border-radius: 10px; }
+.sm-block .f-windows, .sm-fills .f-windows { background: var(--f-windows); }
+.sm-block .f-apps, .sm-fills .f-apps { background: var(--f-apps); }
+.sm-block .f-games, .sm-fills .f-games { background: var(--f-games); }
+.sm-block .f-files, .sm-fills .f-files { background: var(--f-files); }
+.sm-block .f-system, .sm-fills .f-system { background: var(--f-system); }
+.sm-block .f-other, .sm-fills .f-other { background: var(--f-other); }
+.sm-block .f-used { background: var(--f-used); }
+.sm-block .f-free { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sm-block:has(i.is-lit) i:not(.is-lit) { opacity: .45; }
+/* Measuring: the used share is striped until the sizes come in. */
+.sm-block.is-scanning .f-used { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, .28) 0 6px, transparent 6px 12px); background-size: 17px 17px; animation: sm-scan 1.2s linear infinite; }
+@keyframes sm-scan { to { background-position: 17px 0; } }
+@media (prefers-reduced-motion: reduce) { .sm-block.is-scanning .f-used { animation: none; } }
+.sm-used { margin: -2px 0 0; font-size: 13px; }
+.sm-used b { font-weight: 600; }
+
+/* What fills it on the left, the drive's health on the right when there's room for both. */
+.sm-body { display: grid; gap: 14px; }
+@container (min-width: 400px) { .sm-body:has(.sm-fills):has(.sm-health) { grid-template-columns: minmax(0, 1fr) 150px; gap: 20px; } }
+.sm-fills { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.sm-fills li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: baseline; column-gap: 9px; margin: 0 -8px; padding: 5px 8px; border-radius: var(--r-sm); font-size: 14px; }
+.sm-fills li.is-lit { background: var(--sel); }
+.sm-fills li > i { width: 10px; height: 10px; border-radius: 3px; translate: 0 1px; }
+.sm-fill-name { font-weight: 550; }
+.sm-fill-gb { color: var(--text-2); font-weight: 500; }
+.sm-fill-top { grid-column: 2 / -1; color: var(--text-3); font-size: 12.5px; line-height: 1.35; }
+
+.sm-health { display: grid; gap: 8px; align-content: start; margin: 0; }
+.sm-health div { display: grid; gap: 1px; }
+.sm-health dt { color: var(--text-3); font: var(--t-label); }
+.sm-health dd { margin: 0; font-size: 14px; font-weight: 500; }
+.sm-life dd { display: grid; gap: 5px; }
+.sm-meter { display: block; height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.sm-meter i { display: block; height: 100%; border-radius: inherit; background: var(--f-apps); }
+.sm-meter.is-low i { background: var(--look); }
+.sm-unknown { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.4; }

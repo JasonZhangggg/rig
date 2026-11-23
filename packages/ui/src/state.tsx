@@ -198,7 +198,7 @@ let lastStill: StillPC | null = null;
 export function stillOf(pc: PC): StillPC {
   const hit = stillCache.get(pc);
   if (hit) return hit;
-  const { health: _h, seenAt: _s, lastSync: _l, online: _o, stats: _st, breakdown: _b, fans: _f, alerts: _a, readings: _r, parts, ...rest } = pc;
+  const { health: _h, seenAt: _s, lastSync: _l, online: _o, stats: _st, breakdown: _b, fans: _f, alerts: _a, readings: _r, drives: _d, parts, ...rest } = pc;
   const still: StillPC = { ...rest };
   if (parts) {
     still.parts = {};

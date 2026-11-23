@@ -8,6 +8,7 @@ import type { Inventory, Snapshot, SystemFacts } from "../telemetry";
 import { applyToFacts } from "./apply";
 import { demoEvents, demoProcesses } from "./logs";
 import { simulate } from "./simulate";
+import { demoScan } from "./storage";
 
 export class SimulatedLink implements HelperLink {
   private inv: Inventory;
@@ -22,6 +23,8 @@ export class SimulatedLink implements HelperLink {
   async snapshot(): Promise<Snapshot> { return simulate(this.inv, (this.opts.now ?? Date.now)(), { dust: this.opts.dust ?? 0 }); }
   async events(sinceMs: number) { return demoEvents(this.inv.machine.kind, (this.opts.now ?? Date.now)(), sinceMs); }
   async processes() { return demoProcesses(this.inv, (this.opts.now ?? Date.now)()); }
+  /** The folder scan: finished an hour ago, or just now when asked for a fresh one. */
+  async storage(fresh?: boolean) { const now = (this.opts.now ?? Date.now)(); return demoScan(this.inv, fresh ? now : now - 36e5); }
   async apply(call: ActionCall) {
     const bad = validateCall(call);
     if (bad) throw new Error(bad);

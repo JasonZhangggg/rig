@@ -4,8 +4,8 @@
   "gpus": [ { "name": "Intel Arc Graphics", "vendor": "intel", "driverVersion": "32.0.101.6078", "integrated": true } ],
   "board": { "manufacturer": "ASUSTeK", "product": "UX3405MA", "biosVersion": "UX3405MA.308", "biosDate": "Jun 2026" },
   "memory": { "totalMb": 16384, "modules": [ { "capacityMb": 16384, "speedMhz": 7467 } ] },
-  "disks": [ { "model": "WD PC SN560 1TB", "sizeGb": 1000, "media": "nvme", "healthPercent": 100, "writtenTb": 3.1 } ],
-  "volumes": [ { "letter": "C:", "sizeGb": 951, "freeGb": 548 } ],
+  "disks": [ { "model": "WD PC SN560 1TB", "sizeGb": 1000, "media": "nvme", "healthPercent": 100, "writtenTb": 3.1, "status": "healthy", "number": 0, "powerOnHours": 1460 } ],
+  "volumes": [ { "letter": "C:", "sizeGb": 951, "freeGb": 548, "disk": 0 } ],
   "battery": { "designWh": 75, "fullWh": 66.8, "cycles": 212 },
   "displays": [ { "name": "Built-in display", "width": 2880, "height": 1800, "refreshHz": 120, "maxRefreshHz": 120, "primary": true } ]
 }

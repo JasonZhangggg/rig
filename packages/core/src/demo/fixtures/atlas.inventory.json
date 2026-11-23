@@ -4,7 +4,10 @@
   "gpus": [ { "name": "NVIDIA GeForce RTX 4070 SUPER", "vendor": "nvidia", "vramMb": 12288, "driverVersion": "565.90", "driverDate": "Oct 22, 2026", "integrated": false } ],
   "board": { "manufacturer": "MSI", "product": "MAG B650 TOMAHAWK WIFI", "biosVersion": "7D75v1H", "biosDate": "Mar 2026" },
   "memory": { "totalMb": 32768, "slotsTotal": 4, "modules": [ { "manufacturer": "Corsair", "partNumber": "CMK32GX5M2B6000C30", "capacityMb": 16384, "speedMhz": 6000, "slot": "A2" }, { "manufacturer": "Corsair", "partNumber": "CMK32GX5M2B6000C30", "capacityMb": 16384, "speedMhz": 6000, "slot": "B2" } ] },
-  "disks": [ { "model": "Samsung SSD 990 PRO 2TB", "sizeGb": 2000, "media": "nvme", "healthPercent": 98, "writtenTb": 14.2 } ],
-  "volumes": [ { "letter": "C:", "label": "Windows", "sizeGb": 1862, "freeGb": 726 } ],
+  "disks": [
+    { "model": "Samsung SSD 990 PRO 2TB", "sizeGb": 2000, "media": "nvme", "healthPercent": 98, "writtenTb": 14.2, "status": "healthy", "number": 0, "powerOnHours": 3120 },
+    { "model": "ST4000DM004-2U9104", "sizeGb": 4000, "media": "hdd", "status": "healthy", "number": 1, "powerOnHours": 18450 }
+  ],
+  "volumes": [ { "letter": "C:", "label": "Windows", "sizeGb": 1862, "freeGb": 726, "disk": 0 }, { "letter": "D:", "label": "Games", "sizeGb": 3726, "freeGb": 1914, "disk": 1 } ],
   "displays": [ { "name": "LG 27GP850", "width": 2560, "height": 1440, "refreshHz": 60, "maxRefreshHz": 165, "primary": true } ]
 }

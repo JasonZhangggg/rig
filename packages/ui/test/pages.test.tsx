@@ -279,7 +279,7 @@ describe("Upgrades", () => {
     await show("pc");
     fireEvent.click(await screen.findByRole("button", { name: /Storage/ }));
     fireEvent.click(screen.getByRole("tab", { name: "Upgrade" }));
-    expect(screen.getByText(/726 GB free/)).toBeTruthy();
+    expect(screen.getByText(/2.6 TB free/)).toBeTruthy();
     fireEvent.click(screen.getByRole("link", { name: "See parts that fit" }));
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
     expect(await screen.findByRole("heading", { level: 2, name: "Storage" })).toBeTruthy();

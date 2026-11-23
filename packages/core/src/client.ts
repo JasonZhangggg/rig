@@ -140,6 +140,8 @@ export interface RigClient {
   stopRecording(machineId: string, id: string): Promise<void>;
   /** Desktop: reads the background recorder again now, after a custom log was approved, paused or turned off. */
   refreshBackground?(): Promise<unknown>;
+  /** Desktop and demo: measures what fills each drive again now, in the background. Only for this PC; the storage map shows it while it runs. */
+  measureDrives?(machineId: string): Promise<void>;
 
   /** The PC's manuals, newest first. */
   manuals(machineId: string): Promise<Manual[]>;
