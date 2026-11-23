@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { HISTORY_WINDOW_MS, insightContext, mostCommon, ranHot, rangeMs, windowRuns, type Change, type HistoryPoint, type PC, type Range } from "@rig/core";
-import { Icon } from "../../components/common";
+import { DayLabel, Row, RowFigure, Rows } from "../../components/Rows";
 import { useApp, useTemp } from "../../state";
-import { day, hours, timeRange } from "../games/words";
+import { hours } from "../games/words";
+import { clock, dayName } from "../logs/words";
 
 type Event =
   | { kind: "busy"; t: number; to: number; name: string; peak: { part: "cpu" | "gpu"; temp: number; at: number } | null; hot: boolean }
@@ -34,39 +35,40 @@ export function events(points: readonly HistoryPoint[], changes: Change[], pc: P
   return [...busy, ...made].sort((a, b) => b.t - a.t);
 }
 
-/** The list under the chart. A row with a moment shows it on the chart; picking it again lets go. */
+/** The list under the chart, a day at a time. A row with a moment shows it on the chart; picking it again lets go. */
 export function Events({ points, range, pinned, onPin }: { points: HistoryPoint[]; range: Range; pinned: string | null; onPin: (key: string, t: number) => void }) {
   const { pc, data, go } = useApp();
   const temp = useTemp();
   const [all, setAll] = useState(false);
   const list = events(points, data.changes, pc, range);
   const shown = all ? list : list.slice(0, SHOWN);
+  const days: { day: string; list: Event[] }[] = [];
+  for (const e of shown) { const name = dayName(e.t); if (days[days.length - 1]?.day === name) days[days.length - 1].list.push(e); else days.push({ day: name, list: [e] }); }
   return (
     <section className="hi-panel" aria-label="Busy times">
-      {list.length === 0 ? <p className="muted">Nothing heavy ran and nothing was changed in this range.</p> : (
-        <ul className="hi-events" aria-label="Busy times">
-          {shown.map((e) => {
-            const key = e.kind === "busy" ? `b${e.t}` : `c${e.change.id}`;
-            return e.kind === "busy" ? (
-              <li key={key}>
-                <button type="button" className="hi-ev" aria-pressed={pinned === key} onClick={() => onPin(key, e.peak?.at ?? e.t)}>
-                  <span className={`hi-ev-ico${e.hot ? " look" : ""}`} aria-hidden="true"><Icon d="M3 10h3l2-5 4 10 2-5h3" /></span>
-                  <span className="hi-ev-main"><b>{e.name}</b><span className="faint">{day(e.t)}, {timeRange(e.t, e.to)}, {hours((e.to - e.t) / 36e5)}</span></span>
-                  {e.peak && <span className={`hi-ev-fig${e.hot ? " look" : ""}`}><b className="num">{temp(e.peak.temp)}</b><span>{e.hot ? "Ran hot, " : ""}{e.peak.part === "gpu" ? "graphics card" : "processor"}</span></span>}
-                </button>
-              </li>
-            ) : (
-              <li key={key}>
-                <button type="button" className="hi-ev" aria-pressed={pinned === key} onClick={() => onPin(key, e.t)}>
-                  <span className="hi-ev-ico" aria-hidden="true"><Icon d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2" /></span>
-                  <span className="hi-ev-main"><b>{e.change.title}</b><span className="faint">{day(e.t)}, {new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}, {e.change.status === "applied" ? "in place" : "undone"}</span></span>
-                </button>
-                <button type="button" className="btn ghost sm" onClick={() => go("changes")}>See change</button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {list.length === 0 ? <p className="muted">Nothing heavy ran and nothing was changed in this range.</p> : days.map((d) => (
+        <section key={d.day} aria-label={d.day}>
+          <DayLabel day={d.day} count={d.list.length} one="entry" many="entries" />
+          <Rows timeline>
+            {d.list.map((e) => {
+              const key = e.kind === "busy" ? `b${e.t}` : `c${e.change.id}`;
+              return e.kind === "busy" ? (
+                <Row key={key} name={e.name} title={e.name} time={clock(e.t)} at={new Date(e.t).toISOString()}
+                  mark={e.hot ? "look" : "dot"}
+                  meta={`${hours((e.to - e.t) / 36e5)}, until ${clock(e.to)}.`} tag={e.hot && <span className="chip warn">Ran hot</span>}
+                  figure={e.peak && <RowFigure value={temp(e.peak.temp)} word={e.peak.part === "gpu" ? "graphics card" : "processor"} />}
+                  pick={{ pressed: pinned === key, onPick: () => onPin(key, e.peak?.at ?? e.t) }} />
+              ) : (
+                <Row key={key} name={e.change.title} title={e.change.title} time={clock(e.t)} at={e.change.at}
+                  mark={e.change.status === "applied" ? "dot" : "hollow"}
+                  meta={e.change.status === "applied" ? "A change, still in place." : "A change, since undone."}
+                  pick={{ pressed: pinned === key, onPick: () => onPin(key, e.t) }}
+                  action={<button type="button" className="btn sm" onClick={() => go("changes")}>See change</button>} />
+              );
+            })}
+          </Rows>
+        </section>
+      ))}
       {list.length > SHOWN && (
         <button type="button" className="btn sm hi-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${list.length}`}</button>
       )}

@@ -1,6 +1,6 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { eventTitle, type PCEvent } from "@rig/core";
-import { Icon } from "../../components/common";
+import { DayLabel, Row, Rows } from "../../components/Rows";
 import { useApp } from "../../state";
 import { serious, type Highlight } from "./summary";
 import { clock, clockSec, dayName, kindWord, shortDay } from "./words";
@@ -40,31 +40,20 @@ export function Counters({ groups, events, pick, onPick }: { groups: Highlight[]
 /** "today", "yesterday" or "Nov 10": when a kind of event last happened. */
 const lastWhen = (t: number) => { const d = dayName(t); return d === "Today" || d === "Yesterday" ? d.toLowerCase() : shortDay(t); };
 
-/** One Windows event: when and what, opening in place to what Windows wrote. */
+/** One Windows event: when and what, with what Windows wrote behind Details and a button that asks about it. */
 export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {
   const { pc, ask, data } = useApp();
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  const body = useRef<HTMLDivElement>(null);
-  // A closed row keeps its words away from the keyboard and screen readers while it can still animate shut.
-  useLayoutEffect(() => { const el = body.current!; if (open) el.removeAttribute("inert"); else el.setAttribute("inert", ""); }, [open]);
-  const question = `Windows logged "${eventTitle(e)}" on ${pc.name} on ${shortDay(e.t)} at ${clock(e.t)} (${e.source}, event ${e.id}). What does it mean, and should I do anything?`;
+  const title = eventTitle(e);
+  const question = `Windows logged "${title}" on ${pc.name} on ${shortDay(e.t)} at ${clock(e.t)} (${e.source}, event ${e.id}). What does it mean, and should I do anything?`;
   return (
-    <li className={`ev-row${open ? " open" : ""}`}>
-      <button type="button" className="ev-head" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
-        <i className={`ev-dot${serious(e) ? " bad" : ""}`} aria-label={kindWord(e.kind)} role="img" />
-        <span className="ev-title">{eventTitle(e)}</span>
-        <span className="num faint ev-time">{seconds ? clockSec(e.t) : clock(e.t)}</span>
-        <Icon d="M8 4l6 6-6 6" />
-      </button>
-      <div id={id} ref={body} className="ev-more">
-        <div className="ev-more-in">
-          {e.message && <p className="muted">{e.message}</p>}
-          <p className="faint ev-src">{e.source} · event {e.id}</p>
-          <button type="button" className="linkish ev-ask" disabled={data.answering} onClick={() => ask(question)}>Ask about this event</button>
-        </div>
-      </div>
-    </li>
+    <Row name={title} title={title} time={seconds ? clockSec(e.t) : clock(e.t)} at={new Date(e.t).toISOString()}
+      mark={serious(e) ? "look" : "dot"} markLabel={kindWord(e.kind)}
+      meta={`${kindWord(e.kind)}, logged by ${e.source}.`}
+      details={<>
+        {e.message && <p className="muted">{e.message}</p>}
+        <p className="faint ev-src">{e.source} · event {e.id}</p>
+      </>}
+      action={<button type="button" className="btn sm" aria-label={`Ask about this event: ${title}`} disabled={data.answering} onClick={() => ask(question)}>Ask</button>} />
   );
 }
 
@@ -149,10 +138,10 @@ export function Events({ strip, events, day, onDay: pickDay, emptyText }: { stri
     <div className="lg-events-body">
       <Strip events={strip} day={day} onDay={pickDay} />
       {groups.length === 0 ? <p className="muted lg-none">{emptyText}</p> : groups.map((g) => (
-        <div key={g.day} className="ev-group">
-          <div className="label">{g.day}</div>
-          <ul className="ev-list">{g.list.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} />)}</ul>
-        </div>
+        <section key={g.day} className="ev-group" aria-label={g.day}>
+          <DayLabel day={g.day} count={g.list.length} one="event" many="events" />
+          <Rows timeline>{g.list.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} />)}</Rows>
+        </section>
       ))}
     </div>
   );
