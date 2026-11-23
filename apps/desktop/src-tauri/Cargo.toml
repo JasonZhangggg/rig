@@ -1,6 +1,6 @@
 [package]
 name = "rig"
-version = "0.1.6"
+version = "0.1.7"
 description = "Rig: know what's going on inside your PC"
 edition = "2021"
 publish = false

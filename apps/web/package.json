@@ -1,7 +1,7 @@
 {
   "name": "@rig/web",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Rig's website: the landing page and the web app for your PCs.",
   "scripts": {
