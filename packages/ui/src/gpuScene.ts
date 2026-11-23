@@ -298,7 +298,7 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
     head.children[1].textContent = plug.kind === "16-pin" ? "12V-2x6 power from the power supply" : "PCIe power from the power supply";
     const cols = po.rows[0].length;
     const grid = document.createElement("div");
-    grid.className = "po-grid is-labeled";
+    grid.className = `po-grid is-labeled${cols > 5 ? " is-wide" : ""}`;
     grid.style.gridTemplateColumns = `repeat(${cols}, var(--po-pin))`;
     const cells: HTMLElement[] = [];
     const all = [...po.rows.flat(), ...(po.sense ?? [])];
@@ -374,7 +374,7 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
       dir = new THREE.Vector3(-0.18, 1, 0.42);
     } else {
       box.setFromObject(body);
-      dir = new THREE.Vector3(-0.62, 0.34, 0.92);
+      dir = new THREE.Vector3(-0.95, 0.32, 0.72);
     }
     box.getCenter(target);
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focused ? 0.12 : 0.3);
