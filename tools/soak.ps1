@@ -10,6 +10,8 @@
 # and samples each process every 30 seconds: working set, private memory, handles, threads and
 # processor time. It prints a table and the change per hour after a two-minute warm-up, and
 # writes soak.csv and soak.json to -Out. It fails only when a process stops early.
+# With dotnet-counters installed (dotnet tool install -g dotnet-counters), it also records the
+# .NET garbage collector's heap, so growth can be told apart from memory not yet collected.
 
 param(
   [Parameter(Mandatory)] [string] $Helper,
@@ -46,7 +48,17 @@ function Call([string] $method, $params = $null) {
   if ($null -eq $line) { throw "The helper closed the pipe during $method" }
   $ms = $sw.Elapsed.TotalMilliseconds
   if (-not $script:slow[$method] -or $ms -gt $script:slow[$method]) { $script:slow[$method] = [math]::Round($ms) }
-  if ($line -match '"error"') { Write-Host "$method answered an error: $($line.Substring(0, [math]::Min(200, $line.Length)))" }
+  if ($line -match '^\{"id":\d+,"error"') { Write-Host "$method answered an error: $($line.Substring(0, [math]::Min(200, $line.Length)))" }
+}
+
+# The garbage collector's own view of each process, every 30 seconds, when dotnet-counters is there.
+$counters = @{}
+if (Get-Command dotnet-counters -ErrorAction SilentlyContinue) {
+  foreach ($pair in @(@("recorder", $rec), @("helper", $help))) {
+    $csv = Join-Path (Resolve-Path $Out) "gc-$($pair[0]).csv"
+    $counters[$pair[0]] = $csv
+    Start-Process dotnet-counters -ArgumentList "collect", "--process-id", $pair[1].Id, "--refresh-interval", "30", "--format", "csv", "--output", $csv, "--counters", "System.Runtime" -WindowStyle Hidden | Out-Null
+  }
 }
 
 $rows = [System.Collections.Generic.List[object]]::new()
@@ -98,6 +110,18 @@ $summary = foreach ($proc in "recorder", "helper") {
 }
 $rows | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
 $summary | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+# The managed heap over the run: first after the warm-up, the lowest and the last, and how many full collections ran.
+foreach ($proc in $counters.Keys) {
+  $csv = $counters[$proc]
+  if (-not (Test-Path $csv)) { Write-Host "No collector counters for $proc"; continue }
+  $c = @(Import-Csv $csv)
+  $heap = @($c | Where-Object { $_.'Counter Name' -like 'GC Heap Size*' } | ForEach-Object { [double]$_.'Mean/Increment' })
+  $gen2 = @($c | Where-Object { $_.'Counter Name' -like 'Gen 2 GC Count*' } | Measure-Object 'Mean/Increment' -Sum).Sum
+  if ($heap.Count -gt 4) {
+    $after = $heap[4..($heap.Count - 1)]
+    Write-Host ("{0}: managed heap {1} MB after warm-up, lowest {2}, last {3}, highest {4}; {5} full collections" -f $proc, $after[0], ($after | Measure-Object -Minimum).Minimum, $after[-1], ($after | Measure-Object -Maximum).Maximum, $gen2)
+  }
+}
 Write-Host "Slowest helper answers (ms): $(($script:slow.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ', ')"
 @{ summary = $summary; slowestMs = $script:slow; cores = $cores } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Out "soak.json")
 if ($env:GITHUB_STEP_SUMMARY) {
