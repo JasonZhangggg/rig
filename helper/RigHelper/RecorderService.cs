@@ -163,7 +163,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                     bool detail = now < detailUntil;
                     bool wantApps = detail || now - lastApps >= AppsEveryMs;
                     bool due = detail || now - lastSample >= SampleEveryMs;
-                    List<ProcessDto>? top = due && wantApps ? SafeTop() : null;
+                    List<ProcessDto>? top = due && wantApps ? SafeTop(fresh: detail) : null;
                     if (top != null) lastApps = now;
                     var entry = new Ring.Entry(now, values, top, headerId);
 
@@ -179,7 +179,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                         if (fired is { } hit) Marker(now, hit.Why, hit.Text);
                         // What led up to it: the readings held in memory that aren't in the log yet.
                         foreach (var e in ring.TakeUnwritten(headerId, before: now)) log.Write(LogLine.Sample(e.T, e.Values, e.Top, detail: true));
-                        if (top == null) { top = SafeTop(); if (top != null) lastApps = now; entry = entry with { Top = top }; }
+                        if (top == null) { top = SafeTop(fresh: true); if (top != null) lastApps = now; entry = entry with { Top = top }; }
                         detail = true;
                     }
 
@@ -207,9 +207,10 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         }
     }
 
-    List<ProcessDto>? SafeTop()
+    /// fresh: false is the regular once-a-minute list, which may reuse a graphics share from a few minutes ago; a closer look reads it now.
+    List<ProcessDto>? SafeTop(bool fresh)
     {
-        try { return Processes.Top(5); } catch { return null; }
+        try { return Processes.Top(5, fresh); } catch { return null; }
     }
 
     /// The line that says a closer look started, and why.

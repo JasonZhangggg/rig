@@ -36,6 +36,14 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
+            // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
+            if (all["processes"] is JsonArray)
+            {
+                int reads = Processes.GpuReads;
+                Processes.Top(5, fresh: false);
+                Processes.Top(5, fresh: false);
+                if (Processes.GpuReads != reads) problems.Add($"the recorder's app list read the graphics counters {Processes.GpuReads - reads} more times within five minutes");
+            }
             if (problems.Count > 0) all["checks"] = new JsonObject { ["error"] = string.Join("; ", problems) };
             await File.WriteAllTextAsync(outFile, all.ToJsonString(new JsonSerializerOptions(Json.Options) { WriteIndented = true }));
             return all.Any(kv => kv.Value is JsonObject o && o["error"] != null) ? 1 : 0;
@@ -132,6 +140,8 @@ public static class Program
         }
         var ranked = Processes.Rank([("game", 6L << 30, 3200, 90), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
         if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90 } || ranked[1].Name != "System") yield return "process ranking is off";
+        if (Processes.GpuPid("pid_1234_luid_0x00000000_0x0000D1B5_phys_0_eng_0_engtype_3D") != 1234 || Processes.GpuPid("pid__x") != -1 || Processes.GpuPid("luid_1_engtype_3D") != -1 || Processes.GpuPid("pid_99999999999_x") != -1)
+            yield return "reading the process id from a graphics counter is off";
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 7) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
