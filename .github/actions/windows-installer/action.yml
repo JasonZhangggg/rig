@@ -156,6 +156,21 @@ runs:
         if (-not (Test-Path $key)) { throw "Installing Rig didn't install PawnIO" }
         "PawnIO $((Get-ItemProperty $key).DisplayVersion) installed with Rig"
         if ((Get-ItemProperty 'HKLM:\SOFTWARE\Rig' -ErrorAction SilentlyContinue).PawnIOInstalledByRig -ne "1") { throw "Rig didn't record that it installed PawnIO" }
+        # An update while Rig's helper is still running. It runs with admin rights, so the
+        # installer can't close it, and it takes a few seconds to close after Rig does.
+        # A copy of ping stands in for it here, holding RigHelper.exe open for 20 seconds.
+        $helper = Join-Path $dir "RigHelper.exe"
+        $want = (Get-FileHash $helper).Hash
+        Copy-Item "$env:SystemRoot\System32\PING.EXE" $helper -Force
+        $busy = Start-Process $helper -ArgumentList "-n", "20", "127.0.0.1" -WindowStyle Hidden -PassThru
+        Start-Sleep -Seconds 1
+        $p = Start-Process $env:INSTALLER -ArgumentList "/S", "/UPDATE" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Updating while RigHelper.exe was running exited with $($p.ExitCode)" }
+        if ((Get-FileHash $helper).Hash -ne $want) { throw "Updating while RigHelper.exe was running left the old RigHelper.exe in place" }
+        "Updated while RigHelper.exe was still running"
+        Stop-Process -Id $busy.Id -Force -ErrorAction SilentlyContinue
+        $busy.WaitForExit()
+
         $p = Start-Process (Join-Path $dir "RigHelper.exe") -ArgumentList "--selftest", "installed-selftest.json" -Wait -PassThru
         $driver = (Get-Content installed-selftest.json | ConvertFrom-Json).snapshot.driver
         "Helper sees PawnIO: installed=$($driver.installed) version=$($driver.version)"
