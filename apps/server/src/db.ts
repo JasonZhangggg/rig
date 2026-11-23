@@ -76,6 +76,8 @@ function withData(r: { info: unknown; data: unknown }): Recording {
   return { ...(r.info as RecordingInfo), samples: data.samples ?? [], events: data.events ?? [] };
 }
 
+export type BoardLayoutRow = Omit<Selectable<RigTables["board_layouts"]>, "started_at" | "updated_at"> & { started_at: Date; updated_at: Date };
+
 export class Store {
   constructor(private db: DB) {}
 
@@ -311,6 +313,39 @@ export class Store {
   /** Forgets a found address that turned out to be gone, so the next lookup searches again. */
   async forgetManualSource(key: string, url: string): Promise<void> {
     await this.db.deleteFrom("manual_sources").where("key", "=", key).where("url", "=", url).execute();
+  }
+
+  /** A board model's shared layout record: done, being read, or failed. */
+  async boardLayout(key: string): Promise<BoardLayoutRow | null> {
+    const r = await this.db.selectFrom("board_layouts").selectAll().where("key", "=", key).executeTakeFirst();
+    return r ? { ...r, started_at: new Date(r.started_at), updated_at: new Date(r.updated_at) } : null;
+  }
+
+  /**
+   * Claims one board model's read, so it runs once however many PCs ask at
+   * the same time. True when this caller should read it: nobody has, a read
+   * that started over `staleMs` ago never finished, or the last one failed
+   * over `retryMs` ago.
+   */
+  async claimBoardLayout(key: string, who: { maker: string; model: string; page: number; userId: string }, now: Date, staleMs: number, retryMs: number): Promise<boolean> {
+    const values = { maker: who.maker, model: who.model, status: "reading" as const, page: who.page, read_by: who.userId, started_at: now, updated_at: now, problem: null, reading: null };
+    const r = await this.db.insertInto("board_layouts").values({ key, ...values })
+      .onConflict((oc) => oc.column("key").doUpdateSet(values).where((eb) => eb.or([
+        eb.and([eb("board_layouts.status", "=", "reading"), eb("board_layouts.started_at", "<", new Date(now.getTime() - staleMs))]),
+        eb.and([eb("board_layouts.status", "=", "failed"), eb("board_layouts.updated_at", "<", new Date(now.getTime() - retryMs))]),
+      ])))
+      .returning("key").executeTakeFirst();
+    return !!r;
+  }
+
+  /** Saves a claimed read: its reading, or why it failed, and what it cost. */
+  async finishBoardLayout(key: string, out: { reading?: unknown; problem?: string; reader?: string; inputTokens?: number; outputTokens?: number; ms?: number }, now: Date): Promise<void> {
+    await this.db.updateTable("board_layouts").set({
+      status: out.reading ? "done" : "failed",
+      reading: out.reading ? JSON.stringify(out.reading) : null,
+      problem: out.problem ?? null, reader: out.reader ?? null,
+      input_tokens: out.inputTokens ?? null, output_tokens: out.outputTokens ?? null, ms: out.ms ?? null, updated_at: now,
+    }).where("key", "=", key).execute();
   }
 
   /** Website rename, new color or "I cleaned it today". */

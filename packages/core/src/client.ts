@@ -7,6 +7,7 @@ import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
 import type { Shop } from "./shop";
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
+import type { BoardLayoutReply, ReadLayoutRequest } from "./api";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
 
@@ -155,6 +156,10 @@ export interface RigClient {
   /** The saved text of one page, for showing next to the drawn page. Null when it wasn't read. */
   manualPage(machineId: string, manualId: string, page: number): Promise<ManualPage | null>;
   removeManual(machineId: string, manualId: string): Promise<void>;
+  /** A board model's layout, read once from its manual for everyone. Needs the server (signed in). */
+  boardLayout?(machineId: string, maker: string, model: string): Promise<BoardLayoutReply>;
+  /** Has the server read the layout drawing on a page of a found motherboard manual, unless it's read or being read. */
+  readBoardLayout?(machineId: string, manualId: string, page: ReadLayoutRequest): Promise<BoardLayoutReply>;
 
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];

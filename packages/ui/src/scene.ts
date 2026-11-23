@@ -1,16 +1,18 @@
 // 3D view of the PC, drawn in ink: flat toon shading with outlined edges.
-// Models are built in code from part sizes. Popular cases,
-// graphics cards and boards will load a matched model from a library instead,
-// and anything else falls back to a shape built like this one.
+// Models are built in code from each part's real size and layout (pc.build,
+// from core build.ts); anything Rig doesn't know is a typical part of its kind.
 // Units: 1 unit = 100 mm.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
-import { formatTemp, type PC, type Part, type TempUnit } from "@rig/core";
+import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { placeLabels } from "./sceneLabels";
+import { makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
+import { makeBoard } from "./board3d";
+import { makeCase, makePsu } from "./case3d";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -34,6 +36,8 @@ export interface SceneTheme {
   interior?: number;
   /** Turntable the PC stands on. */
   pedestal?: string; pedestalRim?: number;
+  /** "real": metal, plastic, glass and wood that catch the light like the real parts. "ink" (default): flat toon shading with outlines. */
+  finish?: "ink" | "real";
 }
 
 export interface PCScene {
@@ -53,11 +57,12 @@ export interface PCScene {
   setSpin(v: boolean): void;
   /** The unit the part labels show temperatures in. */
   setTempUnit(unit: TempUnit): void;
+  /** Triangles and draw calls in the last frame. */
+  stats(): { triangles: number; calls: number };
   dispose(): void;
 }
 
 type Vec3 = [number, number, number];
-interface MatOpts { op?: number; emissive?: string; ei?: number }
 interface Entry { obj: THREE.Object3D; partId: string; fadeWhenExploded?: boolean }
 interface Label { pin: HTMLDivElement; dot: HTMLElement; lead: HTMLElement; el: HTMLButtonElement; anchor: THREE.Object3D; w: number; h: number; hidden: boolean }
 /** The camera's vertical field of view on a landscape stage, in degrees. */
@@ -230,12 +235,21 @@ export function createScene(
     t.needsUpdate = true;
     return t;
   })();
-  function M(color: THREE.ColorRepresentation, o: MatOpts = {}) {
+  function M(color: THREE.ColorRepresentation, o: MatOpts = {}): THREE.Material {
     const op = o.op ?? 1;
-    const m = new THREE.MeshToonMaterial({ color, gradientMap: toonRamp, transparent: op < 1, opacity: op, depthWrite: op >= 0.5 });
-    // A see-through panel would show its own outline hull through it as a grey sheet, so glass gets none
-    m.userData.outlineParameters = { thickness: 0.0042, color: new THREE.Color(theme().trim).toArray(), visible: op >= 0.5, keepAlive: true };
-    if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei ?? 1; }
+    let m: THREE.MeshStandardMaterial | THREE.MeshToonMaterial;
+    if (theme().finish === "real") {
+      m = realMaterial(color, o);
+      m.userData.outlineParameters = { visible: false };
+    } else {
+      m = new THREE.MeshToonMaterial({ color, gradientMap: toonRamp, transparent: op < 1 || !!o.cutout, opacity: op, depthWrite: op >= 0.5 && !o.cutout, side: o.side ?? THREE.FrontSide });
+      if (o.map) m.map = o.map;
+      if (o.alphaMap) { m.alphaMap = o.alphaMap; m.alphaTest = 0.5; m.transparent = false; m.depthWrite = true; }
+      if (o.cutout) { m.alphaTest = 0.04; m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; m.userData.cutout = true; }
+      // A see-through panel would show its own outline hull through it as a grey sheet, so glass gets none
+      m.userData.outlineParameters = { thickness: 0.0042, color: new THREE.Color(theme().trim).toArray(), visible: op >= 0.5 && !o.cutout, keepAlive: true };
+      if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei ?? 1; if (o.emap && o.map) m.emissiveMap = o.map; }
+    }
     m.userData.glow = !!o.emissive;
     m.userData.baseEmissive = m.emissive.clone();
     m.userData.baseEI = m.emissiveIntensity;
@@ -266,31 +280,6 @@ export function createScene(
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;
-  }
-  function outline(w: number, h: number, d: number) {
-    const th = theme();
-    const lines = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
-      new THREE.LineBasicMaterial({ color: th.edge ?? "#ffffff", transparent: true, opacity: th.edgeOpacity ?? 0.5 }),
-    );
-    lines.raycast = () => {};
-    return lines;
-  }
-  // Perforated mesh pattern for the front panel (holes are see-through).
-  function meshTexture(repeatX: number, repeatY: number) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 32;
-    const g = c.getContext("2d");
-    if (g) {
-      g.fillStyle = "#fff"; g.fillRect(0, 0, 32, 32);
-      g.fillStyle = "#000";
-      for (const [x, y] of [[8, 8], [24, 24]]) { g.beginPath(); g.arc(x, y, 5.2, 0, Math.PI * 2); g.fill(); }
-    }
-    const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeatX, repeatY);
-    t.anisotropy = 4;
-    return t;
   }
   function roundBox(w: number, h: number, d: number, r: number, mat: THREE.Material, x = 0, y = 0, z = 0) {
     const shape = new THREE.Shape();
@@ -360,6 +349,10 @@ export function createScene(
     obj.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.userData.part = partId;
+        // Parts inside cast shadows on each other; the case's own walls and glass don't, so light still reaches inside.
+        const mat = o.material as THREE.Material;
+        if (partId !== "case" && !o.userData.noShadow && mat.opacity >= 0.5 && !mat.userData?.cutout) o.castShadow = true;
+        o.receiveShadow = true;
         if (!opts.noPick) state.pickables.push(o);
       }
     });
@@ -410,190 +403,173 @@ export function createScene(
   }
 
   // ---------- tower ----------
+  // Which part a fan being built belongs to, so its speed follows that part's reading.
+  let spinPart = "fans";
   function buildTower(pc: PC, th: SceneTheme): Framing {
-    const W = 2.27, H = 4.46, D = 4.64;
-    const caseMat = () => M(th.caseColor);
+    // Every size and design comes from the PC's build (build.ts); without one, a typical tower.
+    const b = pc.build ?? resolveBuild({});
     const accent = th.accent ?? pc.accent;
+    const kit: Kit = { M, spin: (r) => state.rotors.push({ rotor: r, partId: spinPart }), accent, lite: true };
+    const W = mm(b.case.w), H = mm(b.case.h), D = mm(b.case.d);
+    const dual = b.case.layout === "dual-chamber";
 
-    // Case shell
-    const shell = new THREE.Group();
-    shell.add(box(0.04, H, D, caseMat(), -W / 2, H / 2, 0)); // right side (solid)
-    shell.add(box(W, 0.04, D, caseMat(), 0, 0.02, 0)); // bottom
-    shell.add(box(W, H, 0.04, caseMat(), 0, H / 2, -D / 2)); // back
-    const shroud = box(W - 0.08, 0.9, D - 0.1, M(th.caseColor), 0, 0.49, 0);
-    shell.add(shroud);
-    // Feet
-    for (const [fx, fz] of [[-0.8, -1.9], [0.8, -1.9], [-0.8, 1.9], [0.8, 1.9]]) {
-      shell.add(box(0.3, 0.06, 0.3, M(th.trim), fx, -0.02, fz));
-    }
-    add(shell, "case");
-    const top = box(W, 0.04, D, caseMat(), 0, H - 0.02, 0);
-    top.add(outline(W, 0.04, D));
-    add(top, "case", [0, 1.2, 0]);
-    // Front mesh panel
-    const front = new THREE.Group();
-    const meshMat = M(th.caseColor);
-    meshMat.alphaMap = meshTexture(W * 14, H * 14);
-    meshMat.transparent = true;
-    meshMat.alphaTest = 0.4;
-    meshMat.side = THREE.DoubleSide;
-    meshMat.userData.baseOpacity = 1;
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.12, H - 0.12), meshMat);
-    panel.position.set(0, H / 2, D / 2 + 0.02);
-    front.add(panel);
-    // Frame around the mesh
-    const fm = caseMat();
-    front.add(box(W, 0.08, 0.06, fm, 0, 0.04, D / 2));
-    front.add(box(W, 0.08, 0.06, fm, 0, H - 0.04, D / 2));
-    front.add(box(0.08, H, 0.06, fm, -W / 2 + 0.04, H / 2, D / 2));
-    front.add(box(0.08, H, 0.06, fm, W / 2 - 0.04, H / 2, D / 2));
-    // Accent light strip: part of identity
-    front.add(box(0.05, H * 0.82, 0.02, M(accent, { emissive: accent, ei: 1.4 }), W / 2 - 0.12, H / 2, D / 2 + 0.03));
-    const stripGlow = halo(accent, 0.55, H * 0.95, 0.5);
-    stripGlow.position.set(W / 2 - 0.12, H / 2, D / 2 + 0.08);
-    front.add(stripGlow);
-    add(front, "case", [0, 0, 1.8], { noPick: true });
-    // Glass side panel
-    const glassMat = M(th.glass, { op: th.glassOpacity });
-    const glass = box(0.02, H - 0.12, D - 0.12, glassMat, W / 2, H / 2, 0);
-    glass.castShadow = false;
-    glass.add(outline(0.02, H - 0.12, D - 0.12));
-    add(glass, "case", [2.6, 0, 0], { noPick: true, fade: true });
+    // The case. Its glass is on the left (-x), so through the glass the front is on the right, as on a real PC.
+    spinPart = "fans";
+    const cs = makeCase(kit, b.case, { caseColor: th.caseColor, glass: th.glass, glassOpacity: th.glassOpacity, trim: th.trim, fanFrame: th.fanFrame });
+    add(cs.shell, "case");
+    add(cs.top, "case", [0, 1.2, 0]);
+    add(cs.front, "case", [0, 0, 1.8], { noPick: true });
+    add(cs.glass, "case", [-2.6, 0, 0], { noPick: true, fade: true });
 
-    // Motherboard against the right side
-    const bx = -W / 2 + 0.2;
-    const mb = new THREE.Group();
-    mb.position.set(bx, 2.72, -0.88);
-    mb.add(box(0.03, 3.05, 2.44, M(th.board), 0, 0, 0));
-    const hs = M(th.heatsink);
-    mb.add(box(0.18, 0.95, 0.3, hs, 0.1, 0.85, -0.6)); // VRM
-    mb.add(box(0.18, 0.3, 0.9, hs, 0.1, 1.35, -0.25)); // VRM top
-    mb.add(box(0.06, 0.45, 0.45, hs, 0.04, -1.05, 0.6)); // chipset
-    // PCIe slots
-    for (const y of [-0.55, -1.25]) mb.add(box(0.06, 0.07, 1.6, M(th.trim), 0.04, y, -0.25));
-    // DIMM slots
-    for (let i = 0; i < 4; i++) mb.add(box(0.06, 1.33, 0.05, M(th.trim), 0.04, 0.62, 0.76 + i * 0.1));
-    // I/O shroud
-    mb.add(box(0.25, 1.1, 0.25, M(th.trim), 0.13, 0.75, -1.05));
-    add(mb, "motherboard", [-0.4, 0, 0]);
+    // Everything on the motherboard is placed in the board's own frame (parts3d.ts), turned to face the glass.
+    const onBoard = () => {
+      const g = new THREE.Group();
+      g.rotation.y = -Math.PI / 2;
+      g.position.set(cs.surf, cs.yTop, cs.zBack);
+      return g;
+    };
+    const BW = mm(b.board.w), BH = mm(b.board.h);
+    const at = (id: string) => b.board.items.find((i) => i.id === id);
+    const mid = (i: { u: number; v: number; w: number; h: number }) => new THREE.Vector3(mm(i.u + i.w / 2), -mm(i.v + i.h / 2), 0);
 
-    // CPU cooler (dual tower)
-    const cool = new THREE.Group();
-    cool.position.set(bx + 0.75, 3.4, -0.8);
-    const finMat = M(th.fins);
-    for (const zc of [-0.35, 0.35]) {
-      for (let i = 0; i < 18; i++) {
-        cool.add(box(1.05, 0.012, 0.52, finMat, 0.05, -0.62 + i * 0.075, zc));
+    const board = makeBoard(kit, { ...b.board, color: b.board.source === "generic" ? th.board : b.board.color }, { ppm: 4 });
+    // The first M.2 slot's heatsink covers the SSD, so it stands for the storage part.
+    const m2 = board.nodes.find((n) => n.item.id === "m2-1");
+    if (m2) board.group.remove(m2.group);
+    const mb = onBoard();
+    mb.add(board.group);
+    add(mb, "motherboard", [0.4, 0, 0]);
+    const ssd = onBoard();
+    if (m2) ssd.add(m2.group);
+    else ssd.add(span(0.5, 1.3, -1.52, -1.3, 0, 0.04, M(th.heatsink, { metal: 0.8, rough: 0.35 })));
+    add(ssd, "ssd", [-2.4, 0.25, 1.1]);
+
+    // Processor cooler on the socket; a liquid cooler's radiator under the top panel (or behind the front)
+    spinPart = "cpu";
+    const sock = mid(at("socket") ?? { u: 85, v: 52, w: 40, h: 40 });
+    const parts = makeCooler(kit, b.cooler, cs.fan);
+    const cool = onBoard();
+    parts.head.position.copy(sock);
+    cool.add(parts.head);
+    let coolTop = mm(b.cooler.height || 60);
+    if (parts.radiator) {
+      const rad = parts.radiator;
+      const len = ((b.cooler.radiator ?? 360) / 120) * 1.2 + 0.38;
+      const span0 = D - 0.12; // board X of the front panel
+      const glassZ = cs.surf + W / 2 - 0.05; // board Z of the glass
+      if (dual) {
+        rad.position.set(Math.min(span0 - len / 2 - 0.15, Math.max(len / 2 - 0.05, BW / 2 + 0.6)), H - 0.03 - cs.yTop - 0.38, glassZ * 0.48);
+      } else {
+        // No room over the board in a standard case: the radiator stands behind the front panel
+        rad.rotation.z = -Math.PI / 2;
+        rad.position.set(span0 - 0.3, (H + cs.shroud) / 2 - cs.yTop, glassZ * 0.5);
       }
+      cool.add(rad);
+      // Hoses from the pump to the radiator's end tank
+      const hoses: THREE.Vector3[][] = [];
+      rad.updateMatrix();
+      for (const dz of [-0.12, 0.12]) {
+        const a = sock.clone().add(new THREE.Vector3(0.3 + dz, 0.48, 0.3));
+        const end = new THREE.Vector3(-len / 2 + 0.1, 0.19, dz * 1.6).applyMatrix4(rad.matrix);
+        hoses.push([a, a.clone().add(new THREE.Vector3(0, 0.35, 0.1)), end.clone().add(new THREE.Vector3(0.2, -0.3, 0)), end]);
+      }
+      for (const path of hoses) cool.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(path), 40, 0.05, 10, false), M("#141516", { rough: 0.7 })));
+      coolTop = 0.55;
     }
-    for (const zc of [-0.35, 0.35]) for (const dz of [-0.12, 0.12]) {
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 12), M(th.copper));
-      pipe.position.set(-0.35, -0.05, zc + dz);
-      cool.add(pipe);
-    }
-    const cfan = fan(1.2, th.fanFrame, accent, { glow: 0.7 });
-    cfan.position.set(0.05, 0, 0.0);
-    cfan.scale.set(0.95, 1.05, 0.9);
-    cool.add(cfan);
-    state.rotors.push({ rotor: cfan.userData.rotor, partId: "cpu" });
-    add(cool, "cpu", [1.9, 0.9, 0.4]);
+    add(cool, "cpu", [-1.9, 0.9, 0.4]);
 
-    // RAM sticks (slots 2 and 4)
-    const ram = new THREE.Group();
-    ram.position.set(bx + 0.24, 3.34, -0.12);
-    for (const i of [0, 2]) {
-      const stick = new THREE.Group();
-      stick.add(box(0.36, 1.33, 0.06, M(th.ram), 0, 0, 0));
-      stick.add(box(0.06, 1.25, 0.065, M(accent, { emissive: accent, ei: 1.2 }), 0.2, 0, 0));
-      stick.position.z = i * 0.1;
-      const rg = halo(accent, 0.45, 1.5, 0.28);
-      rg.position.set(0.24, 0, 0);
-      stick.add(rg);
+    // Memory sticks in the slots that hold them, as tall as the kit really is
+    const ram = onBoard();
+    for (const name of b.memory.slots) {
+      const slot = b.board.items.find((i) => i.kind === "dimm" && i.name === name);
+      if (!slot) continue;
+      const stick = makeRam(kit, b.memory);
+      stick.position.copy(mid(slot)).setZ(0.04);
       ram.add(stick);
     }
-    add(ram, "ram", [1.4, 1.6, 0.9]);
+    add(ram, "ram", [-1.4, 1.6, 0.9]);
 
-    // SSD under its heatsink
-    const ssd = box(0.03, 0.22, 0.8, M(th.heatsink), bx + 0.06, 2.58, -0.75);
-    add(ssd, "ssd", [2.4, 0.25, 1.1]);
-
-    // Graphics card
-    const gpu = new THREE.Group();
-    gpu.position.set(bx + 0.72, 2.0, -0.93);
-    gpu.add(box(1.34, 0.42, 2.67, M(th.gpuShroud), 0, 0, 0));
-    // Fin stack peeking out of the sides
-    const gfin = M(th.fins);
-    for (let i = 0; i < 22; i++) gpu.add(box(1.36, 0.26, 0.012, gfin, 0, -0.02, -1.15 + i * 0.105));
-    gpu.add(box(1.3, 0.04, 2.6, M(th.gpuBack), 0, 0.23, 0)); // backplate
-    gpu.add(box(0.03, 0.06, 1.6, M(accent, { emissive: accent, ei: 1.0 }), 0.68, 0.12, 0.2)); // light bar
-    for (const z of [-0.62, 0.62]) {
-      const f = fan(0.95, th.gpuShroud, th.gpuFanRing, { thick: 0.12, glow: 0.15 });
-      f.rotation.x = Math.PI / 2;
-      f.position.set(0, -0.22, z);
-      gpu.add(f);
-      state.rotors.push({ rotor: f.userData.rotor, partId: "gpu" });
+    // Graphics card in the first long slot, its bracket at the back of the case
+    let gpu: THREE.Group | null = null, gpuAnchor: Vec3 = [0, 0, 0];
+    if (b.gpu) {
+      spinPart = "gpu";
+      const slot = mid(at("pcie1") ?? { u: 42, v: 156, w: 89, h: 7 });
+      const card = makeGpu(kit, b.gpu);
+      card.position.set(-D / 2 + 0.03 - cs.zBack, slot.y + 0.05, 0.02);
+      gpu = onBoard();
+      gpu.add(card);
+      const L = mm(b.gpu.length), T = mm(b.gpu.thick), Hc = mm(b.gpu.height);
+      gpuAnchor = [card.position.x + L * 0.62, card.position.y - T * 0.5, Hc + 0.02];
+      if (pc.parts?.gpu?.warn) {
+        const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
+        heat.position.set(card.position.x + L / 2, card.position.y - T, Hc / 2);
+        heat.userData.pulse = true;
+        gpu.add(heat);
+        state.pulses.push(heat);
+      }
+      add(gpu, "gpu", [-2.4, -0.6, 1.2]);
     }
-    if (pc.parts?.gpu?.warn) {
-      const heat = halo(th.heatHot, 2.4, 1.2, 0.35);
-      heat.position.set(0.1, -0.35, 0);
-      heat.userData.pulse = true;
-      gpu.add(heat);
-      state.pulses.push(heat);
-    }
-    add(gpu, "gpu", [2.4, -0.6, 1.2]);
 
-    // Accent light inside the case, so the parts are lit like a real build
+    // Light inside the case: a soft white fill so dark parts keep their shape, and the PC's own glow
+    const fillIn = new THREE.PointLight("#ffffff", th.finish === "real" ? 5 : 0, 7, 1.4);
+    fillIn.position.set(-W / 2 + 0.5, H * 0.72, 0.8);
+    root.add(fillIn);
+    if (th.finish === "real") {
+      const fillLow = new THREE.PointLight("#ffffff", 2.5, 5, 1.4);
+      fillLow.position.set(-W / 2 + 0.4, H * 0.3, 0.6);
+      root.add(fillLow);
+    }
     if (th.interior) {
-      const inner = new THREE.PointLight(accent, th.interior, 6, 1.7);
-      inner.position.set(0.55, 3.1, 0.9);
+      const inner = new THREE.PointLight(accent, th.interior * (th.finish === "real" ? 0.5 : 1), 6, 1.7);
+      inner.position.set(-0.55, H * 0.7, 0.9);
       root.add(inner);
       const low = new THREE.PointLight(accent, th.interior * 0.6, 4, 1.7);
-      low.position.set(0.5, 1.2, 1.4);
+      low.position.set(-0.5, 1.2, 1.4);
       root.add(low);
     }
 
+    // Power supply: under the shroud, or behind the board tray in a dual-chamber case
+    const psu = dual ? makePsu(kit, 0.78, 0.86, 1.6) : makePsu(kit, 1.5, 0.82, 1.6);
+    if (dual) psu.position.set((cs.surf + 0.09 + W / 2 - 0.02) / 2, 0.55, -D / 2 + 1.0);
+    else psu.position.set(W / 2 - 0.85, 0.5, -D / 2 + 0.9);
+    add(psu, "psu", [-2.6, -0.1, 0.4]);
 
-    // Power supply inside the shroud
-    const psu = box(1.5, 0.82, 1.6, M(th.psu), -0.25, 0.48, -1.4);
-    add(psu, "psu", [2.6, -0.1, 0.4]);
-
-    // Case fans
+    // Case fans where this case has them
+    spinPart = "fans";
     const fans = new THREE.Group();
-    for (const y of [2.15, 3.45]) {
-      const f = fan(1.2, th.fanFrame, accent, { glow: 0.8 });
-      f.position.set(0, y, D / 2 - 0.2);
-      fans.add(f);
-      state.rotors.push({ rotor: f.userData.rotor, partId: "fans" });
-    }
-    add(fans, "fans", [0, 0, 1.0]);
-    const rear = fan(1.2, th.fanFrame, accent, { glow: 0.6 });
-    rear.position.set(-0.1, 3.4, -D / 2 + 0.18);
-    add(rear, "fans", [0, 0, -1.0]);
-
-    // Sleeved cables from the power supply; hidden in the exploded view
-    const cables = new THREE.Group();
-    const cable = (pts: Vec3[], color: string, r = 0.045) => {
-      const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
-      const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, r, 10, false), M(color));
-      m.castShadow = true;
-      cables.add(m);
+    const cf = mm(b.case.fans.size);
+    const row = (n: number, place: (i: number, f: THREE.Group) => void) => {
+      for (let i = 0; i < n; i++) {
+        const f = makeFan(kit, cf, 0.25, { ...cs.fan, w: cf + 0.05, h: cf + 0.05 });
+        place(i, f);
+        fans.add(f);
+      }
     };
-    cable([[bx + 0.1, 0.95, 0.35], [bx + 0.35, 1.3, 0.4], [bx + 0.5, 2.2, 0.38], [bx + 0.12, 2.6, 0.36]], th.trim, 0.06); // 24-pin
-    cable([[bx + 0.6, 0.95, 0.2], [bx + 0.85, 1.45, 0.25], [bx + 1.05, 1.95, 0.32]], th.trim);
-    cable([[bx + 0.7, 0.95, 0.12], [bx + 0.95, 1.5, 0.16], [bx + 1.15, 1.98, 0.22]], accent, 0.03);
-    add(cables, "psu", [0, 0, 0], { fade: true, noPick: true });
+    const fanX = (-W / 2 + cs.surf) / 2;
+    row(b.case.fans.front, (i, f) => f.position.set(-0.04, H - 0.32 - cf / 2 - i * (cf + 0.06), D / 2 - 0.17));
+    if (dual) row(b.case.fans.bottom, (i, f) => { f.rotation.x = Math.PI / 2; f.position.set(fanX, 0.24, D / 2 - 0.3 - cf / 2 - i * (cf + 0.06)); });
+    else row(b.case.fans.bottom, (_i, f) => { f.rotation.x = Math.PI / 2 + 0.45; f.position.set(fanX - 0.05, cs.shroud + 0.2, D / 2 - 0.65); });
+    row(b.case.fans.side, (i, f) => { f.rotation.y = Math.PI / 2; f.position.set(cs.surf - 0.17, 0.95 + cf / 2 + i * (cf + 0.06), D / 2 - 0.3 - cf / 2); });
+    if (b.cooler.kind !== "aio" || !dual) row(b.case.fans.top, (i, f) => { f.rotation.x = Math.PI / 2; f.position.set(fanX, H - 0.17, D / 2 - 0.4 - cf / 2 - i * (cf + 0.06)); });
+    add(fans, "fans", [0, 0, 1.0]);
+    if (b.case.fans.rear) {
+      const rear = makeFan(kit, cf, 0.25, { ...cs.fan, w: cf + 0.05, h: cf + 0.05 });
+      rear.position.set(cs.surf - 0.12 - cf / 2, cs.yTop - cf / 2 - 0.08, -D / 2 + 0.16);
+      add(rear, "fans", [0, 0, -1.0]);
+    }
 
     // Labels
-    const lp = (id: string, obj: THREE.Object3D, p: Vec3) => addLabel(id, obj, p);
-    lp("gpu", gpu, [0.9, 0, 0.9]);
-    lp("cpu", cool, [0.6, 0.85, 0]);
-    lp("ram", ram, [0.2, 0.75, 0.2]);
-    lp("ssd", ssd, [0.1, 0.2, 0.4]);
-    lp("psu", psu, [0.8, 0.3, 0.6]);
-    lp("motherboard", mb, [0, -1.5, 1.2]);
-    lp("fans", fans, [0.6, 3.7, D / 2]);
+    if (gpu) addLabel("gpu", gpu, gpuAnchor);
+    addLabel("cpu", cool, [sock.x, sock.y + 0.3, coolTop]);
+    const dimm = b.board.items.find((i) => i.kind === "dimm" && i.name === b.memory.slots[0]);
+    addLabel("ram", ram, dimm ? [mid(dimm).x, -0.5, mm(b.memory.height)] : [1.8, -0.5, 0.4]);
+    addLabel("ssd", ssd, m2 ? [m2.group.position.x, m2.group.position.y, 0.06] : [0.9, -1.4, 0.05]);
+    addLabel("psu", psu, [-0.3, 0.3, 0.6]);
+    addLabel("motherboard", mb, [BW * 0.72, -BH * 0.88, 0.06]);
+    addLabel("fans", fans, [-0.04, H * 0.78, D / 2 - 0.1]);
 
-    return { target: new THREE.Vector3(0, 1.85, 0), cam: new THREE.Vector3(8.9, 4.5, 9.9), camExploded: new THREE.Vector3(11, 6.2, 10.8) };
+    const s = Math.max(H / 4.46, D / 4.64);
+    return { target: new THREE.Vector3(0, H * 0.45, 0), cam: new THREE.Vector3(-8.9 * s, 4.5 * s, 9.9 * s), camExploded: new THREE.Vector3(-11 * s, 6.2 * s, 10.8 * s) };
   }
 
   // ---------- laptop ----------
@@ -714,9 +690,12 @@ export function createScene(
     shadowFloor.visible = false;
     hemi.intensity = th.hemi; key.intensity = th.key; rim.intensity = th.rim;
     rim.color.set(th.rimColor ?? "#ffffff");
-    renderer.toneMappingExposure = th.exposure ?? 1;
+    renderer.toneMappingExposure = (th.exposure ?? 1) * (th.finish === "real" ? 1.15 : 1);
     (shadowFloor.material as THREE.ShadowMaterial).opacity = (th.shadow ?? 0.3) * 0.55;
     framing = state.pc!.kind === "laptop" ? buildLaptop(state.pc!, th) : buildTower(state.pc!, th);
+    // Light from the side the camera looks from
+    const side = Math.sign(framing.cam.x) || 1;
+    key.position.set(6 * side, 10, 7); rim.position.set(-6 * side, 5, -6); fill.position.set(-7 * side, 3, 6);
     const bb = new THREE.Box3().setFromObject(root);
     const size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
     const ped = !!th.pedestal;
@@ -895,8 +874,8 @@ export function createScene(
         let op = m.userData.baseOpacity;
         if (state.heat && (e.partId === "case" || e.partId === "chassis")) op = Math.min(op, 0.18);
         m.opacity = op;
-        m.transparent = op < 1;
-        m.depthWrite = op >= 0.5;
+        m.transparent = op < 1 || !!m.userData.cutout;
+        m.depthWrite = op >= 0.5 && !m.userData.cutout;
       });
     }
     for (const [id, l] of Object.entries(state.labels)) {
@@ -1167,6 +1146,7 @@ export function createScene(
   }
 
   return {
+    stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls }),
     setPC(pc, t) {
       state.pc = pc; state.theme = t; state.selected = null;
       rebuild(); resize(); frame(state.exploded, true);

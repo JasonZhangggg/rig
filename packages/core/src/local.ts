@@ -7,7 +7,7 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import { searchPages } from "./manualSearch";
 import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
-import type { MachineSync } from "./api";
+import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
 import type { CloudClient } from "./cloud";
 import { makeExport, type DataExport } from "./export";
 import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
@@ -697,6 +697,14 @@ export class LocalClient implements RigClient {
     if (!(await this.isLocal(id))) return;
     await this.putLocalManuals((await this.localManuals()).filter((x) => x.id !== mid));
     await this.store.set(this.pagesKey(mid), null);
+  }
+
+  // Board layouts are read on the server, once per board model, so they need an account.
+  async boardLayout(id: string, maker: string, model: string): Promise<BoardLayoutReply> {
+    return this.cloud && (await this.signedIn()) ? this.cloud.boardLayout(id, maker, model) : { status: "none" };
+  }
+  async readBoardLayout(id: string, mid: string, page: ReadLayoutRequest): Promise<BoardLayoutReply> {
+    return this.cloud && (await this.signedIn()) ? this.cloud.readBoardLayout(id, mid, page) : { status: "none" };
   }
 
   // ----- Chat -----

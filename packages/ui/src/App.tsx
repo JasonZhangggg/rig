@@ -20,6 +20,7 @@ import { SignIn } from "./pages/SignIn";
 import { DeviceApprove } from "./pages/DeviceApprove";
 import { Settings } from "./pages/settings/Settings";
 import { ManualViewer } from "./manuals/Viewer";
+import { useBoardLayout } from "./manuals/boardLayout";
 
 export interface RigAppProps {
   client: RigClient;
@@ -88,6 +89,8 @@ function Splash({ text, detail, retry }: { text: string; detail?: string; retry?
 function Root() {
   const { ui, pc, set } = useApp();
   const { scene } = getStage();
+  // The board's layout is read from its manual once Rig knows the board, without the person asking.
+  useBoardLayout();
 
   useEffect(() => { getStage().onSelect = (id) => set({ selected: id, tab: "live" }); }, [set]);
 
