@@ -93,13 +93,14 @@ jobs:
         env:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CHAT_STATE_SECRET: ${{ secrets.CHAT_STATE_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           BESTBUY_API_KEY: ${{ secrets.BESTBUY_API_KEY }}
         run: |
           secrets=$(mktemp)
           trap 'rm -f "$secrets"' EXIT
-          jq -n 'env | {BETTER_AUTH_SECRET, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BESTBUY_API_KEY} | with_entries(select(.value != null and .value != ""))' > "$secrets"
+          jq -n 'env | {BETTER_AUTH_SECRET, ANTHROPIC_API_KEY, CHAT_STATE_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BESTBUY_API_KEY} | with_entries(select(.value != null and .value != ""))' > "$secrets"
           deploy() { npx wrangler deploy --var "WEB_ORIGIN:$1" --secrets-file "$secrets"; }
           answers() { curl -fsS -o /dev/null --max-time 10 "$WEB_ORIGIN/api/config"; }
           if [ "$WEB_ORIGIN" != "$WORKERS_DEV" ] && ! answers; then

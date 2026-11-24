@@ -125,6 +125,19 @@ describe("PCs", () => {
     expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: badMem, cookie })).status).toBe(400);
   });
 
+  it("shows changes an older app uploaded as fix steps", async () => {
+    const { call, signUp } = await setup();
+    const cookie = await signUp("lee@example.com");
+    const row = ["Game Mode", "Off", "On"];
+    const old = { id: "c1", machineId: "x", at: "2026-11-01T10:00:00.000Z", title: "Turned Game Mode on", by: "you", status: "applied", why: "", result: "", diff: [row],
+      applied: [{ call: { kind: "windows.gameMode", enabled: true }, undo: { kind: "windows.gameMode", enabled: false }, row }] };
+    const s = { ...(await syncPayload()), changes: [old] } as unknown as MachineSync;
+    const id = s.inventory.machine.id;
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
+    expect(await (await call(`/api/machines/${id}/changes`, { cookie })).json()).toEqual([{ ...old, tier: 1,
+      applied: [{ step: { kind: "fix", call: { kind: "windows.gameMode", enabled: true } }, undo: { kind: "fix", call: { kind: "windows.gameMode", enabled: false } }, rows: [row] }] }]);
+  });
+
   it("keeps the newest name, whether it was changed on the website or the PC", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const { call, signUp } = await setup();
@@ -193,6 +206,9 @@ describe("chat", () => {
     const text = events.filter((e) => e.type === "text").map((e) => (e as { text: string }).text).join("");
     expect(text).toBe("Game Mode is off.\n\nReview the card to turn it on.");
     const p = events.find((e) => e.type === "proposal") as Extract<ChatEvent, { type: "proposal" }>;
+    expect(p.proposal.steps).toEqual([{ kind: "fix", call: { kind: "windows.gameMode", enabled: true } }]);
+    expect(p.proposal.tier).toBe(1);
+    // An older desktop app reads the same change from `calls`.
     expect(p.proposal.calls).toEqual([{ kind: "windows.gameMode", enabled: true }]);
     expect(p.proposal.rows[0]).toEqual(["Game Mode", s.facts.gameMode ? "On" : "Off", "On"]);
     expect(events.at(-1)).toEqual({ type: "done" });
@@ -408,7 +424,9 @@ describe("custom logs", () => {
     // The PC block lists what it already keeps, without anything the chat doesn't need.
     const block = JSON.stringify(seen[0].system);
     expect(block).toContain("customLogs");
-    expect(block).toContain("GPU heat");
+    // By id and kind: the label is text an earlier answer wrote.
+    expect(block).toContain("c-old");
+    expect(block).not.toContain("GPU heat");
     expect(block).not.toContain("S-1-5-21-1");
     expect(block).not.toContain("xxxxxxxx");
     expect(JSON.stringify(seen[1].messages)).toMatch(/path must be a counter path/);

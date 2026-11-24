@@ -3,6 +3,7 @@
 // the data comes from.
 
 import type { ActionCall } from "./actions";
+import type { AppliedStep, ApplyReply, Command, PreviewReply, Step, Tier, UndoReply } from "./change";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -11,16 +12,30 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import type { BoardLayoutReply, ReadLayoutRequest } from "./api";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
+import type { PcRead } from "./reads";
 
 export interface Proposal {
   id: string;
   title: string;
   why?: string;
-  calls: ActionCall[];
+  steps: Step[];
+  /** The same changes as `steps`, for desktop apps from before steps (0.1.9 and older). Sent only when every step is a fix. */
+  calls?: ActionCall[];
+  /** The riskiest step's tier, worked out by Rig. */
+  tier: Tier;
   rows: DiffRow[];
   status: "waiting" | "applied" | "declined";
   changeId?: string;
+  /** What the helper read and checked for each step when the card was made. A fix step has none. */
+  previews?: (PreviewReply | null)[];
+  /** What happened to each command step once the person applied it. */
+  outcomes?: (StepOutcome | null)[];
+  /** Rig read text from outside this PC earlier in the conversation. */
+  tainted?: boolean;
 }
+
+/** One command step after the person pressed Apply, and after Undo if they pressed that too. */
+export interface StepOutcome { apply: ApplyReply; undo?: UndoReply }
 
 export interface Source { label: string; kind: "Manual" | "Maker" | "Your PC" | "Web"; url?: string }
 
@@ -39,9 +54,15 @@ export interface ChatMessage {
   script?: { probe: ProbeSpec; status: "waiting" | "approved" | "declined"; error?: string };
   pending?: boolean;
   error?: boolean;
+  /**
+   * The server's signed note on this answer: whether it, or an answer before it, read outside text.
+   * Sent back with the history. An answer of Rig's without a valid one counts as having read outside text.
+   */
+  seal?: string;
 }
 
-export interface AppliedCall { call: ActionCall; undo: ActionCall; row: DiffRow }
+/** The chat answer a change came from. */
+export interface Provenance { proposalId: string; /** The chat message that showed the card. */ messageId?: string }
 
 export interface Change {
   id: string;
@@ -54,8 +75,12 @@ export interface Change {
   why: string;
   diff: DiffRow[];
   result: string;
-  applied: AppliedCall[];
+  tier: Tier;
+  applied: AppliedStep[];
+  from?: Provenance;
 }
+
+export interface ApplyMeta { title?: string; why?: string; by: "you" | "rig"; from?: Provenance }
 
 export interface Account { id: string; name: string; email: string }
 
@@ -75,6 +100,13 @@ export type ChatEvent =
   | { type: "probe"; op: "remove"; id: string; error?: string }
   /** Rig proposed a script for the background recorder. Nothing runs until the person approves it. */
   | { type: "script"; probe: ProbeSpec }
+  /**
+   * Desktop only: Rig wants to look at the PC before it goes on. The app runs each read through the helper and asks again
+   * with `resume` and the results. The stream ends after this event, without `done`.
+   */
+  | { type: "reads"; reads: PcRead[]; resume: string }
+  /** Keep this on the answer (ChatMessage.seal) and send it back with the history. */
+  | { type: "seal"; seal: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -124,8 +156,8 @@ export interface RigClient {
 
   changes(machineId: string): Promise<Change[]>;
   /** Fills in the current values so the person sees exactly what will change. */
-  preview(machineId: string, calls: ActionCall[]): Promise<DiffRow[]>;
-  apply(machineId: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change>;
+  preview(machineId: string, steps: Step[]): Promise<DiffRow[]>;
+  apply(machineId: string, steps: Step[], meta: ApplyMeta): Promise<Change>;
   undo(machineId: string, changeId: string): Promise<Change>;
   redo(machineId: string, changeId: string): Promise<Change>;
 
@@ -166,6 +198,12 @@ export interface RigClient {
 
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];
+  /** Has the helper read the current settings for a command step and check it, so its card can show them. Only where changes can be made. */
+  previewCommand?(machineId: string, cmd: Command, tainted: boolean): Promise<PreviewReply>;
+  /** Runs a command step the helper previewed, by the nonce from its preview. Only where changes can be made. */
+  applyCommand?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
+  /** Puts a command step back, by the id in its undo record. With `force`, even when something else changed those places since. */
+  undoCommand?(machineId: string, undoId: string, force?: boolean): Promise<UndoReply>;
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }

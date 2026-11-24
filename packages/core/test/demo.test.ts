@@ -74,3 +74,62 @@ describe("demo alerts", () => {
     expect(laptop.alerts).toBeUndefined();
   });
 });
+
+describe("the demo's approval cards", () => {
+  it("has one of each: a registry command, an admin firewall rule, an uninstall and a refusal", async () => {
+    const { demoCards, demoPreview } = await import("../src/demo");
+    const seen = Object.fromEntries(demoCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}${p.verdict.admin ? " admin" : ""}` : p.verdict.why]; }));
+    expect(seen).toEqual({ registry: "tier 2", firewall: "tier 2 admin", uninstall: "tier 3", refused: "never", rollback: "tier 3" });
+  });
+
+  it("brings each card up from its question, and a nonce works once", async () => {
+    const { demoCards, demoPreview } = await import("../src/demo");
+    const demo = new DemoClient();
+    for (const c of demoCards) {
+      const events: string[] = [];
+      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => { if (e.type === "proposal") events.push(e.proposal.title); });
+      expect(events).toEqual([c.title]);
+    }
+    const meta = { by: "rig" as const };
+    const registry = demoCards.find((c) => c.key === "registry")!;
+    const read = await demo.previewCommand("demo-atlas", registry.cmd);
+    expect(read).toEqual({ ...demoPreview(registry), nonce: expect.stringMatching(/^demo-registry-/), expiresAt: expect.any(String) });
+    const nonce = read.outcome === "ready" ? read.nonce : "";
+    expect((await demo.applyCommand("demo-atlas", nonce, meta)).outcome).toBe("applied");
+    expect((await demo.applyCommand("demo-atlas", nonce, meta)).outcome).toBe("expired");
+    expect((await demo.changes("demo-atlas"))[0].title).toBe("Show seconds on the taskbar clock");
+    expect((await demo.undoCommand("demo-atlas", "undo-registry")).outcome).toBe("undone");
+    expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
+  });
+
+  it("won't take a rolled-back card's nonce twice", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    const rollback = demoCards.find((c) => c.key === "rollback")!;
+    const read = await demo.previewCommand("demo-atlas", rollback.cmd);
+    const nonce = read.outcome === "ready" ? read.nonce : "";
+    expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("rolledBack");
+    expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("expired");
+  });
+
+  it("shows a firewall undo that something else got to first, and puts it back anyway when asked", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    const firewall = demoCards.find((c) => c.key === "firewall")!;
+    const read = await demo.previewCommand("demo-atlas", firewall.cmd);
+    await demo.applyCommand("demo-atlas", read.outcome === "ready" ? read.nonce : "", { by: "rig" });
+    expect(await demo.undoCommand("demo-atlas", "undo-firewall")).toEqual({ outcome: "drifted", changed: ["The firewall rule Minecraft server"] });
+    expect((await demo.changes("demo-atlas"))[0].status).toBe("applied");
+    expect((await demo.undoCommand("demo-atlas", "undo-firewall", true)).outcome).toBe("undone");
+    expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
+  });
+
+  it("refuses a tier 3 card when the chat read outside text", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    const uninstall = demoCards.find((c) => c.key === "uninstall")!;
+    const read = await demo.previewCommand("demo-atlas", uninstall.cmd, true);
+    expect(read.outcome === "refused" && read.verdict.why).toBe("tainted");
+    expect((await demo.previewCommand("demo-atlas", uninstall.cmd, false)).outcome).toBe("ready");
+  });
+});

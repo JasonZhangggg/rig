@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type PC, type Snapshot } from "../src";
+import { APPROVE_DECLINED, checkStep, commandHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type CommandRpc, type HelperLink, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -117,10 +117,10 @@ describe("LocalClient", () => {
     await client.start();
     const id = client.id;
     const call: ActionCall = { kind: "windows.gameMode", enabled: !(await sim.facts()).gameMode };
-    const rows = await client.preview(id, [call]);
+    const rows = await client.preview(id, fixSteps([call]));
     expect(rows[0][0]).toMatch(/game mode/i);
 
-    const change = await client.apply(id, [call], { by: "you" });
+    const change = await client.apply(id, fixSteps([call]), { by: "you" });
     expect((await sim.facts()).gameMode).toBe(call.enabled);
     expect((await client.changes(id))[0].id).toBe(change.id);
 
@@ -138,8 +138,46 @@ describe("LocalClient", () => {
     await client.start();
     const before = await sim.facts();
     const calls: ActionCall[] = [{ kind: "windows.gameMode", enabled: !before.gameMode }, { kind: "display.refreshRate", display: fixtures.atlas.inv.displays[0].name, hz: 165 }];
-    await expect(client.apply(client.id, calls, { by: "rig" })).rejects.toThrow(/Nothing was changed/);
+    await expect(client.apply(client.id, fixSteps(calls), { by: "rig" })).rejects.toThrow(/Nothing was changed/);
     expect((await sim.facts()).gameMode).toBe(before.gameMode);
+    expect(await client.changes(client.id)).toHaveLength(0);
+    client.stop();
+  });
+
+  it("keeps the tier and the chat answer a change came from", async () => {
+    const { client, sim } = setup();
+    await client.start();
+    const call: ActionCall = { kind: "windows.gameMode", enabled: !(await sim.facts()).gameMode };
+    const change = await client.apply(client.id, fixSteps([call]), { by: "rig", from: { proposalId: "p1", messageId: "m1" } });
+    expect((await client.changes(client.id))[0]).toMatchObject({ id: change.id, tier: 1, from: { proposalId: "p1", messageId: "m1" }, applied: [{ step: { kind: "fix", call } }] });
+    client.stop();
+  });
+
+  it("reads, undoes and redoes a change stored before steps", async () => {
+    const { client, store, sim } = setup();
+    await client.start();
+    const was = (await sim.facts()).gameMode;
+    const call: ActionCall = { kind: "windows.gameMode", enabled: !was };
+    await sim.apply(call);
+    const row: [string, string, string] = ["Game Mode", was ? "On" : "Off", was ? "Off" : "On"];
+    await store.putChange({ id: "old", machineId: client.id, at: "2026-11-01T10:00:00.000Z", title: "Turned Game Mode on", by: "you", status: "applied", why: "", result: "", diff: [row],
+      applied: [{ call, undo: { kind: "windows.gameMode", enabled: was }, row }] });
+    expect((await client.changes(client.id))[0]).toMatchObject({ tier: 1, applied: [{ step: { kind: "fix", call }, undo: { kind: "fix", call: { kind: "windows.gameMode", enabled: was } }, rows: [row] }] });
+    expect((await client.undo(client.id, "old")).status).toBe("undone");
+    expect((await sim.facts()).gameMode).toBe(was);
+    expect((await client.redo(client.id, "old")).status).toBe("applied");
+    expect((await sim.facts()).gameMode).toBe(!was);
+    client.stop();
+  });
+
+  it("makes a command step only from its own card, not with Rig's fixes", async () => {
+    const { client, sim } = setup();
+    await client.start();
+    const was = (await sim.facts()).gameMode;
+    const steps: Step[] = [...fixSteps([{ kind: "windows.gameMode", enabled: !was }]), { kind: "command", cmd: { does: "Turns off menu delay.", read: "Get-Date", run: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay -Value 0", touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop" }] } }];
+    await expect(client.preview(client.id, steps)).rejects.toThrow("A command step runs from its own card in the chat.");
+    await expect(client.apply(client.id, steps, { by: "rig" })).rejects.toThrow("A command step runs from its own card in the chat.");
+    expect((await sim.facts()).gameMode).toBe(was);
     expect(await client.changes(client.id)).toHaveLength(0);
     client.stop();
   });
@@ -147,7 +185,7 @@ describe("LocalClient", () => {
   it("refuses anything outside the fix catalog", async () => {
     const { client } = setup();
     await client.start();
-    await expect(client.preview(client.id, [{ kind: "registry.write", key: "x" } as unknown as ActionCall])).rejects.toThrow();
+    await expect(client.preview(client.id, fixSteps([{ kind: "registry.write", key: "x" } as unknown as ActionCall]))).rejects.toThrow();
     client.stop();
   });
 
@@ -208,6 +246,64 @@ describe("LocalClient", () => {
     const events: ChatEvent[] = [];
     await off.client.chat(off.client.id, [{ id: "1", from: "you", text: "hi" }], (e) => events.push(e));
     expect(events[0]).toMatchObject({ type: "error" });
+  });
+
+  it("runs the chat's reads through the helper and goes on with what they found", async () => {
+    const asks: { resume?: { resume: string; results: PcReadResult[] }; live?: { reads?: boolean; steps?: boolean } }[] = [];
+    const cloud = {
+      signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
+      chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: AbortSignal | undefined, live: { reads?: boolean; steps?: boolean }, resume?: { resume: string; results: PcReadResult[] }) => {
+        asks.push({ resume, live });
+        if (!resume) {
+          onEvent({ type: "text", text: "Let me look." });
+          onEvent({ type: "reads", resume: "signed-state", reads: [
+            { id: "r1", kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "WallPaper" },
+            { id: "r2", kind: "script", script: "Remove-Item -Path 'C:\\Temp' -Recurse" },
+            { id: "r3", kind: "cim", class: "Win32_BIOS" },
+          ] });
+          return;
+        }
+        onEvent({ type: "text", text: " The wallpaper is set." });
+        onEvent({ type: "done" });
+      },
+    } as unknown as CloudClient;
+    const read = vi.fn(async (r: PcReadSpec) => {
+      if (r.kind === "cim") throw new Error("WMI isn't answering.");
+      return '{"data":"C:\\\\Pictures\\\\sea.jpg"}';
+    });
+    const { client } = setup({ read }, cloud);
+    await client.start();
+    const events: ChatEvent[] = [];
+    await client.chat(client.id, [{ id: "1", from: "you", text: "What's my wallpaper?" }], (e) => events.push(e));
+    client.stop();
+
+    expect(asks).toHaveLength(2);
+    expect(asks[0].live?.reads).toBe(true);
+    // This app shows command steps, so the server may offer them; older apps don't say so and only get fixes.
+    expect(asks[0].live?.steps).toBe(true);
+    expect(asks[1].resume?.resume).toBe("signed-state");
+    // The helper only got the reads that check as reads here too, without the server's ids.
+    expect(read.mock.calls.map(([r]) => r)).toEqual([{ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "WallPaper" }, { kind: "cim", class: "Win32_BIOS" }]);
+    const results = asks[1].resume!.results;
+    expect(results[0]).toEqual({ id: "r1", ok: true, text: '{"data":"C:\\\\Pictures\\\\sea.jpg"}' });
+    expect(results[1]).toMatchObject({ id: "r2", ok: false });
+    expect(results[2]).toEqual({ id: "r3", ok: false, error: "WMI isn't answering." });
+    // The person sees one answer; the stop in the middle stays between the app and the server.
+    expect(events.map((e) => e.type)).toEqual(["text", "text", "done"]);
+  });
+
+  it("tells the server it can't read live when the helper is older", async () => {
+    let live: { reads?: boolean } | undefined;
+    const cloud = {
+      signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
+      chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: unknown, l: { reads?: boolean }) => { live = l; onEvent({ type: "done" }); },
+    } as unknown as CloudClient;
+    const { client } = setup({}, cloud);
+    await client.start();
+    await client.chat(client.id, [{ id: "1", from: "you", text: "hi" }], () => {});
+    client.stop();
+    expect(live).toBeDefined();
+    expect(live?.reads).toBeUndefined();
   });
 
   it("exports this PC from disk when signed out, and the account when signed in", async () => {
@@ -300,5 +396,153 @@ describe("LocalClient", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("command steps", () => {
+    const menuDelay: Command = {
+      does: "Turns off the menu delay.",
+      read: "Get-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay",
+      run: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay -Value 0",
+      undo: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay -Value 400",
+      touches: [{ kind: "registry", key: "HKCU:\\Control Panel\\Desktop", value: "MenuShowDelay" }],
+    };
+    const run = { before: "MenuShowDelay : 400", after: "MenuShowDelay : 0", output: "", alsoChanged: [], touches: [{ touch: { kind: "registry" as const, key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" }, before: "400", after: "0" }] };
+    const undoRecord = { kind: "command" as const, id: "u1", script: menuDelay.undo!, outside: [], fingerprint: "f1" };
+
+    /** A helper that answers command calls the way the runner does, and remembers every call in order. */
+    function commandHelper(o: { admin?: boolean; drifts?: string[] } = {}) {
+      const calls: string[] = [];
+      const seen: { method: string; params: unknown }[] = [];
+      let drifted = !!o.drifts;
+      const command = async <K extends keyof CommandRpc>(method: K, params: CommandRpc[K]["params"]): Promise<CommandRpc[K]["reply"]> => {
+        calls.push(method);
+        seen.push({ method, params });
+        let reply: unknown;
+        if (method === "command.preview") {
+          const v = checkStep({ kind: "command", cmd: (params as { cmd: Command }).cmd }) as Allowed;
+          reply = { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: { ...v, admin: !!o.admin }, read: run.before, touches: [{ touch: run.touches[0].touch, value: "400" }] } satisfies PreviewReply;
+        } else if (method === "command.apply") reply = { outcome: "applied", result: run, undo: undoRecord } satisfies ApplyReply;
+        else if (method === "command.undo") {
+          const force = (params as { force?: boolean }).force;
+          reply = (drifted && !force ? { outcome: "drifted", changed: o.drifts! } : { outcome: "undone", printed: run.before, left: [] }) satisfies UndoReply;
+          if (force) drifted = false;
+        } else if (method === "command.read") reply = { printed: "MenuShowDelay : 400" };
+        return reply as CommandRpc[K]["reply"];
+      };
+      return { command, calls, seen };
+    }
+
+    function withCommands(o: { admin?: boolean; drifts?: string[]; approve?: (nonce: string, hash: string) => Promise<void> } = {}) {
+      const helper = commandHelper(o);
+      const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => 0 });
+      const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => sim.facts(), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c), command: helper.command };
+      const approve = vi.fn(o.approve ?? (async (_nonce: string, _hash: string) => { helper.calls.push("approve"); }));
+      const client = new LocalClient(link, new MemoryStore(), null, { tickMs: 1e9, syncEveryMs: 1e9, now: () => new Date("2026-11-17T20:00:00").getTime(), approveCommand: approve });
+      return { client, helper, approve };
+    }
+    const meta = { title: "Turns off the menu delay", by: "rig" as const, from: { proposalId: "p1", messageId: "m1" } };
+
+    it("previews, applies and undoes a command that needs no admin rights, and logs it once", async () => {
+      const { client, helper, approve } = withCommands();
+      await client.start();
+      const preview = await client.previewCommand(client.id, menuDelay, false);
+      expect(preview).toMatchObject({ outcome: "ready", nonce: "n1", read: "MenuShowDelay : 400" });
+      // The helper gets the command as Rig stores it: registry keys written HKCU\.
+      expect((helper.seen[0].params as { cmd: Command }).cmd.touches[0]).toEqual({ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" });
+      const applied = await client.applyCommand(client.id, "n1", meta);
+      expect(applied.outcome).toBe("applied");
+      expect(approve).not.toHaveBeenCalled();
+      const [change, ...rest] = await client.changes(client.id);
+      expect(rest).toHaveLength(0);
+      expect(change).toMatchObject({
+        title: "Turns off the menu delay", status: "applied", tier: (preview as Extract<PreviewReply, { outcome: "ready" }>).verdict.tier, from: meta.from,
+        diff: [["HKCU\\Control Panel\\Desktop\\MenuShowDelay", "400", "0"]],
+        applied: [{ step: { kind: "command" }, undo: { kind: "command", id: "u1" }, verify: { before: "MenuShowDelay : 400", after: "MenuShowDelay : 0" } }],
+      });
+      // A nonce works once.
+      expect((await client.applyCommand(client.id, "n1", meta)).outcome).toBe("expired");
+      expect((await client.undoCommand(client.id, "u1")).outcome).toBe("undone");
+      expect((await client.changes(client.id)).map((c) => c.status)).toEqual(["undone"]);
+      expect(helper.calls).toEqual(["command.preview", "command.apply", "command.undo"]);
+      client.stop();
+    });
+
+    it("has Windows approve an admin command by its nonce and hash before it runs", async () => {
+      const { client, helper, approve } = withCommands({ admin: true });
+      await client.start();
+      await client.previewCommand(client.id, menuDelay, false);
+      expect((await client.applyCommand(client.id, "n1", meta)).outcome).toBe("applied");
+      const stored = (helper.seen[0].params as { cmd: Command }).cmd;
+      expect(approve).toHaveBeenCalledWith("n1", await commandHash(stored));
+      expect(await commandHash(stored)).not.toBe(await commandHash(menuDelay));
+      expect(helper.calls).toEqual(["command.preview", "approve", "command.apply"]);
+      expect(await client.changes(client.id)).toHaveLength(1);
+      client.stop();
+    });
+
+    it("changes nothing when the person says No at Windows' prompt, and can ask again", async () => {
+      let answer: "no" | "yes" = "no";
+      const { client, helper } = withCommands({ admin: true, approve: async () => { if (answer === "no") throw APPROVE_DECLINED; } });
+      await client.start();
+      await client.previewCommand(client.id, menuDelay, false);
+      expect(await client.applyCommand(client.id, "n1", meta)).toEqual({ outcome: "declined" });
+      expect(helper.calls).not.toContain("command.apply");
+      expect(await client.changes(client.id)).toHaveLength(0);
+      answer = "yes";
+      expect((await client.applyCommand(client.id, "n1", meta)).outcome).toBe("applied");
+      expect(await client.changes(client.id)).toHaveLength(1);
+      client.stop();
+    });
+
+    it("says a plain error when Windows' approval fails for another reason", async () => {
+      const { client, helper } = withCommands({ admin: true, approve: async () => { throw "Rig's helper didn't start."; } });
+      await client.start();
+      await client.previewCommand(client.id, menuDelay, false);
+      await expect(client.applyCommand(client.id, "n1", meta)).rejects.toThrow("Rig's helper didn't start.");
+      expect(helper.calls).not.toContain("command.apply");
+      client.stop();
+    });
+
+    it("won't put a change back over something that changed it since, until asked to anyway", async () => {
+      const { client, helper } = withCommands({ drifts: ["HKCU\\Control Panel\\Desktop\\MenuShowDelay"] });
+      await client.start();
+      await client.previewCommand(client.id, menuDelay, false);
+      await client.applyCommand(client.id, "n1", meta);
+      expect(await client.undoCommand(client.id, "u1")).toEqual({ outcome: "drifted", changed: ["HKCU\\Control Panel\\Desktop\\MenuShowDelay"] });
+      expect((await client.changes(client.id))[0].status).toBe("applied");
+      expect((await client.undoCommand(client.id, "u1", true)).outcome).toBe("undone");
+      expect((await client.changes(client.id))[0].status).toBe("undone");
+      expect(helper.seen.filter((c) => c.method === "command.undo").map((c) => c.params)).toEqual([{ id: "u1" }, { id: "u1", force: true }]);
+      client.stop();
+    });
+
+    it("refuses a tier 3 command after the chat read outside text, before the helper sees it", async () => {
+      const { client, helper } = withCommands();
+      await client.start();
+      const noUndo: Command = { ...menuDelay, undo: null, touches: [{ kind: "other", name: "The menu delay" }] };
+      expect(await client.previewCommand(client.id, noUndo, true)).toMatchObject({ outcome: "refused", verdict: { why: "tainted" } });
+      expect(helper.calls).toHaveLength(0);
+      client.stop();
+    });
+
+    it("runs the chat's script and command reads through the helper's command read", async () => {
+      const asked: PcReadResult[][] = [];
+      const cloud = {
+        signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
+        chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: unknown, _l: unknown, resume?: { results: PcReadResult[] }) => {
+          if (resume) { asked.push(resume.results); onEvent({ type: "done" }); return; }
+          onEvent({ type: "reads", resume: "s", reads: [{ id: "a", kind: "cmdlet", command: "Get-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay" }, { id: "b", kind: "script", script: "Get-Service -Name wuauserv" }] });
+        },
+      } as unknown as CloudClient;
+      const helper = commandHelper();
+      const read = vi.fn(async () => "never");
+      const { client } = setup({ read, command: helper.command }, cloud);
+      await client.start();
+      await client.chat(client.id, [{ id: "1", from: "you", text: "What's my menu delay?" }], () => {});
+      client.stop();
+      expect(read).not.toHaveBeenCalled();
+      expect(helper.seen.map((c) => c.params)).toEqual([{ script: "Get-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay" }, { script: "Get-Service -Name wuauserv" }]);
+      expect(asked[0]).toEqual([{ id: "a", ok: true, text: "MenuShowDelay : 400" }, { id: "b", ok: true, text: "MenuShowDelay : 400" }]);
+    });
   });
 });

@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
-import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
+import { appliedCount, headline, stale, undoneLine, waitingOn } from "./components/change";
+import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
 
@@ -51,7 +52,7 @@ export interface Review {
   title: string;
   body: string;
   rows: DiffRow[];
-  calls: ActionCall[];
+  steps: Step[];
   cta: string;
   by: "you" | "rig";
   why?: string;
@@ -119,9 +120,11 @@ export interface Ctx {
   /** Starts a fresh conversation. Does nothing while Rig is answering. */
   clearChat: () => void;
   /** Opens the review sheet with the current values filled in. Nothing changes until the person confirms. */
-  review: (calls: ActionCall[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
+  review: (steps: Step[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
   confirmReview: () => Promise<void>;
   declineProposal: (proposalId: string) => void;
+  /** The one way a card reads, applies or undoes a command step. Rig's own fixes go through `review`. */
+  commandStep: (proposalId: string, index: number, act: "read" | "apply" | "undo" | "forceUndo") => Promise<void>;
   /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
   approveScript: (messageId: string) => Promise<void>;
   declineScript: (messageId: string) => void;
@@ -434,6 +437,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           else if (e.type === "recording") edit((m) => ({ ...m, recording: e.request }));
           else if (e.type === "probe") edit((m) => ({ ...m, probe: e.op === "add" ? { op: "add", id: e.probe.id, label: e.probe.label, error: e.error } : { op: "remove", id: e.id, error: e.error } }));
           else if (e.type === "script") edit((m) => ({ ...m, script: { probe: e.probe, status: "waiting" } }));
+          else if (e.type === "seal") edit((m) => ({ ...m, seal: e.seal }));
           else if (e.type === "error") edit((m) => ({ ...m, error: true, text: m.text || e.message }));
         }, ab.signal)
           .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""} Check your internet connection and send it again.`.replace(/\s+/g, " ").trim() })))
@@ -443,12 +447,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
 
       clearChat: () => { if (!dataNow.current.answering) setData((d) => ({ ...d, chat: [] })); },
 
-      review: (calls, meta) => once("review", async () => {
+      review: (steps, meta) => once("review", async () => {
         if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
         let rows: DiffRow[];
-        try { rows = await client.preview(pcId, calls); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
-        const title = meta.title ?? titleFor(calls);
-        set({ review: { title, body: meta.body ?? "Here's exactly what will change. Nothing happens until you confirm.", rows, calls, cta: meta.cta ?? (calls.length === 1 ? "Make this change" : `Make ${calls.length} changes`), by: meta.by, why: meta.why, proposalId: meta.proposalId } });
+        try { rows = await client.preview(pcId, steps); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
+        const title = meta.title ?? stepsTitle(steps);
+        set({ review: { title, body: meta.body ?? "Here's exactly what will change. Nothing happens until you confirm.", rows, steps, cta: meta.cta ?? (steps.length === 1 ? "Make this change" : `Make ${steps.length} changes`), by: meta.by, why: meta.why, proposalId: meta.proposalId } });
       }),
 
       confirmReview: async () => {
@@ -456,11 +460,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         if (!r || r.busy) return;
         set({ review: { ...r, busy: true, error: undefined } });
         try {
-          const change = await client.apply(pcId, r.calls, { title: r.title, why: r.why, by: r.by });
+          const from = r.proposalId ? { proposalId: r.proposalId, messageId: dataNow.current.chat.find((m) => m.proposal?.id === r.proposalId)?.id } : undefined;
+          const change = await client.apply(pcId, r.steps, { title: r.title, why: r.why, by: r.by, from });
           setData((d) => ({ ...d, changes: [change, ...d.changes.filter((c) => c.id !== change.id)] }));
           if (r.proposalId) patchProposal(r.proposalId, { status: "applied", changeId: change.id });
           set({ review: null });
-          toast(r.calls.length === 1 ? "Done." : `${r.calls.length} changes made.`, change.id);
+          toast(r.steps.length === 1 ? "Done." : `${r.steps.length} changes made.`, change.id);
         } catch (e) {
           set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Rig couldn't make this change, so nothing was changed. Try again, and if it keeps happening, restart Rig." } });
         }
@@ -491,7 +496,48 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         else window.scrollTo(0, 0);
       },
 
-      declineProposal: (proposalId) => { patchProposal(proposalId, { status: "declined" }); toast("Okay, nothing was changed."); },
+      commandStep: (proposalId, index, act) => once(`command:${proposalId}:${index}`, async () => {
+        const message = dataNow.current.chat.find((m) => m.proposal?.id === proposalId);
+        const p = message?.proposal;
+        const preview = p?.previews?.[index];
+        const was = p?.outcomes?.[index];
+        if (!p) return;
+        if (!client.caps.applyChanges || !client.previewCommand || !client.applyCommand || !client.undoCommand) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
+        const at = <T,>(list: (T | null | undefined)[] | undefined, v: T | null) => p.steps.map((_, i) => (i === index ? v : list?.[i] ?? null));
+        const patch = (f: (q: NonNullable<ChatMessage["proposal"]>) => Partial<NonNullable<ChatMessage["proposal"]>>) =>
+          setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...f(m.proposal) } } : m)) }));
+        const keep = (o: StepOutcome) => patch((q) => ({ outcomes: at(q.outcomes, o) }));
+        const step = p.steps[index];
+        if (step?.kind !== "command") return;
+        try {
+          if (act === "read" && p.status !== "declined" && (!was || was.apply.outcome === "expired" || was.apply.outcome === "refused" || was.apply.outcome === "declined")) {
+            const fresh = await client.previewCommand(pcId, step.cmd, !!p.tainted);
+            patch((q) => ({ previews: at(q.previews, fresh), outcomes: at(q.outcomes, null) }));
+            return;
+          }
+          if (act === "apply" && preview?.outcome === "ready" && (!was || was.apply.outcome === "declined") && p.status !== "declined" && !waitingOn(p, index)) {
+            if (stale(preview.expiresAt)) { patch((q) => ({ previews: at(q.previews, null) })); return; }
+            const apply = await client.applyCommand(pcId, preview.nonce, { title: headline(step.cmd, preview.verdict.commands), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
+            keep({ apply });
+          } else if (act === "undo" && was?.apply.outcome === "applied" && was.undo?.outcome !== "undone") {
+            keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id) });
+          } else if (act === "forceUndo" && was?.apply.outcome === "applied" && was.undo?.outcome === "drifted") {
+            keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id, true) });
+          } else return;
+          const changes = await client.changes(pcId);
+          setData((d) => ({ ...d, changes }));
+        } catch (e) {
+          const what = act === "read" ? "read the current settings" : act === "apply" ? "make this change" : "undo this";
+          toast(`Rig couldn't ${what}. ${e instanceof Error ? e.message : ""} Try again, and if it keeps happening, restart Rig.`.replace(/\s+/g, " ").trim());
+        }
+      }),
+
+      declineProposal: (proposalId) => {
+        const p = dataNow.current.chat.find((m) => m.proposal?.id === proposalId)?.proposal;
+        const made = p ? appliedCount(p) : 0;
+        patchProposal(proposalId, { status: "declined" });
+        toast(!made ? "Okay, nothing was changed." : `Okay. ${made === 1 ? "The step you applied stays" : `The ${made} steps you applied stay`}; the rest won't run. Undo them in Changes.`);
+      },
 
       approveScript: (messageId) => once(`script:${messageId}`, async () => {
         const m = dataNow.current.chat.find((x) => x.id === messageId);
@@ -516,6 +562,28 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         const c = dataNow.current.changes.find((x) => x.id === id);
         if (!c) return;
         if (!client.caps.applyChanges) { toast(`Undo works from the Rig app on ${pcOf().name}.`); return; }
+        const commands = c.applied.filter((a) => a.undo.kind === "command");
+        if (commands.length) {
+          if (c.status !== "applied" || !client.undoCommand) return;
+          try {
+            const replies: [string, UndoReply][] = [];
+            for (const a of [...commands].reverse()) if (a.undo.kind === "command") replies.push([a.undo.id, await client.undoCommand(pcId, a.undo.id)]);
+            const changes = await client.changes(pcId);
+            const by = new Map(replies);
+            setData((d) => ({
+              ...d, changes,
+              chat: d.chat.map((m) => {
+                const q = m.proposal;
+                if (!q?.outcomes?.some((o) => o?.apply.outcome === "applied" && by.has(o.apply.undo.id))) return m;
+                return { ...m, proposal: { ...q, outcomes: q.outcomes.map((o) => (o?.apply.outcome === "applied" && by.has(o.apply.undo.id) ? { ...o, undo: by.get(o.apply.undo.id) } : o ?? null)) } };
+              }),
+            }));
+            toast(replies.map(([, u]) => undoneLine(u)).join(" "));
+          } catch (e) {
+            toast(`Couldn't undo that. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
+          }
+          return;
+        }
         try {
           const next = c.status === "applied" ? await client.undo(pcId, id) : await client.redo(pcId, id);
           setData((d) => ({ ...d, changes: d.changes.map((x) => (x.id === id ? next : x)), chat: d.chat.map((m) => (m.proposal?.changeId === id ? { ...m, proposal: { ...m.proposal, status: next.status === "applied" ? "applied" : "waiting" } } : m)) }));

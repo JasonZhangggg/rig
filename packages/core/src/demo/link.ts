@@ -2,10 +2,10 @@
 // demo fixtures. The desktop app uses it when it isn't running on Windows,
 // and the tests use it to drive LocalClient.
 
-import { validateCall, type ActionCall } from "../actions";
+import { validateCall, type ActionCall, type FixApplied, type FixNow } from "../actions";
 import type { HelperLink } from "../local";
 import type { Inventory, Snapshot, SystemFacts } from "../telemetry";
-import { applyToFacts } from "./apply";
+import { applyToFacts, demoNow } from "./apply";
 import { demoEvents, demoProcesses } from "./logs";
 import { simulate } from "./simulate";
 import { demoScan } from "./storage";
@@ -25,9 +25,15 @@ export class SimulatedLink implements HelperLink {
   async processes() { return demoProcesses(this.inv, (this.opts.now ?? Date.now)()); }
   /** The folder scan: finished an hour ago, or just now when asked for a fresh one. */
   async storage(fresh?: boolean) { const now = (this.opts.now ?? Date.now)(); return demoScan(this.inv, fresh ? now : now - 36e5); }
-  async apply(call: ActionCall) {
+  /** Calls are checked as the server checks them, undo calls included. */
+  async apply(call: ActionCall): Promise<FixApplied> {
     const bad = validateCall(call);
     if (bad) throw new Error(bad);
-    return applyToFacts(this.inv, this.f, call);
+    return { undo: applyToFacts(this.inv, this.f, call), verify: { ok: true } };
+  }
+  async readFix(call: ActionCall): Promise<FixNow> {
+    const now = demoNow(this.f, call);
+    if (!now) throw new Error("The facts already hold this one.");
+    return now;
   }
 }

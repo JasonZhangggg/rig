@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import type { Change, DiffRow, Issue } from "@rig/core";
+import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type Issue } from "@rig/core";
 import { DiffTable, StatusChip } from "../components/common";
+import { recordRuns, StepRecord, undoReach } from "../components/change";
 import { DayLabel, Row, Rows } from "../components/Rows";
 import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
+
+type CommandApplied = Extract<AppliedStep, { step: CommandStep }>;
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -70,7 +73,7 @@ function usePreviews(fixes: Issue[]) {
   const ids = fixes.map((i) => i.id).join(" ");
   useEffect(() => {
     let live = true;
-    for (const i of fixes) client.preview(pc.id, i.fix!).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
+    for (const i of fixes) client.preview(pc.id, fixSteps(i.fix!)).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
     return () => { live = false; };
   }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
   return rows;
@@ -94,7 +97,7 @@ function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow
   const open = (i: Issue) => {
     if (!i.fix) { issueGo(i, latest().pc, { set, go, ask, review }); return; }
     setReading(i.id);
-    void review(i.fix, { by: "you", why: i.title }).finally(() => setReading(null));
+    void review(fixSteps(i.fix), { by: "you", why: i.title }).finally(() => setReading(null));
   };
   return (
     <section className="card ch-next" aria-labelledby="ch-next-h">
@@ -117,15 +120,19 @@ function Entry({ c }: { c: Change }) {
   const { toggleChange, client } = useActions();
   const [busy, setBusy] = useState(false);
   const toggle = () => { setBusy(true); void toggleChange(c.id).finally(() => setBusy(false)); };
+  const commands = c.applied.filter((a): a is CommandApplied => a.step.kind === "command");
   const word = c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
-  const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${c.status === "applied" ? "Old values saved." : "Old values put back."}`;
+  const canToggle = commands.length ? c.status === "applied" && commands.some((a) => undoReach(a.step.cmd, a.undo, recordRuns(a.step.cmd)).can) : true;
+  const state = commands.length ? (c.status === "applied" ? "Open it to see what Undo can put back." : "Undone.") : c.status === "applied" ? "Old values saved." : "Old values put back.";
+  const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${state}`;
   return (
     <Row name={c.title} title={c.title} meta={meta} time={clock(c.at)} at={c.at}
       mark={c.status === "undone" ? "hollow" : "dot"} tag={c.status === "undone" && <StatusChip status="undone" />}
-      action={client.caps.applyChanges && <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>}
+      action={client.caps.applyChanges && canToggle && <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>}
       details={<>
         {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
         {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
+        {commands.map((a, i) => <StepRecord key={i} applied={a} />)}
       </>} />
   );
 }

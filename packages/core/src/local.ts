@@ -1,21 +1,25 @@
 // The desktop app's client. It reads this PC through the Windows helper,
-// keeps temperature history and the change log on disk, makes changes only
-// from the fix catalog (saving the undo first), and, when signed in, uploads
-// the view so the website shows it and reaches the other PCs on the account.
+// keeps temperature history and the change log on disk, makes changes from
+// the fix catalog and command steps the helper previewed (saving the undo
+// first), and, when signed in, uploads the view so the website shows it and
+// reaches the other PCs on the account.
 
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
-import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
+import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
+import { canonicalCommand, cardTier, changeOf, checkStep, commandHash, runRows, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type Command, type CommandLink, type CommandUndo, type FixStep, type FixUndo, type PreviewReply, type Step, type StoredChange, type UndoReply } from "./change";
+import { ruleWords, rulesVersion } from "./check";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
 import type { CloudClient } from "./cloud";
 import { makeExport, type DataExport } from "./export";
-import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
+import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
 import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
+import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec } from "./reads";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
@@ -28,8 +32,10 @@ export interface HelperLink {
   inventory(): Promise<Inventory>;
   facts(): Promise<SystemFacts>;
   snapshot(): Promise<Snapshot>;
-  /** Makes one catalog change and returns the call that puts it back. */
-  apply(call: ActionCall): Promise<ActionCall>;
+  /** Makes one catalog change and returns the call that puts it back, and what reading it back showed. */
+  apply(call: ActionCall): Promise<FixApplied>;
+  /** What a power setting holds now, for the preview. Missing on older helpers. */
+  readFix?(call: ActionCall): Promise<FixNow>;
   /** Windows crash and error events since a time. Read-only; missing on helpers from before recordings. */
   events?(sinceMs: number): Promise<RawEvent[]>;
   /** The busiest apps right now, by processor and memory use. Read-only. */
@@ -39,7 +45,17 @@ export interface HelperLink {
    * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
    */
   storage?(fresh?: boolean): Promise<StorageScan>;
+  /** One read the chat asked for: a registry key, CIM instances, or a command or script that checks as a read. Returns what it found as text. Missing on helpers before live reads. */
+  read?(req: PcReadSpec): Promise<string>;
+  /** Command steps: check, preview, apply, undo and read (CommandRpc). Missing on helpers before general commands. */
+  command?: CommandLink["command"];
 }
+
+/** What the Rig app's approval says when the person chose No at Windows' permission prompt. */
+export const APPROVE_DECLINED = "Windows didn't give permission, so the change isn't approved.";
+
+/** How many times one answer can stop to read the PC and go on. The server's round cap stops it first. */
+const MAX_READ_HOPS = 8;
 
 /** The folder scan is asked for this often, and every few seconds while one runs, so the map fills in when it's done. */
 export const SCAN_ASK_MS = 30 * 60_000;
@@ -51,7 +67,8 @@ export interface LocalStore {
   set(key: string, value: unknown): Promise<void>;
   addHistory(p: HistoryPoint): Promise<void>;
   history(sinceMs: number): Promise<HistoryPoint[]>;
-  changes(): Promise<Change[]>;
+  /** May hold changes stored by older versions; LocalClient reads them through changeOf. */
+  changes(): Promise<StoredChange[]>;
   putChange(c: Change): Promise<void>;
 }
 
@@ -77,6 +94,11 @@ export interface LocalOptions {
   backgroundEveryMs?: number;
   /** Debug log: each step of the first read with its timing, and sensor or sync trouble. */
   log?: Log;
+  /**
+   * Has Windows ask for permission to run a command that needs admin rights, for the previewed command by its nonce and
+   * commandHash. Rejects with APPROVE_DECLINED when the person chose No. Missing where Rig can't ask.
+   */
+  approveCommand?: ((nonce: string, hash: string) => Promise<void>) | null;
 }
 
 const EVENTS_DAYS = 30;
@@ -139,9 +161,11 @@ export class LocalClient implements RigClient {
   private scan: StorageScan | null = null;
   private scanAskedAt = -Infinity;
   private scanReading: Promise<void> | null = null;
+  /** Command steps the helper previewed, by nonce: the command as it was checked and the helper's verdict. */
+  private previewed = new Map<string, { cmd: Command; verdict: Allowed; expiresAt: string }>();
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, ...opts };
+    this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, approveCommand: null, ...opts };
     this.recorder = new Recorder({
       pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
       onChange: () => this.emitRecordings(),
@@ -466,7 +490,7 @@ export class LocalClient implements RigClient {
 
   async changes(id: string): Promise<Change[]> {
     if (!(await this.isLocal(id))) return this.cloud?.changes(id) ?? [];
-    return (await this.store.changes()).sort((a, b) => b.at.localeCompare(a.at));
+    return (await this.store.changes()).map(changeOf).sort((a, b) => b.at.localeCompare(a.at));
   }
 
   // ----- Logs and recordings -----
@@ -662,22 +686,33 @@ export class LocalClient implements RigClient {
     return this.facts;
   }
 
-  async preview(id: string, calls: ActionCall[]): Promise<DiffRow[]> {
+  async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
+    const calls = fixes(steps).map((s) => s.call);
     await this.local(id);
     await this.start();
     for (const c of calls) { const bad = validateCall(c); if (bad) throw new Error(bad); }
     const facts = await this.freshFacts();
-    return calls.map((c) => describeCall(c, facts, this.inv!.displays));
+    const rows: DiffRow[] = [];
+    // The facts don't hold most power settings, so the helper reads those now.
+    for (const c of calls) rows.push(describeCall(c, facts, this.inv!.displays, needsRead(c) && this.link.readFix ? await this.link.readFix(c) : undefined));
+    return rows;
   }
 
-  /** Runs calls in order. If one fails, the ones before it are put back and nothing is left half done. */
-  private async run(pairs: { call: ActionCall; row: DiffRow }[]): Promise<AppliedCall[]> {
-    const done: AppliedCall[] = [];
+  /**
+   * Runs fix calls in order: a step's own call, or the call that puts it back. If one fails, the ones before it are put
+   * back and nothing is left half done. Each comes back with what the helper saw when it read the change back.
+   */
+  private async run(todo: { step: FixStep; call: ActionCall; rows: DiffRow[] }[]): Promise<AppliedFix[]> {
+    const done: AppliedFix[] = [];
     try {
-      for (const { call, row } of pairs) done.push({ call, undo: await this.link.apply(call), row });
+      for (const { step, call, rows } of todo) {
+        const r = await this.link.apply(call);
+        const problem = r.verify && !r.verify.ok ? r.verify.problem : undefined;
+        done.push({ step, undo: { kind: "fix", call: r.undo }, rows, ...(problem ? { unverified: problem } : {}) });
+      }
       return done;
     } catch (e) {
-      for (const a of [...done].reverse()) await this.link.apply(a.undo).catch(() => {});
+      for (const a of [...done].reverse()) await this.link.apply(a.undo.call).catch(() => {});
       throw new Error(`${e instanceof Error ? e.message : String(e)} Nothing was changed.`);
     } finally {
       await this.freshFacts().catch(() => {});
@@ -686,12 +721,15 @@ export class LocalClient implements RigClient {
     }
   }
 
-  async apply(id: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change> {
-    const rows = await this.preview(id, calls);
-    const applied = await this.run(calls.map((call, i) => ({ call, row: rows[i] })));
+  async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
+    const rows = await this.preview(id, steps);
+    const tier = cardTier(steps);
+    if (tier === "refused") throw new Error("Rig won't make this change.");
+    const fixed = fixes(steps);
+    const applied = (await this.run(fixed.map((step, i) => ({ step, call: step.call, rows: [rows[i]] })))).map((a) => withBefore(a, this.facts, this.inv?.displays ?? []));
     const change: Change = {
-      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? titleFor(calls),
-      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, applied,
+      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle(steps),
+      by: meta.by, status: "applied", why: meta.why ?? "", result: unverified(applied), diff: applied.flatMap((a) => a.rows), tier, applied, from: meta.from,
     };
     await this.store.putChange(change);
     void this.sync();
@@ -700,7 +738,7 @@ export class LocalClient implements RigClient {
 
   private async change(id: string, changeId: string) {
     await this.local(id);
-    const c = (await this.store.changes()).find((x) => x.id === changeId);
+    const c = (await this.store.changes()).map(changeOf).find((x) => x.id === changeId);
     if (!c) throw new Error("That change isn't in the log.");
     return c;
   }
@@ -708,8 +746,12 @@ export class LocalClient implements RigClient {
   async undo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status !== "applied") return c;
-    await this.run([...c.applied].reverse().map((a) => ({ call: a.undo, row: a.row })));
-    const next: Change = { ...c, status: "undone" };
+    for (const a of [...c.applied].reverse().filter((x) => x.undo.kind === "command")) {
+      const u = await this.helperUndo((a.undo as CommandUndo).id);
+      if (u.outcome !== "undone") throw new Error(undoTrouble(u));
+    }
+    const back = await this.run(appliedFixes(c.applied.filter((a) => a.step.kind === "fix")).reverse().map((a) => ({ step: a.step, call: a.undo.call, rows: a.rows })));
+    const next: Change = { ...c, status: "undone", result: unverified(back) };
     await this.store.putChange(next);
     void this.sync();
     return next;
@@ -718,11 +760,98 @@ export class LocalClient implements RigClient {
   async redo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status === "applied") return c;
-    const applied = await this.run(c.applied.map((a) => ({ call: a.call, row: a.row })));
-    const next: Change = { ...c, status: "applied", applied };
+    if (c.applied.some((a) => a.step.kind === "command")) throw new Error("Rig makes a command change again only from a new card. Ask Rig in the chat.");
+    const applied = await this.run(appliedFixes(c.applied).map((a) => ({ step: a.step, call: a.step.call, rows: a.rows })));
+    const next: Change = { ...c, status: "applied", applied, result: unverified(applied) };
     await this.store.putChange(next);
     void this.sync();
     return next;
+  }
+
+  private commandLink(): CommandLink["command"] {
+    if (!this.link.command) throw new Error("This PC's Rig helper is too old for this change. Update Rig, then ask again.");
+    return this.link.command.bind(this.link);
+  }
+
+  private helperUndo(undoId: string, force?: boolean): Promise<UndoReply> {
+    return this.commandLink()("command.undo", force ? { id: undoId, force: true } : { id: undoId });
+  }
+
+  async previewCommand(id: string, cmd: Command, tainted: boolean): Promise<PreviewReply> {
+    await this.local(id);
+    const command = this.commandLink();
+    const mine = checkStep({ kind: "command", cmd }, { tainted });
+    if (mine.status === "refused") return { outcome: "refused", verdict: mine };
+    const canonical = canonicalCommand(cmd) as Command;
+    const reply = await command("command.preview", { cmd: canonical });
+    if (reply.outcome !== "ready") return reply;
+    if (reply.verdict.tier === 3 && tainted) {
+      return { outcome: "refused", verdict: { status: "refused", why: "tainted", refused: `${ruleWords("tainted")}.`, commands: reply.verdict.commands, rulesVersion } };
+    }
+    const now = this.o.now();
+    for (const [n, p] of this.previewed) if (!(Date.parse(p.expiresAt) > now)) this.previewed.delete(n);
+    this.previewed.set(reply.nonce, { cmd: canonical, verdict: reply.verdict, expiresAt: reply.expiresAt });
+    return reply;
+  }
+
+  async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
+    await this.local(id);
+    const command = this.commandLink();
+    const held = this.previewed.get(nonce);
+    if (!held) return { outcome: "expired" };
+    if (held.verdict.admin) {
+      if (!this.o.approveCommand) throw new Error("This copy of Rig can't ask Windows for permission. Update Rig, then ask again.");
+      try {
+        await this.o.approveCommand(nonce, await commandHash(held.cmd));
+      } catch (e) {
+        const why = e instanceof Error ? e.message : String(e);
+        if (why.trim() === APPROVE_DECLINED) {
+          this.o.log("info", "change: Windows' permission prompt was answered No");
+          return { outcome: "declined" };
+        }
+        throw new Error(why);
+      }
+    }
+    this.previewed.delete(nonce);
+    let reply: ApplyReply;
+    try {
+      reply = await command("command.apply", { nonce });
+    } finally {
+      await this.freshFacts().catch(() => {});
+      this.emit();
+    }
+    this.o.log("info", `change: command ${reply.outcome}`);
+    if (reply.outcome !== "applied") return reply;
+    const step: Step = { kind: "command", cmd: held.cmd };
+    const rows = runRows(reply.result);
+    const change: Change = {
+      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle([step]),
+      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: held.verdict.tier,
+      applied: [{ step: { kind: "command", cmd: held.cmd }, undo: reply.undo, rows, verify: { before: reply.result.before, after: reply.result.after } }],
+      from: meta.from,
+    };
+    await this.store.putChange(change);
+    void this.sync();
+    return reply;
+  }
+
+  async undoCommand(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
+    await this.local(id);
+    const c = (await this.store.changes()).map(changeOf).find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
+    if (!c || c.status !== "applied") return { outcome: "unknown" };
+    let reply: UndoReply;
+    try {
+      reply = await this.helperUndo(undoId, force);
+    } finally {
+      await this.freshFacts().catch(() => {});
+      this.emit();
+    }
+    this.o.log("info", `change: undo ${reply.outcome}${force ? " (put back anyway)" : ""}`);
+    if (reply.outcome === "undone") {
+      await this.store.putChange({ ...c, status: "undone" });
+      void this.sync();
+    }
+    return reply;
   }
 
   // ----- Manuals -----
@@ -816,34 +945,104 @@ export class LocalClient implements RigClient {
     }
     const here = await this.isLocal(id);
     const probes = here ? await this.customLogs() : null;
-    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}) } : undefined;
+    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}), ...(this.link.read ? { reads: true } : {}), steps: true } : undefined;
     // Rig reads recordings on the server, so it needs the latest ones before it answers.
     if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
     // Custom log changes are made here, on the PC, in the order they came; the answer's events wait for them.
     let applying: Promise<void> = Promise.resolve();
     const send = (f: () => void | Promise<void>) => { applying = applying.then(f).catch(() => {}); };
-    await this.cloud.chat(id, history, (e) => {
-      // A recording for this PC starts right away instead of waiting for the next sync.
-      if (e.type === "recording" && live) {
-        this.begin(e.request).catch(() => {});
-        send(() => onEvent({ ...e, queued: false }));
-      } else if (e.type === "probe" && live) {
-        send(async () => onEvent({ ...e, error: await this.applyProbe(e) }));
-      } else send(() => onEvent(e));
-    }, signal, live);
-    await applying;
+    // When Rig wants to look at the PC, the stream ends with the reads; the answer goes on in the next request.
+    let resume: { resume: string; results: PcReadResult[] } | undefined;
+    for (let hop = 0; ; hop++) {
+      let reads: Extract<ChatEvent, { type: "reads" }> | null = null;
+      await this.cloud.chat(id, history, (e) => {
+        if (e.type === "reads") { if (live) reads = e; return; }
+        // A recording for this PC starts right away instead of waiting for the next sync.
+        if (e.type === "recording" && live) {
+          this.begin(e.request).catch(() => {});
+          send(() => onEvent({ ...e, queued: false }));
+        } else if (e.type === "probe" && live) {
+          send(async () => onEvent({ ...e, error: await this.applyProbe(e) }));
+        } else send(() => onEvent(e));
+      }, signal, live, resume);
+      await applying;
+      const asked = reads as Extract<ChatEvent, { type: "reads" }> | null;
+      if (!asked || signal?.aborted) return;
+      if (hop >= MAX_READ_HOPS) {
+        onEvent({ type: "error", message: "Rig kept asking to look at the PC, so it stopped. Ask again." });
+        onEvent({ type: "done" });
+        return;
+      }
+      resume = { resume: asked.resume, results: await this.readForChat(asked.reads) };
+    }
   }
+
+  /** Runs the chat's reads through the helper, checked again here first. Each answers with what it found or why it couldn't. */
+  private async readForChat(reads: PcRead[]): Promise<PcReadResult[]> {
+    const out: PcReadResult[] = [];
+    for (const r of reads.slice(0, READ_LIMITS.perRound)) {
+      const id = typeof r?.id === "string" ? r.id.slice(0, 100) : "";
+      const { id: _id, ...rest } = r ?? {};
+      const spec = checkRead(rest);
+      if (typeof spec === "string") { out.push({ id, ok: false, error: spec }); continue; }
+      const command = this.link.command?.bind(this.link);
+      const script = spec.kind === "cmdlet" ? spec.command : spec.kind === "script" ? spec.script : null;
+      if (!(script !== null && command) && !this.link.read) { out.push({ id, ok: false, error: "This PC's Rig helper can't look at settings yet. Update Rig." }); continue; }
+      try {
+        let text: string;
+        if (script !== null && command) {
+          const reply = await command("command.read", { script });
+          if ("verdict" in reply) { out.push({ id, ok: false, error: reply.verdict.refused }); continue; }
+          text = reply.printed;
+        } else text = await this.link.read!(spec);
+        out.push({ id, ok: true, text: String(text ?? "").slice(0, READ_LIMITS.resultChars) });
+      } catch (e) {
+        out.push({ id, ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 500) });
+      }
+    }
+    return out;
+  }
+}
+
+type AppliedFix = Extract<AppliedStep, { undo: FixUndo }>;
+
+/** A power setting's row, when the preview couldn't read the value before: the helper read it just before the change, and the undo holds it. */
+function withBefore(a: AppliedFix, facts: SystemFacts | null, displays: { name: string; refreshHz: number }[]): AppliedFix {
+  const now = a.rows[0]?.[1] === NOT_READ ? nowFromUndo(a.undo.call) : undefined;
+  return now ? { ...a, rows: [describeCall(a.step.call, facts, displays, now)] } : a;
+}
+
+/** What to tell the person when a fix didn't hold when Rig read it back. */
+function unverified(applied: AppliedFix[]): string {
+  const seen = applied.flatMap((a) => (a.unverified ? [a.unverified] : []));
+  return seen.length ? `Rig read it back afterwards and it didn't hold: ${seen.join(" ")} Windows or another app may have changed it back.` : "";
+}
+
+const noCommands = () => new Error("A command step runs from its own card in the chat.");
+
+function undoTrouble(u: UndoReply): string {
+  if (u.outcome === "drifted") return `Something else changed ${u.changed.join(", ")} since, so Rig didn't put it back. Undo it from its card in the chat to put it back anyway.`;
+  if (u.outcome === "failed") return `Undo didn't finish: ${u.error}`;
+  return "Rig no longer has the saved copy for this change, so it can't undo it from here.";
+}
+
+function fixes(steps: Step[]): FixStep[] {
+  return steps.map((s) => { if (s.kind !== "fix") throw noCommands(); return s; });
+}
+
+function appliedFixes(applied: AppliedStep[]): AppliedFix[] {
+  return applied.map((a) => { if (a.step.kind !== "fix") throw noCommands(); return a as AppliedFix; });
 }
 
 /** A LocalStore in memory, for tests and for running the desktop UI in a browser. */
 export class MemoryStore implements LocalStore {
   private kv = new Map<string, unknown>();
   private points: HistoryPoint[] = [];
-  private log = new Map<string, Change>();
+  private log = new Map<string, StoredChange>();
   async get<T>(k: string) { return (this.kv.has(k) ? structuredClone(this.kv.get(k)) : null) as T | null; }
   async set(k: string, v: unknown) { this.kv.set(k, structuredClone(v)); }
   async addHistory(p: HistoryPoint) { this.points.push(p); }
   async history(since: number) { return this.points.filter((p) => p.t >= since); }
   async changes() { return [...this.log.values()].map((c) => structuredClone(c)); }
-  async putChange(c: Change) { this.log.set(c.id, structuredClone(c)); }
+  async putChange(c: StoredChange) { this.log.set(c.id, structuredClone(c)); }
 }

@@ -1,7 +1,8 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
-import type { ActionCall } from "../actions";
-import { describeCall, titleFor } from "../actions";
-import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
+import { describeCall } from "../actions";
+import { cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type Command, type FixStep, type PreviewReply, type Step, type UndoReply } from "../change";
+import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoUndo } from "./cards";
+import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
@@ -11,7 +12,7 @@ import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
-import { applyToFacts } from "./apply";
+import { applyToFacts, demoNow } from "./apply";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
@@ -33,6 +34,7 @@ export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export { DemoManuals } from "./manualShelf";
 export { demoScan } from "./storage";
+export { demoApply, demoCards, demoPreview, demoProposal, demoUndo, demoUndoRecord, type DemoCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
@@ -54,6 +56,10 @@ function see(seen: Record<string, [number, number]>, s: Sensor) {
   seen[s.id] = [Math.min(lo, s.value), Math.max(hi, s.value)];
 }
 
+function fixesOnly(steps: Step[]): FixStep[] {
+  return steps.map((s) => { if (s.kind !== "fix") throw new Error("A command step runs from its own card."); return s; });
+}
+
 export class DemoClient implements RigClient {
   readonly kind = "demo" as const;
   readonly caps = { local: true, applyChanges: true };
@@ -64,6 +70,8 @@ export class DemoClient implements RigClient {
   private readonly born = Date.now();
   /** Manuals per PC, in memory. Atlas starts with its board manual found and read. */
   readonly shelf = new DemoManuals();
+  /** Nonces work once, as they do in the helper. */
+  private used = new Set<string>();
 
   constructor() {
     const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => {
@@ -91,7 +99,7 @@ export class DemoClient implements RigClient {
     this.pcs["demo-atlas"].changes.push({
       id: "seed1", machineId: "demo-atlas", at: new Date(Date.now() - 5 * day).toISOString(), title: "Turned off NVIDIA Broadcast at startup", by: "rig", status: "applied",
       why: "It started with Windows but you never use it.", result: "", diff: [["NVIDIA Broadcast", "Starts with Windows", "Off"]],
-      applied: [{ call: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: false }, undo: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: true }, row: ["NVIDIA Broadcast", "Starts with Windows", "Off"] }],
+      tier: 1, applied: [{ step: { kind: "fix", call: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: false } }, undo: { kind: "fix", call: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: true } }, rows: [["NVIDIA Broadcast", "Starts with Windows", "Off"]] }],
     });
   }
 
@@ -251,26 +259,66 @@ export class DemoClient implements RigClient {
 
   async changes(id: string) { return [...(this.pcs[id]?.changes ?? [])].sort((a, b) => b.at.localeCompare(a.at)); }
 
-  async preview(id: string, calls: ActionCall[]): Promise<DiffRow[]> {
+  async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
     const p = this.pcs[id];
-    return calls.map((c) => describeCall(c, p.facts, p.inv.displays));
+    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays, demoNow(p.facts, s.call)));
   }
 
-  async apply(id: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change> {
+  async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
     const p = this.pcs[id];
-    const rows = await this.preview(id, calls);
+    const rows = await this.preview(id, steps);
     await sleep(400);
-    const applied = calls.map((call, i) => ({ call, undo: applyToFacts(p.inv, p.facts, call), row: rows[i] }));
-    const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? titleFor(calls), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, applied };
+    const applied: AppliedStep[] = fixesOnly(steps).map((step, i) => ({ step, undo: { kind: "fix", call: applyToFacts(p.inv, p.facts, step.call) }, rows: [rows[i]] }));
+    const tier = cardTier(steps);
+    const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? stepsTitle(steps), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: tier === "refused" ? 3 : tier, applied, from: meta.from };
     p.changes.unshift(change);
     this.emit(id);
     return change;
   }
 
+  /** Reads the way the helper would for one of the demo's command cards. */
+  async previewCommand(id: string, cmd: Command, tainted = false): Promise<PreviewReply> {
+    const card = demoCards.find((c) => c.cmd.run === cmd.run);
+    if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
+    await sleep(300);
+    return demoPreview(card, tainted);
+  }
+
+  /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
+  async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
+    const p = this.pcs[id];
+    const card = demoCardByNonce(nonce);
+    if (!p || !card || this.used.has(nonce)) return { outcome: "expired" };
+    this.used.add(nonce);
+    await sleep(400);
+    const reply = demoApply(card);
+    if (reply.outcome !== "applied") return reply;
+    const step = { kind: "command" as const, cmd: card.cmd };
+    const rows = runRows(reply.result);
+    const tier = cardTier([step]);
+    p.changes.unshift({
+      id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? card.title, by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows,
+      tier: tier === "refused" ? 3 : tier, applied: [{ step, undo: reply.undo, rows, verify: { before: reply.result.before, after: reply.result.after } }], from: meta.from,
+    });
+    this.emit(id);
+    return reply;
+  }
+
+  async undoCommand(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
+    const card = demoCardByUndo(undoId);
+    const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
+    if (!card || !c || c.status === "undone") return { outcome: "unknown" };
+    await sleep(300);
+    if (card.drifts && !force) return { outcome: "drifted", changed: card.drifts };
+    c.status = "undone";
+    this.emit(id);
+    return demoUndo(card);
+  }
+
   async undo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
-    [...c.applied].reverse().forEach((a) => applyToFacts(p.inv, p.facts, a.undo));
+    [...c.applied].reverse().forEach((a) => { if (a.undo.kind === "fix") applyToFacts(p.inv, p.facts, a.undo.call); });
     c.status = "undone";
     this.emit(id);
     return { ...c };
@@ -279,7 +327,7 @@ export class DemoClient implements RigClient {
   async redo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
-    c.applied = c.applied.map((a) => ({ ...a, undo: applyToFacts(p.inv, p.facts, a.call) }));
+    c.applied = c.applied.map((a) => (a.step.kind === "fix" ? { ...a, step: a.step, undo: { kind: "fix", call: applyToFacts(p.inv, p.facts, a.step.call) } } : a));
     c.status = "applied";
     this.emit(id);
     return { ...c };
@@ -303,7 +351,15 @@ export class DemoClient implements RigClient {
       for (const w of text.split(/(?<= )/)) { if (signal?.aborted) return; onEvent({ type: "text", text: w }); await sleep(18); }
     };
     const display = p.inv.displays.find((d) => d.refreshHz < d.maxRefreshHz);
-    if (/recording|what did (it|rig) find/.test(q)) {
+    const card = demoCardFor(q);
+    const refused = /steps to do this myself/.test(q) && demoCards.find((c) => c.steps);
+    if (refused) {
+      await say("Here's how to do it yourself in Windows Security. Rig doesn't change anything.");
+      onEvent({ type: "steps", steps: refused.steps! });
+    } else if (card) {
+      await say(card.says);
+      onEvent({ type: "proposal", proposal: demoProposal(card, uid()) });
+    } else if (/recording|what did (it|rig) find/.test(q)) {
       await p.recorder.load();
       const done = p.recorder.list().find((r) => r.state === "done" || r.state === "cancelled");
       if (done?.id === DEMO_RECORDING_ID) {
@@ -335,12 +391,12 @@ export class DemoClient implements RigClient {
     } else if (/startup|slow|boot/.test(q)) {
       const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
       await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
-      const calls: ActionCall[] = on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false }));
-      onEvent({ type: "proposal", proposal: { id: uid(), title: titleFor(calls), calls, rows: await this.preview(id, calls), status: "waiting" } });
+      const steps = fixSteps(on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false })));
+      onEvent({ type: "proposal", proposal: { id: uid(), title: stepsTitle(steps), steps, tier: 1, rows: await this.preview(id, steps), status: "waiting" } });
     } else if (display && /screen|monitor|smooth|hz|refresh|fps|stutter/.test(q)) {
       await say(`Your ${display.name} can run at ${display.maxRefreshHz} Hz, but Windows has it at ${display.refreshHz} Hz. That's a common default after a new cable or driver. Switching makes games and scrolling look smoother and changes nothing else.`);
-      const calls: ActionCall[] = [{ kind: "display.refreshRate", display: display.name, hz: display.maxRefreshHz }];
-      onEvent({ type: "proposal", proposal: { id: uid(), title: `Run ${display.name} at ${display.maxRefreshHz} Hz`, calls, rows: await this.preview(id, calls), status: "waiting" } });
+      const steps = fixSteps([{ kind: "display.refreshRate", display: display.name, hz: display.maxRefreshHz }]);
+      onEvent({ type: "proposal", proposal: { id: uid(), title: `Run ${display.name} at ${display.maxRefreshHz} Hz`, steps, tier: 1, rows: await this.preview(id, steps), status: "waiting" } });
     } else if (/loud|hot|fan|temp|noise|dust/.test(q)) {
       await say("Some noise while gaming is normal. A steady rise in graphics card temperature at the same settings usually means dust on the intake filters, and cleaning them takes about five minutes.");
       onEvent({ type: "steps", steps: ["Shut down and unplug the PC.", "Take off the front panel; most pull off from the bottom edge.", "Slide the mesh filter out and rinse or vacuum it.", "Let it dry fully, then put it back."] });

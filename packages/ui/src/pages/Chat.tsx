@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatMessage, Proposal } from "@rig/core";
-import { DiffTable } from "../components/common";
+import { ChangeCards } from "../components/change";
 import { useActions, useData, useStillPC, useTempText } from "../state";
 import { RecordingCard } from "./logs/RecordingCard";
 import { ChatBar } from "./chat/ChatBar";
@@ -91,25 +91,13 @@ function Message({ m }: { m: ChatMessage }) {
 }
 
 function ProposalCard({ p }: { p: Proposal }) {
-  const { review, declineProposal } = useActions();
-  const [reading, setReading] = useState(false);
-  const n = p.calls.length;
+  const { client, ask, review, declineProposal, commandStep } = useActions();
+  const pc = useStillPC();
   return (
-    <div className="proposal">
-      <div className="proposal-head">
-        <h3>{p.title}</h3>
-        {p.status === "applied" ? <span className="chip ok">Applied</span> : p.status === "declined" ? <span className="chip">Not now</span> : <span className="chip info">Waiting for you</span>}
-      </div>
-      <DiffTable rows={p.rows} />
-      <div className="proposal-foot">
-        <span className="faint">{n === 1 ? "1 change" : `${n} changes`} · undo anytime</span>
-        {p.status === "applied" ? <a className="btn ghost sm" href="#changes">View in Changes</a> : p.status === "declined" ? null : (
-          <>
-            <button className="btn ghost sm" type="button" disabled={reading} onClick={() => declineProposal(p.id)}>Not now</button>
-            <button className="btn primary sm" type="button" disabled={reading} onClick={() => { setReading(true); void review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id }).finally(() => setReading(false)); }}>{reading ? "Reading settings…" : "Review and apply"}</button>
-          </>
-        )}
-      </div>
-    </div>
+    <ChangeCards proposal={p} previews={p.previews} outcomes={p.outcomes} tainted={p.tainted} pcName={pc.name} canApply={client.caps.applyChanges}
+      onReviewFixes={() => review(p.steps.filter((s) => s.kind === "fix"), { title: p.title, by: "rig", why: p.why, proposalId: p.id })}
+      onDecline={() => declineProposal(p.id)}
+      onCommandStep={(index, act) => commandStep(p.id, index, act)}
+      onSteps={() => ask("Show me the steps to do this myself.")} />
   );
 }

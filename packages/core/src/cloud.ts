@@ -4,7 +4,7 @@
 // and undo aren't available through here.
 
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
-import type { ActionCall } from "./actions";
+import { changeOf, type Step, type StoredChange } from "./change";
 import {
   ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, readJson, unreachableText,
   type AddManualRequest, type BoardLayoutReply, type ChatRequest, type ReadLayoutRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
@@ -17,6 +17,7 @@ import type { Shop } from "./shop";
 import type { PCEvent, Recording, RecordingInfo } from "./recordings";
 import type { ProbeStatus } from "./probes";
 import type { SystemFacts } from "./telemetry";
+import type { PcReadResult } from "./reads";
 
 const POLL_MS = 15_000;
 /** How long a request may wait for the server to start answering. Calls that pass their own signal aren't limited. */
@@ -188,7 +189,7 @@ export class CloudClient implements RigClient {
   upgrades(id: string) { return this.req<Upgrade[]>(paths.upgrades(id)); }
   shop(id: string) { return this.req<Shop | null>(paths.shop(id)); }
   games(id: string) { return this.req<Game[]>(paths.games(id)); }
-  changes(id: string) { return this.req<Change[]>(paths.changes(id)); }
+  async changes(id: string): Promise<Change[]> { return (await this.req<StoredChange[]>(paths.changes(id))).map(changeOf); }
 
   events(id: string) { return this.req<PCEvent[]>(paths.events(id)); }
   recording(id: string, rid: string) { return this.req<Recording | null>(paths.recording(id, rid)).catch(() => null); }
@@ -214,7 +215,7 @@ export class CloudClient implements RigClient {
   async putRecording(id: string, r: Recording) { await this.req(paths.recording(id, r.id), { method: "PUT", body: JSON.stringify(r) }); }
 
   private local(): never { throw new Error("Changes are made from the Rig app on the PC itself."); }
-  preview(_id: string, _calls: ActionCall[]): Promise<DiffRow[]> { return this.local(); }
+  preview(_id: string, _steps: Step[]): Promise<DiffRow[]> { return this.local(); }
   apply(): Promise<Change> { return this.local(); }
   undo(): Promise<Change> { return this.local(); }
   redo(): Promise<Change> { return this.local(); }
@@ -267,8 +268,13 @@ export class CloudClient implements RigClient {
   }
 
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
-  async chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal, live?: { view: PC; facts: SystemFacts; probes?: ProbeStatus[] }) {
-    const body: ChatRequest = { machineId, messages: history.map(({ from, text }) => ({ from, text })), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...live };
+  async chat(
+    machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal,
+    live?: { view: PC; facts: SystemFacts; probes?: ProbeStatus[]; reads?: boolean; steps?: boolean }, resume?: { resume: string; results: PcReadResult[] },
+  ) {
+    const messages = history.map(({ from, text, seal }) => ({ from, text, ...(seal ? { seal } : {}) }));
+    const chatId = history.find((m) => m.from === "you")?.id;
+    const body: ChatRequest = { machineId, messages, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...(chatId ? { chatId } : {}), ...live, ...resume };
     const res = await this.send(paths.chat, { method: "POST", headers: { accept: "text/event-stream" }, body: JSON.stringify(body), signal });
     await readChatStream(res, onEvent);
   }

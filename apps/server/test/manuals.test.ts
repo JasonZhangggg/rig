@@ -413,7 +413,8 @@ describe("the chat and manuals", () => {
     const system = JSON.stringify(t.seen[1].system);
     expect(system).toContain("search_manuals first");
     expect(system).toContain(`\\"id\\":\\"${m.id}\\"`);
-    expect(system).toContain("Front panel header, page 23");
+    // The diagram's kind, not its heading's words from the PDF.
+    expect(system).toContain("front-panel, page 23");
     expect(t.seen[1].tools.map((x) => (x as { name: string }).name)).toContain("search_manuals");
 
     const told = JSON.stringify(t.seen[2].messages.at(-1));

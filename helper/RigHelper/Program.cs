@@ -2,8 +2,9 @@
 // Yes), it connects back to the app's private pipe and answers one JSON
 // request per line. It reads sensors, the PC's parts, a few settings, the
 // Windows event log and the busiest apps, and makes only the changes in Rig's
-// fix catalog. It quits when the app does. Run with --service it is Rig's
-// background recorder instead (RecorderService.cs).
+// fix catalog and the commands the person approved (Commands.cs). It quits when
+// the app does. Run with --service it is Rig's background recorder instead
+// (RecorderService.cs).
 
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -38,6 +39,7 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
+            problems.AddRange(Reads.SelfChecks());
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -47,6 +49,10 @@ public static class Program
                 Processes.Top(5, fresh: false);
                 if (Processes.GpuReads != reads) problems.Add($"the recorder's app list read the graphics counters {Processes.GpuReads - reads} more times within five minutes");
             }
+            // The general command runner last: it runs PowerShell many times, and the checks above count on timing.
+            var (commandChecks, commandProblems) = CommandSelfTest.Run();
+            all["commands"] = commandChecks;
+            problems.AddRange(commandProblems);
             // Each sensor's id is worked out once, not with every reading.
             var (r1, r2) = (hw0.Readings(), hw0.Readings());
             if (r1.Count == r2.Count && r1.Zip(r2).Any(x => !ReferenceEquals(x.First.Id, x.Second.Id))) problems.Add("sensor ids are built again with every reading");
@@ -71,6 +77,8 @@ public static class Program
         }
         // RigHelper.exe --approve-script <file>: started behind Windows' permission prompt when the person approves a script in Rig.
         if (Arg(args, "--approve-script") is string approveFile) return ProbeStore.ApproveFromFile(approveFile, Arg(args, "--hash"));
+        // RigHelper.exe --approve-command <file>: started the same way when the person approves a command that needs admin rights.
+        if (Arg(args, "--approve-command") is string commandFile) return Commands.ApproveFromFile(commandFile, Arg(args, "--hash"));
         // RigHelper.exe --record-for 60 --data-dir <folder>: records in this process for a while, for the CI smoke test.
         if (Arg(args, "--record-for") is string secs && int.TryParse(secs, out int recordSecs) && Arg(args, "--data-dir") is string recordDir)
             return RecorderCore.RunFor(recordDir, Math.Clamp(recordSecs, 1, 3600));
@@ -94,7 +102,7 @@ public static class Program
         app.Exited += (_, _) => cts.Cancel();
 
         using var hw = new Sensors();
-        var rig = new Handler(hw);
+        var rig = new Handler(hw, parent);
         var reader = new StreamReader(client, new UTF8Encoding(false));
         var writer = new StreamWriter(client, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
 
@@ -152,6 +160,7 @@ public static class Program
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 7) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
         foreach (var p in ProbeChecks()) yield return p;
+        foreach (var p in Steps.SelfChecks()) yield return p;
         if (all["storage"] is JsonObject scan && (scan["running"] is not JsonValue || scan["volumes"] is not JsonArray)) yield return "storage answered without running and volumes";
         // Each volume names the drive it's on, so the storage map can draw it there.
         if (all["inventory"]?["volumes"] is JsonArray vols && all["inventory"]?["disks"] is JsonArray disks)
@@ -315,11 +324,16 @@ public static class Json
 
     /// A number from a request or a reply, whichever number type it was written as.
     public static double Num(JsonNode? n, double fallback) =>
-        n is not JsonValue v ? fallback : v.TryGetValue(out double d) ? d : v.TryGetValue(out long l) ? l : v.TryGetValue(out int i) ? i : fallback;
+        n is not JsonValue v ? fallback : v.TryGetValue(out double d) ? d : v.TryGetValue(out long l) ? l : v.TryGetValue(out int i) ? i : v.TryGetValue(out uint u) ? u : v.TryGetValue(out ulong ul) ? ul : fallback;
 }
 
-public class Handler(Sensors hw)
+public class Handler(Sensors hw, int? appPid = null)
 {
+    /// The general command runner, set up on first use, for the person behind the Rig app that started this helper.
+    readonly Lazy<Commands> commands = new(() => new Commands(CommandStore.Open(), appPid));
+    /// Reads of HKCU go to the hive of the account the Rig app runs as, which isn't this process's own when someone else typed the admin password.
+    readonly string? owner = appPid is int pid ? Native.ProcessUserSid(pid) : null;
+
     public JsonNode? Handle(string method, JsonNode? p) => method switch
     {
         "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin(), driver = Sensors.Driver() }),
@@ -329,8 +343,11 @@ public class Handler(Sensors hw)
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
-        "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
+        "fix.read" => Steps.Read(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
+        "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
+        "read" => Reads.Read(p?["read"] as JsonObject, owner),
+        "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }
