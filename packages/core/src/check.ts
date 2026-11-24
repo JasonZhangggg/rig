@@ -10,7 +10,7 @@ import type { Allowed, FoundCommand, Refusal, Refused, Tier, Verdict } from "./c
 
 export type ScriptUse = "read" | "run" | "undo";
 
-interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[] }
+interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[] }
 interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string }
 interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean }
 interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; renames?: string[]; leaves?: boolean; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
@@ -139,7 +139,18 @@ function matches(m: Match, call: Call, strict: boolean, exe: boolean): boolean {
   const fitsPrefix = (x: string, a: Arg) => prefix!.some((p) => x.startsWith(p) || (/^[-/]/.test(x) && abbreviates(headOf(a), p)));
   if (prefix && !prefixUnseen && !shown.some((a, k) => fitsPrefix(t[k], a))) return false;
   if (contains && !unseen && !t.some((x) => contains.some((p) => x.includes(p)))) return false;
+  if (m.params && !fitsParams(m.params, call.args, starts?.length ?? 0)) return false;
   return true;
+}
+
+/** A positive grammar for a rule that allows: nothing hidden, and every switch after `starts` is listed, written in full. */
+function fitsParams(params: string[], args: Arg[], skip: number): boolean {
+  const shown = shownOf(args), listed = params.map(fold);
+  if (shown.some((a) => a.kind === "hidden")) return false;
+  return shown.slice(skip).every((a) => {
+    const x = fold(a.text);
+    return !((x.startsWith("-") || x.startsWith("/")) && x.length > 1) || listed.includes(x.split(":")[0]);
+  });
 }
 
 /** Null when the arguments fit the read form, else the argument that doesn't. */

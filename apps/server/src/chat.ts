@@ -16,7 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, toRequest, validateCall,
-  cardTier, checkRead, checkStep, readTaints, readWhat, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
+  cardTier, checkRead, checkStep, deviceCommand, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
   type Manual, type ChatEvent, type ChatRequest, type DiffRow, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
@@ -135,8 +135,9 @@ Looking at the PC:
 Changes:
 - You can change this PC only with the propose_change tool. The person sees a card and decides. Nothing changes until they approve in the app on that PC.
 - Prefer a catalog fix (a fix step) when one fits; they show the value now and after and always undo. Use the exact GUIDs, app names and display names from the PC block.
-- Command steps, and the registry and service steps below, work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
+- Command steps, and the shorthand steps below ({registry}, {service}, {firewall}, {policy}, {device}, {driver}), work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
 - For one registry value, use a registry step ({registry: {key, name, type, value}}); for how a service starts, a service step ({service: {name, startType}}). Rig writes the PowerShell for them, so prefer these to writing it yourself.
+- Likewise use {firewall} to add one firewall rule or turn a rule on or off, {policy} for one value under Software\\Policies (not on a PC a work or school manages), {device} to turn one device off or on by its instance id, and {driver} to install a signed .inf already on the PC (never a download). Look with read_pc first for rule names, instance ids and file paths.
 - For any other Windows setting, use a command step: does (one plain sentence), read (a PowerShell script that prints the current state; it must only look, like a read_pc script), run (the PowerShell that makes the change; write every path and key in full, like C:\\... or HKCU:\\..., and name -Path, -Name and -Value, since Rig refuses a place it can't tell the full path of), undo (the PowerShell that puts it back, whenever one exists) and touches (every registry key, file, service, task or firewall rule it changes, with full paths). Look with read_pc first so the script fits this PC.
 - Rig checks every step in code and sets the card's risk itself. A step it refuses comes back as an error with the reason: don't try to get around it; give the steps with show_steps instead if the person can do it themselves.
 - Never ask for anything on Rig's never list: reading passwords, saved sign-ins, Wi-Fi keys or BitLocker keys; new accounts or admin rights; turning on Remote Desktop, WinRM or an SSH server; root certificates, the hosts file or a proxy; Run keys, new services, Image File Execution Options, Winlogon or Defender exclusions; flashing firmware, boot entries, partitioning or formatting the system drive, or BitLocker on or off; downloading and running code; Rig's own files.
@@ -220,10 +221,72 @@ const serviceSchema = {
   required: ["name", "startType"],
 };
 
+const firewallSchema = {
+  type: "object",
+  description: "Add one firewall rule (add), or turn an existing rule on or off (rule and enabled). A rule that lets connections in needs ports or a program, and never opens remote-access ports. Undo deletes the rule Rig added, or turns the rule back.",
+  properties: {
+    add: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "A short label, like Minecraft server: letters, digits and spaces." },
+        direction: { type: "string", enum: ["inbound", "outbound"] },
+        action: { type: "string", enum: ["allow", "block"] },
+        protocol: { type: "string", enum: ["tcp", "udp"] },
+        ports: { type: "array", items: { type: "integer" }, maxItems: 16, description: "Port numbers, no ranges." },
+        program: { type: "string", description: "A program's full path, ending .exe." },
+        profile: { type: "string", enum: ["private", "domain", "public"], description: "Which networks it applies on. Private when left out; public gets the strongest check." },
+      },
+      required: ["name", "direction", "action"],
+    },
+    rule: { type: "string", description: "An existing rule's Name from Get-NetFirewallRule, not its display name." },
+    enabled: { type: "boolean" },
+  },
+};
+
+const policySchema = {
+  type: "object",
+  description: "One policy value under Software\\Policies. Rig refuses it on a PC joined to a domain or enrolled in device management, and snapshots the value so undo puts it back.",
+  properties: {
+    scope: { type: "string", enum: ["machine", "user"], description: "machine: everyone on this PC (HKLM). user: this Windows account (HKCU)." },
+    key: { type: "string", description: "The key under Software\\Policies, like Microsoft\\Windows\\GameDVR." },
+    name: { type: "string" },
+    type: registrySchema.properties.type,
+    value: registrySchema.properties.value,
+  },
+  required: ["scope", "key", "name", "type", "value"],
+};
+
+const deviceSchema = {
+  type: "object",
+  description: "Turn one device off or on. Rig won't turn off a part Windows needs or the last working screen adapter, keyboard or mouse. Undo turns it back.",
+  properties: {
+    instanceId: { type: "string", description: "The device's InstanceId from Get-PnpDevice." },
+    enabled: { type: "boolean", description: "false turns it off, true turns it on." },
+  },
+  required: ["instanceId", "enabled"],
+};
+
+const driverSchema = {
+  type: "object",
+  description: "Install a driver from a signed .inf already on this PC, with pnputil. Always the strongest check: Rig can't take a driver back for certain.",
+  properties: {
+    inf: { type: "string", description: "The .inf's full path." },
+    catalog: { type: "string", description: "Its signed .cat in the same folder, full path." },
+  },
+  required: ["inf", "catalog"],
+};
+
+/** The steps Rig writes the command for, by their key in a proposal. */
+const shorthands: Record<string, (raw: unknown) => Command | string> = {
+  registry: registryCommand, service: serviceCommand, firewall: firewallCommand, policy: policyCommand, device: deviceCommand, driver: driverCommand,
+};
+const stepKinds = ["fix", ...Object.keys(shorthands), "command"];
+const stepList = stepKinds.map((k) => `{${k}}`).join(", ");
+
 export const tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "propose_change",
-    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of {fix}, {registry}, {service} or {command}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, and for how a service starts use {service}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
+    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, and for a driver on disk {driver}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -232,7 +295,7 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
         why: { type: "string", description: "One sentence on why this helps with what they asked." },
         steps: {
           type: "array", minItems: 1, maxItems: 8,
-          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, command: commandSchema } },
+          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, command: commandSchema } },
         },
       },
       required: ["title", "why", "steps"],
@@ -490,20 +553,20 @@ function rowsFor(steps: Step[], ctx: ChatContext): DiffRow[] {
 
 /**
  * Checks a proposal: fixes against the catalog and what's on this PC, commands with the shared checker and the chat's taint.
- * Takes `steps` ([{fix} | {registry} | {service} | {command}]) or, from before commands, `calls`. A registry or service step
+ * Takes `steps` ([{fix} | {command} | a shorthand, such as {registry}]) or, from before commands, `calls`. A shorthand step
  * becomes the command Rig writes for it, checked like any other. Errors are plain words for the model.
  */
 export function checkProposal(input: ProposeInput, ctx: ChatContext, tainted = false): { steps: Step[]; tier: Tier; title: string; why: string } | string {
   const raws: unknown[] | null = Array.isArray(input.steps) && input.steps.length
     ? input.steps
     : Array.isArray(input.calls) && input.calls.length ? input.calls.map((fix) => ({ fix })) : null;
-  if (!raws) return "steps must be a non-empty list of {fix}, {registry}, {service} or {command}";
+  if (!raws) return `steps must be a non-empty list of ${stepList}`;
   if (raws.length > 8) return "At most 8 steps on one card";
   const steps: Step[] = [];
   for (const [i, raw] of raws.entries()) {
     const r = (raw ?? {}) as Record<string, unknown>;
-    const given = ["fix", "registry", "service", "command"].filter((k) => r[k] !== undefined);
-    if (given.length !== 1) return `Step ${i + 1} must be exactly one of {fix}, {registry}, {service} or {command}`;
+    const given = stepKinds.filter((k) => r[k] !== undefined);
+    if (given.length !== 1) return `Step ${i + 1} must be exactly one of ${stepList}`;
     if (given[0] === "fix") {
       const call = checkFix(r.fix, ctx);
       if (typeof call === "string") return call;
@@ -515,7 +578,7 @@ export function checkProposal(input: ProposeInput, ctx: ChatContext, tainted = f
           ? `Step ${i + 1}: command steps need the newer Rig app on ${ctx.view.name}, and this one is older. Use a catalog fix, or give the steps with show_steps and suggest updating Rig.`
           : `Step ${i + 1}: command steps need the newer Rig app on ${ctx.view.name}; they can't be offered from the website. Use a catalog fix, or give the steps with show_steps and say they can ask in the Rig app on that PC.`;
       }
-      const cmd = given[0] === "registry" ? registryCommand(r.registry) : given[0] === "service" ? serviceCommand(r.service) : commandOf(r.command);
+      const cmd = given[0] === "command" ? commandOf(r.command) : shorthands[given[0]](r[given[0]]);
       if (typeof cmd === "string") return `Step ${i + 1}: ${given[0] === "command" ? "" : `${given[0]}: `}${cmd}`;
       const step: Step = { kind: "command", cmd };
       const v = checkStep(step, { tainted });

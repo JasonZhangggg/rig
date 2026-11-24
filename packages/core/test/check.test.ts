@@ -132,7 +132,7 @@ describe("checking a step", () => {
   });
 
   it("rates a change tier 3 when there is no undo and Rig can't snapshot what it touches", () => {
-    const rule = { run: "New-NetFirewallRule -DisplayName 'Game' -Direction Inbound -LocalPort 27015 -Protocol TCP -Action Allow", read: "Get-NetFirewallRule -DisplayName 'Game'" };
+    const rule = { run: "New-NetFirewallRule -Profile Private -Direction Inbound -Action Allow -DisplayName 'Game' -LocalPort 27015 -Protocol TCP", read: "Get-NetFirewallRule -DisplayName 'Game'" };
     expect(checkStep(command({ ...rule, undo: undefined, touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 3 });
     expect(checkStep(command({ ...rule, undo: undefined, touches: [] }))).toMatchObject({ tier: 3 });
     expect(checkStep(command({ ...rule, undo: "Remove-NetFirewallRule -DisplayName 'Game'", touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 3 });
