@@ -7,9 +7,22 @@ import { BackgroundLogs, NowRecording, Recordings } from "./logs/Recordings";
 import { highlights, serious } from "./logs/summary";
 import { shortDay } from "./logs/words";
 import { LogsHead } from "./logs/Head";
+import { OptionA } from "./logs/options/OptionA";
+import { OptionB } from "./logs/options/OptionB";
+import { OptionC } from "./logs/options/OptionC";
+
+/** Preview only: ?logs=a|b|c shows one of the redesign options. */
+const option = typeof location !== "undefined" ? new URLSearchParams(location.search).get("logs") : null;
 
 /** What the Windows logs say about this PC lately: a count per thing that went wrong, the events behind each, and the recordings Rig made to find out why. */
 export function Logs() {
+  if (option === "a") return <OptionA />;
+  if (option === "b") return <OptionB />;
+  if (option === "c") return <OptionC />;
+  return <LogsNow />;
+}
+
+function LogsNow() {
   const { client, openRecording } = useActions();
   const ui = useUI();
   const pc = useStillPC();
