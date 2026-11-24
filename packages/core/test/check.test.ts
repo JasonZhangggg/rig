@@ -159,7 +159,7 @@ describe("checking a step", () => {
     expect(checkStep(command({ ...rule, undo: undefined, touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 3 });
     expect(checkStep(command({ ...rule, undo: undefined, touches: [] }))).toMatchObject({ tier: 3 });
     expect(checkStep(command({ ...rule, undo: "Remove-NetFirewallRule -DisplayName 'Game'", touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 3 });
-    expect(checkStep(command({ ...rule, undo: "Disable-NetFirewallRule -DisplayName 'Game'", touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 2, admin: true });
+    expect(checkStep(command({ ...rule, undo: "Disable-NetFirewallRule -Name 'Game'", touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 2, admin: true });
     expect(checkStep(command({ undo: undefined }))).toMatchObject({ tier: 2 });
   });
 

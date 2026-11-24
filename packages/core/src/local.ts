@@ -53,6 +53,8 @@ export interface HelperLink {
 
 /** What the Rig app's approval says when the person chose No at Windows' permission prompt. */
 export const APPROVE_DECLINED = "Windows didn't give permission, so the change isn't approved.";
+/** The helper stored a step this app fingerprints differently, so the card would show one change and run another. */
+export const STEP_DIFFERS = "Rig's helper read this change differently than the Rig app did, so there is nothing to approve. Update Rig, then ask again.";
 
 /** How many times one answer can stop to read the PC and go on. The server's round cap stops it first. */
 const MAX_READ_HOPS = 8;
@@ -786,6 +788,8 @@ export class LocalClient implements RigClient {
     const canonical = canonicalStep(step) as HelperStep;
     const reply = await helper("step.preview", { step: canonical });
     if (reply.outcome !== "ready") return reply;
+    // The helper runs what it stored, so a card is shown only for the step this app fingerprints the same way.
+    if (reply.hash !== (await stepHash(canonical))) return { outcome: "refused", verdict: { status: "refused", why: "refused", refused: STEP_DIFFERS, commands: [], rulesVersion } };
     if (reply.verdict.tier === 3 && tainted) {
       return { outcome: "refused", verdict: { status: "refused", why: "tainted", refused: `${ruleWords("tainted")}.`, commands: reply.verdict.commands, rulesVersion } };
     }

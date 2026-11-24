@@ -89,6 +89,8 @@ public static class CommandSelfTest
             Check("a native step, applied and undone", () => NativeApplied(ctx));
             Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
             FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null, TestOnlyNativeOps = true });
+            Check("a native step whose worker dies after its change may have changed it", () => NativeDied(ctx));
+            Check("a file that changed after its preview is refused", () => FileChanged(ctx));
             Check("HKCU for another account", OtherAccount);
             if (elevated)
             {
@@ -1000,6 +1002,7 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
                 yield break;
             }
             if (Exists(ctx.Person, Key)) yield return "a preview changed the registry";
+            if (p["hash"]?.ToString() != TestOp("rig-1").Hash()) yield return $"the preview didn't give the stored step's fingerprint: {p["hash"]}";
 
             // The stored step is swapped for another after the preview.
             string file = Path.Combine(ctx.Store.Root, "pending", p["nonce"] + ".json");
@@ -1060,6 +1063,59 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
             rig.TestOnlyNativeOps = false;
             Clean(ctx.Person);
         }
+    }
+
+    static IEnumerable<string> NativeDied(Context ctx)
+    {
+        Clean(ctx.Person);
+        var rig = ctx.Rig;
+        string cap = Path.Combine(ctx.Store.Root, "cap.json");
+        string? count = File.Exists(cap) ? File.ReadAllText(cap) : null;
+        rig.TestOnlyNativeOps = true;
+        try
+        {
+            var step = NativeStep("rig-3");
+            step["op"]!["die"] = true;
+            var p = StepPreview(rig, step);
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
+            var a = StepApply(rig, p);
+            if (!Is(a, "rolledBack") || a["left"] is not JsonArray left || !left.Any(l => l?.ToString().StartsWith("This may still be changed", StringComparison.Ordinal) == true && l.ToString().Contains("rig-3")))
+                yield return $"a worker that died after its change wasn't reported as having maybe changed it: {a.ToJsonString()}";
+        }
+        finally
+        {
+            rig.TestOnlyNativeOps = false;
+            Clean(ctx.Person);
+            // Later checks need room under the daily limit.
+            if (count != null) File.WriteAllText(cap, count);
+        }
+    }
+
+    static IEnumerable<string> FileChanged(Context ctx)
+    {
+        // A long path: a short one (RUNNER~1) is refused by the check.
+        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RigSelftest-" + CommandStore.NewId());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string file = Path.Combine(dir, "driver.inf");
+            File.WriteAllText(file, "one");
+            var cmd = new JsonObject
+            {
+                ["does"] = "Writes a test file.",
+                ["read"] = $"Get-FileHash -LiteralPath '{file}' -Algorithm SHA256 | Format-List -Property Hash",
+                ["run"] = $"Set-Content -LiteralPath '{file}' -Value 'two'",
+                ["undo"] = $"Set-Content -LiteralPath '{file}' -Value 'one'",
+                ["touches"] = new JsonArray(new JsonObject { ["kind"] = "file", ["path"] = file }),
+            };
+            var p = ctx.Preview(cmd);
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
+            File.WriteAllText(file, "swapped");
+            var a = ctx.Apply(p);
+            if (!Is(a, "refused") || a["verdict"]?["refused"]?.ToString().Contains("changed since you looked at it") != true) yield return $"a file that changed after its preview wasn't refused: {a.ToJsonString()}";
+            if (File.ReadAllText(file) != "swapped") yield return "the change ran on a file that changed after its preview";
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch { } }
     }
 
     /// The Rig app's token is the person's everyday one: the worker must run at its level, below the helper's own.

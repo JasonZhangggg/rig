@@ -109,7 +109,7 @@ describe("the amber card", () => {
     show(demoProposal(card("firewall")));
     expect(screen.getByRole("heading", { name: "Lets other computers on private networks connect to one program or port" })).toBeTruthy();
     expect(glance("How risky")).toBe("Medium: it changes the firewall. Needs admin, so Windows asks first.");
-    expect(glance("Can it be undone")).toBe("Rig will run the undo script, which changes a firewall rule. It can't save a copy first.");
+    expect(glance("Can it be undone")).toBe("Rig will run the undo script, which turns off a firewall rule. It can't save a copy first.");
     expect(within(screen.getByRole("list", { name: "What it changes" })).getByRole("listitem").textContent).toBe("Firewall rule Minecraft server now Not there");
     expect(within(screen.getByRole("list", { name: "Commands Rig found" })).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["New-NetFirewallRulelets other computers on private networks connect to one program or port"]);
   });

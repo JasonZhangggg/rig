@@ -229,7 +229,8 @@ public static class NativeWorker
 }
 
 /// The self-test's op: sets one value under HKCU\Software\RigSelftest, which no snapshot covers, so only its own Undo
-/// puts it back. With `run` it also writes a Run value, which the helper must catch and put back itself.
+/// puts it back. With `run` it also writes a Run value, which the helper must catch and put back itself. With `die` the
+/// worker stops after the change without answering.
 sealed class SelftestOp : INativeStep
 {
     public const string Key = @"Software\RigSelftest", Value = "Native", RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run", RunValue = "RigSelftest";
@@ -241,6 +242,7 @@ sealed class SelftestOp : INativeStep
         if (op["value"] is not JsonValue v || !v.TryGetValue(out string? value) || value.Length is 0 or > 64) throw new RigException("The self-test op needs a short value.");
         var kept = new JsonObject { ["name"] = Name, ["value"] = value };
         if (op["run"]?.GetValueKind() == JsonValueKind.True) kept["run"] = true;
+        if (op["die"]?.GetValueKind() == JsonValueKind.True) kept["die"] = true;
         return new NativeCheck(kept, 2, ["Rig's own self-test change."], []);
     }
 
@@ -261,6 +263,8 @@ sealed class SelftestOp : INativeStep
             using var run = Registry.CurrentUser.CreateSubKey(RunKey);
             run.SetValue(RunValue, "rig-selftest-native");
         }
+        // A worker that dies after its change, before it can say how to put it back.
+        if (op["die"] != null) Environment.Exit(3);
         return new JsonObject { ["was"] = was };
     }
 

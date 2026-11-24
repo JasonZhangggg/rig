@@ -222,7 +222,7 @@ describe("general command steps", () => {
   });
 
   it("builds device steps from their shorthand and refuses parts Windows needs", async () => {
-    expect((await proposal({ device: { instanceId: "USB\\VID_046D&PID_C52B\\5&1A2B3C&0&2", enabled: false } })).p?.tier).toBe(2);
+    expect((await proposal({ device: { instanceId: "USB\\VID_046D&PID_C52B\\5&1A2B3C&0&2", enabled: false } })).p?.tier).toBe(3);
     const cpu = await proposal({ device: { instanceId: "ACPI\\GenuineIntel_-_Intel64\\_0", enabled: false } });
     expect(cpu.p).toBeUndefined();
     expect(cpu.sent).toContain("a part Windows needs to run");

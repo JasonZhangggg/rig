@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { APPROVE_DECLINED, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
+import { APPROVE_DECLINED, STEP_DIFFERS, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -410,7 +410,7 @@ describe("LocalClient", () => {
     const undoRecord = { kind: "command" as const, id: "u1", script: menuDelay.undo!, outside: [], fingerprint: "f1" };
 
     /** A helper that answers command calls the way the runner does, and remembers every call in order. */
-    function commandHelper(o: { admin?: boolean; drifts?: string[] } = {}) {
+    function commandHelper(o: { admin?: boolean; drifts?: string[]; storedHash?: string } = {}) {
       const calls: string[] = [];
       const seen: { method: string; params: unknown }[] = [];
       let drifted = !!o.drifts;
@@ -422,7 +422,7 @@ describe("LocalClient", () => {
         if (method === "step.preview") {
           previewed = (params as { step: HelperStep }).step;
           const v = checkStep(previewed) as Allowed;
-          reply = { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: { ...v, admin: !!o.admin }, read: run.before, touches: [{ touch: run.touches[0].touch, value: "400" }] } satisfies PreviewReply;
+          reply = { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: { ...v, admin: !!o.admin }, read: run.before, touches: [{ touch: run.touches[0].touch, value: "400" }], hash: o.storedHash ?? (await stepHash(previewed)) } satisfies PreviewReply;
         } else if (method === "step.apply") reply = { outcome: "applied", result: run, undo: previewed?.kind === "native" ? { kind: "native", id: "u1", outside: [], fingerprint: "f1" } : undoRecord } satisfies ApplyReply;
         else if (method === "step.undo") {
           const force = (params as { force?: boolean }).force;
@@ -434,7 +434,7 @@ describe("LocalClient", () => {
       return { command, calls, seen };
     }
 
-    function withCommands(o: { admin?: boolean; drifts?: string[]; approve?: (nonce: string, hash: string) => Promise<void> } = {}) {
+    function withCommands(o: { admin?: boolean; drifts?: string[]; storedHash?: string; approve?: (nonce: string, hash: string) => Promise<void> } = {}) {
       const helper = commandHelper(o);
       const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => 0 });
       const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => sim.facts(), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c), step: helper.command };
@@ -495,7 +495,7 @@ describe("LocalClient", () => {
       const helper = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
         seen.push({ method, params });
         const replies: Partial<{ [M in keyof StepRpc]: StepRpc[M]["reply"] }> = {
-          "step.preview": { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step) as Allowed, read: before, touches: [{ touch, value: "80 bytes, fingerprint 0123456789ab" }] },
+          "step.preview": { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step) as Allowed, read: before, touches: [{ touch, value: "80 bytes, fingerprint 0123456789ab" }], hash: method === "step.preview" ? await stepHash((params as { step: HelperStep }).step) : "" },
           "step.apply": { outcome: "applied", result: { before, after, output: "", alsoChanged: [], touches: [{ touch, before: "80 bytes, fingerprint 0123456789ab", after: "81 bytes, fingerprint ba9876543210" }] }, undo: { kind: "native", id: "u1", outside: [], fingerprint: "f1" } },
         };
         return replies[method] as StepRpc[K]["reply"];
@@ -507,6 +507,15 @@ describe("LocalClient", () => {
       const [change] = await client.changes(client.id);
       expect(change).toMatchObject({ title: "Changed a value in settings.json", tier: 1, diff: [["settings.json › graphics › vsync", "true", "false"]], applied: [{ undo: { kind: "native", id: "u1" } }] });
       expect(seen).toHaveLength(2);
+      client.stop();
+    });
+
+    it("shows no card when the helper stored a step this app fingerprints differently", async () => {
+      const { client, helper } = withCommands({ storedHash: "0".repeat(64) });
+      await client.start();
+      expect(await client.previewStep(client.id, { kind: "command", cmd: menuDelay }, false)).toMatchObject({ outcome: "refused", verdict: { refused: STEP_DIFFERS } });
+      expect(await client.applyStep(client.id, "n1", meta)).toEqual({ outcome: "expired" });
+      expect(helper.calls).toEqual(["step.preview"]);
       client.stop();
     });
 

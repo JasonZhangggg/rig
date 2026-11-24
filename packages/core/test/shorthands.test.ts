@@ -58,6 +58,9 @@ describe("firewallCommand", () => {
     expect(rule({ direction: "both" })).toMatch(/direction must be/);
     expect(rule({ program: "C:\\Games\\*.exe" })).toMatch(/program must be/);
     expect(rule({ program: "..\\server.exe" })).toMatch(/program must be/);
+    for (const program of ["C:\\Windows\\System32\\svchost.exe", "C:\\WINDOWS\\system32\\spoolsv.exe", "D:\\Tools\\svchost.exe"]) {
+      expect(rule({ ports: undefined, protocol: undefined, program }), program).toMatch(/^Rig won't let connections in to a program in the Windows folder/);
+    }
     for (const name of ["Game-2", "Any", "0day", "Gam\u0435", "a*b", ""]) expect(rule({ name }), name).toMatch(/name must be/);
     expect(firewallCommand({ add: {}, rule: "x", enabled: true })).toMatch(/either add/);
   });
@@ -119,23 +122,24 @@ describe("policyCommand", () => {
 describe("deviceCommand", () => {
   const mouse = "USB\\VID_046D&PID_C52B\\5&1A2B3C&0&2";
 
-  it("turns a device off only when it's on and isn't one Windows needs, and undo turns it on", () => {
+  it("turns a device off only when it's on and isn't one Windows needs, at tier 3, and undo turns it on", () => {
     const c = built(deviceCommand({ instanceId: mouse, enabled: false }));
-    expect(c.does).toBe(`Turns off the device ${mouse} until it's turned back on. Undo turns it on again.`);
+    expect(c.does).toBe(`Turns off the device ${mouse} until it's turned back on. Undo turns it on again. Rig can't tell from the command alone whether Windows needs a device, so this always gets Rig's strongest check.`);
     expect(c.read).toBe(`Get-PnpDevice -InstanceId '${mouse}' | Format-List -Property FriendlyName, Class, Status, Problem, InstanceId`);
     expect(c.run).toContain("if ($d.ConfigManagerErrorCode -eq 22) { throw 'This device is already turned off.' }");
     expect(c.run).toContain("if ($d.Class -in @('System', 'DiskDrive', 'SCSIAdapter', 'HDC', 'Volume', 'Processor', 'Computer')) { throw");
     expect(c.run).toContain("if ($d.Class -in @('Display', 'Keyboard', 'Mouse') -and -not (Get-PnpDevice -Class $d.Class -PresentOnly -Status OK");
     expect(c.run.split("\n").at(-1)).toBe(`Disable-PnpDevice -InstanceId '${mouse}' -Confirm:$false`);
     expect(c.undo).toBe(`Enable-PnpDevice -InstanceId '${mouse}' -Confirm:$false`);
-    expect(verdict(c)).toMatchObject({ status: "allowed", tier: 2, admin: true });
+    expect(verdict(c)).toMatchObject({ status: "allowed", tier: 3, admin: true });
   });
 
-  it("turns a device on only when it's off, and undo turns it off", () => {
+  it("turns a device on only when it's off, and undo turns it off, so it is tier 3 too", () => {
     const c = built(deviceCommand({ instanceId: "PCI\\VEN_8086&DEV_2723&SUBSYS_00848086&REV_1A\\4&2C2A1E8D&0&00E3", enabled: true }));
     expect(c.run).toContain("if ($d.ConfigManagerErrorCode -ne 22) { throw 'This device isn''t turned off, so there is nothing to turn on.' }");
     expect(c.undo).toMatch(/^Disable-PnpDevice -InstanceId 'PCI\\/);
-    expect(verdict(c)).toMatchObject({ status: "allowed", tier: 2 });
+    expect(c.does).toContain("turning a device off always gets Rig's strongest check, so this does too");
+    expect(verdict(c)).toMatchObject({ status: "allowed", tier: 3 });
   });
 
   it("refuses ids it can't pass as plain text, and parts Windows always needs", () => {
