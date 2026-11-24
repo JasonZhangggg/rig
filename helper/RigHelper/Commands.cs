@@ -586,7 +586,9 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         var after = touches.Select(t => { try { return states.Read(t); } catch (RigException) { return null; } }).ToList();
         string readAfter;
         string? error = made.Error;
-        if (step is NativeOpStep native && made.Ok)
+        // A walk the person stopped part way is left as it stands, unread, with its undo offered.
+        if (step is NativeOpStep && made.Ok && made.Back?["stopped"] is JsonNode stopped) readAfter = stopped.ToString();
+        else if (step is NativeOpStep native && made.Ok)
         {
             // A native op reads its own change back; one that didn't hold is put back like one that failed.
             var said = Ask(person, "verify", native, check.Held);
@@ -639,7 +641,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         {
             record["back"] = made.Back?.DeepClone();
             record["held"] = check.Held?.DeepClone();
-            record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = readAfter };
+            record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = made.Back?["stopped"] != null ? made.Back["after"]?.ToString() : readAfter };
         }
         store.SaveRecord(id, record);
         var undo = new JsonObject { ["kind"] = step.Kind, ["id"] = id };

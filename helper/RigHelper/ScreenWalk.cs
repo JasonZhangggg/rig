@@ -4,7 +4,11 @@
 // types, moves the mouse or presses a place on the screen. The only calls that
 // act are SelectionItem.Select, ExpandCollapse.Expand and Collapse,
 // Toggle.Toggle, RangeValue.SetValue and Invoke, and Invoke is only ever made
-// on the app's own Apply or OK button at the end of an approved change.
+// on the app's own Apply or OK button at the end of an approved change. A
+// classic Windows drop-down list, which UI Automation can't set, takes the
+// approved entry inside an approved change by three messages to its own
+// window, the ones its list sends when a person picks an entry. Each call goes
+// through Guard, which reads the control again just before it.
 //
 // A control is found by what it is (name, control type, automation id), never
 // by where it sits, so a list that reorders or loads late is walked the same
@@ -12,6 +16,7 @@
 // process; the walk waits a few seconds for one to appear, then stops and says
 // so. It also stops when the person presses Stop on the bar this file shows,
 // when another program's window opens, or when Windows asks for permission.
+// After Stop nothing in the window is touched again, not even to put it back.
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -73,7 +78,7 @@ interface IUIAutomationRangeValuePattern { [PreserveSig] int SetValue(double val
 /// UI Automation's numbers for properties, patterns and control types, and reads that answer a default when a control has gone.
 static class Uia
 {
-    public const int ProcessId = 30002, ControlType = 30003, Name = 30005, IsEnabled = 30010, AutomationId = 30011, ClassName = 30012,
+    public const int ProcessId = 30002, ControlType = 30003, Name = 30005, IsEnabled = 30010, AutomationId = 30011, ClassName = 30012, IsPassword = 30019, NativeWindowHandle = 30020,
         ValueValue = 30045, RangeValue = 30047, RangeReadOnly = 30048, RangeMin = 30049, RangeMax = 30050, ExpandState = 30070, IsSelected = 30079, ToggleState = 30086;
     public const int Invoke = 10000, Range = 10003, ExpandCollapse = 10005, SelectionItem = 10010, Toggle = 10015;
     public const int Button = 50000, CheckBox = 50002, ComboBox = 50003, ListItem = 50007, RadioButton = 50013, Slider = 50015, TabItem = 50019, TreeItem = 50024,
@@ -130,7 +135,8 @@ static class Win
     public const uint WS_POPUP = 0x80000000, WS_VISIBLE = 0x10000000, WS_CHILD = 0x40000000, WS_BORDER = 0x00800000, WS_OVERLAPPEDWINDOW = 0x00CF0000, WS_VSCROLL = 0x00200000;
     public const uint WS_EX_TOPMOST = 0x8, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x08000000;
     public const uint WM_DESTROY = 0x2, WM_CLOSE = 0x10, WM_SETFONT = 0x30, WM_COMMAND = 0x111, WM_TIMER = 0x113;
-    const int GWL_EXSTYLE = -20, GW_OWNER = 4, DWMWA_CLOAKED = 14;
+    const int GWL_STYLE = -16, GWL_EXSTYLE = -20, GW_OWNER = 4, DWMWA_CLOAKED = 14;
+    const uint SMTO_ABORTIFHUNG = 0x2, AnswerMs = 2000;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern ushort RegisterClassExW(ref WNDCLASSEX c);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateWindowExW(uint ex, string cls, string title, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
@@ -159,6 +165,11 @@ static class Win
     [DllImport("gdi32.dll")] static extern IntPtr GetStockObject(int which);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string? name);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder name, int size);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint ms, out IntPtr result);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, string l, uint flags, uint ms, out IntPtr result);
 
     /// Window procedures stay alive for as long as their class does.
     static readonly List<WndProc> Kept = [];
@@ -210,6 +221,20 @@ static class Win
 
     public static bool Owned(IntPtr hwnd) => GetWindow(hwnd, GW_OWNER) != IntPtr.Zero;
 
+    public static long Style(IntPtr hwnd) => (long)GetWindowLongPtrW(hwnd, GWL_STYLE);
+
+    public static string ClassOf(IntPtr hwnd)
+    {
+        var name = new StringBuilder(64);
+        return GetClassNameW(hwnd, name, name.Capacity) > 0 ? name.ToString() : "";
+    }
+
+    /// A message to another program's window that gives up when the program doesn't answer.
+    public static IntPtr Send(IntPtr hwnd, uint msg, IntPtr w, IntPtr l) =>
+        SendMessageTimeoutW(hwnd, msg, w, l, SMTO_ABORTIFHUNG, AnswerMs, out IntPtr r) != IntPtr.Zero ? r : throw new RigException("The app didn't answer, so Rig stopped.");
+    public static IntPtr Send(IntPtr hwnd, uint msg, IntPtr w, string l) =>
+        SendMessageTimeoutW(hwnd, msg, w, l, SMTO_ABORTIFHUNG, AnswerMs, out IntPtr r) != IntPtr.Zero ? r : throw new RigException("The app didn't answer, so Rig stopped.");
+
     public static int Pid(IntPtr hwnd)
     {
         Native.GetWindowThreadProcessId(hwnd, out uint pid);
@@ -237,8 +262,7 @@ sealed class StopBar : IDisposable
     volatile bool stopped;
     IntPtr hwnd;
 
-    /// Set while a half-made change is put back: Stop no longer cuts that short.
-    public bool Closing { get; set; }
+    public bool Pressed => stopped;
 
     public StopBar(string text)
     {
@@ -273,7 +297,6 @@ sealed class StopBar : IDisposable
         new Thread(() =>
         {
             Thread.Sleep(HardStopMs);
-            if (Closing) return;
             NativeWorker.Say(new JsonObject { ["ok"] = false, ["error"] = Stopped });
             Environment.Exit(1);
         }) { IsBackground = true }.Start();
@@ -281,7 +304,7 @@ sealed class StopBar : IDisposable
 
     public void Check()
     {
-        if (stopped && !Closing) throw new RigException(Stopped);
+        if (stopped) throw new RigException(Stopped);
     }
 
     public void Dispose()
@@ -323,6 +346,12 @@ sealed class ScreenWalk : IDisposable
             for (var n = this; n != null; n = n.Up) if (n.Type == Uia.Document) return true;
             return false;
         }
+
+        public bool InComboBox()
+        {
+            for (var n = parent; n != null; n = n.Up) if (n.Type == Uia.ComboBox) return true;
+            return false;
+        }
     }
 
     /// Where a walk ended: the control the last name stands for, what kind it is, its choices when it has them, and
@@ -362,22 +391,6 @@ sealed class ScreenWalk : IDisposable
     /// The worker drives only windows at its own level or below. A window Windows won't describe counts as higher.
     public static bool TooHigh(int window, int mine) => window == 0 || window > mine;
 
-    static bool IsGui(string path)
-    {
-        try
-        {
-            using var f = File.OpenRead(path);
-            using var r = new BinaryReader(f);
-            if (r.ReadUInt16() != 0x5a4d) return false;
-            f.Position = 0x3c;
-            f.Position = r.ReadInt32();
-            if (r.ReadUInt32() != 0x4550) return false;
-            f.Position += 20 + 68;
-            return r.ReadUInt16() == 2;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
-    }
-
     List<(IntPtr Hwnd, int Pid, string Image)> Windows()
     {
         var found = new List<(IntPtr, int, string)>();
@@ -390,15 +403,16 @@ sealed class ScreenWalk : IDisposable
         return found;
     }
 
+    /// Asks Windows' shell to open an app from Rig's list or a Settings page. A program named by its .exe is never started.
     void Start()
     {
-        if (app.Start.Length == 0) return;
-        if (app.Image.Contains('\\') && !IsGui(app.Start)) throw new RigException($"{app.Name} isn't there, or isn't a program with a window, so Rig didn't start it.");
-        try { using var p = Process.Start(new ProcessStartInfo(app.Start) { UseShellExecute = true }); }
+        if (app.Start.Length == 0) throw new RigException($"{app.Name} isn't open. {ScreenRules.Words("not-open")}");
+        string explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        try { using var p = Process.Start(new ProcessStartInfo(explorer, app.Start) { UseShellExecute = false }); }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or FileNotFoundException) { throw new RigException($"Windows couldn't open {app.Name}."); }
     }
 
-    /// Finds the app's one window, starting the app when it has none to show. Settings is always opened at its page.
+    /// Finds the app's one window, starting an app from Rig's list when it has none to show. Settings is always opened at its page.
     void Open()
     {
         var found = Windows();
@@ -515,11 +529,17 @@ sealed class ScreenWalk : IDisposable
 
     // ----- The closed set of calls that act -----
 
-    /// Before every call that acts: the person hasn't pressed Stop, the control is the app's own, and nothing else has opened.
+    /// Before every call that acts: the person hasn't pressed Stop, the control is still the app's own with the name and
+    /// kind it was found by, it is switched on, isn't a password box or named like something Rig never presses, and
+    /// nothing else has opened.
     void Guard(Node node)
     {
         bar.Check();
         if (Uia.Int(node.El, Uia.ProcessId) != pid) throw new RigException($"{node.Says} belongs to another program than {app.Name}, so Rig stopped.");
+        if (Uia.Int(node.El, Uia.ControlType) != node.Type || Uia.Text(node.El, Uia.Name) != node.Name) throw new RigException($"{app.Name}'s window changed while Rig was working, so it stopped.");
+        if (Uia.Bool(node.El, Uia.IsPassword)) throw new RigException("Rig never touches a password box.");
+        if (ScreenRules.NeverName(node.Says)) throw new RigException(ScreenRules.Words("never-name"));
+        if (!Uia.Bool(node.El, Uia.IsEnabled)) throw new RigException($"{node.Says} is greyed out in {app.Name}.");
         Unexpected();
     }
 
@@ -532,6 +552,7 @@ sealed class ScreenWalk : IDisposable
     void Enter(Node node)
     {
         if (!node.Enabled) throw new RigException($"{node.Says} is greyed out in {app.Name}.");
+        if (node.InComboBox()) throw new RigException(ScreenRules.Words("combo-row"));
         if (node.Type is Uia.TabItem or Uia.TreeItem or Uia.ListItem or Uia.DataItem && !app.Settings
             && Uia.Pattern<IUIAutomationSelectionItemPattern>(node.El, Uia.SelectionItem) is { } item && !Uia.Bool(node.El, Uia.IsSelected))
         {
@@ -604,10 +625,13 @@ sealed class ScreenWalk : IDisposable
         return holder == null ? [] : all.Where(n => n.Type == rows && n.Under(holder)).ToList();
     }
 
+    /// Closes a drop-down the walk opened, when Guard allows it. It runs as a walk ends, so a refusal leaves it open.
     void Close(Spot spot)
     {
         if (!spot.Opened || Uia.Pattern<IUIAutomationExpandCollapsePattern>(spot.Control.El, Uia.ExpandCollapse) is not { } fold || Uia.Int(spot.Control.El, Uia.ExpandState) == 0) return;
-        if (Uia.Int(spot.Control.El, Uia.ProcessId) == pid) fold.Collapse();
+        try { Guard(spot.Control); }
+        catch (RigException) { return; }
+        fold.Collapse();
     }
 
     // ----- Reading -----
@@ -719,25 +743,24 @@ sealed class ScreenWalk : IDisposable
     }
 
     /// Sets the control to `to` and presses the app's Apply. `from` is the value it must still have; null sets it whatever
-    /// it reads. A change that fails part way is put back before the walk says so.
-    public void Set(ScreenLook look, string? from, string to)
+    /// it reads. A change that fails part way is put back before the walk says so. One the person stopped part way is
+    /// left as it stands, and the answer says so; it is null when the walk ran to the end.
+    public string? Set(ScreenLook look, string? from, string to)
     {
         var spot = Walk(look);
         try
         {
             string was = Says(look, Settled(spot));
             if (from != null && !look.Same(was, from)) throw new RigException($"{look.Target.Says} reads {was} now, not {from} as when Rig looked, so Rig changed nothing.");
-            if (look.Same(was, to)) return;
+            if (look.Same(was, to)) return null;
             try
             {
                 Put(look, spot, to);
                 Commit();
             }
-            catch (RigException e)
-            {
-                bar.Closing = true;
-                throw new RigException($"{e.Message} {Back(look, was)}");
-            }
+            catch (RigException) when (bar.Pressed) { }
+            catch (RigException e) { throw new RigException($"{e.Message} {Back(look, was)}"); }
+            return bar.Pressed ? $"{StopBar.Stopped} It had started setting {look.Target.Says} to {to} and didn't read it back, so check it in {app.Name}." : null;
         }
         finally { Close(spot); }
     }
@@ -765,6 +788,12 @@ sealed class ScreenWalk : IDisposable
             default:
                 string name = look.Options.FirstOrDefault(o => o.Says == to).Name ?? "";
                 if (!spot.Items.Any(i => i.Name == name)) throw new RigException($"{look.Target.Says} in {app.Name} no longer offers {to}, so Rig changed nothing.");
+                if (DropList(c) is var box && box != IntPtr.Zero)
+                {
+                    Close(spot);
+                    Choose(c, box, name, to);
+                    break;
+                }
                 Pick(spot.Items, name);
                 // A drop-down takes the row for good when it closes, and the app's Apply must see it taken.
                 Close(spot);
@@ -774,11 +803,40 @@ sealed class ScreenWalk : IDisposable
                 Did(fold.Expand(), c);
                 Thread.Sleep(300);
                 Pick(ItemsOf(c, Snapshot(), byElement: true), name);
-                if (Uia.Int(c.El, Uia.ExpandState) != 0 && Uia.Int(c.El, Uia.ProcessId) == pid) fold.Collapse();
+                if (Uia.Int(c.El, Uia.ExpandState) != 0)
+                {
+                    Guard(c);
+                    Did(fold.Collapse(), c);
+                }
                 if (!Took(look, spot, to, 1000)) Pick(spot.Items, name);
                 break;
         }
         if (!Took(look, spot, to, SettleMs)) throw new RigException($"{app.Name} didn't take {to} for {look.Target.Says}. It reads {Says(look, Now(spot))}.");
+    }
+
+    const uint CBS_DROPDOWNLIST = 0x3, CBS_OWNERDRAW = 0x30, CBS_HASSTRINGS = 0x200, CB_FINDSTRINGEXACT = 0x158, CB_SETCURSEL = 0x14e, CBN_SELCHANGE = 1;
+
+    /// The window of a classic Windows drop-down list of the app's own, the one kind UI Automation can't set: selecting
+    /// its row only moves the open list's cursor, and closing the list puts the old entry back. Zero for any other.
+    IntPtr DropList(Node control)
+    {
+        IntPtr box = Uia.Int(control.El, Uia.NativeWindowHandle);
+        if (box == IntPtr.Zero || Win.ClassOf(box) != "ComboBox" || Win.Pid(box) != pid) return IntPtr.Zero;
+        long style = Win.Style(box);
+        return (style & 0x3) == CBS_DROPDOWNLIST && ((style & CBS_OWNERDRAW) == 0 || (style & CBS_HASSTRINGS) != 0) ? box : IntPtr.Zero;
+    }
+
+    /// Chooses the approved entry of a classic drop-down list as its own list does when a person picks one: the entry
+    /// becomes the drop-down's, and the window that holds it is told. The read-back after it decides whether it took.
+    void Choose(Node control, IntPtr box, string name, string to)
+    {
+        Guard(control);
+        int at = (int)Win.Send(box, CB_FINDSTRINGEXACT, -1, name);
+        if (at < 0 || (int)Win.Send(box, CB_FINDSTRINGEXACT, at, name) != at) throw new RigException($"{control.Says} in {app.Name} doesn't hold {to} exactly once, so Rig changed nothing.");
+        IntPtr parent = Win.GetParent(box);
+        if (parent == IntPtr.Zero || Win.Pid(parent) != pid) throw new RigException($"{control.Says} in {app.Name} isn't where a drop-down's list tells its choice, so Rig changed nothing.");
+        Win.Send(box, CB_SETCURSEL, at, 0);
+        Win.Send(parent, Win.WM_COMMAND, (Win.GetDlgCtrlID(box) & 0xffff) | (int)(CBN_SELCHANGE << 16), box);
     }
 
     void Pick(List<Node> rows, string name)

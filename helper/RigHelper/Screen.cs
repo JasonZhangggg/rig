@@ -2,11 +2,13 @@
 // packages/core/src/change.ts).
 //
 //   look     screen.look names an app and the controls to walk to. The worker
-//            opens the app as the person, walks there, reads the control and
-//            presses nothing but tabs, list rows and tree rows. The helper
-//            keeps what it found (the app's program and signer, each hop, the
-//            value, the choices) in memory under an id that runs out, and
-//            answers with the id and plain words.
+//            opens the app as the person (starting only an app from Rig's
+//            list or a Settings page), walks there, reads the control and
+//            presses nothing but tabs, and list and tree rows outside a
+//            drop-down. The helper holds the program the worker names to the
+//            rules again, finds its signer itself, keeps what was found (the
+//            program and signer, each hop, the value, the choices) in memory
+//            under an id that runs out, and answers with the id and plain words.
 //   step     { lookId, to, does }: the step names the look and the new value,
 //            never where to press. It goes through the one approval path in
 //            Commands.cs like every native op; this file is its INativeStep.
@@ -29,8 +31,9 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Rig.Helper;
 
-/// The app a look names, as Rig starts and recognises it. `Start` is what Windows is asked to open, or empty. `Image` is
-/// the full path of its program when the look gave one, else the program's file name; both folded.
+/// The app a look names, as Rig starts and recognises it. `Start` is what Windows' shell is asked to open: an app from
+/// Rig's list or a Settings page, else empty and the app is only used when already open. `Image` is the full path of its
+/// program when the look gave one, else the program's file name; both folded.
 public sealed record ScreenApp(string Name, string Start, string Image, bool Settings = false, bool SelfTest = false);
 
 /// rules/commands.json `screen`, and what it says of an app's name and of a window's program.
@@ -52,6 +55,7 @@ public static class ScreenRules
         public StartRule RefuseStarts { get; set; } = new();
         public string[] ContentHosts { get; set; } = [];
         public CommitNames Commit { get; set; } = new();
+        public string[] NeverNames { get; set; } = [];
         public Dictionary<string, string> Words { get; set; } = [];
         public Example[] Examples { get; set; } = [];
     }
@@ -63,6 +67,9 @@ public static class ScreenRules
     public static CommitNames Commit => S.Commit;
     public static IReadOnlyList<Example> Examples => S.Examples;
     public static string Words(string which) => S.Words[which] + ".";
+
+    /// Whether a control's name or a value is one Rig never walks through, sets or presses.
+    public static bool NeverName(string text) => S.NeverNames.Any(n => text.Contains(n, StringComparison.OrdinalIgnoreCase));
 
     static readonly Regex Line = new(@"^[\x20-\x7e]{1,260}\z"), Dots = new(@"(^|\\)\.\.(\\|$)"), ShortName = new(@"[a-z0-9]~\d"), Odd = new("[/*?\"<>|]");
 
@@ -88,7 +95,7 @@ public static class ScreenRules
         }
         if (!UnderRoots(name) || !name.EndsWith(".exe", StringComparison.Ordinal) || Dots.IsMatch(name) || ShortName.IsMatch(name) || Odd.IsMatch(name) || name.Contains(@"\\")) throw new RigException(Words("app"));
         if (RefusedImage(Path.GetFileName(name)) is string refused) throw new RigException(refused);
-        return new ScreenApp(Path.GetFileNameWithoutExtension(app), app, name);
+        return new ScreenApp(Path.GetFileNameWithoutExtension(app), "", name);
     }
 
     /// Whether a window's own program is the app Rig was asked for. A program on the refused list never is.
@@ -300,9 +307,11 @@ public sealed class ScreenStep : INativeStep
         }
         string? app = p?["app"] is JsonValue a && a.TryGetValue(out string? text) ? text : null;
         var goal = (p?["goal"] as JsonArray ?? []).Select(g => g is JsonValue v && v.TryGetValue(out string? s) ? s.Trim() : "").ToList();
-        try { ScreenRules.Resolve(app, selfTest); }
+        ScreenApp resolved;
+        try { resolved = ScreenRules.Resolve(app, selfTest); }
         catch (RigException e) { return No(e.Message); }
         if (goal.Count is 0 or > MaxGoal || goal.Any(g => !Word.IsMatch(g))) return No(ScreenRules.Words("goal"));
+        if (goal.Any(ScreenRules.NeverName)) return No(ScreenRules.Words("never-name"));
 
         NativeWorker.Answer said;
         try { said = ask(new JsonObject { ["name"] = OpName, ["app"] = app, ["goal"] = new JsonArray(goal.Select(g => (JsonNode)g).ToArray()) }); }
@@ -313,7 +322,11 @@ public sealed class ScreenStep : INativeStep
         if (said.Result["refused"] is JsonNode refused)
             return No(ScreenRules.Plain(refused.ToString(), 300), clean,
                 new JsonArray((said.Result["shows"] as JsonArray ?? []).Take(40).Select(s => (JsonNode)ScreenRules.Plain(s?.ToString())).ToArray()));
-        if (ScreenLook.From(said.Result["look"]) is not ScreenLook look || look.App != app) return No("Rig's worker answered with something that isn't a look.");
+        if (ScreenLook.From(said.Result["look"]) is not ScreenLook seen || seen.App != app) return No("Rig's worker answered with something that isn't a look.");
+        // The worker's word on the program is data from outside: the rules, the signer and what counts as clean are the helper's.
+        if (!ScreenRules.Is(resolved, seen.Image)) return No(ScreenRules.Words("app"));
+        string? signer = Signature.Signer(seen.Image);
+        var look = seen with { Signer = signer ?? "", Clean = seen.Clean && ScreenRules.Trusted(resolved, seen.Image, signer) };
 
         var (id, until) = Keep(look);
         var reply = new JsonObject
@@ -339,6 +352,7 @@ public sealed class ScreenStep : INativeStep
         // The rules may have changed since the look, and they have the last word on the app.
         ScreenRules.Resolve(look.App, selfTest: look.App == ScreenRules.SelfTestApp);
         if (!look.Takes(to)) throw new RigException(ScreenRules.Words("not-offered"));
+        if (ScreenRules.NeverName(to)) throw new RigException(ScreenRules.Words("never-name"));
         if (!look.Clean) throw new RigException(ScreenRules.Words("unclean"));
         return new NativeCheck(kept, 3, [ScreenRules.Words("tier")], [], look.ToJson(), look.Line(look.Value));
     }
@@ -380,9 +394,16 @@ public sealed class ScreenStep : INativeStep
     public JsonObject Apply(JsonObject op)
     {
         var look = Held(op);
+        string to = op["to"]!.ToString();
         using var walk = new ScreenWalk(App(look), changing: true, look.Target.Says);
-        walk.Set(look, from: look.Value, to: op["to"]!.ToString());
-        return new JsonObject { ["was"] = look.Value };
+        var back = new JsonObject { ["was"] = look.Value };
+        // Stopped part way, the change is left as it stands and its undo is offered: nothing reads the window again.
+        if (walk.Set(look, from: look.Value, to) is string stopped)
+        {
+            back["stopped"] = stopped;
+            back["after"] = look.Line(to);
+        }
+        return back;
     }
 
     public string? Verify(JsonObject op)
@@ -399,6 +420,6 @@ public sealed class ScreenStep : INativeStep
         var look = Held(op);
         string was = back["was"]?.ToString() ?? throw new RigException("Rig has no note of the value this control had.");
         using var walk = new ScreenWalk(App(look), changing: true, look.Target.Says);
-        walk.Set(look, from: null, to: was);
+        if (walk.Set(look, from: null, to: was) is string stopped) throw new RigException(stopped);
     }
 }

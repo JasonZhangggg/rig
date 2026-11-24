@@ -199,6 +199,8 @@ static class ScreenSelfTest
         if (Process.GetProcessesByName("regedit").Length > 0) yield return "regedit is running";
         string charmap = Path.Combine(Environment.SystemDirectory, "charmap.exe");
         if (LookAt(rig, charmap)["refused"] == null || LookAt(rig, charmap, "two\nlines")["refused"] == null) yield return "a look with no control named, or one named over two lines, wasn't refused";
+        var reset = LookAt(rig, charmap, "Options", "Restore defaults");
+        if (reset["refused"]?.ToString() != ScreenRules.Words("never-name")) yield return $"a look through a control named like one Rig never presses answered {reset.ToJsonString()}";
     }
 
     static IEnumerable<string> Looks(Commands rig)
@@ -216,6 +218,9 @@ static class ScreenSelfTest
         var combo = LookAt(rig, App, "display", "quality");
         if (combo["value"]?.ToString() != "Low" || Options(combo) != "Low,Medium,High") yield return $"the look at the drop-down answered {combo.ToJsonString()}";
         if (Quality != 0 || applied != 0) yield return "a look changed the drop-down or pressed Apply";
+        var entry = LookAt(rig, App, "Display", "High");
+        if (entry["refused"]?.ToString() != ScreenRules.Words("combo-row")) yield return $"a look that named one of the drop-down's entries answered {entry.ToJsonString()}";
+        if (Quality != 0 || applied != 0) yield return $"a look that named one of the drop-down's entries left it at {Quality}, and Apply was pressed {applied} times";
 
         var twin = LookAt(rig, App, "Twin");
         if (twin["refused"]?.ToString().Contains("2 controls named Twin") != true) yield return $"a name two controls share wasn't refused: {twin.ToJsonString()}";
@@ -241,6 +246,9 @@ static class ScreenSelfTest
         var unclean = new ScreenLook(App, "Rig's self-test window", "", "", [], new Hop("Sharpen images", "Sharpen images", Uia.CheckBox, "", ""), "toggle", "Off", [("On", "On"), ("Off", "Off")], 0, 0, Clean: false);
         var tainted = Preview(rig, Step(ScreenStep.Keep(unclean).Id, "On"));
         if (!Is(tainted, "refused") || Refusal(tainted) != ScreenRules.Words("unclean")) yield return $"a step on a look that wasn't clean got {tainted.ToJsonString()}";
+        var resets = unclean with { Kind = "choice", Value = "Low", Options = [("Low", "Low"), ("Reset everything", "Reset everything")], Clean = true };
+        var never = Preview(rig, Step(ScreenStep.Keep(resets).Id, "Reset everything"));
+        if (!Is(never, "refused") || Refusal(never) != ScreenRules.Words("never-name")) yield return $"a step to a value named like one Rig never sets got {never.ToJsonString()}";
         if (Sharpen || applied != 0) yield return "a refused step changed something";
     }
 
@@ -303,13 +311,32 @@ static class ScreenSelfTest
         if (Sharpen || applied != 0) yield return "a stopped look changed something";
     }
 
+    /// A program named by its .exe is never started by a look, only used once it is open: here the self-test opens it.
     static IEnumerable<string> RealProgram(Commands rig)
     {
         string exe = Path.Combine(Environment.SystemDirectory, "charmap.exe");
         if (!File.Exists(exe)) { yield return Skip + "this Windows has no Character Map"; yield break; }
         var before = Process.GetProcessesByName("charmap").Select(p => p.Id).ToHashSet();
         JsonNode look;
-        try { look = LookAt(rig, exe, "Advanced view"); }
+        try
+        {
+            if (before.Count == 0)
+            {
+                var closed = LookAt(rig, exe, "Advanced view");
+                if (closed["refused"]?.ToString().Contains(ScreenRules.Words("not-open")) != true) yield return $"a look at a program that isn't open answered {closed.ToJsonString()}";
+                if (Process.GetProcessesByName("charmap").Length > 0) yield return "a look started Character Map";
+            }
+            using (var started = Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false })!)
+            {
+                for (int i = 0; i < 100 && started.MainWindowHandle == IntPtr.Zero; i++)
+                {
+                    Thread.Sleep(100);
+                    started.Refresh();
+                }
+            }
+            Thread.Sleep(500);
+            look = LookAt(rig, exe, "Advanced view");
+        }
         finally
         {
             foreach (var p in Process.GetProcessesByName("charmap").Where(p => !before.Contains(p.Id)))
