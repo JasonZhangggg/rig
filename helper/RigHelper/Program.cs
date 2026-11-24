@@ -40,6 +40,9 @@ public static class Program
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
+            var (gpuChecks, gpuProblems) = Gpu.SelfTest();
+            all["gpu"] = gpuChecks;
+            problems.AddRange(gpuProblems);
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)

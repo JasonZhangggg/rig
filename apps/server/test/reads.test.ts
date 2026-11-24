@@ -227,6 +227,28 @@ describe("general command steps", () => {
     expect((await proposal({ driver: { inf: "C:\\Drivers\\*.inf", catalog: "C:\\Drivers\\x.cat" } })).sent).toContain("driver: inf must be");
   });
 
+  it("reads NVIDIA's settings without tainting the chat, and proposes a gpu step from Rig's table", async () => {
+    const vsyncOff = { vendor: "nvidia", app: "Game.exe", setting: "vsync", value: "off", does: "Turns vertical sync off for this game." };
+    const { live, seen } = await chatSetup([
+      { tool: { name: "read_pc", input: { kind: "gpu", vendor: "nvidia", app: "Game.exe", settings: ["vsync"] } } },
+      { tool: { name: "propose_change", input: { title: "Vsync off", why: "y", steps: [{ gpu: { ...vsyncOff, setting: "0x00A879CF" } }] } } },
+      { tool: { name: "propose_change", input: { title: "Vsync off", why: "y", steps: [{ gpu: { ...vsyncOff, vendor: "amd" } }] } } },
+      { tool: { name: "propose_change", input: { title: "Vsync off", why: "Less input lag.", steps: [{ gpu: vsyncOff }, { command: deleteFolder }] } } },
+      { text: "Review the card." },
+    ]);
+    const stop = of(await live(ask("Turn vsync off for my game")), "reads")[0];
+    expect(stop.reads).toEqual([{ id: "tu_1", kind: "gpu", vendor: "nvidia", app: "game.exe", settings: ["vsync"] }]);
+    const text = JSON.stringify({ vendor: "nvidia", settings: { vsync: { name: "Vertical sync", value: "app", says: "Use the game's own setting", from: "from the global settings" } } });
+    const rest = await live(ask("Turn vsync off for my game"), { resume: stop.resume, results: [{ id: "tu_1", ok: true, text }] });
+    expect(lastToolResults(seen[2])).toContain("Rig doesn't change that graphics setting");
+    expect(lastToolResults(seen[3])).toContain("Rig can only change NVIDIA's graphics settings for now.");
+    // A gpu read is Rig's own table, so a change that can't be undone may still be offered after it.
+    const p = of(rest, "proposal")[0].proposal;
+    expect(p.tier).toBe(3);
+    expect(p.steps![0]).toEqual({ kind: "native", op: { name: "gpu", ...vsyncOff, app: "game.exe" } });
+    expect(p.rows![0]).toEqual(["Set Vertical sync to Off for game.exe", "As it is now", "Changed by Rig"]);
+  });
+
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {
     const clean = await chatSetup([{ tool: { name: "propose_change", input: { title: "Delete the old installers", why: "Frees space.", steps: [{ command: deleteFolder }] } } }, { text: "Review it." }]);
     expect(of(await clean.live(ask("Delete C:\\Installers\\old")), "proposal")[0].proposal.tier).toBe(3);

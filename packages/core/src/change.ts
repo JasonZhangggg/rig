@@ -11,6 +11,7 @@
 import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
 import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
 import type { Change } from "./client";
+import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import type { DiffRow } from "./model";
 
 /** 0 read, 1 reversible fix, 2 general or disruptive, 3 no undo or lowers a protection. Never is a refusal, not a tier. */
@@ -30,7 +31,7 @@ export type HelperStep = CommandStep | NativeStep;
  * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
  * `nativeOps`, and one class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp;
+export type NativeOp = SelftestOp | GpuOp;
 
 /** The helper's self-test op: sets a value under HKCU\Software\RigSelftest. The helper knows it only inside --selftest. */
 export interface SelftestOp {
@@ -58,6 +59,12 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
     tier: () => 2,
     reasons: () => ["Rig's own self-test change."],
     title: () => "Ran Rig's self-test change",
+  },
+  gpu: {
+    canonical: canonicalGpu,
+    tier: (op) => GPU_SETTINGS[op.setting].tier,
+    reasons: () => ["A graphics driver setting from Rig's own list. Rig notes how it was and puts it back exactly on undo."],
+    title: gpuTitle,
   },
 };
 

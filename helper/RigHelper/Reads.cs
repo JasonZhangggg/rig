@@ -52,6 +52,7 @@ public static class Reads
         string text = kind switch
         {
             "registry" => RegistryRead(req!, owner),
+            "gpu" => Gpu.Read(req!),
             "cim" => CimRead(req!),
             "cmdlet" or "script" => throw new RigException("Rig can't run PowerShell reads on this PC yet. Look with a registry or CIM read instead, or answer from what Rig already knows."),
             _ => throw new RigException("Rig's helper doesn't know that kind of read."),
