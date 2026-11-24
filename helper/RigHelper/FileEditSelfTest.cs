@@ -135,17 +135,17 @@ public static class FileEditSelfTest
     public static IEnumerable<string> Refused(Commands rig, string dir)
     {
         string Write(string name, byte[] bytes) { string f = Path.Combine(dir, name); File.WriteAllBytes(f, bytes); return f; }
-        var vsync = Edit(false, false, "graphics", "vsync");
+        JsonObject Vsync() => Edit(false, false, "graphics", "vsync");
         var cases = new (string What, JsonObject Op, string Says, string? Why)[]
         {
-            ("a file on the never list", Op(Write("logins.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": true}}")), "json", vsync), "Rig never", "never"),
-            ("a script", Op(Write("start.ps1", Encoding.UTF8.GetBytes("{}")), "json", vsync), "doesn't edit programs", null),
-            ("a key that is there twice", Op(Write("twice.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": true, \"vsync\": false}}")), "json", vsync), "twice", null),
+            ("a file on the never list", Op(Write("logins.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": true}}")), "json", Vsync()), "Rig never", "never"),
+            ("a script", Op(Write("start.ps1", Encoding.UTF8.GetBytes("{}")), "json", Vsync()), "doesn't edit programs", null),
+            ("a key that is there twice", Op(Write("twice.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": true, \"vsync\": false}}")), "json", Vsync()), "twice", null),
             ("an INI key that is there twice", Op(Write("twice.ini", Encoding.UTF8.GetBytes("[Graphics]\nVSync=1\nvsync=0\n")), "ini", Edit("0", false, "Graphics", "VSync")), "more than once", null),
-            ("a file over 1 MB", Op(Write("big.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": true}, \"pad\": \"" + new string('x', FileEditOp.MaxBytes) + "\"}")), "json", vsync), "over 1 MB", null),
+            ("a file over 1 MB", Op(Write("big.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": true}, \"pad\": \"" + new string('x', FileEditOp.MaxBytes) + "\"}")), "json", Vsync()), "over 1 MB", null),
             ("a file that isn't UTF-8", Op(Write("latin.ini", [.. Encoding.ASCII.GetBytes("[Graphics]\nName=Jos"), 0xE9, 10]), "ini", Edit("x", false, "Graphics", "Name")), "UTF-8", null),
-            ("a value that isn't there", Op(Write("missing.json", Encoding.UTF8.GetBytes("{\"graphics\": {}}")), "json", vsync), "didn't find", null),
-            ("a group of values", Op(Write("group.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": [1]}}")), "json", vsync), "single values", null),
+            ("a value that isn't there", Op(Write("missing.json", Encoding.UTF8.GetBytes("{\"graphics\": {}}")), "json", Vsync()), "didn't find", null),
+            ("a group of values", Op(Write("group.json", Encoding.UTF8.GetBytes("{\"graphics\": {\"vsync\": [1]}}")), "json", Vsync()), "single values", null),
         };
         foreach (var (what, op, says, why) in cases)
         {

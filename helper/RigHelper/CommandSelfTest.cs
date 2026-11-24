@@ -88,7 +88,7 @@ public static class CommandSelfTest
             Check("the native worker runs as the person", () => NativeWorkerRuns(ctx));
             Check("a native step, applied and undone", () => NativeApplied(ctx));
             Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
-            FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null });
+            FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null, TestOnlyNativeOps = true });
             Check("HKCU for another account", OtherAccount);
             if (elevated)
             {
