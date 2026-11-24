@@ -93,17 +93,20 @@ public static class PowerShellHost
     public static void Write(string file, string script, bool stopOnError) =>
         File.WriteAllText(file, Pinned(script, stopOnError), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
-    /// Runs with the helper's own rights, starting in `folder`, with temporary files in `temp`.
-    public static Ran RunHere(string args, int timeoutMs, string folder, string temp)
+    /// Runs PowerShell with the helper's own rights, starting in `folder`, with temporary files in `temp`.
+    public static Ran RunHere(string args, int timeoutMs, string folder, string temp) => Start(Exe, args, timeoutMs, folder, temp);
+
+    /// Runs a program with the helper's own rights and the clean environment.
+    public static Ran Start(string exe, string args, int timeoutMs, string folder, string temp)
     {
-        var psi = new ProcessStartInfo(Exe, args)
+        var psi = new ProcessStartInfo(exe, args)
         {
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = folder,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
         };
         psi.Environment.Clear();
         foreach (var (k, v) in Mine(temp)) psi.Environment[k] = v;
-        using var p = Process.Start(psi) ?? throw new RigException("PowerShell didn't start.");
+        using var p = Process.Start(psi) ?? throw new RigException($"{Path.GetFileName(exe)} didn't start.");
         p.StandardInput.Close();
         var o = UserProcess.Drain(p.StandardOutput.BaseStream);
         var e = UserProcess.Drain(p.StandardError.BaseStream);
@@ -121,6 +124,8 @@ public sealed class Person : IDisposable
     /// The Rig app runs with admin rights, so a change without admin rights would run with them all the same. Windows says so
     /// for an app started as administrator, and also when User Account Control is off or the account is the built-in Administrator.
     public bool Elevated { get; }
+    /// The integrity level of the token programs started for the person get (Native.Integrity).
+    public int Integrity { get; }
     readonly IntPtr primary;
     readonly SafeAccessTokenHandle? borrowed;
 
@@ -130,6 +135,7 @@ public sealed class Person : IDisposable
         this.primary = primary;
         Elevation = elevation;
         Elevated = elevated;
+        using (var me = WindowsIdentity.GetCurrent()) Integrity = Native.Integrity(primary == IntPtr.Zero ? me.Token : primary);
         if (primary == IntPtr.Zero) return;
         if (!DuplicateTokenEx(primary, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenImpersonation, out IntPtr thread)) throw Win("borrow your Windows sign-in");
         borrowed = new SafeAccessTokenHandle(thread);
@@ -186,11 +192,14 @@ public sealed class Person : IDisposable
     public T Do<T>(Func<T> act) => borrowed == null ? act() : WindowsIdentity.RunImpersonated(borrowed, act);
 
     /// Runs a script file with the person's rights, starting in `folder`. Temporary files go to the person's own temp folder.
-    public PowerShellHost.Ran Run(string file, int timeoutMs, string folder)
+    public PowerShellHost.Ran Run(string file, int timeoutMs, string folder) => Start(PowerShellHost.Exe, PowerShellHost.Args(file), timeoutMs, folder);
+
+    /// Runs a program with the person's rights and the clean environment, on the desktop this helper is on: the one the
+    /// Rig app that started it is on.
+    public PowerShellHost.Ran Start(string exe, string args, int timeoutMs, string folder)
     {
-        string args = PowerShellHost.Args(file);
-        if (primary == IntPtr.Zero) return PowerShellHost.RunHere(args, timeoutMs, folder, Path.GetTempPath());
-        var (exit, o, e, timedOut) = UserProcess.RunAs(primary, PowerShellHost.Exe, args, timeoutMs, desktop: null, PowerShellHost.Clean(folder), folder, logonService: true, keep: PowerShellHost.Theirs);
+        if (primary == IntPtr.Zero) return PowerShellHost.Start(exe, args, timeoutMs, folder, Path.GetTempPath());
+        var (exit, o, e, timedOut) = UserProcess.RunAs(primary, exe, args, timeoutMs, desktop: null, PowerShellHost.Clean(folder), folder, logonService: true, keep: PowerShellHost.Theirs);
         return new PowerShellHost.Ran(exit, o, e, timedOut);
     }
 

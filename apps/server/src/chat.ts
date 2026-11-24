@@ -548,7 +548,13 @@ function commandOf(raw: unknown): Command | string {
 
 /** Plain rows for the card, before the app reads the current values. */
 function rowsFor(steps: Step[], ctx: ChatContext): DiffRow[] {
-  return steps.map((s) => (s.kind === "fix" ? describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? []) : [s.cmd.does, "As it is now", "Changed by this command"]));
+  return steps.map((s): DiffRow => {
+    switch (s.kind) {
+      case "fix": return describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? []);
+      case "command": return [s.cmd.does, "As it is now", "Changed by this command"];
+      case "native": return [stepsTitle([s]), "As it is now", "Changed by Rig"];
+    }
+  });
 }
 
 /**

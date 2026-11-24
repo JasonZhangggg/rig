@@ -1,4 +1,4 @@
-import { checkScript, secondLook, type Allowed, type Command, type CommandUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
+import { checkScript, secondLook, type Allowed, type Command, type HelperUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
 
 const kinds: Record<Touch["kind"], [one: string, many: string]> = {
   registry: ["a registry value", "registry values"], file: ["a file", "files"], service: ["a service", "services"],
@@ -145,13 +145,14 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "
 export const restoreLine = (r: RestorePoint) => `As a last resort, Windows has a restore point from ${when(r.at)} called "${r.name}".`;
 
 /** What Undo can and can't put back, after the change ran. `can` is false when there's nothing to undo it with. */
-export function undoReach(cmd: Command, undo: CommandUndo, runs: FoundCommand[]): { can: boolean; line: string; untied: string[] } {
+export function undoReach(cmd: Command, undo: HelperUndo, runs: FoundCommand[]): { can: boolean; line: string; untied: string[] } {
+  const script = undo.kind === "command" ? undo.script : undefined;
   const saved = cmd.touches.filter(snapshotted).length;
   const rest = cmd.touches.filter((t) => !snapshotted(t)).length;
   const restore = undo.restorePoint ? ` ${restoreLine(undo.restorePoint)}` : "";
-  if (!saved && !undo.script) return { can: false, untied: [], line: `Rig can't undo this: it had no copy to save and no undo script.${restore}` };
-  const can = saved ? `Undo puts back ${saved === 1 ? "the listed value" : "the listed values"} Rig saved${undo.script ? ", then runs the undo script" : ""}.` : "Undo runs the undo script.";
-  const cant = [...(rest && !undo.script ? ["the listed things Rig had no copy of"] : []), ...(undo.outside.length ? ["what's under Also changed"] : [])];
+  if (!saved && !script) return { can: false, untied: [], line: `Rig can't undo this: it had no copy to save and no undo script.${restore}` };
+  const can = saved ? `Undo puts back ${saved === 1 ? "the listed value" : "the listed values"} Rig saved${script ? ", then runs the undo script" : ""}.` : "Undo runs the undo script.";
+  const cant = [...(rest && !script ? ["the listed things Rig had no copy of"] : []), ...(undo.outside.length ? ["what's under Also changed"] : [])];
   const off = saved ? untied(cmd, runs) : [];
   return { can: true, untied: off, line: `${can}${cant.length ? ` It can't put back ${list(cant)}.` : ""}${cant.length || off.length ? restore : ""}` };
 }

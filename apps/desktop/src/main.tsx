@@ -3,7 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { CloudClient, LocalClient, MemoryStore, type HelperLink } from "@rig/core";
 import { SimulatedLink, fixtures } from "@rig/core/demo";
 import { RigApp } from "@rig/ui";
-import { approveCommand, inTauri, openLogs, tauriAutostart, tauriLink, tauriRecorder, tauriStore, tauriToken } from "./tauri";
+import { approveStep, inTauri, openLogs, tauriAutostart, tauriLink, tauriRecorder, tauriStore, tauriToken } from "./tauri";
 import { notifyAlerts, notifyRecording } from "./notify";
 import { quietWhenHidden } from "./quiet";
 import { tauriUpdates, watchForUpdates } from "./update";
@@ -35,7 +35,7 @@ pickLink().then((link) => {
   const cloud = inTauri ? new CloudClient({ base: api, token: tauriToken, openUrl: (u) => void openUrl(u), log }) : null;
   // The background recorder only exists with the Windows helper, not with the pretend PC.
   const recorder = inTauri && link === tauriLink ? tauriRecorder : null;
-  const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording, recorder, log, ...(link === tauriLink ? { approveCommand } : {}) } : { log });
+  const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording, recorder, log, ...(link === tauriLink ? { approveStep } : {}) } : { log });
   root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api, openLogs, updates: tauriUpdates, ...(recorder ? { recorder } : {}) } : undefined} />);
   if (inTauri) { quietWhenHidden(client); client.start().then(() => notifyAlerts(client), () => {}); }
 }).catch((e: unknown) => {
