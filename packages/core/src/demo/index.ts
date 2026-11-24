@@ -15,6 +15,8 @@ import { applyToFacts } from "./apply";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
+import { demoBackground } from "./background";
+import { isBackground } from "../background";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
 import { demoScan } from "./storage";
 import { DemoManuals } from "./manualShelf";
@@ -35,7 +37,7 @@ export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } fr
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] } }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -74,7 +76,7 @@ export class DemoClient implements RigClient {
       const recorder: Recorder = new Recorder({
         pcId: () => inv.machine.id, store, now: Date.now, limits: () => limitsOf(this.view(inv.machine.id)),
         source: { events: async (since) => demoEvents(inv.machine.kind, Date.now(), since), processes: async () => demoProcesses(inv, Date.now()) },
-        onChange: () => recListeners.forEach((cb) => cb(recorder.list())),
+        onChange: () => { const p = this.pcs[inv.machine.id]; if (p) recListeners.forEach((cb) => cb(this.recordingList(p))); },
       });
       return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners, scan: demoScan(inv, Date.now() - 3 * 36e5) };
     };
@@ -133,7 +135,7 @@ export class DemoClient implements RigClient {
     const machines = await Promise.all(Object.entries(this.pcs).map(async ([id, p]) => ({
       id, view: this.view(id), inventory: p.inv, facts: p.facts, identity: { ...p.id },
       changes: await this.changes(id), games: await this.games(id), history: await this.history(id, "30d"),
-      events: await this.events(id), recordings: await p.recorder.all(),
+      events: await this.events(id), recordings: [...await p.recorder.all(), ...this.background(p)],
     })));
     return makeExport({ account: await this.account(), machines, notes: ["Made-up data from Rig's demo."] });
   }
@@ -199,11 +201,33 @@ export class DemoClient implements RigClient {
     const p = this.pcs[id];
     if (!p) return () => {};
     p.recListeners.add(cb);
-    void p.recorder.load().then(() => p.recListeners.has(cb) && cb(p.recorder.list()));
+    void p.recorder.load().then(() => p.recListeners.has(cb) && cb(this.recordingList(p)));
     return () => { p.recListeners.delete(cb); };
   }
 
-  async recording(id: string, rid: string) { await this.pcs[id]?.recorder.load(); return this.pcs[id]?.recorder.get(rid) ?? null; }
+  /** Atlas's background log, made again every few minutes so today's day log keeps up. */
+  private background(p: DemoPC): Recording[] {
+    const now = Date.now();
+    if (!p.bg || now - p.bg.at > 5 * 60_000) p.bg = { at: now, recs: demoBackground(p.inv, now, p.dust, limitsOf(this.view(p.inv.machine.id))) };
+    return p.bg.recs;
+  }
+
+  /** Recordings started by the person or the chat, then the background recorder's, newest first; one that's running stays on top. */
+  private recordingList(p: DemoPC): RecordingInfo[] {
+    const mine = p.recorder.list();
+    const bg = this.background(p).map(toInfo);
+    const at = (r: RecordingInfo) => r.startedAt ?? Date.parse(r.createdAt);
+    const live = (r: RecordingInfo) => r.state === "pending" || r.state === "recording";
+    return [...mine.filter(live), ...[...mine.filter((r) => !live(r)), ...bg].sort((a, b) => at(b) - at(a))];
+  }
+
+  async recording(id: string, rid: string) {
+    const p = this.pcs[id];
+    if (!p) return null;
+    if (isBackground(rid)) { const r = this.background(p).find((x) => x.id === rid); return r ? structuredClone(r) : null; }
+    await p.recorder.load();
+    return p.recorder.get(rid) ?? null;
+  }
 
   async startRecording(id: string, req: { reason: string; minutes: number; question?: string }, by: "you" | "rig" = "you"): Promise<RecordingInfo> {
     const checked = checkRequest(req, { id: uid(), by, now: new Date() });

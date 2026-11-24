@@ -187,7 +187,7 @@ describe("Logs", () => {
 
   it("shows a day's tip for a mouse but not after a tap", async () => {
     await start();
-    await go("logs");
+    await go("events");
     const strip = await screen.findByRole("group", { name: "Last 30 days" });
     const day = within(strip).getByRole("button", { name: /1 event: The PC turned off without shutting down/ });
 

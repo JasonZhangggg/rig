@@ -20,7 +20,8 @@ const pageWords: Partial<Record<Route, [string, string]>> = {
   upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
   manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
   chat: ["Ask Rig anything about your PC", "ask chat help question"],
-  logs: ["Windows errors and Rig's recordings", "logs events crashes errors blue screen driver shutdown recordings record"],
+  logs: ["Everything Rig recorded, day by day, and what happened", "logs recordings record recorded background log sensors closer look custom log"],
+  events: ["In Logs: what went wrong, from the Windows event log", "windows events event log crashes errors blue screen driver shutdown"],
   changes: ["What Rig or you changed, with undo", "changes undo fixes applied review"],
   settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
 };

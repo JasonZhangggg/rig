@@ -28,7 +28,7 @@ export function demoProcesses(inv: Inventory, t: number, act: Activity = activit
 }
 
 /** The start of the latest Wednesday evening that's fully behind us: the demo's hot Cyberpunk night. */
-function hotEvening(now: number): number {
+export function hotEvening(now: number): number {
   const d = new Date(now);
   d.setHours(20, 10, 0, 0);
   while (d.getDay() !== 3 || d.getTime() + 60 * MIN > now) d.setDate(d.getDate() - 1);

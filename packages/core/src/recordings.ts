@@ -8,7 +8,7 @@
 import type { CustomInfo } from "./probes";
 import { describeChange, memoryTest } from "./changes";
 import { cpuTemp, gpuTemp } from "./health";
-import { findSensor, type Snapshot } from "./telemetry";
+import { findSensor, type Sensor, type Snapshot } from "./telemetry";
 
 // ----- Windows events -----
 
@@ -151,7 +151,12 @@ export interface RecordingSample {
   fan?: number | null;
   game?: string | null;
   top?: ProcessUse[];
+  /** Every sensor the background recorder kept, lined up with the recording's `sensors`. Missing on recordings people start. */
+  all?: (number | null)[];
 }
+
+/** A sensor as a recording names it: everything but its reading. */
+export type SensorRef = Pick<Sensor, "id" | "hw" | "hwName" | "type" | "name">;
 
 /** What a recording can capture. `sample` reads it from a sensor snapshot; `helper` names the helper call it needs instead. */
 export const captures = {
@@ -221,6 +226,8 @@ export interface RecordingInfo extends RecordingRequest {
 export interface Recording extends RecordingInfo {
   samples: RecordingSample[];
   events: PCEvent[];
+  /** The sensors each sample's `all` refers to, in order. Only the background recorder keeps them. */
+  sensors?: SensorRef[];
 }
 
 export const isActive = (r: Pick<RecordingInfo, "state">) => r.state === "pending" || r.state === "recording";
@@ -257,7 +264,7 @@ export function toRequest({ id, reason, question, minutes, capture, by, createdA
 }
 
 export function toInfo(r: Recording): RecordingInfo {
-  const { samples, events, ...info } = r;
+  const { samples, events, sensors: _sensors, ...info } = r;
   return { ...info, sampleCount: samples.length, eventCount: events.length };
 }
 

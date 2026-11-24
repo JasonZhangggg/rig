@@ -76,7 +76,7 @@ describe("Steady interactions", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     await screen.findByText("What Rig found");
     expect(scrolls.at(-1)).toBe(0);
-    fireEvent.click(screen.getByRole("button", { name: "All logs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Logs" }));
     await waitFor(() => expect(scrolls.at(-1)).toBe(640));
     Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
   });

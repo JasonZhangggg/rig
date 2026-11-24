@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BackgroundLog, LocalClient, MemoryStore, RIG_EVENT, backgroundRecordings, eventTitle, isBackground, thinned,
+  BackgroundLog, LocalClient, MemoryStore, RIG_EVENT, backgroundRecordings, eventTitle, isBackground, thinned, toInfo,
   type MachineSync, type RecorderCursor, type RecorderLink,
 } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
@@ -122,6 +122,32 @@ describe("Background log", () => {
     kept.ingest([s(now + 30 * SEC, 50, 60)]);
     const next = backgroundRecordings(kept, "pc-1", { gpu: 90 }, now + MIN);
     for (const r of byDay(recs)) expect(next.find((x) => x.id === r.id)).toBe(r);
+  });
+
+  it("keeps every sensor the recorder wrote, not just the six the charts used to show", () => {
+    const log = new BackgroundLog();
+    const fan = ["/lpc/nct6799d/fan/1", "board", "MSI MAG B650 TOMAHAWK WIFI", "fan", "CPU Fan"];
+    log.ingest([
+      header(T0), s(T0, 41.26, 52),
+      // A fan shows up later (the recorder writes a new list): earlier readings simply don't have it.
+      { k: "sensors", t: T0 + MIN, list: [...header(T0).list, fan] },
+      { k: "s", t: T0 + MIN, v: [44, 60, 35, 51, 1240] },
+    ]);
+    const recs = backgroundRecordings(log, "pc-1", { gpu: 90 }, T0 + 2 * MIN);
+    const day = recs.find((r) => r.id.startsWith("bg-d-"))!;
+    expect(day.sensors?.map((x) => x.name)).toEqual(["Core (Tctl/Tdie)", "GPU Core", "CPU Total", "Memory", "CPU Fan"]);
+    expect(day.samples.map((x) => x.all)).toEqual([[41.3, 52, 30, 50], [44, 60, 35, 51, 1240]]);
+    // The list of recordings stays light: the sensors come with a recording's readings only.
+    expect("sensors" in toInfo(day)).toBe(false);
+  });
+
+  it("keeps each sensor's highest reading when it thins a day", () => {
+    const day = new Date(2026, 10, 18).getTime();
+    const list = Array.from({ length: 2880 }, (_, i) => ({ t: day + i * 30 * SEC, cpu: 50, all: [50, i === 1001 ? 1900 : 900] }));
+    const { samples } = thinned(list, day, day + 864e5);
+    expect(samples).toHaveLength(360);
+    expect(Math.max(...samples.map((x) => x.all![1]!))).toBe(1900);
+    expect(samples.every((x) => x.all![0] === 50)).toBe(true);
   });
 
   it("thins a whole day to what a recording holds, keeping the peaks", () => {

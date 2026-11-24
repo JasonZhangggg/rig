@@ -20,3 +20,6 @@ export function whenRan(r: RecordingInfo): string {
 }
 
 export const stateWord: Record<RecordingInfo["state"], string> = { pending: "Waiting", recording: "Recording", done: "Finished", cancelled: "Stopped early", failed: "Didn't work" };
+
+/** A phone-width screen, where charts draw shorter. */
+export const isPhone = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 760px)").matches;
