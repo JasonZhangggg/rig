@@ -14,6 +14,7 @@ import type { Change } from "./client";
 import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
 import type { DiffRow } from "./model";
+import rulesJson from "./rules/commands.json";
 
 /** 0 read, 1 reversible fix, 2 general or disruptive, 3 no undo or lowers a protection. Never is a refusal, not a tier. */
 export type Tier = 0 | 1 | 2 | 3;
@@ -147,6 +148,9 @@ export interface CheckContext {
   tainted: boolean;
 }
 
+/** Programs that run only as the person, never with admin rights (`person` in the rules). */
+const asPerson = new Set((rulesJson.commands as unknown as { name: string; person?: boolean }[]).filter((e) => e.person).map((e) => e.name.toLowerCase()));
+
 const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []): Refused => ({ status: "refused", why, refused, commands, rulesVersion });
 const snapshotted = (t: Touch) => t.kind === "registry" || t.kind === "file" || t.kind === "service";
 const wild = (text: string) => /[*?[]/.test(text);
@@ -255,6 +259,7 @@ function checkCommand(raw: Command, ctx: CheckContext): Verdict {
   }
   if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted", commands);
   const admin = allowed.some((v) => v.admin) || cmd.touches.some((t) => t.kind === "service") || cmd.touches.map(touchText).some(textNeedsAdmin);
+  if (admin && commands.some((c) => asPerson.has(c.name.toLowerCase()))) return refuse(`${ruleWords("as-person")}.`, "refused", commands);
   return { status: "allowed", tier, admin, commands, reasons, rulesVersion };
 }
 

@@ -234,6 +234,21 @@ describe("general command steps", () => {
     expect((await proposal({ driver: { inf: "C:\\Drivers\\*.inf", catalog: "C:\\Drivers\\x.cat" } })).sent).toContain("driver: inf must be");
   }, 60_000); // Eight chats in one test: near the default 30 seconds on a busy CI runner.
 
+  it("builds an app install from its shorthand at tier 2, and the card says it accepts the licence", async () => {
+    const app = await proposal({ app: { id: "Mozilla.Firefox", action: "install", source: "winget" } });
+    expect(app.p).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { does: expect.stringContaining("accepts the app's licence agreement for you"), undo: expect.stringContaining("winget uninstall --exact --source winget --id 'Mozilla.Firefox'") } }] });
+  });
+
+  it("builds an app uninstall at tier 3", async () => {
+    expect((await proposal({ app: { id: "Mozilla.Firefox", action: "uninstall", source: "winget" } })).p?.tier).toBe(3);
+  });
+
+  it("refuses an app step it can't write safely, in plain words", async () => {
+    const bad = await proposal({ app: { id: "Mozilla.Firefox --override /S", action: "install", source: "winget" } });
+    expect(bad.p).toBeUndefined();
+    expect(bad.sent).toContain("app: id must be the app's winget id");
+  });
+
   it("reads NVIDIA's settings without tainting the chat, and proposes a gpu step from Rig's table", async () => {
     const vsyncOff = { vendor: "nvidia", app: "Game.exe", setting: "vsync", value: "off", does: "Turns vertical sync off for this game." };
     const { live, seen } = await chatSetup([

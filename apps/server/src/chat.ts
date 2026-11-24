@@ -16,7 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, toRequest, validateCall,
-  cardTier, canonicalNative, checkRead, checkStep, deviceCommand, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
+  appCommand, cardTier, canonicalNative, checkRead, checkStep, deviceCommand, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
   type Manual, type ChatEvent, type ChatRequest, type DiffRow, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
@@ -136,10 +136,11 @@ Looking at the PC:
 Changes:
 - You can change this PC only with the propose_change tool. The person sees a card and decides. Nothing changes until they approve in the app on that PC.
 - Prefer a catalog fix (a fix step) when one fits; they show the value now and after and always undo. Use the exact GUIDs, app names and display names from the PC block.
-- Command steps, and the shorthand steps below ({registry}, {service}, {firewall}, {policy}, {device}, {driver}, {gpu}), work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
+- Command steps, and the shorthand steps below ({registry}, {service}, {firewall}, {policy}, {device}, {driver}, {app}, {gpu}), work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
 - For one registry value, use a registry step ({registry: {key, name, type, value}}); for how a service starts, a service step ({service: {name, startType}}). Rig writes the PowerShell for them, so prefer these to writing it yourself.
 - To change values in a program's or game's own settings file, use {fileEdit}: the file's full path, its format (json, or ini for key=value files, .cfg included) and each value's place as a list of keys. Rig changes only those values' text, saves a copy first and keeps the rest of the file as it is. Look at the file with read_pc first. A key the file doesn't have yet needs add: true.
 - Likewise use {firewall} to add one firewall rule or turn a rule on or off, {policy} for one value under Software\\Policies (not on a PC a work or school manages), {device} to turn one device off or on by its instance id, {driver} to install a signed .inf already on the PC (never a download), and {gpu} for one NVIDIA graphics setting from Rig's list (read it first with read_pc kind gpu; AMD and Intel settings can't be changed yet, so give the steps). Look with read_pc first for rule names, instance ids and file paths.
+- To install, update or uninstall an app, use {app} with its winget id (or Microsoft Store id with source msstore), never a download or an installer file: look it up first with read_pc (winget search, list or show), and for an update give from, the version installed now, so undo can go back to it. An install or update also accepts the app's licence for the person, and the card says so.
 - For any other Windows setting, use a command step: does (one plain sentence), read (a PowerShell script that prints the current state; it must only look, like a read_pc script), run (the PowerShell that makes the change; write every path and key in full, like C:\\... or HKCU:\\..., and name -Path, -Name and -Value, since Rig refuses a place it can't tell the full path of), undo (the PowerShell that puts it back, whenever one exists) and touches (every registry key, file, service, task or firewall rule it changes, with full paths). Look with read_pc first so the script fits this PC.
 - Rig checks every step in code and sets the card's risk itself. A step it refuses comes back as an error with the reason: don't try to get around it; give the steps with show_steps instead if the person can do it themselves.
 - Never ask for anything on Rig's never list: reading passwords, saved sign-ins, Wi-Fi keys or BitLocker keys; new accounts or admin rights; turning on Remote Desktop, WinRM or an SSH server; root certificates, the hosts file or a proxy; Run keys, new services, Image File Execution Options, Winlogon or Defender exclusions; flashing firmware, boot entries, partitioning or formatting the system drive, or BitLocker on or off; downloading and running code; Rig's own files.
@@ -278,6 +279,19 @@ const driverSchema = {
   required: ["inf", "catalog"],
 };
 
+const appSchema = {
+  type: "object",
+  description: "Install, update or uninstall one app with winget, as the person, from winget's catalog or the Microsoft Store. An install or update accepts the app's licence for them. Undo uninstalls what Rig installed; an update can go back only with from; an uninstall can't be put back.",
+  properties: {
+    id: { type: "string", description: "winget's id for the app, like Mozilla.Firefox, or the Store's, like 9NBLGGH4NNS1, from read_pc." },
+    action: { type: "string", enum: ["install", "upgrade", "uninstall"] },
+    source: { type: "string", enum: ["winget", "msstore"] },
+    version: { type: "string", description: "install or upgrade: one version from winget show --versions. The newest when left out." },
+    from: { type: "string", description: "upgrade only: the version installed now, as winget list showed it." },
+  },
+  required: ["id", "action", "source"],
+};
+
 const fileEditSchema = {
   type: "object",
   description: "Change values in one settings file of a program or game, JSON or INI. Rig replaces only those values' text, keeps the rest of the file byte for byte, and saves a copy first so undo puts it back.",
@@ -324,7 +338,7 @@ const natives: Record<string, (raw: unknown) => NativeOp | string> = {
 
 /** The steps Rig writes the command for, by their key in a proposal. */
 const shorthands: Record<string, (raw: unknown) => Command | string> = {
-  registry: registryCommand, service: serviceCommand, firewall: firewallCommand, policy: policyCommand, device: deviceCommand, driver: driverCommand,
+  registry: registryCommand, service: serviceCommand, firewall: firewallCommand, policy: policyCommand, device: deviceCommand, driver: driverCommand, app: appCommand,
 };
 const stepKinds = ["fix", ...Object.keys(shorthands), ...Object.keys(natives), "command"];
 const stepList = stepKinds.map((k) => `{${k}}`).join(", ");
@@ -332,7 +346,7 @@ const stepList = stepKinds.map((k) => `{${k}}`).join(", ");
 export const tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "propose_change",
-    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
+    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, to install, update or uninstall an app {app}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -341,7 +355,7 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
         why: { type: "string", description: "One sentence on why this helps with what they asked." },
         steps: {
           type: "array", minItems: 1, maxItems: 8,
-          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, gpu: gpuSchema, fileEdit: fileEditSchema, command: commandSchema } },
+          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, app: appSchema, gpu: gpuSchema, fileEdit: fileEditSchema, command: commandSchema } },
         },
       },
       required: ["title", "why", "steps"],

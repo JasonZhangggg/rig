@@ -35,6 +35,23 @@ const COMMAND_READ_SECS: u64 = 20;
 #[cfg_attr(not(windows), allow(dead_code))]
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(COMMAND_PARSE_SECS + COMMAND_RUN_SECS + COMMAND_RESTORE_POINT_SECS + 3 * COMMAND_READ_SECS + 90);
 
+/// An apply or undo can run a program whose rules row gives it longer: winget's is 30 minutes (commands.json).
+/// An apply that rolls back runs the undo too, and a winget read gets the run's 120 seconds.
+#[cfg_attr(not(windows), allow(dead_code))]
+const LONGEST_RUN_SECS: u64 = 30 * 60;
+#[cfg_attr(not(windows), allow(dead_code))]
+const APPLY_TIMEOUT: Duration = Duration::from_secs(COMMAND_PARSE_SECS + 2 * LONGEST_RUN_SECS + COMMAND_RESTORE_POINT_SECS + 3 * COMMAND_RUN_SECS + 90);
+
+/// How long the helper may take to answer `method`. A step is a command by another name.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn limit(method: &str) -> Duration {
+    match method {
+        "step.apply" | "command.apply" | "step.undo" | "command.undo" => APPLY_TIMEOUT,
+        m if m.starts_with("command.") || m.starts_with("step.") => COMMAND_TIMEOUT,
+        _ => CALL_TIMEOUT,
+    }
+}
+
 #[cfg_attr(not(windows), allow(dead_code))]
 pub enum CallError {
     /// The helper answered with an error. The connection is still fine.
@@ -84,8 +101,7 @@ impl<S: AsyncRead + AsyncWrite> Conn<S> {
                 }
             }
         };
-        let limit = if method.starts_with("command.") { COMMAND_TIMEOUT } else { CALL_TIMEOUT };
-        let msg = match tokio::time::timeout(limit, io).await {
+        let msg = match tokio::time::timeout(limit(method), io).await {
             Err(_) => {
                 self.timeouts += 1;
                 let msg = "Rig's helper didn't answer in time.".to_string();
@@ -354,6 +370,15 @@ mod tests {
         assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
         assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Remote(_))));
         assert!(matches!(c.call("slow", Value::Null).await, Err(CallError::Broken(_))));
+    }
+
+    #[test]
+    fn a_step_gets_a_command_limit_and_an_apply_gets_winget_time() {
+        assert_eq!(limit("sensors.read"), CALL_TIMEOUT);
+        assert_eq!(limit("step.preview"), COMMAND_TIMEOUT);
+        assert_eq!(limit("command.read"), COMMAND_TIMEOUT);
+        assert!(limit("step.apply") > Duration::from_secs(2 * 30 * 60));
+        assert_eq!(limit("step.undo"), limit("command.apply"));
     }
 
     #[test]

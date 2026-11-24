@@ -14,7 +14,7 @@ using Microsoft.Win32;
 
 namespace Rig.Helper;
 
-public static class CommandSelfTest
+public static partial class CommandSelfTest
 {
     const string Key = @"Software\RigSelftest", RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string UserKey = @"HKCU\Software\RigSelftest", UserPath = @"HKCU:\Software\RigSelftest";
@@ -89,6 +89,8 @@ public static class CommandSelfTest
             Check("a native step, applied and undone", () => NativeApplied(ctx));
             Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
             FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null, TestOnlyNativeOps = true });
+            var wingetStore = new CommandStore(root + "-winget", secured: elevated);
+            Winget(Check, new Context(new Commands(wingetStore, app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null }, wingetStore, person, elevated, root + "-winget"));
             Check("HKCU for another account", OtherAccount);
             if (elevated)
             {
@@ -113,6 +115,7 @@ public static class CommandSelfTest
             }
             try { Directory.Delete(root, recursive: true); } catch { }
             try { Directory.Delete(root + "-files", recursive: true); } catch { }
+            try { Directory.Delete(root + "-winget", recursive: true); } catch { }
             try { string parent = Path.GetDirectoryName(root)!; if (elevated && !Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent); } catch { }
         }
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);

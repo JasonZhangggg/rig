@@ -46,7 +46,10 @@ const lowersUac: Command = {
   undo: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 5`,
   touches: [{ kind: "registry", key: uac.replace(":", ""), value: "ConsentPromptBehaviorAdmin" }],
 };
-const reinstall: Command = { does: "Uninstalls Foo.", read: "winget list --id Foo.Bar", run: "winget uninstall --id Foo.Bar --silent", undo: "winget install --id Foo.Bar --silent", touches: [{ kind: "other", name: "Foo" }] };
+const uninstall: Command = { does: "Uninstalls Foo.", read: "winget list --id Foo.Bar --exact --source winget", run: "winget uninstall --exact --source winget --id Foo.Bar --silent", touches: [{ kind: "other", name: "Foo" }] };
+const fooLog = "C:\\Users\\Sam\\AppData\\Local\\Foo\\foo.log";
+/** A tier 3 change whose undo can't put back what it removed. */
+const emptiesLog: Command = { does: "Empties Foo's log.", read: `Get-Content -LiteralPath '${fooLog}'`, run: `Clear-Content -LiteralPath '${fooLog}'`, undo: `Set-Content -LiteralPath '${fooLog}' -Value 'started'`, touches: [{ kind: "file", path: fooLog }] };
 
 const soon = () => new Date(Date.now() + 10 * 60_000).toISOString();
 
@@ -146,7 +149,7 @@ describe("the amber card", () => {
 describe("the red card", () => {
   it("says what can't be undone before anything else", () => {
     show(demoProposal(card("uninstall")));
-    const box = screen.getByRole("region", { name: "Uninstalls an app" });
+    const box = screen.getByRole("region", { name: /^Uninstalls an app/ });
     const first = within(box).getByRole("note");
     expect(first.textContent).toMatch(/^This can't be undone\./);
     expect(first.textContent).toContain("There is no undo script");
@@ -182,7 +185,7 @@ describe("the red card", () => {
   });
 
   it("can't promise an undo when the undo itself can't be sure", () => {
-    show(one(reinstall, true));
+    show(one(emptiesLog, true));
     expect(screen.getByRole("note").textContent).toMatch(/^Rig can't promise to undo this\./);
     expect(screen.getByText("Can't promise an undo", { selector: ".chip" })).toBeTruthy();
     expect(screen.queryByText("Can't be undone", { selector: ".chip" })).toBeNull();
@@ -203,7 +206,7 @@ describe("the red card", () => {
     const one = demoProposal(card("uninstall"));
     const two: Proposal = { ...one, steps: [...one.steps, ...one.steps], previews: [...one.previews!, ...one.previews!] };
     show(two);
-    expect(screen.getAllByRole("region", { name: "Uninstalls an app" })).toHaveLength(2);
+    expect(screen.getAllByRole("region", { name: /^Uninstalls an app/ })).toHaveLength(2);
     expect(screen.getByText("1 of 2")).toBeTruthy();
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
     expect(screen.getByText("Apply 1 of 2 first.")).toBeTruthy();
@@ -619,7 +622,7 @@ describe("an undo that something else got to first", () => {
 
 describe("a command with undo set to null", () => {
   it("reads as having no undo on the card, after it ran, and in the changes log", () => {
-    const cmd: Command = { ...reinstall, undo: null };
+    const cmd: Command = { ...uninstall, undo: null };
     show(one(cmd, true));
     expect(glance("Can it be undone")).toBe("No.");
     expect(screen.queryByLabelText("Undo script")).toBeNull();
