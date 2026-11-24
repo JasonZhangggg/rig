@@ -44,19 +44,20 @@ using Microsoft.Win32;
 
 namespace Rig.Helper;
 
-public sealed record Pending(string Nonce, string Hash, HelperStep Step, Verdict Verdict, string Person, long ExpiresAt, long ApprovedAt)
+/// `Read` is a native op's state as preview read it, which apply holds the state to before it runs.
+public sealed record Pending(string Nonce, string Hash, HelperStep Step, Verdict Verdict, string Person, long ExpiresAt, long ApprovedAt, string? Read = null)
 {
     public JsonObject ToJson() => new()
     {
         ["nonce"] = Nonce, ["hash"] = Hash, ["step"] = Step.ToJson(), ["verdict"] = Verdict.ToJson(),
-        ["person"] = Person, ["expiresAt"] = ExpiresAt, ["approvedAt"] = ApprovedAt,
+        ["person"] = Person, ["expiresAt"] = ExpiresAt, ["approvedAt"] = ApprovedAt, ["read"] = Read,
     };
 
     public static Pending? From(JsonNode? n)
     {
         if (n is not JsonObject o || HelperStep.Stored(o) is not HelperStep step || Verdict.From(o["verdict"]) is not Verdict verdict) return null;
         return new Pending(o["nonce"]?.ToString() ?? "", o["hash"]?.ToString() ?? "", step, verdict,
-            o["person"]?.ToString() ?? "", (long)Json.Num(o["expiresAt"], 0), (long)Json.Num(o["approvedAt"], 0));
+            o["person"]?.ToString() ?? "", (long)Json.Num(o["expiresAt"], 0), (long)Json.Num(o["approvedAt"], 0), o["read"]?.ToString());
     }
 }
 
@@ -450,8 +451,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         }
         if (verdict.Tier >= 2 && RestorePoints.ProtectionOff())
             verdict = verdict with { Reasons = [.. verdict.Reasons, "Windows' System Protection is off on this PC, so there will be no restore point to fall back on."] };
-        var pending = new Pending(CommandStore.NewId(), step.Hash(), step, verdict, person.Sid, DateTimeOffset.UtcNow.AddMinutes(NonceMinutes).ToUnixTimeMilliseconds(), 0);
         var (read, unread) = Look(person, step);
+        var pending = new Pending(CommandStore.NewId(), step.Hash(), step, verdict, person.Sid, DateTimeOffset.UtcNow.AddMinutes(NonceMinutes).ToUnixTimeMilliseconds(), 0, step is NativeOpStep ? read : null);
         if (unread != null) return Refused($"Rig couldn't read what this would change, so there is nothing to approve. {unread}");
         store.Save(pending);
         Issued[pending.Nonce] = pending.Hash;
@@ -528,6 +529,14 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             if (!Native.IsAdmin()) return Refused("This needs admin rights, and Rig's helper is running without them. Restart Rig and choose Yes when Windows asks, then try again. Nothing ran.");
             if (pending.ApprovedAt == 0) return new JsonObject { ["outcome"] = "declined" };
             if (step is CommandStep c && OtherAccount(true, Person.Mine(), person.Sid, c.Cmd, check.Writes) is string other) return Refused(other);
+        }
+
+        // The card showed a native op's state as preview read it: what was approved is that change to that state.
+        if (step is NativeOpStep && pending.Read != null)
+        {
+            var (seen, notSeen) = Look(person, step);
+            if (notSeen != null) return Refused($"Rig couldn't read what this would change, so it didn't run it. {notSeen}");
+            if (seen != pending.Read) return Refused("What this would change is different now from when you looked, so nothing ran. Look at it again.");
         }
 
         string id = CommandStore.NewId(), dir = store.NewRecord(id);

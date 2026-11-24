@@ -88,6 +88,7 @@ public static class CommandSelfTest
             Check("the native worker runs as the person", () => NativeWorkerRuns(ctx));
             Check("a native step, applied and undone", () => NativeApplied(ctx));
             Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
+            FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null });
             Check("HKCU for another account", OtherAccount);
             if (elevated)
             {
@@ -111,6 +112,7 @@ public static class CommandSelfTest
                 person.Dispose();
             }
             try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(root + "-files", recursive: true); } catch { }
             try { string parent = Path.GetDirectoryName(root)!; if (elevated && !Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent); } catch { }
         }
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
@@ -172,7 +174,12 @@ public static class CommandSelfTest
         {
             string use = v!["as"]!.ToString(), label;
             Verdict got;
-            if (use == "step")
+            if (use == "step" && v["step"]?["kind"]?.ToString() == "native")
+            {
+                got = ctx.Rig.Check(HelperStep.From(v["step"], out string? problem), problem).Verdict;
+                label = $"step ({v["note"]})";
+            }
+            else if (use == "step")
             {
                 var cmd = Command.From(v["step"]?["cmd"], out string? problem);
                 got = CommandCheck.CheckStep(cmd, problem, list => list.Select(Parsed).ToList()).Verdict;
@@ -688,6 +695,7 @@ public static class CommandSelfTest
             Clean(ctx.Person);
             try { Directory.Delete(probe, recursive: true); } catch { }
             try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(root + "-files", recursive: true); } catch { }
         }
     }
 

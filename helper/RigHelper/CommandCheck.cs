@@ -230,6 +230,8 @@ public static class CommandCheck
 
     public static string? LowersProtection(string text) { string flat = Squash(text); return R.ProtectText.FirstOrDefault(e => Fits(e, flat))?.Says; }
     public static bool NeedsAdmin(string text) { string flat = Squash(text); return R.AdminText.Any(a => flat.Contains(Squash(a), StringComparison.Ordinal)); }
+    /// A program, script or shortcut by its name's ending, which Rig never writes: programFile in check.ts.
+    public static bool ProgramFile(string text) => R.Paths.Programs.Any(p => PlaceOf(text).EndsWith(p, StringComparison.Ordinal));
     /// Whether the text names the current user's part of the registry, however it is written.
     public static bool NamesCurrentUser(string text) => Squash(text).Contains("hkcu", StringComparison.Ordinal);
 

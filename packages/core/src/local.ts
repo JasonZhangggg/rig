@@ -823,7 +823,7 @@ export class LocalClient implements RigClient {
     }
     this.o.log("info", `change: ${held.step.kind} ${reply.outcome}`);
     if (reply.outcome !== "applied") return reply;
-    const rows = runRows(reply.result);
+    const rows = runRows(reply.result, held.step);
     const applied = appliedHelperStep(held.step, reply.undo, rows, { before: reply.result.before, after: reply.result.after });
     const change: Change = {
       id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle([held.step]),

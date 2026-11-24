@@ -3,6 +3,7 @@ export * from "./telemetry";
 export * from "./drives";
 export * from "./actions";
 export * from "./change";
+export * from "./fileEdit";
 export * from "./shorthand";
 export * from "./reads";
 export { checkScript, rulesVersion, secondLook, type ScriptUse } from "./check";
