@@ -25,8 +25,8 @@ export type MakeMat = (color: THREE.ColorRepresentation, o?: MatOpts) => THREE.M
 
 export interface Kit {
   M: MakeMat;
-  /** Fan rotors register here so the view can spin them. */
-  spin(rotor: THREE.Object3D): void;
+  /** Fan rotors register here so the view can spin them. A view whose fans stand still leaves it out. */
+  spin?(rotor: THREE.Object3D): void;
   /** The PC's light color, for RGB parts. */
   accent: string;
   /** Lighter build for the whole-PC view: fewer tiny pieces. */
@@ -381,7 +381,6 @@ export function makeFan(kit: Kit, size: number, thick: number, look: FanLook) {
   const tipR = R - size * 0.012;
   const bladeMat = kit.M(look.blade, { rough: 0.5, op: look.bladeOp ?? 1, side: THREE.DoubleSide });
   const blades = new THREE.Mesh(bladesGeometry(look.blades, hubR * 0.96, tipR, thick * 0.62, look.sweep ?? -0.55, look.fill ?? 0.8, !look.ring && !look.pairs), bladeMat);
-  blades.castShadow = true;
   rotor.add(blades);
   if (look.ring) {
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(tipR + 0.004, tipR + 0.004, thick * 0.3, 64, 1, true), kit.M(look.blade, { rough: 0.5, side: THREE.DoubleSide }));
@@ -399,9 +398,40 @@ export function makeFan(kit: Kit, size: number, thick: number, look: FanLook) {
     }
   }
   g.add(rotor);
-  kit.spin(rotor);
+  if (kit.spin) {
+    rotor.userData.blades = look.blades;
+    rotor.traverse((o) => { o.userData.noShadow = true; });
+    kit.spin(rotor);
+    g.add(spinBlur(kit, look, hubR * 0.96, tipR, thick * 0.62 * 0.6));
+  }
   g.add(fanHitArea(R));
   return g;
+}
+
+/** Frames a second the view draws while fans turn (scene.ts). */
+export const FAN_FPS = 30;
+/**
+ * How fast a fan turns on screen, in radians a second: with its reading, but never more than a third of the way from one
+ * blade to the next between two frames. Any faster and the eye can't follow a blade from frame to frame, so the fan seems
+ * to stutter, stand still or run backwards instead of turning.
+ */
+export function fanSpeed(rpm: number, blades: number) {
+  return Math.min(rpm * 0.012, ((Math.PI * 2) / blades / 3) * FAN_FPS);
+}
+
+/**
+ * A still, see-through disc just behind the blades, in their color: what the eye sees of a spinning fan. The view draws
+ * at 30 frames a second, and between two frames the blades turn further than the gaps between them are wide, so without
+ * it whatever is behind the fan (a cooler's fins, a case wall) shows through in a new place every frame and flashes. It
+ * also casts the blades' shadow, which stays put, as the turning blades cast none: the view keeps its shadows while fans
+ * turn and casts them again only when something moves, so a blade's shadow would sit still and jump.
+ */
+function spinBlur(kit: Kit, look: FanLook, r0: number, r1: number, z: number) {
+  const m = kit.M(look.blade, { op: 0.72 * (look.bladeOp ?? 1), side: THREE.DoubleSide });
+  m.userData.outlineParameters = { visible: false };
+  const disc = new THREE.Mesh(new THREE.RingGeometry(r0, r1, kit.lite ? 40 : 64), m);
+  disc.position.z = -z;
+  return disc;
 }
 
 const hitMaterial = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });

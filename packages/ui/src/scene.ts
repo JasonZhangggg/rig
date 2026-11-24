@@ -10,7 +10,7 @@ import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelPoint } from "./sceneLabels";
-import { fanHitArea, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
+import { FAN_FPS, fanHitArea, fanSpeed, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
 
@@ -1136,7 +1136,7 @@ export function createScene(
   // With reduced motion, a still stage draws nothing.
   let raf = 0, onScreen = true, tabShown = !document.hidden, built = false, gone = false;
   let settleUntil = 0, lastDraw = 0, relabel = false;
-  const SETTLE_MS = 250, AMBIENT_MS = 1000 / 30 - 1, IDLE_MS = 20_000;
+  const SETTLE_MS = 250, AMBIENT_MS = 1000 / FAN_FPS - 1, IDLE_MS = 20_000;
   const live = () => built && onScreen && tabShown && !gone;
   let focused = typeof document.hasFocus === "function" ? document.hasFocus() : true, lastInput = performance.now();
   const awake = () => focused && performance.now() - lastInput < IDLE_MS;
@@ -1215,7 +1215,7 @@ export function createScene(
     if (!reducedMotion()) {
       for (const { rotor, partId } of state.rotors) {
         const rpm = parts()[partId]?.fan ?? 1200;
-        rotor.rotation.z -= dt * rpm * 0.012;
+        rotor.rotation.z -= dt * fanSpeed(rpm, rotor.userData.blades ?? 7);
       }
     }
     const pulsing = state.pulses.some((sp) => sp.visible);
