@@ -157,6 +157,12 @@ export function undoReach(cmd: Command, undo: HelperUndo, runs: FoundCommand[]):
   return { can: true, untied: off, line: `${can}${cant.length ? ` It can't put back ${list(cant)}.` : ""}${cant.length || off.length ? restore : ""}` };
 }
 
+/** What Undo can put back after a native op ran. Its way back was approved with it, so there is always one. */
+export function nativeReach(undo: HelperUndo): { can: true; line: string; untied: string[] } {
+  const restore = undo.restorePoint ? ` ${restoreLine(undo.restorePoint)}` : "";
+  return { can: true, untied: [], line: `Undo puts it back the way Rig read it before.${undo.outside.length ? ` It can't put back what's under Also changed.${restore}` : ""}` };
+}
+
 const sentinels: Record<Sentinel, string> = {
   services: "the list of Windows services or how they start", run: "the apps that start with Windows", ifeo: "which program Windows opens in place of another",
   winlogon: "what runs when you sign in", defenderExclusions: "the places Defender skips", localUsers: "the accounts on this PC", administrators: "who is an administrator on this PC",

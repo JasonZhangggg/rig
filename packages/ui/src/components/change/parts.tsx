@@ -77,7 +77,7 @@ export function Untied({ names, after }: { names: string[]; after?: boolean }) {
 export interface GlanceProps {
   /** What Claude says the command touches, with the value Rig read just now when it has. `false` means Rig didn't read that one. */
   touches: { touch: Touch; now?: string | null | false }[];
-  risk: string;
+  risk: ReactNode;
   undo: ReactNode;
   /** Nothing can put it back. */
   noUndo?: boolean;
@@ -89,33 +89,39 @@ function Value({ now }: { now: string | null | false }) {
   return <><span className="faint">now</span> <b title={short !== v ? v : undefined}>{short}</b></>;
 }
 
-/** The three things to know first: what Claude says it changes with Rig's read of each, how risky Rig found it, and whether it can be undone. */
-export function Glance({ touches, risk, undo, noUndo }: GlanceProps) {
+/** What Claude says a command touches, each with Rig's read of it. */
+export function TouchGlance({ touches }: Pick<GlanceProps, "touches">) {
+  if (!touches.length) return <>Nothing listed.</>;
+  return (
+    <ul className="cc-plain" aria-label="What it changes">
+      {touches.map(({ touch, now }) => {
+        const where = touchWhere(touch);
+        return (
+          <li key={`${touch.kind}|${touchName(touch)}`}>
+            {touch.kind !== "other" && <><span className="cc-tag">{touchKind(touch)}</span> </>}<Claim text={touchShort(touch)} />
+            {now !== undefined && <> <Value now={now} /></>}
+            {where && <Claim className="cc-where" text={where} max={64} />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** The three things to know first: what changes, how risky Rig found it, and whether it can be undone. */
+export function GlanceFrame({ label, what, risk, undo, noUndo }: Omit<GlanceProps, "touches"> & { label: string; what: ReactNode }) {
   return (
     <dl className="cc-glance">
-      <div>
-        <dt>Claude says it changes</dt>
-        <dd>
-          {touches.length ? (
-            <ul className="cc-plain" aria-label="What it changes">
-              {touches.map(({ touch, now }) => {
-                const where = touchWhere(touch);
-                return (
-                  <li key={`${touch.kind}|${touchName(touch)}`}>
-                    {touch.kind !== "other" && <><span className="cc-tag">{touchKind(touch)}</span> </>}<Claim text={touchShort(touch)} />
-                    {now !== undefined && <> <Value now={now} /></>}
-                    {where && <Claim className="cc-where" text={where} max={64} />}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : "Nothing listed."}
-        </dd>
-      </div>
+      <div><dt>{label}</dt><dd>{what}</dd></div>
       <div><dt>How risky</dt><dd>{risk}</dd></div>
       <div><dt>Can it be undone</dt><dd className={noUndo ? "cc-no" : undefined}>{undo}</dd></div>
     </dl>
   );
+}
+
+/** A command's glance: what Claude says it changes with Rig's read of each, how risky Rig found it, and whether it can be undone. */
+export function Glance({ touches, ...rest }: GlanceProps) {
+  return <GlanceFrame label="Claude says it changes" what={<TouchGlance touches={touches} />} {...rest} />;
 }
 
 export interface TouchRow { touch: Touch; now?: string | null; before?: string | null; after?: string | null }

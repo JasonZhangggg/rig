@@ -19,6 +19,8 @@ export interface GpuSetting {
   tier: Tier;
   /** global: one setting for the whole PC, never one game's. */
   scope?: "global";
+  /** A program picks up the change only when it starts again. */
+  nextStart?: true;
   values: Record<string, GpuValue>;
   /** A whole number for one id instead of a named choice. `says` has {n} where the number goes. */
   range?: { id: string; min: number; max: number; says: string };

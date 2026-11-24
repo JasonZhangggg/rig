@@ -1,6 +1,7 @@
-import { checkStep, type AppliedStep, type ApplyReply, type Command, type CommandStep, type FoundCommand, type StepOutcome, type UndoReply } from "@rig/core";
+import { checkStep, type AppliedStep, type ApplyReply, type Command, type CommandStep, type FoundCommand, type HelperStep, type NativeStep, type StepOutcome, type UndoReply } from "@rig/core";
+import { ChangeList, nativeOf } from "./native";
 import { Claim, ClaudeSays, Fact, Printed, ReadCompare, Scripts, TouchList, Untied } from "./parts";
-import { declinedLine, limitLine, runCommands, sentinelWords, snapshotted, touchName, undoneLine, undoReach } from "./words";
+import { declinedLine, limitLine, nativeReach, runCommands, sentinelWords, snapshotted, touchName, undoneLine, undoReach } from "./words";
 
 type Applied = Extract<ApplyReply, { outcome: "applied" }>;
 type RolledBack = Extract<ApplyReply, { outcome: "rolledBack" }>;
@@ -26,7 +27,18 @@ function AppliedResult({ reply, pcName }: { reply: Applied; pcName: string }) {
   );
 }
 
-function RolledBackResult({ reply }: { reply: RolledBack }) {
+/** A native op's values before and after, as the helper read them. */
+function NativeApplied({ step, reply }: { step: NativeStep; reply: Applied }) {
+  const native = nativeOf(step.op);
+  return (
+    <>
+      {native && <Fact label="What changed" note="read by Rig before and after"><ChangeList label="What changed" changes={native.part.changes(native.op, reply.result.before, reply.result.after)} /></Fact>}
+      <AlsoChanged items={reply.result.alsoChanged} />
+    </>
+  );
+}
+
+function RolledBackResult({ reply, native }: { reply: RolledBack; native: boolean }) {
   const touches = reply.result.touches;
   const saved = touches.filter((t) => snapshotted(t.touch));
   const left = reply.left ?? [];
@@ -39,31 +51,31 @@ function RolledBackResult({ reply }: { reply: RolledBack }) {
       <Fact label="Why">
         <ul className="cc-plain">
           {reply.sentinels.map((s) => (
-            <li key={s.sentinel}>The command changed {sentinelWords(s.sentinel)}, which Rig never lets a command change. It went from “{s.before}” to “{s.after}”.</li>
+            <li key={s.sentinel}>{native ? "It" : "The command"} changed {sentinelWords(s.sentinel)}, which Rig never lets {native ? "a change touch" : "a command change"}. It went from “{s.before}” to “{s.after}”.</li>
           ))}
-          {reply.error && <li>The command stopped with an error: {reply.error}</li>}
+          {reply.error && <li>{native ? "It" : "The command"} stopped with an error: {reply.error}</li>}
         </ul>
       </Fact>
       {saved.length > 0 && <Fact label="Rig put back"><TouchList label="Rig put back" nowWord="to" rows={saved.map((t) => ({ touch: t.touch, now: t.before }))} /></Fact>}
       {lost.length > 0 && <Fact label="Rig couldn't put back" note={left.length ? undefined : "it had no copy"}><ul className="cc-plain">{lost.map((x, i) => <li key={i}>{x}</li>)}</ul></Fact>}
-      {reply.result.output.trim() && <Printed label="The change script printed" text={reply.result.output} />}
+      {!native && reply.result.output.trim() && <Printed label="The change script printed" text={reply.result.output} />}
     </>
   );
 }
 
-function Undone({ undo }: { undo: UndoReply }) {
+function Undone({ undo, readLabel }: { undo: UndoReply; readLabel: string }) {
   return (
     <div className="cc-undone" role="status">
       <p><b>{undoneLine(undo)}</b></p>
       {undo.outcome === "drifted" && undo.changed.length > 0 && <Fact label="Changed since"><ul className="cc-plain">{undo.changed.map((x) => <li key={x}>{x}</li>)}</ul></Fact>}
       {undo.outcome === "undone" && undo.left.length > 0 && <Fact label="Rig couldn't put back"><ul className="cc-plain">{undo.left.map((x) => <li key={x}>{x}</li>)}</ul></Fact>}
-      {undo.outcome === "undone" && <Printed label="After undo, the read script printed" text={undo.printed} />}
+      {undo.outcome === "undone" && <Printed label={readLabel} text={undo.printed} />}
     </div>
   );
 }
 
 export interface ResultViewProps {
-  cmd: Command;
+  step: HelperStep;
   outcome: StepOutcome;
   /** The commands the change script runs, as Rig found them. */
   runs: FoundCommand[];
@@ -75,20 +87,20 @@ export interface ResultViewProps {
 }
 
 /** What happened after Apply: before and after, what else changed, a rollback, and Undo with what it can reach. */
-export function ResultView({ cmd, outcome, runs, pcName, canApply, busy, onUndo }: ResultViewProps) {
+export function ResultView({ step, outcome, runs, pcName, canApply, busy, onUndo }: ResultViewProps) {
   const a = outcome.apply;
   if (a.outcome === "expired") return <p className="cc-note">This card was too old to run, so nothing changed on {pcName}. Ask again and Rig will read the settings fresh.</p>;
   if (a.outcome === "refused") return <p className="cc-note"><b>Rig didn't run this, so nothing changed on {pcName}.</b> {a.verdict.refused}</p>;
-  if (a.outcome === "rolledBack") return <RolledBackResult reply={a} />;
+  if (a.outcome === "rolledBack") return <RolledBackResult reply={a} native={step.kind === "native"} />;
   if (a.outcome === "limit") return <p className="cc-note" role="status">{limitLine(a.until, pcName)}</p>;
   if (a.outcome === "declined") return <p className="cc-note" role="status">{declinedLine(pcName)}</p>;
-  const reach = undoReach(cmd, a.undo, runs);
+  const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo);
   const again = outcome.undo?.outcome === "failed";
   const drifted = outcome.undo?.outcome === "drifted";
   return (
     <>
-      <AppliedResult reply={a} pcName={pcName} />
-      {outcome.undo ? <Undone undo={outcome.undo} /> : null}
+      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} />}
+      {outcome.undo ? <Undone undo={outcome.undo} readLabel={step.kind === "command" ? "After undo, the read script printed" : "After undo, Rig read"} /> : null}
       {drifted && canApply && (
         <div className="cc-undo">
           <p className="faint">Putting it back anyway sets these to what Rig saved, over whatever changed them since.</p>
