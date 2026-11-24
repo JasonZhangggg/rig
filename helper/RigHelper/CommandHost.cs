@@ -68,6 +68,8 @@ public static class PowerShellHost
     }
 
     /// The clean environment for a script with the helper's own rights: who the helper is, read from Windows, not from its own environment.
+    internal static Dictionary<string, string> DiagMine(string temp) => Mine(temp);
+
     static Dictionary<string, string> Mine(string temp)
     {
         var env = Clean(temp);
