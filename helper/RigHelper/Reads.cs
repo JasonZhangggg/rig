@@ -45,14 +45,15 @@ public static class Reads
             (int)Json.Num(o["keyMinBytes"], 16), (int)Json.Num(o["keyMinChars"], 24));
     }
 
-    /// `owner` is the SID of the Windows account the Rig app that started this helper runs as.
-    public static JsonNode Read(JsonObject? req, string? owner)
+    /// `owner` is the SID of the Windows account the Rig app that started this helper runs as. `worker` makes a read that loads a
+    /// driver's own code, which never runs in the helper: the native worker, as the person.
+    public static JsonNode Read(JsonObject? req, string? owner, Func<JsonObject, string>? worker = null)
     {
         string kind = Text(req, "kind") ?? "";
         string text = kind switch
         {
             "registry" => RegistryRead(req!, owner),
-            "gpu" => Gpu.Read(req!),
+            "gpu" => worker != null ? worker(Gpu.Request(req!)) : throw new RigException("Rig can't read graphics settings here."),
             "cim" => CimRead(req!),
             "cmdlet" or "script" => throw new RigException("Rig can't run PowerShell reads on this PC yet. Look with a registry or CIM read instead, or answer from what Rig already knows."),
             _ => throw new RigException("Rig's helper doesn't know that kind of read."),

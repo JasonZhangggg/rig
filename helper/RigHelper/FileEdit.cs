@@ -24,7 +24,8 @@ sealed class FileEditOp : INativeStep
 {
     public const int MaxBytes = 1 << 20, MaxEdits = 20, MaxDepth = 16, MaxSegment = 200, MaxValue = 1000, MaxDoes = 300;
     const int ShownChars = 120, DiffLineChars = 160, DiffLines = 60;
-    static readonly Regex Control = new(@"[\u0000-\u001f\u007f]"), JsonNumber = new(@"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?\z");
+    const string Hidden = "A key or value can't hold hidden characters that change how its text reads on the card.";
+    static readonly Regex JsonNumber = new(@"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?\z");
     static readonly Regex OwnFile = new(@"^[a-z]:\\users\\(?!(public|default|default user|all users)\\)[^\\]+\\.");
 
     public string Name => "fileEdit";
@@ -47,7 +48,8 @@ sealed class FileEditOp : INativeStep
             case JsonValueKind.String:
                 string s = v.GetValue<string>();
                 if (s.Length > MaxValue) throw new RigException($"A value can be at most {MaxValue} characters.");
-                if (ini && s.IndexOfAny(['\r', '\n']) >= 0) throw new RigException("A value in an INI file is one line.");
+                if (CommandCheck.FileEditRefuses(s, "hidden")) throw new RigException(Hidden);
+                if (ini && CommandCheck.FileEditRefuses(s, "iniValue")) throw new RigException("A value in an INI file is one line of plain text, with no line breaks or control characters.");
                 return s;
             case JsonValueKind.Number:
                 string text = v.ToJsonString();
@@ -64,9 +66,10 @@ sealed class FileEditOp : INativeStep
     static JsonObject Edit(JsonNode? raw, bool ini)
     {
         var e = raw as JsonObject ?? [];
-        if (e["at"] is not JsonArray list || list.Count == 0 || list.Count > MaxDepth || list.Any(s => Str(s) is not string t || t.Length > MaxSegment || Control.IsMatch(t)))
+        if (e["at"] is not JsonArray list || list.Count == 0 || list.Count > MaxDepth || list.Any(s => Str(s) is not string t || t.Length > MaxSegment || CommandCheck.FileEditRefuses(t, "at")))
             throw new RigException($"Each edit's at is a list of 1 to {MaxDepth} keys, each one line of text.");
         var at = list.Select(s => Str(s)!).ToList();
+        if (at.Any(s => CommandCheck.FileEditRefuses(s, "hidden"))) throw new RigException(Hidden);
         if (ini)
         {
             if (at.Count != 2 || at[0].Contains(']')) throw new RigException("In an INI file, at is [section, key], with \"\" for keys above the first section.");
@@ -89,6 +92,9 @@ sealed class FileEditOp : INativeStep
         if (CommandCheck.ProgramFile(path)) throw new RigException("Rig doesn't edit programs, scripts or shortcuts, only settings files.");
         if (Str(op["format"]) is not ("json" or "ini")) throw new RigException("A file edit's format is \"json\" or \"ini\" (use \"ini\" for .cfg files written as key=value lines).");
         bool ini = Str(op["format"]) == "ini";
+        var (formats, ends) = CommandCheck.FileEditFormats(path);
+        if (formats.Count == 0) throw new RigException($"Rig only edits settings files whose names end in {string.Join(", ", ends)}.");
+        if (!formats.Contains(ini ? "ini" : "json")) throw new RigException($"A file with this name's ending is edited with format \"{string.Join("\" or \"", formats)}\".");
         if (op["edits"] is not JsonArray edits || edits.Count == 0 || edits.Count > MaxEdits) throw new RigException($"A file edit changes 1 to {MaxEdits} values.");
         var kept = new JsonArray();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -99,11 +105,14 @@ sealed class FileEditOp : INativeStep
             kept.Add(e);
         }
         bool adds = kept.Any(e => e?["add"] != null), own = OwnFile.IsMatch(CommandCheck.PlaceOf(path));
-        var reasons = new List<string> { "Rig changes only the text of the values listed and saves a copy of the file first, so undo puts it back." };
+        string? tool = CommandCheck.FileEditPathRule(path, "tier3");
+        var reasons = new List<string>();
+        if (tool != null) reasons.Add($"{tool}.");
+        reasons.Add("Rig changes only the text of the values listed and saves a copy of the file first, so undo puts it back.");
         if (adds) reasons.Add("It adds a key the file may not have yet, which the program may not expect.");
         if (!own) reasons.Add("The file isn't in your own folders, so the change may reach everyone on this PC. Rig makes it with your own rights.");
         var op2 = new JsonObject { ["name"] = Name, ["does"] = does, ["path"] = path, ["format"] = ini ? "ini" : "json", ["edits"] = kept };
-        return new NativeCheck(op2, own && !adds ? 1 : 2, reasons, [new Touch("file", path, null)]);
+        return new NativeCheck(op2, tool != null ? 3 : own && !adds ? 1 : 2, reasons, [new Touch("file", path, null)], CommandCheck.FileEditPathRule(path, "never"));
     }
 
     static List<string> At(JsonNode? e) => e!["at"]!.AsArray().Select(s => s!.GetValue<string>()).ToList();
@@ -132,6 +141,7 @@ sealed class FileEditOp : INativeStep
         if (Directory.Exists(path)) throw new RigException($"{path} is a folder, not a settings file.");
         var info = new FileInfo(path);
         if (!info.Exists) throw new RigException($"Rig didn't find {path}. It only changes a settings file that is already there.");
+        if (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new RigException($"{name} is a link to another file, so Rig left it as it is.");
         if (info.Length > MaxBytes) throw new RigException($"{name} is over 1 MB, which is more than Rig edits.");
         byte[] bytes;
         try { bytes = File.ReadAllBytes(path); }
@@ -198,7 +208,7 @@ sealed class FileEditOp : INativeStep
         var file = Load(path);
         var (_, after) = PlanAll(op, file);
         byte[] bytes = file.Encode(after);
-        if (after != file.Text) Replace(path, bytes);
+        if (after != file.Text) Replace(path, bytes, file.Bytes);
         // What puts the edits back on the file exactly as this left it: the old text of each changed region, last first.
         var back = new JsonArray();
         foreach (var (start, end, old, _) in Regions(file.Text, after)) back.Add(new JsonObject { ["start"] = start, ["end"] = end, ["text"] = old });
@@ -231,12 +241,13 @@ sealed class FileEditOp : INativeStep
         }
         byte[] bytes = file.Encode(text);
         if (Hash(bytes) != back["before"]?.ToString()) throw new RigException("Rig's note of how to put this file back doesn't give the file as it was.");
-        Replace(path, bytes);
+        Replace(path, bytes, file.Bytes);
     }
 
     /// Writes the new copy beside the file and swaps it in, so a program never reads half a file. The file keeps its own
-    /// permissions and attributes. Runs in the worker, so only where the person may write.
-    static void Replace(string path, byte[] bytes)
+    /// permissions and attributes. Runs in the worker, so only where the person may write. `was` is the file as Rig read it:
+    /// a program that saved it since keeps its own write.
+    static void Replace(string path, byte[] bytes, byte[] was)
     {
         string name = Path.GetFileName(path), dir = Path.GetDirectoryName(path)!;
         var attrs = File.GetAttributes(path);
@@ -245,6 +256,7 @@ sealed class FileEditOp : INativeStep
         string temp = Path.Combine(dir, $".{name}.rig-{CommandStore.NewId()[..8]}.tmp");
         try
         {
+            if (!File.ReadAllBytes(path).AsSpan().SequenceEqual(was)) throw new RigException($"{name} changed while Rig was editing it, so Rig left it as it is. Ask again.");
             using (var f = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
             {
                 f.Write(bytes);

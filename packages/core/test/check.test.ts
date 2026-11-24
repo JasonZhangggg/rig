@@ -254,6 +254,13 @@ describe("checking a file edit", () => {
     }
   });
 
+  it("is tier 3 for a developer tool's settings, and refused in a chat that read outside text", () => {
+    const code = edit({ path: "C:\\Users\\Sam\\AppData\\Roaming\\Code\\User\\settings.json" });
+    expect(checkStep(code)).toMatchObject({ status: "allowed", tier: 3 });
+    expect(checkStep(code, { tainted: true })).toMatchObject({ status: "refused", why: "tainted" });
+    expect(checkStep(edit(), { tainted: true })).toMatchObject({ status: "allowed", tier: 1 });
+  });
+
   it("refuses values the file format can't hold, and the same value twice", () => {
     const ini = (edits: unknown[]) => edit({ format: "ini", path: game.replace(".json", ".ini"), edits });
     expect(refusal(ini([{ at: ["Graphics", "VSync"], value: true }]))?.refused).toContain("text or a number");

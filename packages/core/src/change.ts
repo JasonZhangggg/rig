@@ -53,6 +53,8 @@ export interface NativeRule<O extends NativeOp> {
   title(op: O): string;
   /** The places it changes that Rig snapshots and puts back itself, held to the never list. The helper's check gives the same. */
   touches?(op: O): Touch[];
+  /** The never-list words that fit the op beyond its touches, or null. The helper's check gives the same. */
+  never?(op: O): string | null;
   /** Rows for the card and the changes log: with the state the helper read before and after, once it has. */
   rows?(op: O, before?: string, after?: string): DiffRow[];
 }
@@ -206,6 +208,8 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
         const never = textOnNeverList(touchText(t), "run");
         if (never) return refuse(`${never}.`, "never");
       }
+      const never = rule.never?.(op);
+      if (never) return refuse(`${never}.`, "never");
       let tier = rule.tier(op);
       const reasons = rule.reasons(op);
       const lowers = touches.map((t) => textLowersProtection(touchText(t))).find((x) => x);

@@ -5,7 +5,7 @@
 // first and undo puts the copy back. FileEdit.cs in the helper makes the same
 // checks.
 
-import { localFile, placeOf, programFile } from "./check";
+import { fileEditFormats, fileEditPathRule, fileEditRefuses, localFile, placeOf, programFile } from "./check";
 import type { NativeRule, Tier, Touch } from "./change";
 import type { DiffRow } from "./model";
 
@@ -32,17 +32,19 @@ export interface FileEditOp {
 
 export const FILE_EDIT = { edits: 20, depth: 16, segment: 200, value: 1000, does: 300 };
 
-const CONTROL = /[\u0000-\u001f\u007f]/;
 const JSON_NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 /** Folds ASCII letters only, as the helper does, so the two agree on which keys are the same. */
 const fold = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
+const HIDDEN = "A key or value can't hold hidden characters that change how its text reads on the card.";
 
 /** The value as Rig keeps it, or what is wrong with it. */
 function canonicalValue(v: unknown, format: FileEditOp["format"]): { value: FileValue } | string {
   const ini = format === "ini";
   if (typeof v === "string") {
     if (v.length > FILE_EDIT.value) return `A value can be at most ${FILE_EDIT.value} characters.`;
-    return ini && /[\r\n]/.test(v) ? "A value in an INI file is one line." : { value: v };
+    if (fileEditRefuses(v, "hidden")) return HIDDEN;
+    return ini && fileEditRefuses(v, "iniValue") ? "A value in an INI file is one line of plain text, with no line breaks or control characters." : { value: v };
   }
   if (typeof v === "number") {
     if (Number.isSafeInteger(v)) return { value: v };
@@ -59,9 +61,10 @@ function canonicalValue(v: unknown, format: FileEditOp["format"]): { value: File
 function canonicalEdit(raw: unknown, format: FileEditOp["format"]): FileEdit | string {
   const e = (raw ?? {}) as Record<string, unknown>;
   const at = e.at;
-  if (!Array.isArray(at) || at.length === 0 || at.length > FILE_EDIT.depth || !at.every((s) => typeof s === "string" && s.length <= FILE_EDIT.segment && !CONTROL.test(s))) {
+  if (!Array.isArray(at) || at.length === 0 || at.length > FILE_EDIT.depth || !at.every((s) => typeof s === "string" && s.length <= FILE_EDIT.segment && !fileEditRefuses(s, "at"))) {
     return `Each edit's at is a list of 1 to ${FILE_EDIT.depth} keys, each one line of text.`;
   }
+  if ((at as string[]).some((s) => fileEditRefuses(s, "hidden"))) return HIDDEN;
   if (format === "ini") {
     const [section, key] = at as string[];
     if (at.length !== 2 || section.includes("]")) return 'In an INI file, at is [section, key], with "" for keys above the first section.';
@@ -80,6 +83,9 @@ export function canonicalFileEdit(raw: Record<string, unknown>): FileEditOp | st
   if (typeof path !== "string" || !localFile(path) || path.indexOf(":", 2) >= 0) return "A file edit needs the file's full path, such as C:\\Users\\you\\AppData\\Roaming\\Game\\settings.json.";
   if (programFile(path)) return "Rig doesn't edit programs, scripts or shortcuts, only settings files.";
   if (format !== "json" && format !== "ini") return 'A file edit\'s format is "json" or "ini" (use "ini" for .cfg files written as key=value lines).';
+  const { formats, ends } = fileEditFormats(path);
+  if (formats.length === 0) return `Rig only edits settings files whose names end in ${ends.join(", ")}.`;
+  if (!formats.includes(format)) return `A file with this name's ending is edited with format "${formats.join('" or "')}".`;
   if (!Array.isArray(edits) || edits.length === 0 || edits.length > FILE_EDIT.edits) return `A file edit changes 1 to ${FILE_EDIT.edits} values.`;
   const out: FileEdit[] = [];
   const seen = new Set<string>();
@@ -99,14 +105,16 @@ const ownFile = (path: string) => /^[a-z]:\\users\\(?!(public|default|default us
 
 export const fileEditRule: NativeRule<FileEditOp> = {
   canonical: canonicalFileEdit,
-  tier: (op): Tier => (ownFile(op.path) && !op.edits.some((e) => e.add) ? 1 : 2),
+  tier: (op): Tier => (fileEditPathRule(op.path, "tier3") ? 3 : ownFile(op.path) && !op.edits.some((e) => e.add) ? 1 : 2),
   reasons: (op) => [
+    ...(fileEditPathRule(op.path, "tier3") ? [`${fileEditPathRule(op.path, "tier3")}.`] : []),
     "Rig changes only the text of the values listed and saves a copy of the file first, so undo puts it back.",
     ...(op.edits.some((e) => e.add) ? ["It adds a key the file may not have yet, which the program may not expect."] : []),
     ...(!ownFile(op.path) ? ["The file isn't in your own folders, so the change may reach everyone on this PC. Rig makes it with your own rights."] : []),
   ],
   title: (op) => `Changed ${op.edits.length === 1 ? "a value" : `${op.edits.length} values`} in ${fileName(op.path)}`,
   touches: (op): Touch[] => [{ kind: "file", path: op.path }],
+  never: (op) => fileEditPathRule(op.path, "never"),
   rows: (op, before, after) => {
     const now = (text: string | undefined, i: number) => {
       const line = text?.split("\n")[i] ?? "";

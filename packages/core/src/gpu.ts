@@ -62,6 +62,7 @@ export function gpuValueSays(setting: GpuSetting, value: string): string | null 
 }
 
 const vendorWords = "Rig can only change NVIDIA's graphics settings for now.";
+const windowsWords = "That is one of Windows' own programs, not a game, so Rig doesn't change its graphics settings.";
 
 /** The op as the helper stores and checks it, or what is wrong with it in plain words. Same rules as GpuStep.Check in the helper. */
 export function canonicalGpu(raw: Record<string, unknown>): GpuOp | string {
@@ -78,6 +79,7 @@ export function canonicalGpu(raw: Record<string, unknown>): GpuOp | string {
     const a = gpuApp(raw.app);
     if (!a) return "app must be the game's program file name, like game.exe, with no folder.";
     if (setting.scope === "global") return `${setting.name} is one setting for the whole PC, not for one game. Leave app out.`;
+    if (table.nvidia.windowsApps.includes(a)) return windowsWords;
     app = a;
   }
   if (typeof raw.does !== "string" || !raw.does.trim() || raw.does.length > 300) return "does must be one plain sentence.";
