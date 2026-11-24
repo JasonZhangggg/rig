@@ -41,11 +41,11 @@ export function describe(item: BoardItem, use: SlotUse | undefined, pc: Pick<PC,
 }
 
 /**
- * The motherboard close up, in place of the 3D PC while the board is open: drag to move it around, right-drag to
- * turn it, scroll to zoom. Pointing at a slot or header says what it is and what's in it; clicking one zooms in,
- * with a pin map for headers whose pins have names.
+ * The motherboard close up, in place of the 3D PC while the board is open: drag to turn it, right-drag to move it
+ * around, scroll to zoom, as in the 3D PC. Pointing at a slot or header says what it is and what's in it; clicking
+ * one zooms in, with a pin map for headers whose pins have names. With intro, it opens zooming in from further out.
  */
-export function BoardView() {
+export function BoardView({ intro = false }: { intro?: boolean }) {
   const board = useBoardShape();
   const { pc } = useApp();
   const usage = useUsage(board);
@@ -58,6 +58,8 @@ export function BoardView() {
   const look = useAppearance();
   const accent = useMemo(() => paletteOf(look).colors.good, [look]);
   const sceneRef = useRef<BoardScene | null>(null);
+  // Only the first board drawn zooms in; one drawn again for a new look just appears.
+  const introRef = useRef(intro);
   // Slots Rig can place get a mark on the board: filled when in use, an outline when free.
   const marks = useMemo(() => {
     const m: Record<string, "used" | "free"> = {};
@@ -77,7 +79,7 @@ export function BoardView() {
     try {
       s = createBoardScene(host.current!, board, {
         accent,
-        dragToPan: true,
+        intro: introRef.current,
         landmarks: false,
         onHover: (h) => {
           boardStage.pointed(h?.id ?? null);
@@ -90,6 +92,7 @@ export function BoardView() {
       setNo3d(true); // no WebGL: the Slots tab still reads fine
       return;
     }
+    introRef.current = false;
     s.setUsage(marksRef.current);
     sceneRef.current = s;
     boardStage.attach(s);
@@ -123,7 +126,7 @@ export function BoardView() {
       )}
       <div className="board-top">
         {no3d ? <p className="board-hint faint">This screen can't draw the board in 3D.</p> : <>
-          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom · Click a slot or header for a closer look</p>
+          <p className="board-hint faint">Drag to turn · Right-drag to move · Scroll to zoom · Click a slot or header for a closer look</p>
           {Object.keys(marks).length > 0 && <p className="board-key" aria-hidden="true"><i className="is-used" />In use<i className="is-free" />Free</p>}
         </>}
       </div>
