@@ -40,6 +40,7 @@ interface Rules {
   aliases: Record<string, string>;
   neverText: (TextRule & { applies: "any" | "change" })[];
   protectText: TextRule[];
+  fileEdit: { formats: Record<string, string[]>; never: TextRule[]; tier3: TextRule[]; at: string[]; iniValue: string[]; hidden: string[] };
   commands: Entry[];
 }
 
@@ -454,9 +455,28 @@ export function checkScript(script: string, use: ScriptUse): Verdict {
   return inspectScript(script, use).verdict;
 }
 
-/** A file named by its full local path: a drive letter, no .., no short names such as PROGRA~1, no wildcards, nothing on another computer. */
+/** A file named by its full local path, written the way Windows writes it: a drive letter, only \\ between parts, no . or .. part and
+ * no part ending in a dot or a space (Windows drops those), no short names such as PROGRA~1, no wildcards, nothing on another computer. */
 export const localFile = (text: string) =>
-  /^[a-z]:\\/i.test(text) && !text.includes("\\\\") && !/[*?[]/.test(text) && !/(^|\\)\.\.(\\|$)/.test(text) && !/[a-z0-9]~\d/i.test(text);
+  /^[a-z]:\\/i.test(text) && !text.includes("\\\\") && !text.includes("/") && !/[*?[]/.test(text) && !/[a-z0-9]~\d/i.test(text) &&
+  text.slice(3).split("\\").every((part, i, all) => (part === "" ? i === all.length - 1 : part !== "." && part !== ".." && !/[. ]$/.test(part)));
 
 /** A program, script or shortcut by its name's ending, which Rig never writes. */
 export const programFile = (text: string) => R.paths.programs.some((p) => placeOf(text).endsWith(p));
+
+/** Characters from hex ranges as the rules write them. */
+const charsOf = (ranges: string[]) => new RegExp(`[${ranges.map((r) => r.split("-").map((h) => `\\u${h.padStart(4, "0")}`).join("-")).join("")}]`);
+const fileEditChars = { at: charsOf(R.fileEdit.at), iniValue: charsOf(R.fileEdit.iniValue), hidden: charsOf(R.fileEdit.hidden) };
+/** Whether text holds a character a file edit refuses: in an `at` part, an INI value, or (`hidden`) any key or value. */
+export const fileEditRefuses = (text: string, where: keyof typeof fileEditChars) => fileEditChars[where].test(text);
+
+/** The formats a file edit may use on this file, by its name's ending, and every ending Rig edits. */
+export function fileEditFormats(path: string): { formats: string[]; ends: string[] } {
+  const name = placeOf(path).split("\\").pop() ?? "";
+  const end = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+  const formats = Object.entries(R.fileEdit.formats).filter(([, ends]) => ends.includes(end)).map(([f]) => f);
+  return { formats, ends: [...new Set(Object.values(R.fileEdit.formats).flat())] };
+}
+
+/** The words of the file edit rule this path falls under: `never` refuses it, `tier3` makes it tier 3. */
+export const fileEditPathRule = (path: string, list: "never" | "tier3") => R.fileEdit[list].find((r) => r.contains.some((c) => placeOf(path).includes(fold(c))))?.says ?? null;

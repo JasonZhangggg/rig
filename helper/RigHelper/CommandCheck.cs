@@ -69,12 +69,24 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
                 if (rest.Length == 0) return null;
                 return new Touch("registry", $@"{(m.Groups[1].Value.ToLowerInvariant() is "hkey_current_user" or "hkcu" ? "HKCU" : "HKLM")}\{rest}", value);
             case "file":
-                return Regex.IsMatch(text, @"^[a-zA-Z]:\\") && !Regex.IsMatch(text, @"(^|\\)\.\.(\\|\z)") && !Regex.IsMatch(text, @"[a-zA-Z0-9]~[0-9]") ? new Touch("file", text, null) : null;
+                return LocalFile(text) ? new Touch("file", text, null) : null;
             case "service" or "task" or "firewall" or "other":
                 return new Touch(kind, text, null);
             default:
                 return null;
         }
+    }
+
+    /// A file by its full local path, written the way Windows writes it: localFile in check.ts, and Windows' own full form of
+    /// the path must be the path itself.
+    public static bool LocalFile(string text)
+    {
+        if (!Regex.IsMatch(text, @"^[a-zA-Z]:\\") || text.Contains(@"\\") || text.Contains('/') || Wild(text) || Regex.IsMatch(text, @"[a-zA-Z0-9]~[0-9]")) return false;
+        var parts = text[3..].Split('\\');
+        for (int i = 0; i < parts.Length; i++)
+            if (parts[i].Length == 0 ? i != parts.Length - 1 : parts[i] is "." or ".." || parts[i].EndsWith('.') || parts[i].EndsWith(' ')) return false;
+        try { return Path.GetFullPath(text) == text; }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return false; }
     }
 
     public JsonObject ToJson()
@@ -136,6 +148,15 @@ public static class CommandCheck
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
     sealed class ReadRoot { public string Root { get; set; } = ""; public string[]? Ends { get; set; } }
+    sealed class FileEditRules
+    {
+        public Dictionary<string, string[]> Formats { get; set; } = [];
+        public TextRule[] Never { get; set; } = [];
+        public TextRule[] Tier3 { get; set; } = [];
+        public string[] At { get; set; } = [];
+        public string[] IniValue { get; set; } = [];
+        public string[] Hidden { get; set; } = [];
+    }
     sealed class RemoteRule { public string[] Params { get; set; } = []; public string Refused { get; set; } = ""; }
     sealed class RootList { public string[] Known { get; set; } = []; public string[] Unknown { get; set; } = []; }
     sealed class PathRules
@@ -174,6 +195,7 @@ public static class CommandCheck
         public Dictionary<string, string> Aliases { get; set; } = [];
         public TextRule[] NeverText { get; set; } = [];
         public TextRule[] ProtectText { get; set; } = [];
+        public FileEditRules FileEdit { get; set; } = new();
         public Entry[] Commands { get; set; } = [];
     }
 
@@ -197,7 +219,26 @@ public static class CommandCheck
         return new StreamReader(s, Encoding.UTF8).ReadToEnd();
     }
 
-    static readonly Regex Disguised = new("[" + string.Concat(R.Disguised.Select(r => string.Join("-", r.Split('-').Select(h => $@"\u{h.PadLeft(4, '0')}")))) + "]");
+    /// Characters from hex ranges as the rules write them.
+    static Regex CharsOf(string[] ranges) => new("[" + string.Concat(ranges.Select(r => string.Join("-", r.Split('-').Select(h => $@"\u{h.PadLeft(4, '0')}")))) + "]");
+    static readonly Regex Disguised = CharsOf(R.Disguised);
+    static readonly Dictionary<string, Regex> FileEditChars = new() { ["at"] = CharsOf(R.FileEdit.At), ["iniValue"] = CharsOf(R.FileEdit.IniValue), ["hidden"] = CharsOf(R.FileEdit.Hidden) };
+
+    /// Whether text holds a character a file edit refuses: fileEditRefuses in check.ts.
+    public static bool FileEditRefuses(string text, string where) => FileEditChars[where].IsMatch(text);
+
+    /// The formats a file edit may use on this file by its name's ending, and every ending Rig edits: fileEditFormats in check.ts.
+    public static (List<string> Formats, List<string> Ends) FileEditFormats(string path)
+    {
+        string name = PlaceOf(path).Split('\\')[^1];
+        string end = name.Contains('.') ? name[name.LastIndexOf('.')..] : "";
+        return (R.FileEdit.Formats.Where(kv => kv.Value.Contains(end)).Select(kv => kv.Key).ToList(), R.FileEdit.Formats.Values.SelectMany(e => e).Distinct().ToList());
+    }
+
+    /// The words of the file edit rule this path falls under: fileEditPathRule in check.ts.
+    public static string? FileEditPathRule(string path, string list) =>
+        (list == "never" ? R.FileEdit.Never : R.FileEdit.Tier3).FirstOrDefault(r => r.Contains.Any(c => PlaceOf(path).Contains(Fold(c), StringComparison.Ordinal)))?.Says;
+
     // PowerShell's parser loads modules, assemblies and DSC resources for these while it parses, so they never reach it.
     static readonly Regex LoadsWhileParsing = new(@"\busing[\s`]+(module|assembly|namespace)\b|(^|[;{}(|&>])[\s`]*configuration[\s`]|\bImport-DscResource\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
     static readonly Regex SwitchLike = new(@"^(-[a-z]|--[a-z]|/[a-z?])");

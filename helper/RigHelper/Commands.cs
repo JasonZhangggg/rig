@@ -383,6 +383,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                 catch (RigException e) { return No(Verdict.Refuse(e.Message)); }
                 foreach (var t in found.Touches)
                     if (CommandCheck.OnNeverList(t.RuleText, "run") is string never) return No(Verdict.Refuse($"{never}.", "never"));
+                if (found.Never != null) return No(Verdict.Refuse($"{found.Never}.", "never"));
                 int tier = Math.Clamp(found.Tier, 1, 3);
                 var reasons = found.Reasons.ToList();
                 if (found.Touches.Select(t => CommandCheck.LowersProtection(t.RuleText)).FirstOrDefault(x => x != null) is string lowers)
@@ -453,6 +454,14 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         string? winget = WingetFor(person, verdict.Commands, out string? noWinget);
         if (noWinget != null) return new JsonObject { ["verdict"] = Verdict.Refuse(noWinget, "refused", verdict.Commands).ToJson() };
         return new JsonObject { ["printed"] = Read(person, script, winget) };
+    }
+
+    /// A read the worker makes as the person, such as the gpu read: the JSON text it answers, read as outside data.
+    public string WorkerRead(JsonObject read)
+    {
+        using var person = Person.Find(appPid);
+        var said = NativeWorker.Read(person, store, read, TestOnlyNativeOps);
+        return said.Ok ? said.Result["text"]?.ToString() ?? "" : throw new RigException(said.Error);
     }
 
     NativeWorker.Answer Ask(Person person, string verb, NativeOpStep step, JsonObject? held, JsonObject? back = null) =>

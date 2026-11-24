@@ -7,8 +7,11 @@
 // for each id it sets, whether the profile held it and whether that was
 // NVIDIA's predefined value or the person's own, and whether Rig made the
 // game's profile or added the game to one. Undo sets the old value back, puts
-// NVIDIA's predefined one back, takes out what wasn't there, and removes what
-// Rig made. Every read back is a fresh session loaded from the driver.
+// NVIDIA's predefined one back, and takes out what wasn't there. The profile
+// Rig made for a game goes only once nothing else is set in it, so another
+// change of Rig's or the person's own stays. Every read back is a fresh
+// session loaded from the driver. The read runs in the native worker too,
+// because it loads NVIDIA's own code.
 
 using System.Diagnostics;
 using System.Reflection;
@@ -46,11 +49,14 @@ public static class GpuTable
         public string Allowed => $"{Name} takes one of: {string.Join(", ", Values.Select(v => v.Key))}{(Range is Range r ? $", or a whole number from {r.Min} to {r.Max}" : "")}.";
     }
 
-    sealed record Table(IReadOnlyDictionary<string, Setting> Settings, IReadOnlyDictionary<uint, uint> Defaults);
+    sealed record Table(IReadOnlyDictionary<string, Setting> Settings, IReadOnlyDictionary<uint, uint> Defaults, IReadOnlySet<string> WindowsApps);
 
     static readonly Lazy<Table> table = new(Load);
     public static IReadOnlyDictionary<string, Setting> Settings => table.Value.Settings;
     public static uint Default(uint id) => table.Value.Defaults.TryGetValue(id, out uint d) ? d : 0;
+    /// One of Windows' own programs, which a change is never made for.
+    public static bool WindowsApp(string app) => table.Value.WindowsApps.Contains(app);
+    public const string WindowsWords = "That is one of Windows' own programs, not a game, so Rig doesn't change its graphics settings.";
 
     /// A DRS id or value as the table writes it: a whole number, or hex text like "0x60925292".
     static uint Num(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? Convert.ToUInt32(s[2..], 16) : (uint)Json.Num(n, -1);
@@ -68,7 +74,8 @@ public static class GpuTable
             var range = e["range"] is JsonObject r ? new Range(Num(r["id"]), (int)Json.Num(r["min"], 0), (int)Json.Num(r["max"], 0), r["says"]!.GetValue<string>()) : null;
             settings[key] = new Setting(key, e["name"]!.GetValue<string>(), e["says"]!.GetValue<string>(), (int)Json.Num(e["tier"], 3), e["scope"]?.ToString() == "global", values, range);
         }
-        return new Table(settings, defaults);
+        var windows = (nvidia["windowsApps"] as JsonArray ?? []).Select(a => a!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+        return new Table(settings, defaults, windows);
     }
 
     static readonly Regex App = new(@"^[a-z0-9][a-z0-9 _.()+-]{0,99}\.exe\z");
@@ -105,6 +112,7 @@ public sealed class GpuStep : INativeStep
         {
             app = GpuTable.AppName(a) ?? throw new RigException(GpuTable.BadApp);
             if (setting.GlobalOnly) throw new RigException($"{setting.Name} is one setting for the whole PC, not for one game. Leave app out.");
+            if (GpuTable.WindowsApp(app)) throw new RigException(GpuTable.WindowsWords);
         }
         if (Str(op["does"]) is not string does || does.Trim().Length == 0 || does.Length > 300) throw new RigException("does must be one plain sentence.");
         var kept = new JsonObject { ["name"] = Name, ["vendor"] = vendor };
@@ -120,17 +128,36 @@ public sealed class GpuStep : INativeStep
     static string? AppOf(JsonObject op) => Str(op["app"]);
     static string RigProfile(string app) => $"Rig {app}";
 
+    static NvApi.IDrs Session() => NvApi.Open().Session();
+
     public string Preview(JsonObject op)
     {
-        using var drs = NvApi.Open().Session();
+        using var drs = Session();
         return Gpu.Line(drs, SettingOf(op), AppOf(op));
     }
 
     public JsonObject Apply(JsonObject op)
     {
+        using var drs = Session();
+        return Apply(op, drs);
+    }
+
+    public string? Verify(JsonObject op)
+    {
+        using var drs = Session();
+        return Verify(op, drs);
+    }
+
+    public void Undo(JsonObject op, JsonObject back)
+    {
+        using var drs = Session();
+        Undo(op, back, drs);
+    }
+
+    public static JsonObject Apply(JsonObject op, NvApi.IDrs drs)
+    {
         var choice = ChoiceOf(op);
         string? app = AppOf(op);
-        using var drs = NvApi.Open().Session();
         IntPtr profile;
         bool madeProfile = false, addedApp = false;
         if (app == null) profile = drs.Global();
@@ -159,12 +186,11 @@ public sealed class GpuStep : INativeStep
         return back;
     }
 
-    public string? Verify(JsonObject op)
+    public static string? Verify(JsonObject op, NvApi.IDrs drs)
     {
         var setting = SettingOf(op);
         var choice = ChoiceOf(op);
         string? app = AppOf(op);
-        using var drs = NvApi.Open().Session();
         IntPtr profile = app == null ? drs.Global() : drs.App(app);
         if (profile == IntPtr.Zero) return $"{app} isn't in NVIDIA's settings.";
         foreach (var (id, to) in choice.Set)
@@ -172,20 +198,25 @@ public sealed class GpuStep : INativeStep
         return null;
     }
 
-    public void Undo(JsonObject op, JsonObject back)
+    /// Puts back each setting this step changed. The profile Rig made for the game, or the game in it, goes only once nothing
+    /// else is set there: another change of Rig's or the person's own stays.
+    public static void Undo(JsonObject op, JsonObject back, NvApi.IDrs drs)
     {
         string? app = AppOf(op);
-        using var drs = NvApi.Open().Session();
         bool on(string key) => back[key]?.GetValueKind() == JsonValueKind.True;
-        if (app != null && on("madeProfile"))
+        IntPtr profile;
+        if (app != null && (on("madeProfile") || on("addedApp")))
         {
-            // Rig made the game's profile, so taking the profile out puts everything back. Only Rig's own, by its name.
-            IntPtr made = drs.ProfileNamed(back["profile"]?.ToString() ?? "");
-            if (made != IntPtr.Zero) { drs.DeleteProfile(made); drs.Save(); }
-            return;
+            // Only Rig's own profile for this game, by its name, so a damaged note can never name another.
+            if (back["profile"]?.ToString() != RigProfile(app)) throw new RigException("Rig's note of how this was doesn't match this game, so it left NVIDIA's settings as they are.");
+            profile = drs.ProfileNamed(RigProfile(app));
+            if (profile == IntPtr.Zero) return;
         }
-        IntPtr profile = app == null ? drs.Global() : drs.App(app);
-        if (profile == IntPtr.Zero) throw new RigException($"{app} isn't in NVIDIA's settings any more, so there is nothing to put back.");
+        else
+        {
+            profile = app == null ? drs.Global() : drs.App(app);
+            if (profile == IntPtr.Zero) throw new RigException($"{app} isn't in NVIDIA's settings any more, so there is nothing to put back.");
+        }
         foreach (var o in back["old"] as JsonArray ?? [])
         {
             uint id = Convert.ToUInt32(o!["id"]!.GetValue<string>()[2..], 16);
@@ -196,7 +227,11 @@ public sealed class GpuStep : INativeStep
                 default: drs.Delete(profile, id); break;
             }
         }
-        if (app != null && on("addedApp")) drs.RemoveApp(profile, app);
+        if (app != null && drs.Info(profile) is { Predefined: false, Settings: 0 } info && info.Name == RigProfile(app))
+        {
+            if (info.Apps <= 1) drs.DeleteProfile(profile);
+            else drs.RemoveApp(profile, app);
+        }
         drs.Save();
     }
 }
@@ -213,7 +248,7 @@ public static class Gpu
     };
 
     /// A setting as the driver has it now for a game (or the whole PC): the value in plain words and where it comes from.
-    static (GpuTable.Value? Value, string Says, string From) Now(NvApi.Drs drs, GpuTable.Setting setting, IntPtr global, IntPtr profile)
+    static (GpuTable.Value? Value, string Says, string From) Now(NvApi.IDrs drs, GpuTable.Setting setting, IntPtr global, IntPtr profile)
     {
         var cache = new Dictionary<uint, NvApi.Setting?>();
         NvApi.Setting? Of(uint id)
@@ -241,14 +276,15 @@ public static class Gpu
     }
 
     /// Where a game's settings live, in words that never repeat a name someone other than NVIDIA wrote.
-    static string ProfileWords(NvApi.Drs drs, IntPtr profile)
+    static string ProfileWords(NvApi.IDrs drs, IntPtr profile)
     {
-        var (name, predefined) = drs.Info(profile);
-        return predefined ? $"NVIDIA's own profile \"{name}\"" : "a profile made on this PC";
+        var info = drs.Info(profile);
+        string shared = info.Apps > 1 ? $", which {info.Apps} programs share, so a change reaches all of them" : "";
+        return (info.Predefined ? $"NVIDIA's own profile \"{info.Name}\"" : "a profile made on this PC") + shared;
     }
 
     /// One line for the card: the setting, for whom, its value now and where that comes from.
-    public static string Line(NvApi.Drs drs, GpuTable.Setting setting, string? app)
+    public static string Line(NvApi.IDrs drs, GpuTable.Setting setting, string? app)
     {
         IntPtr global = drs.Global(), profile = app == null ? global : drs.App(app);
         var (_, says, from) = Now(drs, setting, global, profile);
@@ -256,17 +292,28 @@ public static class Gpu
         return $"{setting.Name} for {whose}: {says} ({from})";
     }
 
-    /// read_pc kind gpu. Checked again here against the same table; the answer is JSON text.
-    public static string Read(JsonObject req)
+    /// read_pc kind gpu as Rig keeps it, checked against the same table as reads.ts: in the helper before the worker is
+    /// started, and again in the worker.
+    public static JsonObject Request(JsonObject req)
     {
         string vendor = req["vendor"]?.ToString() ?? "";
-        var maker = Maker(vendor);
-        string? app = null;
-        if (req["app"] is JsonNode a && a.ToString() != "") app = GpuTable.AppName(a) ?? throw new RigException(GpuTable.BadApp);
-        var keys = new List<string>();
+        Maker(vendor);
+        var o = new JsonObject { ["kind"] = "gpu", ["vendor"] = vendor };
+        if (req["app"] is JsonNode a && a.ToString() != "") o["app"] = GpuTable.AppName(a) ?? throw new RigException(GpuTable.BadApp);
         if (req["settings"] is JsonArray list)
-            foreach (var k in list.Take(16))
-                keys.Add(k is JsonValue kv && kv.TryGetValue(out string? s) && GpuTable.Settings.ContainsKey(s) ? s : throw new RigException("settings must be keys from Rig's list of graphics settings, like vsync or lowLatency. Leave it out for all of them."));
+            o["settings"] = new JsonArray(list.Take(16).Select(k => (JsonNode)(k is JsonValue kv && kv.TryGetValue(out string? s) && GpuTable.Settings.ContainsKey(s) ? s
+                : throw new RigException("settings must be keys from Rig's list of graphics settings, like vsync or lowLatency. Leave it out for all of them."))).ToArray());
+        return o;
+    }
+
+    /// read_pc kind gpu, made only in the native worker, as the person: it loads NVIDIA's own code. The answer is JSON text.
+    public static string Read(JsonObject sent)
+    {
+        var req = Request(sent);
+        string vendor = req["vendor"]!.ToString();
+        var maker = Maker(vendor);
+        string? app = req["app"]?.ToString();
+        var keys = (req["settings"] as JsonArray ?? []).Select(k => k!.ToString()).ToList();
         if (vendor != "nvidia")
         {
             // The driver is checked to be there and the maker's, and nothing of it is loaded.
@@ -317,6 +364,7 @@ public static class Gpu
         Check("a planted nvapi64.dll is never loaded", Planted);
         Check("the signer check refuses an unsigned file and another maker's", Signers);
         Check("a gpu step through the worker, with no NVIDIA driver", ThroughWorker);
+        Check("undo puts back only its own settings and keeps what else is in the game's profile", UndoKeepsOthers);
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
         return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["checks"] = checks }, problems);
     }
@@ -367,6 +415,7 @@ public static class Gpu
         if (Refused(("vendor", "amd")) != "Rig can only change NVIDIA's graphics settings for now.") yield return "an AMD change wasn't refused";
         if (Refused(("setting", "shaderCache"), ("value", "off")) != "Shader cache size is one setting for the whole PC, not for one game. Leave app out.") yield return "a whole-PC setting for one game wasn't refused";
         if (Refused(("app", @"C:\Games\game.exe")) != GpuTable.BadApp) yield return "an app with a folder wasn't refused";
+        if (Refused(("app", "DWM.exe")) != GpuTable.WindowsWords) yield return "the desktop's own program wasn't refused";
     }
 
     static IEnumerable<string> NoDriver()
@@ -426,6 +475,69 @@ public static class Gpu
         if (own != null) yield return $"Microsoft's own signature on dotnet.exe wasn't taken: {own}";
     }
 
+    /// NVIDIA's settings database in memory: profiles by handle, each with its programs and the values set in it.
+    sealed class MemoryDrs : NvApi.IDrs
+    {
+        sealed record Profile(string Name, bool Predefined, HashSet<string> Apps, Dictionary<uint, uint> Values);
+        readonly Dictionary<IntPtr, Profile> profiles = [];
+        readonly IntPtr global;
+        int next = 1;
+
+        public MemoryDrs() => global = Add("Base Profile", true);
+        IntPtr Add(string name, bool predefined) { var h = (IntPtr)next++; profiles[h] = new Profile(name, predefined, [], []); return h; }
+
+        public void Save() { }
+        public void Dispose() { }
+        public IntPtr Global() => global;
+        public IntPtr App(string exe) => profiles.FirstOrDefault(kv => kv.Value.Apps.Contains(exe)).Key;
+        public IntPtr ProfileNamed(string name) => profiles.FirstOrDefault(kv => kv.Value.Name == name).Key;
+        public NvApi.ProfileInfo Info(IntPtr p) => new(profiles[p].Name, profiles[p].Predefined, profiles[p].Apps.Count, profiles[p].Values.Count);
+        public IntPtr CreateProfile(string name) => Add(name, false);
+        public void DeleteProfile(IntPtr p) => profiles.Remove(p);
+        public void AddApp(IntPtr p, string exe) => profiles[p].Apps.Add(exe);
+        public void RemoveApp(IntPtr p, string exe) => profiles[p].Apps.Remove(exe);
+        public NvApi.Setting? Get(IntPtr p, uint id) =>
+            profiles.TryGetValue(p, out var x) && x.Values.TryGetValue(id, out uint v) ? new(v, NvApi.Where.Profile, false)
+            : p != global && profiles[global].Values.TryGetValue(id, out uint g) ? new(g, NvApi.Where.Global, false) : null;
+        public void Set(IntPtr p, uint id, uint value) => profiles[p].Values[id] = value;
+        public void RestoreDefault(IntPtr p, uint id) => profiles[p].Values.Remove(id);
+        public void Delete(IntPtr p, uint id) => profiles[p].Values.Remove(id);
+    }
+
+    static IEnumerable<string> UndoKeepsOthers()
+    {
+        var drs = new MemoryDrs();
+        JsonObject Op(string app, string setting, string value) =>
+            new GpuStep().Check(new JsonObject { ["name"] = "gpu", ["vendor"] = "nvidia", ["app"] = app, ["setting"] = setting, ["value"] = value, ["does"] = "Rig's self-test change." }).Op;
+        var fps = Op("game.exe", "maxFrameRate", "141");
+        var vsync = Op("game.exe", "vsync", "off");
+
+        // Two changes for one game: the first makes its profile, the second finds it.
+        var first = GpuStep.Apply(fps, drs);
+        var second = GpuStep.Apply(vsync, drs);
+        if (first["madeProfile"]?.GetValue<bool>() != true || second["madeProfile"]?.GetValue<bool>() != false) yield return $"the profile was noted as made by {first.ToJsonString()} and {second.ToJsonString()}";
+        GpuStep.Undo(fps, first, drs);
+        if (GpuStep.Verify(vsync, drs) is string gone) yield return $"undoing the first change took the second with it: {gone}";
+        if (GpuStep.Verify(fps, drs) == null) yield return "the first change was still there after its undo";
+        GpuStep.Undo(vsync, second, drs);
+        if (drs.App("game.exe") != IntPtr.Zero || drs.ProfileNamed("Rig game.exe") != IntPtr.Zero) yield return "the profile Rig made stayed once nothing was set in it";
+
+        // A setting the person made in the profile afterwards stays, and so does the profile.
+        first = GpuStep.Apply(fps, drs);
+        drs.Set(drs.App("game.exe"), 0x00A879CF, 0x08416747);
+        GpuStep.Undo(fps, first, drs);
+        if (drs.App("game.exe") == IntPtr.Zero || GpuStep.Verify(vsync, drs) != null) yield return "the person's own setting went with Rig's profile";
+
+        // A note that names another profile than Rig's own for the game is refused, and nothing changes.
+        var other = Op("other.exe", "maxFrameRate", "141");
+        var made = GpuStep.Apply(other, drs);
+        var damaged = (JsonObject)made.DeepClone();
+        damaged["profile"] = "Rig game.exe";
+        string? said = Fails(() => GpuStep.Undo(other, damaged, drs));
+        if (said?.StartsWith("Rig's note of how this was") != true) yield return $"a damaged note was used: {said ?? "it passed"}";
+        if (drs.App("game.exe") == IntPtr.Zero || GpuStep.Verify(other, drs) != null) yield return "a damaged note changed something";
+    }
+
     static IEnumerable<string> ThroughWorker()
     {
         if (Present(DriverDll.Nvidia)) { yield return $"{Skip}this PC has NVIDIA's driver"; yield break; }
@@ -448,6 +560,12 @@ public static class Gpu
             var preview = rig.Handle("step.preview", new JsonObject { ["step"] = step.DeepClone() });
             string? refused = preview["verdict"]?["refused"]?.ToString();
             if (preview["outcome"]?.ToString() != "refused" || refused?.Contains(DriverDll.Missing(DriverDll.Nvidia)) != true) yield return $"the preview wasn't refused with the worker's plain words: {preview.ToJsonString()}";
+            // The read goes to the worker too, so NVIDIA's code is never loaded into the helper.
+            var read = new JsonObject { ["kind"] = "gpu", ["vendor"] = "nvidia", ["app"] = "game.exe" };
+            string? said = Fails(() => Reads.Read((JsonObject)read.DeepClone(), null, rig.WorkerRead));
+            if (said != DriverDll.Missing(DriverDll.Nvidia)) yield return $"the read through the worker said: {said ?? "nothing went wrong"}";
+            if (Fails(() => Reads.Read((JsonObject)read.DeepClone(), null)) == null) yield return "a gpu read ran without the worker";
+            if (Process.GetCurrentProcess().Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals(DriverDll.Nvidia.File, StringComparison.OrdinalIgnoreCase))) yield return "nvapi64.dll is loaded in the helper";
         }
         finally { try { Directory.Delete(root, recursive: true); } catch { } }
     }

@@ -56,7 +56,7 @@ public static class DriverDll
     {
         if (Verify(file, path) is int status and not 0)
             return status == TRUST_E_NOSIGNATURE
-                ? $"The {m.Who} driver file on this PC ({m.File}) isn't signed, so Rig won't use it."
+                ? $"Rig couldn't confirm that the {m.Who} driver file on this PC ({m.File}) is {m.Who}'s, so it won't use it."
                 : $"Windows doesn't trust the signature on the {m.Who} driver file on this PC ({m.File}), so Rig won't use it.";
         string? signer;
         try
@@ -69,7 +69,8 @@ public static class DriverDll
         return m.Signers.Contains(signer, StringComparer.Ordinal) ? null : $"The {m.Who} driver file on this PC ({m.File}) is signed by {signer}, not {m.Who}, so Rig won't use it.";
     }
 
-    // WinVerifyTrust, Authenticode policy, no prompts and nothing fetched from the network.
+    // WinVerifyTrust, Authenticode policy, no prompts and nothing fetched from the network: no revocation check, and the signer
+    // is matched by its common name. Enough for a System32 file loaded only in the worker, as the person.
     const int TRUST_E_NOSIGNATURE = unchecked((int)0x800B0100);
     const uint LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800;
     static readonly Guid GenericVerifyV2 = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
@@ -166,8 +167,29 @@ public sealed unsafe class NvApi
 
     public Drs Session() => new(this);
 
+    /// What Rig asks of a session of the driver settings database. The self-test has one of its own, in memory.
+    public interface IDrs : IDisposable
+    {
+        void Save();
+        IntPtr Global();
+        IntPtr App(string exe);
+        IntPtr ProfileNamed(string name);
+        ProfileInfo Info(IntPtr profile);
+        IntPtr CreateProfile(string name);
+        void DeleteProfile(IntPtr profile);
+        void AddApp(IntPtr profile, string exe);
+        void RemoveApp(IntPtr profile, string exe);
+        Setting? Get(IntPtr profile, uint id);
+        void Set(IntPtr profile, uint id, uint value);
+        void RestoreDefault(IntPtr profile, uint id);
+        void Delete(IntPtr profile, uint id);
+    }
+
+    /// A profile's name, whether it is one of NVIDIA's own, and how many programs and settings it holds.
+    public sealed record ProfileInfo(string Name, bool Predefined, int Apps, int Settings);
+
     /// One session of the driver settings database, loaded fresh from the driver when it starts.
-    public sealed class Drs : IDisposable
+    public sealed class Drs : IDrs
     {
         readonly NvApi api;
         IntPtr h;
@@ -226,13 +248,12 @@ public sealed unsafe class NvApi
             }
         }
 
-        /// A profile's name, and whether it is one of NVIDIA's own.
-        public (string Name, bool Predefined) Info(IntPtr profile)
+        public ProfileInfo Info(IntPtr profile)
         {
             var info = new byte[Profile1.Size];
             BitConverter.TryWriteBytes(info.AsSpan(0), Profile1.Version);
             fixed (byte* i = info) Ok(((delegate* unmanaged<IntPtr, IntPtr, byte*, int>)api.Fn(0x61CD6FD6))(h, profile, i), "read a profile");
-            return (Text(info, 4), BitConverter.ToUInt32(info, Profile1.IsPredefined) != 0);
+            return new ProfileInfo(Text(info, 4), BitConverter.ToUInt32(info, Profile1.IsPredefined) != 0, (int)BitConverter.ToUInt32(info, Profile1.Apps), (int)BitConverter.ToUInt32(info, Profile1.Settings));
         }
 
         public IntPtr CreateProfile(string name)
@@ -260,7 +281,11 @@ public sealed unsafe class NvApi
 
         public void RemoveApp(IntPtr profile, string exe)
         {
-            fixed (char* name = Wide(exe)) Ok(((delegate* unmanaged<IntPtr, IntPtr, char*, int>)api.Fn(0x2C694BC6))(h, profile, name), "remove the game Rig added");
+            fixed (char* name = Wide(exe))
+            {
+                int s = ((delegate* unmanaged<IntPtr, IntPtr, char*, int>)api.Fn(0x2C694BC6))(h, profile, name);
+                if (s != ExecutableNotFound) Ok(s, "remove the game Rig added");
+            }
         }
 
         /// A DWORD setting as the driver gives it for a profile: null when nothing sets it, else its value, where that value
@@ -320,7 +345,7 @@ public sealed unsafe class NvApi
     // NVDRS_PROFILE_V1: version, profileName[2048], gpuSupport, isPredefined, numOfApps, numOfSettings.
     static class Profile1
     {
-        public const int IsPredefined = 4104, Size = 4116;
+        public const int IsPredefined = 4104, Apps = 4108, Settings = 4112, Size = 4116;
         public const uint Version = Size | (1u << 16);
     }
 

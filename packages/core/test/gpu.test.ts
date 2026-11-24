@@ -56,6 +56,11 @@ describe("a gpu step", () => {
     expect(refused(gpu({ setting: "vsync", value: "off", does: " " }))).toBe("does must be one plain sentence.");
   });
 
+  it("won't change Windows' own programs, such as the desktop", () => {
+    expect(refused(gpu({ setting: "maxFrameRate", value: "20", app: "DWM.exe" }))).toBe("That is one of Windows' own programs, not a game, so Rig doesn't change its graphics settings.");
+    expect(refused(gpu({ setting: "vsync", value: "off", app: "explorer.exe" }))).toContain("Windows' own programs");
+  });
+
   it("can't change AMD or Intel settings yet", () => {
     expect(refused(gpu({ vendor: "amd", setting: "vsync", value: "off" }))).toBe("Rig can only change NVIDIA's graphics settings for now.");
     expect(refused(gpu({ vendor: "intel", setting: "vsync", value: "off" }))).toBe("Rig can only change NVIDIA's graphics settings for now.");

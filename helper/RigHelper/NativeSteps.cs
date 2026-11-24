@@ -13,6 +13,9 @@
 // it can do nothing the person couldn't. What the worker answers is read as
 // data from outside, like a script's output.
 //
+// The gpu read is made by the worker the same way, because it loads the
+// graphics driver's own code.
+//
 // A new op is one class that implements INativeStep and one line in
 // NativeSteps.All (and one member of NativeOp and one entry of nativeOps in
 // packages/core/src/change.ts).
@@ -107,11 +110,11 @@ public sealed record NativeOpStep(string Name, JsonObject Op) : HelperStep
 }
 
 /// What an op's check found: the op as Rig keeps and fingerprints it, with anything it doesn't know dropped, its tier
-/// (1 to 3) and why, and the places it changes that Rig can snapshot and put back itself. `Held` is what the helper
-/// itself knows about the op and the app never sent: the worker gets it as the op's `held`, and it is kept with the
-/// record of an applied step. `Expect` is the line Preview must give for the change to be the one the person saw; when
-/// the state reads otherwise, nothing is approved or run.
-public sealed record NativeCheck(JsonObject Op, int Tier, IReadOnlyList<string> Reasons, IReadOnlyList<Touch> Touches, JsonObject? Held = null, string? Expect = null);
+/// (1 to 3) and why, the places it changes that Rig can snapshot and put back itself, and the never-list words that fit it
+/// beyond those places. `Held` is what the helper itself knows about the op and the app never sent: the worker gets it as
+/// the op's `held`, and it is kept with the record of an applied step. `Expect` is the line Preview must give for the change
+/// to be the one the person saw; when the state reads otherwise, nothing is approved or run.
+public sealed record NativeCheck(JsonObject Op, int Tier, IReadOnlyList<string> Reasons, IReadOnlyList<Touch> Touches, JsonObject? Held = null, string? Expect = null, string? Never = null);
 
 public interface INativeStep
 {
@@ -169,7 +172,16 @@ public static class NativeWorker
     static string Short(string text) => text.Length <= 300 ? text : text[..300] + "…";
 
     /// Has a worker with the person's own sign-in do one part of a native op, and waits for its answer.
-    public static Answer Ask(Person person, CommandStore store, string verb, NativeOpStep step, JsonObject? back, bool selfTest, int timeoutMs = TimeoutMs, JsonObject? held = null)
+    public static Answer Ask(Person person, CommandStore store, string verb, NativeOpStep step, JsonObject? back, bool selfTest, int timeoutMs = TimeoutMs, JsonObject? held = null) =>
+        Send(person, store, new JsonObject { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone(), ["held"] = held?.DeepClone() }, selfTest, timeoutMs);
+
+    /// Has a worker with the person's own sign-in make a read that loads a driver's own code, which never loads in the helper.
+    public static Answer Read(Person person, CommandStore store, JsonObject read, bool selfTest, int timeoutMs = ReadTimeoutMs) =>
+        Send(person, store, new JsonObject { ["verb"] = "read", ["read"] = read.DeepClone() }, selfTest, timeoutMs);
+
+    public const int ReadTimeoutMs = 30_000;
+
+    static Answer Send(Person person, CommandStore store, JsonObject request, bool selfTest, int timeoutMs)
     {
         // Windows' services have no desktop of the person's to work on, and no Rig app to take the person's sign-in from.
         if (!selfTest && Process.GetCurrentProcess().SessionId == 0) return Failed(NoDesktop);
@@ -177,7 +189,6 @@ public static class NativeWorker
         string file = Path.Combine(store.PersonScripts(person.Sid), CommandStore.NewId() + ".json");
         try
         {
-            var request = new JsonObject { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone(), ["held"] = held?.DeepClone() };
             File.WriteAllText(file, request.ToJsonString());
             var ran = person.Start(exe, $"{Flag} \"{file}\"" + (selfTest ? $" {SelfTestFlag}" : ""), timeoutMs, store.Empty());
             if (ran.TimedOut) return Failed($"It didn't finish in {timeoutMs / 1000} seconds, so Rig stopped it.", timedOut: true);
@@ -216,18 +227,8 @@ public static class NativeWorker
             if (!selfTest && Process.GetCurrentProcess().SessionId == 0) throw new RigException(NoDesktop);
             // With admin rights in force this could reach what the person can't, so it does nothing at all.
             if (!selfTest && Person.IsElevated(me.Token)) throw new RigException(Commands.AppElevated);
-            if (JsonNode.Parse(File.ReadAllText(file)) is not JsonObject req || req["op"] is not JsonObject op) throw new RigException("Rig's worker was started without anything to do.");
-            if (NativeSteps.Find(req["name"]?.ToString() ?? "", selfTest) is not INativeStep step) throw new RigException(Commands.UnknownOp);
-            if (req["held"] is JsonObject held) op["held"] = held.DeepClone();
-            answer["result"] = req["verb"]?.ToString() switch
-            {
-                "look" when step is ScreenStep screen => screen.Look(op, selfTest),
-                "preview" => new JsonObject { ["now"] = step.Preview(op) },
-                "apply" => new JsonObject { ["back"] = step.Apply(op) },
-                "verify" => new JsonObject { ["problem"] = step.Verify(op), ["now"] = step.Preview(op) },
-                "undo" when req["back"] is JsonObject back => Undone(step, op, back),
-                _ => throw new RigException("Rig's worker was asked for something it doesn't do."),
-            };
+            if (JsonNode.Parse(File.ReadAllText(file)) is not JsonObject req) throw new RigException("Rig's worker was started without anything to do.");
+            answer["result"] = req["verb"]?.ToString() == "read" ? Read(req) : Step(req, selfTest);
             answer["ok"] = true;
         }
         catch (Exception e)
@@ -238,6 +239,27 @@ public static class NativeWorker
         bool ok = answer["ok"]!.GetValue<bool>();
         Say(answer);
         return ok ? 0 : 1;
+    }
+
+    static JsonObject Read(JsonObject req) =>
+        req["read"] is JsonObject read && read["kind"]?.ToString() == "gpu"
+            ? new JsonObject { ["text"] = Gpu.Read(read) }
+            : throw new RigException("Rig's worker was asked for something it doesn't do.");
+
+    static JsonObject Step(JsonObject req, bool selfTest)
+    {
+        if (req["op"] is not JsonObject op) throw new RigException("Rig's worker was started without anything to do.");
+        if (NativeSteps.Find(req["name"]?.ToString() ?? "", selfTest) is not INativeStep step) throw new RigException(Commands.UnknownOp);
+        if (req["held"] is JsonObject held) op["held"] = held.DeepClone();
+        return req["verb"]?.ToString() switch
+        {
+            "look" when step is ScreenStep screen => screen.Look(op, selfTest),
+            "preview" => new JsonObject { ["now"] = step.Preview(op) },
+            "apply" => new JsonObject { ["back"] = step.Apply(op) },
+            "verify" => new JsonObject { ["problem"] = step.Verify(op), ["now"] = step.Preview(op) },
+            "undo" when req["back"] is JsonObject back => Undone(step, op, back),
+            _ => throw new RigException("Rig's worker was asked for something it doesn't do."),
+        };
     }
 
     static JsonObject Undone(INativeStep step, JsonObject op, JsonObject back)
