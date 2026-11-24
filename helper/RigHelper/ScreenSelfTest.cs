@@ -269,7 +269,7 @@ public static partial class CommandSelfTest
             foreach (string to in new[] { "Maybe", "on", "Off", "1" })
             {
                 var no = StepPreview(rig, ScreenStepOf(look["lookId"], to));
-                if (!Is(no, "refused")) yield return $"a step to \"{to}\", which the look doesn't offer, wasn't refused: {no.ToJsonString()}";
+                if (!Is(no, "refused") || !Words(no).Contains(to == "Off" ? "already has" : "doesn't offer")) yield return $"a step to \"{to}\", which the look doesn't offer, wasn't refused: {no.ToJsonString()}";
             }
 
             // Hops sent with the step are dropped: what is stored is the walk the helper kept.
@@ -314,14 +314,14 @@ public static partial class CommandSelfTest
         rig.TestOnlyNativeOps = true;
         try
         {
-            var look = ScreenLook(rig, ScreenStep.TestApp, "Advanced", "Quality");
-            var p = StepPreview(rig, ScreenStepOf(look["lookId"], "High"));
-            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
-            // Someone picks Medium in the app between the look and the approval.
-            window.SetQuality(1);
+            var look = ScreenLook(rig, ScreenStep.TestApp, "Advanced", "Fast mode");
+            var p = StepPreview(rig, ScreenStepOf(look["lookId"], "On"));
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()} after the look {look.ToJsonString()}"; yield break; }
+            // Someone ticks the box in the app between the look and the approval.
+            window.SetFast(true);
             var a = StepApply(rig, p);
             if (Is(a, "applied") || a["error"]?.ToString().Contains("when Rig looked") != true) yield return $"a step whose value moved since the look wasn't refused at apply: {a.ToJsonString()}";
-            if (window.Quality != 1 || window.Applied != 0) yield return $"Rig changed a setting that had moved since the look (Quality {window.Quality}, Apply pressed {window.Applied} times)";
+            if (!window.Fast || window.Applied != 0) yield return $"Rig changed a setting that had moved since the look (Fast mode {window.Fast}, Apply pressed {window.Applied} times)";
         }
         finally { rig.TestOnlyNativeOps = false; }
     }

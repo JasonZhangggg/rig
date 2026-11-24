@@ -245,11 +245,11 @@ sealed class ScreenStep(bool test) : INativeStep
     {
         if (Str(op["lookId"]) is not string id || !CommandStore.Id.IsMatch(id) || Str(op["to"]) is not string to || !ScreenRules.Plain(to) || Str(op["does"]) is not string does || does.Trim().Length == 0 || does.Length > 300)
             throw new RigException("A change in an app's window needs the look it came from, the new value and one sentence.");
-        if (ScreenLooks.Find(id) is not JsonObject look || (Str(look["app"]?["kind"]) == "test") != test) throw new RigException($"{CommandCheck.Words("screen-look")}.");
+        if (ScreenLooks.Find(id) is not JsonObject look || (AppOf(look["app"]).Kind == "test") != test) throw new RigException($"{CommandCheck.Words("screen-look")}.");
         if (!Offers(look, to) || ScreenRules.NeverName(to)) throw new RigException($"{CommandCheck.Words("screen-option")}.");
         if (Str(look["value"]) == to) throw new RigException($"{CommandCheck.Words("screen-same")}.");
         // The rules may have changed since the look.
-        if (!test && ScreenRules.Refusal(Str(look["image"])!, Str(look["app"]!["page"])) is string refused) throw new RigException(refused);
+        if (!test && ScreenRules.Refusal(Str(look["image"])!, AppOf(look["app"]).Page) is string refused) throw new RigException(refused);
         // Whatever came in as `look` is dropped: the walk is only ever the one the helper kept.
         var kept = new JsonObject { ["name"] = Name, ["lookId"] = id, ["to"] = to, ["does"] = does, ["look"] = look.DeepClone() };
         return new NativeCheck(kept, 3, [$"{CommandCheck.Words("screen-tier")}."], []);

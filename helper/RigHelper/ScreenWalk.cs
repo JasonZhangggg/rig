@@ -290,7 +290,7 @@ sealed class ScreenWalk : IDisposable
 
     List<Control> Items(Control list) => Scan(list.El).Where(c => c.Type == Uia.ListItem).ToList();
 
-    /// What the control at the end of the walk reads now. A drop-down list is opened to read what it offers and closed again.
+    /// What the control at the end of the walk reads now.
     public ScreenReading Read()
     {
         var c = Target;
@@ -304,10 +304,11 @@ sealed class ScreenWalk : IDisposable
                 if (Prop<bool>(c.El, Uia.RangeReadOnly)) throw new RigException("The app shows this slider but doesn't let it be set.");
                 return new ScreenReading("range", Number(Prop<double>(c.El, Uia.RangeValue)), [], Number(Prop<double>(c.El, Uia.RangeMinimum)), Number(Prop<double>(c.El, Uia.RangeMaximum)));
             case Uia.ComboBox:
-                bool opened = Collapsed(c);
-                if (opened) Expand(c);
+                // Many lists tell Windows their choices while closed. One that doesn't is opened to read them and closed again.
                 var items = Items(c);
-                for (var waited = Stopwatch.StartNew(); items.Count == 0 && waited.ElapsedMilliseconds < 2000; items = Items(c)) Thread.Sleep(PollMs);
+                bool opened = items.Count == 0 && Collapsed(c);
+                if (opened) Expand(c);
+                for (var waited = Stopwatch.StartNew(); opened && items.Count == 0 && waited.ElapsedMilliseconds < 2000; items = Items(c)) Thread.Sleep(PollMs);
                 if (items.Any(i => i.InDocument)) ReadDocument = true;
                 var chosen = items.Where(i => Prop<bool>(i.El, Uia.IsSelected)).Select(i => ScreenRules.Clean(i.Name)).ToList();
                 // A choice Rig can't write in plain letters isn't offered, and two that read the same can't be told apart.
@@ -337,11 +338,17 @@ sealed class ScreenWalk : IDisposable
                 SetRange(c, double.Parse(to, CultureInfo.InvariantCulture));
                 break;
             case "choice":
-                if (Collapsed(c)) Expand(c);
-                var items = Items(c).Where(i => i.Name == to).ToList();
-                if (items.Count != 1) throw new RigException($"The list no longer offers \"{to}\" exactly once, so Rig stopped.");
-                Select(items[0]);
-                if (Has(c.El, Uia.ExpandCollapsePattern) && !Collapsed(c)) Collapse(c);
+                // Closed first, as it was read. A list that only takes a choice while open is opened for it.
+                foreach (bool open in new[] { false, true })
+                {
+                    if (open && !Collapsed(c)) break;
+                    if (open) Expand(c);
+                    var items = Items(c).Where(i => i.Name == to).ToList();
+                    if (items.Count > 1 || (items.Count == 0 && open)) throw new RigException($"The list no longer offers \"{to}\" exactly once, so Rig stopped.");
+                    if (items.Count == 1) Select(items[0]);
+                    if (open) Collapse(c);
+                    if (items.Count == 1 && Read().Value == to) break;
+                }
                 break;
         }
     }
