@@ -61,6 +61,8 @@ function fixesOnly(steps: Step[]): FixStep[] {
 }
 
 export class DemoClient implements RigClient {
+  /** How long approval steps pretend to take, as a share of the website's pace. Tests set 0. */
+  static pace = 1;
   readonly kind = "demo" as const;
   readonly caps = { local: true, applyChanges: true };
   private pcs: Record<string, DemoPC>;
@@ -267,7 +269,7 @@ export class DemoClient implements RigClient {
   async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
     const p = this.pcs[id];
     const rows = await this.preview(id, steps);
-    await sleep(400);
+    await sleep(400 * DemoClient.pace);
     const applied: AppliedStep[] = fixesOnly(steps).map((step, i) => ({ step, undo: { kind: "fix", call: applyToFacts(p.inv, p.facts, step.call) }, rows: [rows[i]] }));
     const tier = cardTier(steps);
     const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? stepsTitle(steps), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: tier === "refused" ? 3 : tier, applied, from: meta.from };
@@ -280,7 +282,7 @@ export class DemoClient implements RigClient {
   async previewStep(id: string, step: HelperStep, tainted = false): Promise<PreviewReply> {
     const card = demoCardByStep(step);
     if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
-    await sleep(300);
+    await sleep(300 * DemoClient.pace);
     return demoPreview(card, tainted);
   }
 
@@ -290,7 +292,7 @@ export class DemoClient implements RigClient {
     const card = demoCardByNonce(nonce);
     if (!p || !card || this.used.has(nonce)) return { outcome: "expired" };
     this.used.add(nonce);
-    await sleep(400);
+    await sleep(400 * DemoClient.pace);
     const reply = demoApply(card);
     if (reply.outcome !== "applied") return reply;
     const step = demoStep(card);
@@ -308,7 +310,7 @@ export class DemoClient implements RigClient {
     const card = demoCardByUndo(undoId);
     const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind !== "fix" && a.undo.id === undoId));
     if (!card || !c || c.status === "undone") return { outcome: "unknown" };
-    await sleep(300);
+    await sleep(300 * DemoClient.pace);
     if (card.drifts && !force) return { outcome: "drifted", changed: card.drifts };
     c.status = "undone";
     this.emit(id);

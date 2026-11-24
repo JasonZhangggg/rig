@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { DemoClient } from "@rig/core/demo";
 
 Element.prototype.scrollIntoView = () => {};
 window.scrollTo = () => {};
@@ -12,3 +13,6 @@ morning.setHours(10, 0, 0, 0);
 while (morning.getDay() !== 4) morning.setDate(morning.getDate() - 1);
 vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
 vi.setSystemTime(morning);
+
+// The demo pretends approval steps take a moment, for the website. Tests don't wait for it.
+DemoClient.pace = 0;

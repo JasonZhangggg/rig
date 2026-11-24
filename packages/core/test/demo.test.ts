@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC, type Proposal, type WeekEvenings } from "../src";
 import { DemoClient } from "../src/demo";
 
+DemoClient.pace = 0;
+
 afterEach(() => { vi.useRealTimers(); });
 
 /** The demo on Tuesday 17 November 2026 at 9 PM, local time, with each PC's last week. */
