@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardTier, catalog, checkScript, checkStep, rulesVersion, type Command, type ScriptUse, type Step } from "../src";
+import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, type Command, type ScriptUse, type Step } from "../src";
 import vectors from "../src/rules/vectors.json";
 
 interface Vector { script: string; as: ScriptUse; expect: { refused?: true; tier?: number; commands?: string[] } }
@@ -19,6 +19,17 @@ const refusal = (s: Step, tainted = false) => {
   const v = checkStep(s, { tainted });
   return v.status === "refused" ? v : null;
 };
+
+describe("a command's fingerprint", () => {
+  it("is the one the helper works out, and changes with any part", async () => {
+    // The helper's self-test holds Command.Hash to the same value for the same command.
+    const a = await commandHash(menuDelay);
+    expect(a).toBe("684001665991492c95d668bca82a394c0671daabf81b71ae978766d18c07e053");
+    expect(await commandHash({ ...menuDelay, undo: undefined })).not.toBe(a);
+    expect(await commandHash({ ...menuDelay, run: `${menuDelay.run} ` })).not.toBe(a);
+    expect(await commandHash({ ...menuDelay, touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop" }] })).not.toBe(a);
+  });
+});
 
 describe("the shared vectors", () => {
   it("cover reads, changes and undos", () => {

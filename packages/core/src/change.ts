@@ -244,6 +244,17 @@ export type UndoReply =
   | { outcome: "unknown" }
   | { outcome: "failed"; error: string; /** The last resort, named for the person. */ restorePoint?: RestorePoint };
 
+/** What an approval behind Windows' prompt is of: every part of the command, each with its length in front. The helper works out the same fingerprint from the command it stored and approves only when the two match. */
+export async function commandHash(cmd: Command): Promise<string> {
+  const parts = ["rig-command-1", cmd.does, cmd.read, cmd.run, cmd.undo === undefined ? "-" : `+${cmd.undo}`];
+  for (const t of cmd.touches) {
+    parts.push(t.kind, t.kind === "registry" ? t.key : t.kind === "file" ? t.path : t.name, t.kind === "registry" && t.value !== undefined ? `+${t.value}` : "-");
+  }
+  const bytes = new TextEncoder().encode(parts.map((p) => `${p.length}:${p}`).join("\n"));
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(d, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
 export interface CommandRpc {
   "command.check": { params: { cmd: Command; tainted: boolean }; reply: { verdict: Verdict } };
   "command.preview": { params: { cmd: Command; tainted: boolean }; reply: PreviewReply };
