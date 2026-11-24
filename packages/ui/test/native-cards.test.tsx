@@ -132,8 +132,14 @@ describe("an app window card", () => {
 });
 
 describe("a firmware setting card", () => {
+  // The helper refuses a firmware change while drive encryption is on or not known; the card still says so if one reaches it.
+  const sealed = () => {
+    const c = card("firmware");
+    return { ...c, read: c.read.replace("drive C: off", "drive C: on") };
+  };
+
   it("shows the setting, the maker, now and after, that it applies at the next restart, and the BitLocker line", () => {
-    show(demoProposal(card("firmware")));
+    show(demoProposal(sealed()));
     expect(screen.getByRole("heading", { name: "Changes Virtualization (Intel VT-x or AMD-V) in firmware" })).toBeTruthy();
     expect(screen.getByText("This changes a firmware setting.")).toBeTruthy();
     expect(glance("What changes")).toContain("Maker Dell");
@@ -144,7 +150,7 @@ describe("a firmware setting card", () => {
   });
 
   it("turns on Apply only once the word is typed and the recovery key box is ticked", () => {
-    const on = show(demoProposal(card("firmware")));
+    const on = show(demoProposal(sealed()));
     const apply = button("Apply") as HTMLButtonElement;
     fireEvent.change(screen.getByLabelText(/to turn on Apply/), { target: { value: "firmware" } });
     expect(apply.disabled).toBe(true);
@@ -155,8 +161,7 @@ describe("a firmware setting card", () => {
   });
 
   it("asks for no box when drive encryption is off", () => {
-    const c = card("firmware");
-    show(demoProposal({ ...c, read: c.read.replace("drive C: on", "drive C: off") }));
+    show(demoProposal(card("firmware")));
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByText(/recovery key at the next start/)).toBeNull();
   });

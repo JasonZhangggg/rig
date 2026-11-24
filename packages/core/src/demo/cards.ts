@@ -160,8 +160,8 @@ export const demoNativeCards: DemoNativeCard[] = [
     says: "WSL 2 needs the processor's virtualization, and it's off in this PC's firmware. Rig can turn it on through Dell's own firmware tools; it applies the next time the PC restarts.",
     title: "Turn on virtualization",
     op: { name: "firmware", setting: "virtualization", value: "on", does: "Turns on virtualization in firmware so WSL 2 can run." },
-    read: "Virtualization (Intel VT-x or AMD-V): Off\nDrive encryption on drive C: on\nMaker: Dell",
-    values: [], after: "Virtualization (Intel VT-x or AMD-V): On\nDrive encryption on drive C: on\nMaker: Dell",
+    read: "Virtualization (Intel VT-x or AMD-V): Off\nDrive encryption on drive C: off\nMaker: Dell",
+    values: [], after: "Virtualization (Intel VT-x or AMD-V): On\nDrive encryption on drive C: off\nMaker: Dell",
   },
   {
     key: "restartToFirmware", ask: "How do I turn on Secure Boot?", asks: /secure boot|firmware setup|bios/,

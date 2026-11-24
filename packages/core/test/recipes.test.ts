@@ -41,10 +41,10 @@ describe("Rig's recipes", () => {
   });
 
   it("get the tier, admin rights and checks of the command they compile to, and say they're Rig's own", () => {
-    const step = recipe("gpuScheduling", { state: "on" });
+    const step = recipe("fastStartup", { state: "off" });
     const cmd = built(recipeCommand(step));
-    expect(cmd.touches).toEqual([{ kind: "registry", key: "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", value: "HwSchMode" }]);
-    expect(cmd.run).toContain("-Name 'HwSchMode' -Type DWord -Value 2");
+    expect(cmd.touches).toEqual([{ kind: "registry", key: "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", value: "HiberbootEnabled" }]);
+    expect(cmd.run).toContain("-Name 'HiberbootEnabled' -Type DWord -Value 0");
     const own = checkStep({ kind: "command", cmd });
     const got = checkStep(step);
     expect(got).toMatchObject({ status: "allowed", tier: 2, admin: true, commands: own.commands });
@@ -102,8 +102,9 @@ describe("Rig's recipes", () => {
     const by = (id: string) => RECIPES.find((r) => r.id === id)!;
     expect(takesEffectWords(by("storageSense"))).toBe("Takes effect now.");
     expect(takesEffectWords(by("darkMode"))).toBe("Takes effect after you sign out and back in.");
-    expect(takesEffectWords(by("gpuScheduling"))).toBe("Takes effect after you restart the PC.");
-    expect(takesEffectWords(by("fileExtensions"))).toBe("Takes effect once you close File Explorer and open it again.");
+    expect(takesEffectWords(by("sysMain"))).toBe("Takes effect after you restart the PC.");
+    expect(takesEffectWords(by("explorerOpensTo"))).toBe("Takes effect once you close File Explorer and open it again.");
+    expect(takesEffectWords(by("fileExtensions"))).toBe("Takes effect after you sign out and back in.");
     expect(stepsTitle([recipe("fileExtensions", { state: "show" })])).toBe("Shows file extensions, like .txt, on file names in File Explorer");
   });
 });

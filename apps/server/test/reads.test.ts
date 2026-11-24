@@ -496,7 +496,7 @@ describe("Rig's recipes", () => {
     await live(ask("Hi"));
     const tool = (seen[0].tools as { name: string; description?: string; input_schema?: { properties: { steps: { items: { properties: { recipe: { properties: { id: { enum: string[] } } } } } } } } }[]).find((t) => t.name === "propose_change")!;
     expect(tool.input_schema!.properties.steps.items.properties.recipe.properties.id.enum).toContain("fileExtensions");
-    expect(tool.description).toContain("- fileExtensions (File extensions): show or hide extensions like .txt on file names in File Explorer. params: state (show, hide). Takes effect once you close File Explorer and open it again.");
+    expect(tool.description).toContain("- fileExtensions (File extensions): show or hide extensions like .txt on file names in File Explorer. params: state (show, hide). Takes effect after you sign out and back in.");
     expect(tool.description).toContain("menuDelay (How fast menus open)");
     expect(tool.description).toContain("ms (0 to 4000)");
   });

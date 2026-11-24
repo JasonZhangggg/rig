@@ -838,6 +838,11 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             store.Rebuild();
             return Failed("Rig found something in its own store of changes that it didn't put there, so it cleared the store, and this change's snapshot with it. Nothing ran.");
         }
+        // The restart waits only a minute, so Cancel stops it before anything is read; the undo below checks that it stopped.
+        if (step is NativeOpStep { Name: RestartToFirmwareStep.OpName })
+        {
+            try { Firmware.Shutdown("/a"); } catch (RigException) { }
+        }
 
         var states = new TouchStates(person, admin);
         // A command's touches are part of it. A native op's came from its check when it ran, and are kept with the record.

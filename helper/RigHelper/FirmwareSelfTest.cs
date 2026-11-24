@@ -3,7 +3,8 @@
 // refusals, the restart's preview (never the restart itself: nothing here
 // runs shutdown.exe) and, with a stand-in for a maker's class, the whole
 // approval path in the helper with admin rights: preview, approve, apply, the
-// check after the restart and undo.
+// check after the restart and undo, and the refusals while drive encryption
+// is on or not known.
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
@@ -53,6 +54,7 @@ public static class FirmwareSelfTest
         Check("restart into firmware setup: the preview reads OsIndicationsSupported and never restarts", () => RestartPreview(notes));
         Check("with a stand-in maker class: preview, approve, apply, the check after the restart, undo", StandIn);
         Check("a firmware password or the never list stops a change", PasswordAndNever);
+        Check("drive encryption on or not known stops a firmware change and the restart into firmware setup", () => Encryption(notes));
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
         return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["checks"] = checks, ["seen"] = notes }, problems);
     }
@@ -134,6 +136,7 @@ public static class FirmwareSelfTest
         if (!Native.IsAdmin()) { yield return $"{Skip}the self-test has no admin rights"; yield break; }
         string root = Root("restart");
         int before = Process.GetProcessesByName("shutdown").Length;
+        Firmware.TestOnlyEncryption = "off";
         try
         {
             var rig = Rig(root, true);
@@ -150,7 +153,11 @@ public static class FirmwareSelfTest
             // The preview only reads: nothing is waiting to restart.
             if (Process.GetProcessesByName("shutdown").Length > before) yield return "shutdown.exe ran";
         }
-        finally { try { Directory.Delete(root, recursive: true); } catch { } }
+        finally
+        {
+            Firmware.TestOnlyEncryption = null;
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
     }
 
     static IEnumerable<string> StandIn()
@@ -159,6 +166,7 @@ public static class FirmwareSelfTest
         var bios = new MemoryBios("dell", new() { ["Virtualization"] = "Disabled", ["WakeOnLan"] = "LanWithPxeBoot", ["TpmSecurity"] = "Disabled" });
         string root = Root("firmware-standin");
         Firmware.TestOnlyBios = bios;
+        Firmware.TestOnlyEncryption = "off";
         try
         {
             var store = new CommandStore(root, secured: true);
@@ -183,10 +191,10 @@ public static class FirmwareSelfTest
 
             // Before a restart nothing is due; after one, Windows' own reading is reported once.
             if (AfterRestart.Report(store)["found"] is not JsonArray { Count: 0 }) yield return "a check was due before any restart";
-            var found = AfterRestart.Report(store, AfterRestart.Boot() + 10 * 60_000)["found"] as JsonArray;
+            var found = AfterRestart.Report(store, AfterRestart.Boot() + 1)["found"] as JsonArray;
             string? says = found?.FirstOrDefault()?["says"]?.ToString();
             if (found?.Count != 1 || found[0]?["id"]?.ToString() != id || says?.StartsWith("After the restart, ", StringComparison.Ordinal) != true || !says.Contains("Virtualization (Intel VT-x or AMD-V)")) yield return $"after the restart it said {found?.ToJsonString()}";
-            if (AfterRestart.Report(store, AfterRestart.Boot() + 10 * 60_000)["found"] is not JsonArray { Count: 0 }) yield return "the check after the restart was answered twice";
+            if (AfterRestart.Report(store, AfterRestart.Boot() + 1)["found"] is not JsonArray { Count: 0 }) yield return "the check after the restart was answered twice";
 
             var u = rig.Handle("step.undo", new JsonObject { ["id"] = id });
             if (u["outcome"]?.ToString() != "undone" || bios.Now("Virtualization") != "Disabled") yield return $"the undo: {u.ToJsonString()}, the stand-in reads {bios.Now("Virtualization")}";
@@ -207,6 +215,7 @@ public static class FirmwareSelfTest
         finally
         {
             Firmware.TestOnlyBios = null;
+            Firmware.TestOnlyEncryption = null;
             try { Directory.Delete(root, recursive: true); } catch { }
         }
     }
@@ -233,6 +242,61 @@ public static class FirmwareSelfTest
         finally
         {
             Firmware.TestOnlyBios = null;
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    static readonly JsonObject Restart = new() { ["kind"] = "native", ["op"] = new JsonObject { ["name"] = RestartToFirmwareStep.OpName } };
+
+    static IEnumerable<string> Encryption(JsonObject notes)
+    {
+        notes["driveEncryption"] = Firmware.Encryption();
+        notes["bootId"] = AfterRestart.Boot();
+        if (AfterRestart.Boot() < 0) yield return "Windows' count of its starts can't be read, so no check after a restart would ever be due";
+        if (!Native.IsAdmin()) { yield return $"{Skip}the self-test has no admin rights"; yield break; }
+        var bios = new MemoryBios("dell", new() { ["Virtualization"] = "Disabled" });
+        string root = Root("firmware-sealed");
+        Firmware.TestOnlyBios = bios;
+        try
+        {
+            var store = new CommandStore(root, secured: true);
+            var rig = new Commands(store, Environment.ProcessId, restorePoints: false) { TestOnlyElevatedApp = false };
+            foreach (var enc in new[] { "on", "off", "not known" })
+            {
+                Firmware.TestOnlyEncryption = enc;
+                string says = enc == "on" ? "Drive encryption (BitLocker or device encryption) is on for drive " : "Rig couldn't tell whether drive encryption (BitLocker or device encryption) is on for drive ";
+                var set = Verdict(rig, Step("virtualization", "on"));
+                var restart = Verdict(rig, (JsonObject)Restart.DeepClone());
+                var read = JsonNode.Parse(Firmware.Read()) as JsonObject;
+                var row = (read?["settings"] as JsonArray)?.FirstOrDefault(r => r?["setting"]?.ToString() == "virtualization");
+                if (read?["driveEncryption"]?.ToString() != enc) yield return $"with encryption {enc}, the read says {read?["driveEncryption"]}";
+                if (enc == "off")
+                {
+                    if (set?["status"]?.ToString() != "allowed") yield return $"with encryption off, a change: {set?.ToJsonString()}";
+                    if (restart?["status"]?.ToString() != "allowed") yield return $"with encryption off, the restart: {restart?.ToJsonString()}";
+                    if (row?["canSet"] is not JsonArray { Count: > 0 }) yield return $"with encryption off, the read offers no change: {row?.ToJsonString()}";
+                    continue;
+                }
+                if (set?["status"]?.ToString() != "refused" || set["refused"]?.ToString() is not string no || !no.StartsWith(says, StringComparison.Ordinal) || !no.Contains("so Rig won't change Virtualization (Intel VT-x or AMD-V)")) yield return $"with encryption {enc}, a change: {set?.ToJsonString()}";
+                if (restart?["status"]?.ToString() != "refused" || restart["refused"]?.ToString() is not string noRestart || !noRestart.StartsWith(says, StringComparison.Ordinal) || !noRestart.Contains("so Rig won't restart into firmware setup")) yield return $"with encryption {enc}, the restart: {restart?.ToJsonString()}";
+                if (row?["canSet"] != null || row?["why"] == null) yield return $"with encryption {enc}, the read offers a change: {row?.ToJsonString()}";
+            }
+
+            // Encryption that reads as not known between the look and the apply stops the write too.
+            Firmware.TestOnlyEncryption = "off";
+            var p = rig.Handle("step.preview", new JsonObject { ["step"] = Step("virtualization", "on") });
+            if (p["outcome"]?.ToString() != "ready") { yield return $"the preview: {p.ToJsonString()}"; yield break; }
+            string file = Path.Combine(store.Work, "approve.json");
+            File.WriteAllText(file, new JsonObject { ["nonce"] = p["nonce"]?.ToString(), ["owner"] = Person.Find(Environment.ProcessId).Sid }.ToJsonString());
+            if (Commands.ApproveFromFile(file, p["hash"]?.ToString(), store) != RecorderSetup.Ok) { yield return "it couldn't be approved"; yield break; }
+            Firmware.TestOnlyEncryption = "not known";
+            var a = rig.Handle("step.apply", new JsonObject { ["nonce"] = p["nonce"]?.ToString() });
+            if (a["outcome"]?.ToString() == "applied" || bios.Now("Virtualization") != "Disabled") yield return $"it changed the firmware with encryption not known: {a.ToJsonString()}, the stand-in reads {bios.Now("Virtualization")}";
+        }
+        finally
+        {
+            Firmware.TestOnlyBios = null;
+            Firmware.TestOnlyEncryption = null;
             try { Directory.Delete(root, recursive: true); } catch { }
         }
     }

@@ -115,14 +115,17 @@ static class Wmi
 
     public static object? Call(string ns, string cls, string method, Action<ManagementBaseObject> fill, string outName)
     {
-        var target = Query(ns, $"SELECT * FROM {cls}").FirstOrDefault() ?? throw new RigException($"The firmware's {cls} isn't there, so nothing changed.");
-        using (target)
+        // On its own thread, so a firmware that never answers can't hold the helper.
+        var call = Task.Run(() =>
         {
+            using var target = Query(ns, $"SELECT * FROM {cls}").FirstOrDefault() ?? throw new RigException($"The firmware's {cls} isn't there, so nothing changed.");
             using var args = target.GetMethodParameters(method);
             fill(args);
             using var done = target.InvokeMethod(method, args, null);
             return done?[outName];
-        }
+        });
+        if (Task.WaitAny([call], TimeSpan.FromSeconds(60)) < 0) throw new RigException("The firmware didn't answer within a minute, so Rig can't tell whether it took the change. Check it in firmware setup.");
+        return call.GetAwaiter().GetResult();
     }
 }
 
@@ -310,13 +313,17 @@ public static class Firmware
         return Regex.IsMatch(d, "^[A-Za-z]:$") ? d.ToUpperInvariant() : "C:";
     }
 
+    /// The self-test's stand-in for the encryption read. Only code in this process can set it.
+    internal static string? TestOnlyEncryption { get; set; }
+
     /// "on", "off" or "not known": whether BitLocker or device encryption protects the system drive. No key is read.
     public static string Encryption()
     {
+        if (TestOnlyEncryption != null) return TestOnlyEncryption;
         try
         {
             var v = Wmi.Query(@"root\cimv2\Security\MicrosoftVolumeEncryption", $"SELECT ProtectionStatus FROM Win32_EncryptableVolume WHERE DriveLetter = '{SystemDrive()}'").FirstOrDefault();
-            if (v == null) return "off";
+            if (v == null) return "not known";
             return Convert.ToInt64(v["ProtectionStatus"] ?? 2L) switch { 0 => "off", 1 => "on", _ => "not known" };
         }
         // Windows without BitLocker has no such namespace or class: nothing can be encrypted.
@@ -325,6 +332,14 @@ public static class Firmware
     }
 
     public static string EncryptionLine(string enc) => $"Drive encryption on drive {SystemDrive()} {enc}";
+
+    /// Why Rig won't make a firmware change, or restart into firmware setup, while drive encryption is on or not known; null when it is off.
+    public static string? Sealed(string enc, string wont, string next)
+    {
+        if (enc == "off") return null;
+        string state = enc == "on" ? $"Drive encryption (BitLocker or device encryption) is on for drive {SystemDrive()}" : $"Rig couldn't tell whether drive encryption (BitLocker or device encryption) is on for drive {SystemDrive()}";
+        return $"{state}, so Rig won't {wont}: a firmware change can make Windows ask for the recovery key at the next start. Have your recovery key ready, then {next}.";
+    }
 
     public static string Tpm()
     {
@@ -446,7 +461,7 @@ public static class Firmware
                 if (!now.TryGetValue(row.Attribute, out string? native)) continue;
                 var canSet = s.Allow.Where(v => row.Values.ContainsKey(v)).ToList();
                 var r = new JsonObject { ["setting"] = s.Key, ["name"] = s.Name, ["now"] = Words(s, row, native) };
-                string? no = !row.FromWindows ? row.Why : pw != "none" ? "A firmware password is set, so Rig won't change it." : s.Sealed && enc != "off" ? "Drive encryption is on, so Rig won't change it." : null;
+                string? no = !row.FromWindows ? row.Why : pw != "none" ? "A firmware password is set, so Rig won't change it." : enc == "on" ? "Drive encryption is on, so Rig won't change it." : enc != "off" ? "Rig couldn't tell whether drive encryption is on, so it won't change it." : null;
                 if (no == null) r["canSet"] = new JsonArray(canSet.Select(v => (JsonNode)v).ToArray());
                 else r["why"] = no;
                 if (row.Asks != null) r["asks"] = row.Asks;
@@ -497,12 +512,9 @@ sealed class FirmwareStep : INativeStep, IAfterRestart
         string pw = bios.Password();
         if (pw == "set") throw new RigException("A firmware (BIOS) password is set on this PC, so Rig won't change firmware settings: it never asks for or types that password. You can change it in firmware setup.");
         if (pw != "none") throw new RigException("Rig couldn't tell whether a firmware (BIOS) password is set, so it won't change firmware settings. You can change it in firmware setup.");
-        string enc = Firmware.Encryption();
-        if (s.Sealed && enc != "off")
-            throw new RigException($"Drive encryption (BitLocker or device encryption) {(enc == "on" ? "protects" : "may protect")} drive {Firmware.SystemDrive()}, and changing {s.Name} would make Windows ask for its recovery key at the next start. Rig won't change it while encryption is on. You can in firmware setup once you have your recovery key.");
+        Unsealed(s);
         var reasons = new List<string> { "A firmware (BIOS) setting from Rig's own list. It applies at the next restart, and Rig checks it after that restart." };
         if (!s.Undo) reasons.Add($"Rig won't turn {s.Name} off again for you. You can in firmware setup.");
-        if (enc != "off") reasons.Add($"Drive encryption may be on for drive {Firmware.SystemDrive()}. Windows can ask for its recovery key at the next start: have it ready before you apply.");
         if (row.Asks != null) reasons.Add(row.Asks);
         var held = new JsonObject { ["maker"] = maker, ["attribute"] = row.Attribute, ["to"] = to };
         return new NativeCheck(kept, 3, reasons, [], Held: held);
@@ -520,6 +532,11 @@ sealed class FirmwareStep : INativeStep, IAfterRestart
         return (s, row, bios, held["to"]?.ToString() ?? "");
     }
 
+    static void Unsealed(FirmwareTable.Setting s)
+    {
+        if (Firmware.Sealed(Firmware.Encryption(), $"change {s.Name}", "change it in firmware setup") is string no) throw new RigException(no);
+    }
+
     static string? Now(IBios bios, string attribute) => bios.Read([attribute]).TryGetValue(attribute, out var v) ? v : null;
 
     public string Preview(JsonObject op)
@@ -530,7 +547,8 @@ sealed class FirmwareStep : INativeStep, IAfterRestart
 
     public JsonObject Apply(JsonObject op)
     {
-        var (_, row, bios, to) = Parts(op);
+        var (s, row, bios, to) = Parts(op);
+        Unsealed(s);
         string was = Now(bios, row.Attribute) ?? throw new RigException("The firmware didn't show this setting's value, so Rig didn't change it.");
         bios.Set(row.Attribute, to);
         return new JsonObject { ["was"] = was };
@@ -550,6 +568,7 @@ sealed class FirmwareStep : INativeStep, IAfterRestart
         var (s, row, bios, _) = Parts(op);
         if (!s.Undo) throw new RigException($"Rig won't turn {s.Name} off again, because that lowers this PC's protection. You can change it in firmware setup.");
         if (back["was"] is not JsonValue v || !v.TryGetValue(out string? was) || was.Length is 0 or > 100) throw new RigException("Rig has no note of the old value.");
+        Unsealed(s);
         bios.Set(row.Attribute, was);
     }
 
@@ -567,10 +586,8 @@ sealed class RestartToFirmwareStep : INativeStep, IAfterRestart
     public NativeCheck Check(JsonObject op)
     {
         if (!Native.IsAdmin()) throw new RigException(Firmware.NeedsAdmin);
-        string enc = Firmware.Encryption();
-        var reasons = new List<string> { "Restarts this PC in one minute and opens its firmware setup. Save your work first; Cancel stops it." };
-        if (enc != "off") reasons.Add($"Drive encryption may be on for drive {Firmware.SystemDrive()}. Changing Secure Boot or the security chip in setup will make Windows ask for its recovery key: have it ready.");
-        return new NativeCheck(new JsonObject { ["name"] = OpName }, 3, reasons, []);
+        if (Firmware.Sealed(Firmware.Encryption(), "restart into firmware setup", "press the PC's setup key (often Del, F2 or F10) as it starts") is string no) throw new RigException(no);
+        return new NativeCheck(new JsonObject { ["name"] = OpName }, 3, ["Restarts this PC in one minute and opens its firmware setup. Save your work first; Cancel stops it."], []);
     }
 
     public string Preview(JsonObject op)
@@ -606,11 +623,15 @@ sealed class RestartToFirmwareStep : INativeStep, IAfterRestart
 public static class AfterRestart
 {
     const int Keep = 20;
-    /// A restart moves the boot time by more than this; a clock that drifts doesn't.
-    const long Slack = 120_000;
 
     static string File(CommandStore store) => Path.Combine(store.Root, "after-restart.json");
-    public static long Boot() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - Environment.TickCount64;
+
+    /// Windows' own count of its starts, which a change to the clock doesn't move; -1 when it can't be read.
+    public static long Boot()
+    {
+        using var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters");
+        return k?.GetValue("BootId") is int id ? (uint)id : -1;
+    }
 
     static JsonArray Load(CommandStore store)
     {
@@ -652,7 +673,7 @@ public static class AfterRestart
         long boot = bootNow ?? Boot();
         var list = Load(store);
         var found = new JsonArray();
-        var due = list.Where(e => Json.Num(e?["boot"], boot) < boot - Slack).ToList();
+        var due = list.Where(e => Json.Num(e?["boot"], -1) is var was && was >= 0 && boot >= 0 && was != boot).ToList();
         foreach (var e in due)
         {
             list.Remove(e);

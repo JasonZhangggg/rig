@@ -153,7 +153,7 @@ describe("one of Rig's recipes", () => {
     expect(screen.getByText("Check first")).toBeTruthy();
     const own = screen.getByText("Rig's own recipe").parentElement!;
     expect(own.textContent).toContain("Shows file extensions, like .txt, on file names in File Explorer.");
-    expect(own.textContent).toContain("Takes effect once you close File Explorer and open it again.");
+    expect(own.textContent).toContain("Takes effect after you sign out and back in.");
     expect(screen.queryByText("Claude says")).toBeNull();
     expect(screen.getByLabelText("Change script").textContent).toBe(card("recipe").cmd.run);
   });
