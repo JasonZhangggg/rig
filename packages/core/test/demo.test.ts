@@ -102,22 +102,26 @@ describe("the demo's approval cards", () => {
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
   });
 
-  it("has a graphics setting and a settings file change, each brought up, applied and undone like a command", async () => {
+  it("has a graphics setting, a settings file, a firmware change and a restart into firmware setup, each brought up, applied and undone like a command", async () => {
     const { demoNativeCards, demoPreview, demoStep } = await import("../src/demo");
     const demo = new DemoClient();
     const meta = { by: "rig" as const };
-    expect(demoNativeCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}` : p.verdict.why]; })).toEqual([["gpu", "tier 1"], ["fileEdit", "tier 1"]]);
+    expect(demoNativeCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}` : p.verdict.why]; })).toEqual([["gpu", "tier 1"], ["fileEdit", "tier 1"], ["firmware", "tier 3"], ["restartToFirmware", "tier 3"]]);
     for (const c of demoNativeCards) {
       const events: string[] = [];
-      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => { if (e.type === "proposal") events.push(e.proposal.title); });
-      expect(events).toEqual([c.title]);
+      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => {
+        if (e.type === "proposal") events.push(e.proposal.title);
+        if (e.type === "steps") events.push(e.firmwareSetup ? "steps with the restart button" : "steps");
+      });
+      // The restart takes nothing from the chat: it comes only from the app's button under firmware setup steps.
+      expect(events).toEqual([c.key === "restartToFirmware" ? "steps with the restart button" : c.title]);
       const read = await demo.previewStep("demo-atlas", demoStep(c));
       expect(read.outcome === "ready" && read.read).toBe(c.read);
       expect((await demo.applyStep("demo-atlas", read.outcome === "ready" ? read.nonce : "", meta)).outcome).toBe("applied");
       expect((await demo.changes("demo-atlas"))[0].applied[0].undo.kind).toBe("native");
       expect((await demo.undoStep("demo-atlas", `undo-${c.key}`)).outcome).toBe("undone");
     }
-  });
+  }, 20_000);
 
   it("won't take a rolled-back card's nonce twice", async () => {
     const { demoCards } = await import("../src/demo");

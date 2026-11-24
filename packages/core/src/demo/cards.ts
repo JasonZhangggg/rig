@@ -29,7 +29,7 @@ interface DemoBase {
 
 export interface DemoCard extends DemoBase { key: "registry" | "firewall" | "uninstall" | "refused" | "rollback"; cmd: Command }
 /** A native op the demo can show, preview, apply and undo. */
-export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit"; op: NativeOp }
+export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "firmware" | "restartToFirmware"; op: NativeOp }
 export type AnyDemoCard = DemoCard | DemoNativeCard;
 
 const seconds = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
@@ -129,6 +129,23 @@ export const demoNativeCards: DemoNativeCard[] = [
     read: [`${ue} › bUseVSync: True`, `${ue} › FrameRateLimit: 0.000000`, "File fingerprint 3f9a1c07b2e4, 2,184 bytes", "", "Line 14:", "- bUseVSync=True", "+ bUseVSync=False", "Line 22:", "- FrameRateLimit=0.000000", "+ FrameRateLimit=141.000000"].join("\n"),
     values: [["2,184 bytes", "2,190 bytes"]],
     after: [`${ue} › bUseVSync: False`, `${ue} › FrameRateLimit: 141.000000`, "File fingerprint 8c2177d0a51f, 2,190 bytes"].join("\n"),
+  },
+  {
+    key: "firmware", ask: "Turn on virtualization so WSL 2 works", asks: /virtuali[sz]ation|wsl|vt-x/,
+    says: "WSL 2 needs the processor's virtualization, and it's off in this PC's firmware. Rig can turn it on through Dell's own firmware tools; it applies the next time the PC restarts.",
+    title: "Turn on virtualization",
+    op: { name: "firmware", setting: "virtualization", value: "on", does: "Turns on virtualization in firmware so WSL 2 can run." },
+    read: "Virtualization (Intel VT-x or AMD-V): Off\nDrive encryption on drive C: on\nMaker: Dell",
+    values: [], after: "Virtualization (Intel VT-x or AMD-V): On\nDrive encryption on drive C: on\nMaker: Dell",
+  },
+  {
+    key: "restartToFirmware", ask: "How do I turn on Secure Boot?", asks: /secure boot|firmware setup|bios/,
+    says: "This PC's maker doesn't let Windows change Secure Boot, so it's done in firmware setup. Here are the steps from your board's manual.",
+    title: "Restart into firmware setup",
+    op: { name: "restartToFirmware" },
+    read: "Windows can open firmware setup at the next restart.\nDrive encryption on drive C: off",
+    values: [], after: "",
+    steps: ["Save your work.", "Restart into firmware setup with the button below.", "Open the Boot tab, then Secure Boot.", "Set Secure Boot to Enabled.", "Press F10 to save and restart."],
   },
 ];
 

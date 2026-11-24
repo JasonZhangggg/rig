@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
 import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
-import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply } from "@rig/core";
+import { alertRules, formatTemp, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
 
@@ -127,6 +127,8 @@ export interface Ctx {
   commandStep: (proposalId: string, index: number, act: "read" | "apply" | "undo" | "forceUndo") => Promise<void>;
   /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
   approveScript: (messageId: string) => Promise<void>;
+  /** The button under firmware setup steps: read, restart in a minute (after Windows' own prompt), or cancel that restart. Takes nothing from the chat. */
+  firmwareRestart: (messageId: string, act: "read" | "apply" | "cancel" | "reset") => Promise<void>;
   declineScript: (messageId: string) => void;
   toggleChange: (id: string) => Promise<void>;
   pickPC: (id: string) => void;
@@ -432,7 +434,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         client.chat(pcId, history, (e) => {
           if (e.type === "text") edit((m) => ({ ...m, text: m.text + e.text }));
           else if (e.type === "sources") edit((m) => ({ ...m, sources: [...(m.sources ?? []), ...e.sources] }));
-          else if (e.type === "steps") edit((m) => ({ ...m, steps: e.steps }));
+          else if (e.type === "steps") edit((m) => ({ ...m, steps: e.steps, ...(e.firmwareSetup ? { firmwareSetup: true } : {}) }));
           else if (e.type === "proposal") edit((m) => ({ ...m, proposal: e.proposal }));
           else if (e.type === "recording") edit((m) => ({ ...m, recording: e.request }));
           else if (e.type === "probe") edit((m) => ({ ...m, probe: e.op === "add" ? { op: "add", id: e.probe.id, label: e.probe.label, error: e.error } : { op: "remove", id: e.id, error: e.error } }));
@@ -529,6 +531,31 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         } catch (e) {
           const what = act === "read" ? "read the current settings" : act === "apply" ? "make this change" : "undo this";
           toast(`Rig couldn't ${what}. ${e instanceof Error ? e.message : ""} Try again, and if it keeps happening, restart Rig.`.replace(/\s+/g, " ").trim());
+        }
+      }),
+
+      firmwareRestart: (messageId, act) => once(`restart:${messageId}`, async () => {
+        const m = dataNow.current.chat.find((x) => x.id === messageId);
+        if (!m?.firmwareSetup) return;
+        if (!client.caps.applyChanges || !client.previewStep || !client.applyStep || !client.undoStep) { toast(`Rig can restart into firmware setup only in the Rig app on ${pcOf().name}.`); return; }
+        const was = m.restart ?? {};
+        const keep = (restart: NonNullable<ChatMessage["restart"]>) => setData((d) => ({ ...d, chat: d.chat.map((x) => (x.id === messageId ? { ...x, restart } : x)) }));
+        const applied = was.outcome?.apply.outcome === "applied";
+        try {
+          if (act === "reset" && !applied) keep({});
+          // The op is only its name, so nothing the chat read can reach it.
+          else if (act === "read" && !applied) keep({ preview: await client.previewStep(pcId, { kind: "native", op: { name: "restartToFirmware" } }, false) });
+          else if (act === "apply" && was.preview?.outcome === "ready" && !applied) {
+            if (stale(was.preview.expiresAt)) { keep({}); return; }
+            const apply = await client.applyStep(pcId, was.preview.nonce, { title: RESTART_WORDS.title, by: "rig" });
+            keep({ ...was, outcome: { apply }, at: new Date().toISOString() });
+          } else if (act === "cancel" && was.outcome?.apply.outcome === "applied" && was.outcome.undo?.outcome !== "undone") {
+            keep({ ...was, outcome: { ...was.outcome, undo: await client.undoStep(pcId, was.outcome.apply.undo.id) } });
+          } else return;
+          if (act === "apply" || act === "cancel") { const changes = await client.changes(pcId); setData((d) => ({ ...d, changes })); }
+        } catch (e) {
+          const what = act === "read" ? "check whether it can restart into firmware setup" : act === "apply" ? "set the restart" : "cancel the restart";
+          toast(`Rig couldn't ${what}. ${e instanceof Error ? e.message : ""}`.replace(/\s+/g, " ").trim());
         }
       }),
 

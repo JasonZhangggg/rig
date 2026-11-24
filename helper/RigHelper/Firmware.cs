@@ -525,7 +525,7 @@ sealed class FirmwareStep : INativeStep, IAfterRestart
     public string Preview(JsonObject op)
     {
         var (s, row, bios, _) = Parts(op);
-        return $"{s.Name}: {Firmware.Words(s, row, Now(bios, row.Attribute))}\n{Firmware.EncryptionLine(Firmware.Encryption())}";
+        return $"{s.Name}: {Firmware.Words(s, row, Now(bios, row.Attribute))}\n{Firmware.EncryptionLine(Firmware.Encryption())}\nMaker: {Firmware.MakerName(bios.Maker)}";
     }
 
     public JsonObject Apply(JsonObject op)

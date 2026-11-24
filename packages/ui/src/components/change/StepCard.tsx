@@ -96,7 +96,9 @@ interface Look {
   facts: (ready?: Ready) => ReactNode;
   folds: (open?: boolean) => ReactNode;
   amber: { risk: ReactNode; undo: ReactNode; noUndo: boolean };
-  red: { kind: RedKind; reasons: string[]; risk: string; undo: ReactNode; noUndo: boolean };
+  red: { kind: RedKind; reasons: string[]; risk: string; undo: ReactNode; noUndo: boolean; words?: { head: string; chip: string; word: string } };
+  /** What the person ticks before Apply, from Rig's read, or null. */
+  confirm: (ready?: Ready) => string | null;
   /** What Review says runs. */
   exact: string;
   /** The change script's commands, as Rig found them. Native ops run none. */
@@ -131,6 +133,7 @@ function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string)
       undo: <>{redBack(kind, plan)}{kind !== "none" && <Untied names={plan.untied} />}</>, noUndo: words.word === "permanent",
     },
     exact: `These scripts are exactly what runs on ${pcName}.`,
+    confirm: () => null,
   };
 }
 
@@ -141,14 +144,19 @@ function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: V
   const { op, part } = native;
   const reasons = verdict?.status === "allowed" ? [...new Set(verdict.reasons)] : [];
   const tier = verdict?.status === "allowed" ? verdict.tier : 2;
+  const own = part.red?.(op);
   return {
     title: part.title(op), does: nativeDoes(op), whatLabel: "What changes", runs: [],
     what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} />,
     facts: (ready) => part.more?.(op, ready?.read, pcName),
     folds: () => null,
     amber: { risk: <>{nativeRisk[tier]}{reasons.length > 0 && <ul className="cc-plain cc-reasons">{reasons.map((r) => <li key={r}>{r}</li>)}</ul>}</>, undo: nativeBack, noUndo: false },
-    red: { kind: "lowers", reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: nativeRisk[3], undo: `${nativeBack} Until you undo it, the PC is less protected.`, noUndo: false },
+    red: {
+      kind: "lowers", reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: nativeRisk[3],
+      undo: own?.undo ?? `${nativeBack} Until you undo it, the PC is less protected.`, noUndo: own?.noUndo ?? false, words: own,
+    },
     exact: `This is exactly what changes on ${pcName}.`,
+    confirm: (ready) => part.confirm?.(op, ready?.read) ?? null,
   };
 }
 
@@ -231,11 +239,13 @@ function AmberCard(p: TierProps) {
 /** Tier 3: what can't be undone comes first, and Apply works only once the card's word is typed. */
 function RedCard(p: TierProps) {
   const [typed, setTyped] = useState("");
+  const [ticked, setTicked] = useState(false);
   const [busy, run] = useBusy();
   const id = useId();
   const { kind, reasons } = p.look.red;
-  const words = redWords(kind);
-  const ok = typed.trim().toLowerCase() === words.word;
+  const words = p.look.red.words ?? redWords(kind);
+  const tick = p.look.confirm(p.ready);
+  const ok = typed.trim().toLowerCase() === words.word && (!tick || ticked);
   const lead = (
     <div className="cc-first" role="note">
       <b>{words.head}</b>
@@ -248,8 +258,9 @@ function RedCard(p: TierProps) {
       {p.look.folds()}
       {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : p.waitsFor ? <WaitFoot waitsFor={p.waitsFor} onDecline={p.onDecline} /> : p.ready ? (
         <>
+          {tick && <label className="cc-confirm"><input type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} disabled={busy} /> {tick}</label>}
           <div className="cc-confirm">
-            <label id={`${id}-word`} htmlFor={id}>Type <b>{words.word}</b> to turn on Apply.</label>
+            <label id={`${id}-word`} htmlFor={id}>Type <b>{words.word}</b>{tick ? " and tick the box" : ""} to turn on Apply.</label>
             <input id={id} className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={busy} />
           </div>
           <div className="proposal-foot">

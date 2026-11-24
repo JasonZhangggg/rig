@@ -77,6 +77,54 @@ describe("a graphics setting card", () => {
   });
 });
 
+describe("a firmware setting card", () => {
+  it("shows the setting, the maker, now and after, that it applies at the next restart, and the BitLocker line", () => {
+    show(demoProposal(card("firmware")));
+    expect(screen.getByRole("heading", { name: "Changes Virtualization (Intel VT-x or AMD-V) in firmware" })).toBeTruthy();
+    expect(screen.getByText("This changes a firmware setting.")).toBeTruthy();
+    expect(glance("What changes")).toContain("Maker Dell");
+    expect(changes()).toEqual(["Virtualization (Intel VT-x or AMD-V):Off→ changed to On"]);
+    expect(screen.getByText(/It applies at the next restart\. Rig won't restart the PC for you\./)).toBeTruthy();
+    expect(screen.getByText("Drive encryption (BitLocker) is on. Windows may ask for its recovery key at the next start.")).toBeTruthy();
+    expect(glance("Can it be undone")).toBe("Yes. Undo sets the old value back, and that also applies at the next restart.");
+  });
+
+  it("turns on Apply only once the word is typed and the recovery key box is ticked", () => {
+    const on = show(demoProposal(card("firmware")));
+    const apply = button("Apply") as HTMLButtonElement;
+    fireEvent.change(screen.getByLabelText(/to turn on Apply/), { target: { value: "firmware" } });
+    expect(apply.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "I have my BitLocker recovery key." }));
+    expect(apply.disabled).toBe(false);
+    fireEvent.click(apply);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "apply");
+  });
+
+  it("asks for no box when drive encryption is off", () => {
+    const c = card("firmware");
+    show(demoProposal({ ...c, read: c.read.replace("drive C: on", "drive C: off") }));
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText(/recovery key at the next start/)).toBeNull();
+  });
+
+  it("says Rig won't turn the security chip back off, and offers no Undo once it's on", () => {
+    const c = { ...card("firmware"), op: { name: "firmware" as const, setting: "tpm", value: "on", does: "Turns on the security chip for Windows 11." }, read: "Security chip (TPM): Off\nDrive encryption on drive C: off\nMaker: HP", after: "Security chip (TPM): On\nDrive encryption on drive C: off\nMaker: HP" };
+    show(demoProposal(c));
+    expect(glance("Can it be undone")).toBe("No. Rig won't turn Security chip (TPM) off again. You can in firmware setup.");
+    expect(screen.getByText("HP asks you to press a key at the next start to confirm.")).toBeTruthy();
+    cleanup();
+    show(demoProposal(c), { outcomes: [{ apply: demoApply(c) }] });
+    expect(screen.getByText("Rig won't turn Security chip (TPM) off again. You can in firmware setup.")).toBeTruthy();
+    expect(button("Undo")).toBeNull();
+  });
+
+  it("is refused in plain words for a setting on the never list", () => {
+    show(unread({ name: "firmware", setting: "bootOrder", value: "usb", does: "Starts from USB first." } as NativeOp));
+    expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
+    expect(screen.getByText(/Rig never changes the boot order or boot entries/)).toBeTruthy();
+  });
+});
+
 describe("a kind of change this Rig doesn't know", () => {
   it("is refused in plain words, never left blank", () => {
     const on = show(unread({ name: "refreshRate", does: "Sets the screen to 144 Hz.", hz: 144 } as unknown as NativeOp));
@@ -171,6 +219,27 @@ describe("applying a native step through the app", () => {
     await act(() => actions.commandStep("g", 0, "undo"));
     expect(undo).toHaveBeenCalledWith("demo-atlas", "undo-gpu");
     expect(chat[0].proposal!.outcomes![0]!.undo?.outcome).toBe("undone");
+  });
+
+  it("offers the restart into firmware setup under the steps, counts down a minute, and cancels it", async () => {
+    const client = new DemoClient();
+    const preview = vi.spyOn(client, "previewStep");
+    render(<RigApp client={client} />);
+    await screen.findByText(/Things to look at/i);
+    await act(async () => { location.hash = "chat"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    const box = await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.change(box, { target: { value: card("restartToFirmware").ask } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("button", { name: "Restart into firmware setup" }, { timeout: 4000 }));
+    expect(preview).toHaveBeenCalledWith("demo-atlas", { kind: "native", op: { name: "restartToFirmware" } }, false);
+    const restart = await screen.findByRole("button", { name: "Restart in 1 minute" }, { timeout: 4000 });
+    expect(screen.getByText("This restarts your PC in one minute.")).toBeTruthy();
+    expect(changes()).toEqual(["Next restart:Starts Windows→ changed to Opens firmware setup"]);
+    fireEvent.click(restart);
+    expect((await screen.findByRole("timer", {}, { timeout: 4000 })).textContent).toMatch(/^Restarting in (1:00|0:5\d)\. Save your work now\. Firmware setup opens next\.$/);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel restart" }));
+    expect(await screen.findByText("Restart cancelled. Windows may still open firmware setup the next time Atlas restarts.", {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel restart" })).toBeNull();
   });
 
   it("reads, applies and undoes from the card in the demo", async () => {

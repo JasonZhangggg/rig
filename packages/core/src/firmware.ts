@@ -11,6 +11,7 @@ import type { DiffRow } from "./model";
 
 export type FirmwareMaker = keyof typeof table.makers;
 export const FIRMWARE_MAKERS = Object.keys(table.makers) as FirmwareMaker[];
+export const FIRMWARE_MAKER_NAMES = Object.fromEntries(Object.entries(table.makers).map(([k, v]) => [k, v.name])) as Record<FirmwareMaker, string>;
 
 export interface FirmwareMakerRow {
   attribute: string;

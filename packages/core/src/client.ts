@@ -45,6 +45,10 @@ export interface ChatMessage {
   text: string;
   sources?: Source[];
   steps?: string[];
+  /** The steps are done in firmware setup: the app offers a button that restarts into it. */
+  firmwareSetup?: boolean;
+  /** The app's own restart into firmware setup, offered under those steps: Rig's read, then what happened when the person pressed it. */
+  restart?: { preview?: PreviewReply; outcome?: StepOutcome; /** ISO time the restart was set. */ at?: string };
   proposal?: Proposal;
   /** A recording Rig started with this answer. Its card follows the recording's live state. */
   recording?: RecordingRequest;
@@ -91,7 +95,8 @@ export const rangeMs: Record<Range, number> = { "24h": 864e5, "7d": 7 * 864e5, "
 export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "sources"; sources: Source[] }
-  | { type: "steps"; steps: string[] }
+  /** `firmwareSetup`: the steps are done in firmware setup, so the app offers to restart into it. */
+  | { type: "steps"; steps: string[]; firmwareSetup?: true }
   | { type: "proposal"; proposal: Proposal }
   /** Rig started a recording. `queued` means the PC picks it up the next time its app checks in. */
   | { type: "recording"; request: RecordingRequest; queued: boolean }
