@@ -322,6 +322,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             case "step.apply" or "command.apply": return Apply(Str(p?["nonce"]) ?? "");
             case "step.undo" or "command.undo": return Undo(Str(p?["id"]) ?? "", p?["force"]?.GetValueKind() == System.Text.Json.JsonValueKind.True);
             case "command.read": return ReadOnly(Str(p?["script"]) ?? "");
+            case "firmware.after": return AfterRestart.Report(store);
             case "screen.look":
                 return ScreenStep.LookFor(p, TestOnlyNativeOps, op =>
                 {
@@ -391,8 +392,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                     tier = 3;
                     reasons.Add($"{lowers}.");
                 }
-                // A native op is made by the worker with the person's own rights, so it never needs admin rights.
-                return new Checked(new Verdict(true, tier, false, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
+                // A native op is made by the worker with the person's own rights, unless Windows allows it only with admin rights.
+                return new Checked(new Verdict(true, tier, op.Admin, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
             default:
                 return No(Verdict.Refuse(problem ?? "This change request is missing a part."));
         }
@@ -465,7 +466,9 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     }
 
     NativeWorker.Answer Ask(Person person, string verb, NativeOpStep step, JsonObject? held, JsonObject? back = null) =>
-        NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
+        NativeSteps.Find(step.Name, TestOnlyNativeOps) is { Admin: true } op
+            ? NativeWorker.Here(op, verb, step.Op, held, back)
+            : NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
 
     static string Moved(string now, string expect) =>
         $"What this changes has moved since Rig looked: it reads \"{now}\" now, not \"{expect}\". Nothing ran. Look again.";
@@ -711,6 +714,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = made.Back?["stopped"] != null ? made.Back["after"]?.ToString() : readAfter };
         }
         store.SaveRecord(id, record);
+        if (step is NativeOpStep later && NativeSteps.Find(later.Name, TestOnlyNativeOps) is IAfterRestart noted) AfterRestart.Note(store, id, noted.Note(later.Op, made.Back));
         var undo = new JsonObject { ["kind"] = step.Kind, ["id"] = id };
         if (step is CommandStep { Cmd.Undo: string script }) undo["script"] = script;
         if (point != null) undo["restorePoint"] = point;
@@ -896,6 +900,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         if (failed.Count > 0) return Failed($"Rig couldn't put everything back: {string.Join("; ", failed.Distinct())}.");
         rec["undone"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         store.SaveRecord(id, rec);
+        AfterRestart.Drop(store, id);
         return new JsonObject { ["outcome"] = "undone", ["printed"] = printed, ["left"] = new JsonArray(left.Select(d => (JsonNode)d).ToArray()) };
     }
 }

@@ -16,6 +16,13 @@
 // The gpu read is made by the worker the same way, because it loads the
 // graphics driver's own code.
 //
+// The one exception is an op that Windows allows only with admin rights
+// (firmware settings, a restart into firmware setup: Firmware.cs). It runs in
+// the helper itself, only after Windows' own permission prompt approved it
+// like an admin command, and it is Rig's own code calling Windows: it loads no
+// driver or program of anyone else's and takes nothing from the op but keys
+// into Rig's own table.
+//
 // A new op is one class that implements INativeStep and one line in
 // NativeSteps.All (and one member of NativeOp and one entry of nativeOps in
 // packages/core/src/change.ts).
@@ -116,10 +123,20 @@ public sealed record NativeOpStep(string Name, JsonObject Op) : HelperStep
 /// to be the one the person saw; when the state reads otherwise, nothing is approved or run.
 public sealed record NativeCheck(JsonObject Op, int Tier, IReadOnlyList<string> Reasons, IReadOnlyList<Touch> Touches, JsonObject? Held = null, string? Expect = null, string? Never = null);
 
+/// An op whose change only shows after the next restart: what to check then, kept in the admin store (AfterRestart).
+public interface IAfterRestart
+{
+    /// What AfterRestart keeps for this applied op, from the op and what its Apply returned.
+    JsonObject Note(JsonObject op, JsonObject? back);
+}
+
 public interface INativeStep
 {
     /// The op's name: `name` in its payload.
     string Name { get; }
+
+    /// True for the few ops Windows allows only with admin rights: they run in the helper, after Windows' permission prompt.
+    bool Admin => false;
 
     /// Runs in the helper, before the op is stored, again before it runs and again before it is undone. Changes nothing.
     /// Throws a RigException that says in plain words why the op is refused. The tier is this code's own judgment, never
@@ -149,7 +166,7 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp()];
+    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp(), new FirmwareStep(), new RestartToFirmwareStep()];
 
     /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
     static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
@@ -246,21 +263,36 @@ public static class NativeWorker
             ? new JsonObject { ["text"] = Gpu.Read(read) }
             : throw new RigException("Rig's worker was asked for something it doesn't do.");
 
+    /// Does one part of an op that needs admin rights here, in the helper: Rig's own code calling Windows, nothing loaded.
+    public static Answer Here(INativeStep step, string verb, JsonObject op, JsonObject? held, JsonObject? back)
+    {
+        var mine = (JsonObject)op.DeepClone();
+        if (held != null) mine["held"] = held.DeepClone();
+        try { return new Answer(true, false, Verb(step, verb, mine, back, selfTest: false), "", 0, Process.GetCurrentProcess().SessionId); }
+        catch (RigException e) { return Failed(e.Message); }
+        catch (Exception e) { return Failed($"Rig's helper hit a problem: {e.Message}"); }
+    }
+
     static JsonObject Step(JsonObject req, bool selfTest)
     {
         if (req["op"] is not JsonObject op) throw new RigException("Rig's worker was started without anything to do.");
         if (NativeSteps.Find(req["name"]?.ToString() ?? "", selfTest) is not INativeStep step) throw new RigException(Commands.UnknownOp);
+        // An op that needs admin rights never runs in a worker, which has none.
+        if (step.Admin) throw new RigException("Rig's worker was asked for something it doesn't do.");
         if (req["held"] is JsonObject held) op["held"] = held.DeepClone();
-        return req["verb"]?.ToString() switch
+        return Verb(step, req["verb"]?.ToString(), op, req["back"] as JsonObject, selfTest);
+    }
+
+    static JsonObject Verb(INativeStep step, string? verb, JsonObject op, JsonObject? back, bool selfTest) =>
+        verb switch
         {
             "look" when step is ScreenStep screen => screen.Look(op, selfTest),
             "preview" => new JsonObject { ["now"] = step.Preview(op) },
             "apply" => new JsonObject { ["back"] = step.Apply(op) },
             "verify" => new JsonObject { ["problem"] = step.Verify(op), ["now"] = step.Preview(op) },
-            "undo" when req["back"] is JsonObject back => Undone(step, op, back),
+            "undo" when back != null => Undone(step, op, back),
             _ => throw new RigException("Rig's worker was asked for something it doesn't do."),
         };
-    }
 
     static JsonObject Undone(INativeStep step, JsonObject op, JsonObject back)
     {

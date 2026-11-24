@@ -208,6 +208,7 @@ export class LocalClient implements RigClient {
       this.o.log("info", `start: done in ${Math.round(performance.now() - began)} ms${this.lastError ? `, but sensors failed: ${this.lastError}` : ""}`);
       this.running = true;
       this.schedule();
+      void this.afterRestart();
       if (this.cloud) {
         this.timers.push(setInterval(() => void this.sync(), this.o.syncEveryMs));
         void this.sync();
@@ -769,6 +770,24 @@ export class LocalClient implements RigClient {
     await this.store.putChange(next);
     void this.sync();
     return next;
+  }
+
+  /** What the helper checked after this PC restarted following a firmware change: each goes on its change in the log, and out as a notification. */
+  private async afterRestart() {
+    const helper = this.link.step?.bind(this.link);
+    if (!helper) return;
+    let found: { id: string; says: string }[];
+    try { found = (await helper("firmware.after", {})).found ?? []; } catch { return; }
+    if (!found.length) return;
+    const all = (await this.store.changes()).map(changeOf);
+    for (const f of found) {
+      const c = all.find((x) => x.applied.some((a) => a.undo.kind !== "fix" && a.undo.id === f.id));
+      this.o.log("info", `change: checked after the restart${c ? "" : ", and the change isn't in the log"}`);
+      this.o.notify({ title: "Rig checked a firmware change", body: f.says });
+      if (c) await this.store.putChange({ ...c, result: f.says });
+    }
+    this.emit();
+    void this.sync();
   }
 
   private stepLink(): StepLink["step"] {

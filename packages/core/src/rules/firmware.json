@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "about": [
+    "Firmware (BIOS) settings Rig offers, by maker. One table for the server, the app (packages/core/src/firmware.ts) and the helper (helper/RigHelper/Firmware.cs). A step names a setting by its key here and a value by its key in `values`; the helper turns them into the maker's exact attribute name and value text for this PC's maker, and nothing else is ever sent to the firmware.",
+    "`allow`: the values a step may set. A value in `values` that isn't allowed has words in `refuse`, and is refused as never. `sealed`: BitLocker and device encryption measure it, so a change is refused while either protects the system drive. `undo: false`: Rig won't set the old value back (that would be a refused value), and says so. `windows`: what Windows itself can read after the restart to tell whether it took (tpm, secureBoot, virtualization); without it, Rig reads the maker's value again.",
+    "Per maker: `attribute` is the exact name the maker's class uses and `values` the exact value text for each Rig value. `fromWindows: false` means the maker doesn't let Windows change it without a firmware password, which Rig never uses: it is read only, and `why` says so. `asks`: the firmware asks the person to confirm at the next start.",
+    "`makers`: how a PC's maker is found (`match`, folded, against Win32_ComputerSystem.Manufacturer's start). `never`: words that are never a setting Rig changes, matched against a step's setting and against every attribute name here (folded, letters and digits only)."
+  ],
+  "makers": {
+    "dell": { "name": "Dell", "match": ["dell"] },
+    "hp": { "name": "HP", "match": ["hp", "hewlett-packard", "hewlett packard"] },
+    "lenovo": { "name": "Lenovo", "match": ["lenovo"] }
+  },
+  "settings": {
+    "virtualization": {
+      "name": "Virtualization (Intel VT-x or AMD-V)",
+      "says": "Lets the processor run virtual machines, WSL 2, Windows Sandbox and Android apps.",
+      "values": { "on": "On", "off": "Off" },
+      "allow": ["on", "off"],
+      "windows": "virtualization",
+      "makers": {
+        "dell": { "attribute": "Virtualization", "values": { "on": "Enabled", "off": "Disabled" } },
+        "hp": { "attribute": "Virtualization Technology (VTx)", "values": { "on": "Enable", "off": "Disable" } },
+        "lenovo": { "attribute": "VirtualizationTechnology", "values": { "on": "Enable", "off": "Disable" } }
+      }
+    },
+    "vtd": {
+      "name": "Direct device access for virtual machines (VT-d)",
+      "says": "Lets virtual machines use a device directly. Some security features use it too.",
+      "values": { "on": "On", "off": "Off" },
+      "allow": ["on", "off"],
+      "makers": {
+        "dell": { "attribute": "VtForDirectIo", "values": { "on": "Enabled", "off": "Disabled" } },
+        "hp": { "attribute": "Virtualization Technology for Directed I/O (VTd)", "values": { "on": "Enable", "off": "Disable" } },
+        "lenovo": { "attribute": "VTdFeature", "values": { "on": "Enable", "off": "Disable" } }
+      }
+    },
+    "wakeOnLan": {
+      "name": "Wake on LAN",
+      "says": "Lets another device on your network turn this PC on.",
+      "values": { "on": "On", "off": "Off" },
+      "allow": ["on", "off"],
+      "makers": {
+        "dell": { "attribute": "WakeOnLan", "values": { "on": "LanOnly", "off": "Disabled" } },
+        "hp": { "attribute": "Wake On LAN", "values": { "on": "Boot to Hard Drive", "off": "Disable" } },
+        "lenovo": { "attribute": "WakeOnLAN", "values": { "on": "ACOnly", "off": "Disable" } }
+      }
+    },
+    "fanMode": {
+      "name": "Fan and cooling mode",
+      "says": "How the firmware trades fan noise for cooling.",
+      "values": { "quiet": "Quiet", "balanced": "Balanced", "cool": "Cool", "performance": "Performance" },
+      "allow": ["quiet", "balanced", "cool", "performance"],
+      "makers": {
+        "dell": { "attribute": "ThermalManagement", "values": { "quiet": "Quiet", "balanced": "Optimized", "cool": "Cool", "performance": "UltraPerformance" } },
+        "lenovo": { "attribute": "AdaptiveThermalManagementAC", "values": { "balanced": "Balanced", "performance": "MaximizePerformance" } }
+      }
+    },
+    "tpm": {
+      "name": "Security chip (TPM)",
+      "says": "Windows 11, BitLocker and Windows Hello need it.",
+      "values": { "on": "On", "off": "Off" },
+      "allow": ["on"],
+      "refuse": { "off": "Rig never turns the security chip (TPM) off: Windows 11, BitLocker and Windows Hello depend on it" },
+      "sealed": true,
+      "undo": false,
+      "windows": "tpm",
+      "makers": {
+        "dell": { "attribute": "TpmSecurity", "values": { "on": "Enabled", "off": "Disabled" }, "fromWindows": false, "why": "Dell lets Windows change the security chip only with a BIOS admin password, which Rig never uses. Turn it on in firmware setup." },
+        "hp": { "attribute": "TPM State", "values": { "on": "Enable", "off": "Disable" }, "asks": "HP asks you to press a key at the next start to confirm." },
+        "lenovo": { "attribute": "SecurityChip", "values": { "on": "Active", "off": "Disable" }, "fromWindows": false, "why": "Lenovo lets Windows change security settings only with a supervisor password, which Rig never uses. Turn it on in firmware setup." }
+      }
+    },
+    "secureBoot": {
+      "name": "Secure Boot",
+      "says": "Lets only signed start-up code run. Windows 11 and some games' anti-cheat need it.",
+      "values": { "on": "On", "off": "Off" },
+      "allow": ["on"],
+      "refuse": { "off": "Rig never turns Secure Boot off, which lowers this PC's protection and can stop some games running" },
+      "sealed": true,
+      "undo": false,
+      "windows": "secureBoot",
+      "makers": {
+        "dell": { "attribute": "SecureBoot", "values": { "on": "Enabled", "off": "Disabled" } },
+        "hp": { "attribute": "Secure Boot", "values": { "on": "Enable", "off": "Disable" }, "asks": "HP asks you to press a key at the next start to confirm." },
+        "lenovo": { "attribute": "SecureBoot", "values": { "on": "Enable", "off": "Disable" }, "fromWindows": false, "why": "Lenovo lets Windows change security settings only with a supervisor password, which Rig never uses. Turn it on in firmware setup." }
+      }
+    }
+  },
+  "never": [
+    { "says": "Rig never clears the security chip (TPM) or switches it between the processor and a separate chip, which loses the keys BitLocker and Windows Hello keep in it", "words": ["tpmclear", "cleartpm", "clearsecuritychip", "securitychipclear", "ptt", "ftpm", "firmwaretpm", "tpmselect", "tpmdevice", "physicalpresence"] },
+    { "says": "Rig never changes Secure Boot's mode or keys, which can stop Windows starting", "words": ["securebootmode", "securebootkey", "customkey", "expertkey", "deletekey", "resetkey", "platformkey", "auditmode", "deployedmode", "kek"] },
+    { "says": "Rig never switches between UEFI and legacy start-up (CSM), which can stop Windows starting", "words": ["csm", "legacy", "bootmode", "uefiboot", "compatibilitysupport"] },
+    { "says": "Rig never changes the storage controller's mode (SATA, RAID, AHCI, VMD), which can stop Windows finding its drive", "words": ["sata", "raid", "ahci", "vmd", "storagemode", "nvmemode"] },
+    { "says": "Rig never changes the boot order or boot entries, which can stop Windows starting", "words": ["bootorder", "bootsequence", "bootpriority", "bootentry", "bootdevice", "bootlist", "uefibootorder"] },
+    { "says": "Rig never sets, changes or clears firmware passwords", "words": ["password", "passwd", "pwd", "passphrase"] },
+    { "says": "Rig never changes Absolute (Computrace) or anti-theft settings, which often can't be undone", "words": ["absolute", "computrace", "antitheft", "persistence"] },
+    { "says": "Rig never changes memory profiles, voltages or clock speeds in firmware, which can stop this PC starting or damage it", "words": ["xmp", "expo", "docp", "memoryprofile", "voltage", "vcore", "overclock", "ratio", "multiplier", "frequency", "turbo"] },
+    { "says": "Rig never updates or rewrites the firmware itself", "words": ["flash", "biosupdate", "firmwareupdate", "capsule", "downgrade", "rollback"] }
+  ]
+}
