@@ -14,7 +14,7 @@ using Microsoft.Win32;
 
 namespace Rig.Helper;
 
-public static class CommandSelfTest
+public static partial class CommandSelfTest
 {
     const string Key = @"Software\RigSelftest", RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string UserKey = @"HKCU\Software\RigSelftest", UserPath = @"HKCU:\Software\RigSelftest";
@@ -89,6 +89,12 @@ public static class CommandSelfTest
             Check("a native step, applied and undone", () => NativeApplied(ctx));
             Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
             Check("HKCU for another account", OtherAccount);
+            Check("which apps a screen step may drive", ScreenRulesHold);
+            Check("a screen step is refused without its look", () => ScreenWithoutLook(ctx));
+            Check("the Stop bar and the watch for other windows", ScreenStopAndWatch);
+            Check("a look at an app's window, applied and undone", () => ScreenApplied(ctx));
+            Check("a screen step whose value moved since the look", () => ScreenMoved(ctx));
+            Check("a look stops at two controls with one name and at a button", () => ScreenStops(ctx));
             if (elevated)
             {
                 Check("the command store is admins' only", () => StoreLocked(ctx));
@@ -158,7 +164,8 @@ public static class CommandSelfTest
         var scripts = new List<string>();
         foreach (var v in vectors)
         {
-            if (v!["as"]?.ToString() != "step") scripts.Add(TextOf(v));
+            if (v!["as"]?.ToString() == "screen") continue;
+            if (v["as"]?.ToString() != "step") scripts.Add(TextOf(v));
             else if (v["step"]?["cmd"] is JsonObject cmd) scripts.AddRange(new[] { "read", "run", "undo" }.Select(k => cmd[k]?.ToString()).OfType<string>());
         }
         var texts = scripts.Where(s => CommandCheck.Precheck(s) == null).Distinct().ToList();
@@ -171,6 +178,7 @@ public static class CommandSelfTest
         foreach (var v in vectors)
         {
             string use = v!["as"]!.ToString(), label;
+            if (use == "screen") continue;
             Verdict got;
             if (use == "step")
             {

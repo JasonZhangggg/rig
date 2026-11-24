@@ -7,7 +7,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
 import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
-import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
+import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type LookReply, type PreviewReply, type ScreenLook, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
@@ -163,6 +163,8 @@ export class LocalClient implements RigClient {
   private scanReading: Promise<void> | null = null;
   /** Steps the helper previewed, by nonce: the step as it was checked and the helper's verdict. */
   private previewed = new Map<string, { step: HelperStep; verdict: Allowed; expiresAt: string }>();
+  /** The looks at app windows the helper made, by id. A screen step is checked against its look. */
+  private looks = new Map<string, ScreenLook>();
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
     this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, approveStep: null, ...opts };
@@ -778,15 +780,27 @@ export class LocalClient implements RigClient {
     return this.stepLink()("step.undo", force ? { id: undoId, force: true } : { id: undoId });
   }
 
+  async lookAtScreen(id: string, app: string, goal: string[]): Promise<LookReply> {
+    await this.local(id);
+    const reply = await this.stepLink()("screen.look", { app, goal });
+    if ("lookId" in reply) {
+      // The helper keeps a look for half an hour; the newest few are all a card can come from.
+      if (this.looks.size >= 16) this.looks.delete(this.looks.keys().next().value as string);
+      this.looks.set(reply.lookId, reply);
+    }
+    return reply;
+  }
+
   async previewStep(id: string, step: HelperStep, tainted: boolean): Promise<PreviewReply> {
     await this.local(id);
     const helper = this.stepLink();
-    const mine = checkStep(step, { tainted });
+    const mine = checkStep(step, { tainted, looks: [...this.looks.values()] });
     if (mine.status === "refused") return { outcome: "refused", verdict: mine };
     const canonical = canonicalStep(step) as HelperStep;
     const reply = await helper("step.preview", { step: canonical });
     if (reply.outcome !== "ready") return reply;
-    if (reply.verdict.tier === 3 && tainted) {
+    // Rig's own check allows tier 3 in a chat that read outside text only for a screen step whose look was clean.
+    if (reply.verdict.tier === 3 && tainted && mine.tier !== 3) {
       return { outcome: "refused", verdict: { status: "refused", why: "tainted", refused: `${ruleWords("tainted")}.`, commands: reply.verdict.commands, rulesVersion } };
     }
     const now = this.o.now();

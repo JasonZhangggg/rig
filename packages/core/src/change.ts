@@ -9,7 +9,7 @@
 // approval in the helper: preview, a nonce, apply, undo.
 
 import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
-import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
+import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, screenMaxText, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
 import type { Change } from "./client";
 import type { DiffRow } from "./model";
 
@@ -30,7 +30,44 @@ export type HelperStep = CommandStep | NativeStep;
  * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
  * `nativeOps`, and one class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp;
+export type NativeOp = SelftestOp | ScreenOp;
+
+/**
+ * Sets one control in an app's window, for a setting that only exists behind the app's buttons. The model sends only
+ * these three things: which look, the new value and its sentence. The walk to the control, the app and the value it has
+ * now are what the helper kept from the look, so nothing the model sends can point Rig at another control.
+ */
+export interface ScreenOp {
+  name: "screen";
+  /** The id `screen.look` gave. */
+  lookId: string;
+  /** The new value: one of the look's options, or a number in its range. */
+  to: string;
+  /** Claude's one sentence, shown labelled as Claude's. */
+  does: string;
+}
+
+/**
+ * What the helper read when it walked to a control and changed nothing. `path`, `value` and `options` are the app's
+ * own words, cut to one short line of plain characters: show them labelled as the app's, never as Rig's.
+ */
+export interface ScreenLook {
+  lookId: string;
+  /** The walk, one name per hop, ending at the control. */
+  path: string[];
+  /** What the control reads now. */
+  value: string;
+  /** The values the control offers. A slider has a range instead. */
+  options?: string[];
+  range?: { min: number; max: number };
+  /**
+   * Whether what came back counts as Rig's own reading and not text from outside: the app is installed for the whole
+   * PC, validly signed, not a host for web content, and only names and values of its controls were read.
+   */
+  clean: boolean;
+}
+
+export type LookReply = ScreenLook | { /** Why Rig won't or can't look, in plain words. */ refused: string };
 
 /** The helper's self-test op: sets a value under HKCU\Software\RigSelftest. The helper knows it only inside --selftest. */
 export interface SelftestOp {
@@ -49,6 +86,17 @@ export interface NativeRule<O extends NativeOp> {
   reasons(op: O): string[];
   /** A short past-tense title for the changes log. */
   title(op: O): string;
+  /** What the op needs from outside itself. `refused`: why it can't be offered. `clean`: its tier 3 card may be shown in a chat that has read outside text. */
+  check?(op: O, ctx: CheckContext): { refused?: string; clean?: boolean };
+}
+
+const shortLine = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length > 0 && v.length <= max && /^[\x20-\x7e]*$/.test(v);
+const numberText = /^-?\d{1,9}(\.\d{1,6})?$/;
+
+/** Whether a look offers this value. */
+export function lookOffers(look: ScreenLook, to: string): boolean {
+  if (look.options) return look.options.includes(to);
+  return !!look.range && numberText.test(to) && Number(to) >= look.range.min && Number(to) <= look.range.max;
 }
 
 export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, { name: N }>> } = {
@@ -58,6 +106,23 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
     tier: () => 2,
     reasons: () => ["Rig's own self-test change."],
     title: () => "Ran Rig's self-test change",
+  },
+  screen: {
+    canonical: (raw) =>
+      typeof raw.lookId !== "string" || !/^[0-9a-f]{32}$/.test(raw.lookId) || !shortLine(raw.to, screenMaxText) || !shortLine(raw.does, 300)
+        ? "A change in an app's window needs the look it came from, the new value and one sentence."
+        : { name: "screen", lookId: raw.lookId, to: raw.to, does: raw.does },
+    // Always the strongest card: Rig can't know what the app writes, and undo by repeating the walk is best effort.
+    tier: () => 3,
+    reasons: () => [`${ruleWords("screen-tier")}.`],
+    title: (op) => op.does.trim().replace(/\.$/, ""),
+    check: (op, ctx) => {
+      const look = ctx.looks?.find((l) => l.lookId === op.lookId);
+      if (!look) return { refused: `${ruleWords("screen-look")}.` };
+      if (!lookOffers(look, op.to)) return { refused: `${ruleWords("screen-option")}.` };
+      if (look.value === op.to) return { refused: `${ruleWords("screen-same")}.` };
+      return { clean: look.clean };
+    },
   },
 };
 
@@ -126,6 +191,8 @@ export type Verdict = Refused | Allowed;
 export interface CheckContext {
   /** The conversation has read free text from outside (web, manuals, recordings, script output). */
   tainted: boolean;
+  /** The looks at app windows made for this conversation on this PC. A screen step is refused without its look. */
+  looks?: ScreenLook[];
 }
 
 const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []): Refused => ({ status: "refused", why, refused, commands, rulesVersion });
@@ -183,7 +250,10 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
       if (typeof op === "string") return refuse(op);
       const rule = nativeRule(op.name)!;
       const tier = rule.tier(op);
-      if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
+      const found = rule.check?.(op, ctx) ?? {};
+      if (found.refused) return refuse(found.refused);
+      // A clean look's words are the app's own controls, read by Rig, so the card may still be shown.
+      if (tier === 3 && ctx.tainted && !found.clean) return refuse(`${ruleWords("tainted")}.`, "tainted");
       // The helper's worker makes it with the person's own rights, so it never needs admin rights.
       return { status: "allowed", tier, admin: false, commands: [], reasons: rule.reasons(op), rulesVersion };
     }
@@ -448,6 +518,12 @@ export interface StepRpc {
   "step.undo": { params: { id: string; /** Put it back even when something else changed it since. */ force?: boolean }; reply: UndoReply };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
+  /**
+   * Walks to a control in an app's window and reads it, changing nothing. `app` is one of Rig's own names for an app,
+   * `ms-settings:` and a page, the full path of a program, or the file name of one that is open; `goal` is the names of
+   * the controls to walk through, the last being the one to read. The helper keeps the walk under `lookId`.
+   */
+  "screen.look": { params: { app: string; goal: string[] }; reply: LookReply };
 }
 
 /** The part of the helper link that carries steps. */

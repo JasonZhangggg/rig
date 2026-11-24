@@ -409,6 +409,7 @@ describe("LocalClient", () => {
     const run = { before: "MenuShowDelay : 400", after: "MenuShowDelay : 0", output: "", alsoChanged: [], touches: [{ touch: { kind: "registry" as const, key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" }, before: "400", after: "0" }] };
     const undoRecord = { kind: "command" as const, id: "u1", script: menuDelay.undo!, outside: [], fingerprint: "f1" };
 
+    const screenLook = { lookId: "0123456789abcdef0123456789abcdef", path: ["Manage 3D settings", "Low Latency Mode"], value: "Off", options: ["Off", "On"], clean: true };
     /** A helper that answers command calls the way the runner does, and remembers every call in order. */
     function commandHelper(o: { admin?: boolean; drifts?: string[] } = {}) {
       const calls: string[] = [];
@@ -421,7 +422,7 @@ describe("LocalClient", () => {
         let reply: unknown;
         if (method === "step.preview") {
           previewed = (params as { step: HelperStep }).step;
-          const v = checkStep(previewed) as Allowed;
+          const v = checkStep(previewed, { tainted: false, looks: [screenLook] }) as Allowed;
           reply = { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: { ...v, admin: !!o.admin }, read: run.before, touches: [{ touch: run.touches[0].touch, value: "400" }] } satisfies PreviewReply;
         } else if (method === "step.apply") reply = { outcome: "applied", result: run, undo: previewed?.kind === "native" ? { kind: "native", id: "u1", outside: [], fingerprint: "f1" } : undoRecord } satisfies ApplyReply;
         else if (method === "step.undo") {
@@ -429,6 +430,7 @@ describe("LocalClient", () => {
           reply = (drifted && !force ? { outcome: "drifted", changed: o.drifts! } : { outcome: "undone", printed: run.before, left: [] }) satisfies UndoReply;
           if (force) drifted = false;
         } else if (method === "command.read") reply = { printed: "MenuShowDelay : 400" };
+        else if (method === "screen.look") reply = (params as { app: string }).app === "regedit.exe" ? { refused: "Rig doesn't drive Windows' own management tools." } : screenLook;
         return reply as StepRpc[K]["reply"];
       };
       return { command, calls, seen };
@@ -482,6 +484,20 @@ describe("LocalClient", () => {
       expect((await client.undoStep(client.id, "u1")).outcome).toBe("undone");
       expect(helper.calls).toEqual(["step.preview", "step.apply", "step.undo"]);
       await expect(client.redo(client.id, change.id)).rejects.toThrow("only from a new card");
+      client.stop();
+    });
+
+    it("offers a change in an app's window only after its look, even in a chat that read outside text when the look was clean", async () => {
+      const { client, helper } = withCommands();
+      await client.start();
+      const step = { kind: "native", op: { name: "screen", lookId: screenLook.lookId, to: "On", does: "Turns on low latency mode.", hops: ["Restore"] } } as unknown as HelperStep;
+      expect(await client.previewStep(client.id, step, false)).toMatchObject({ outcome: "refused", verdict: { refused: expect.stringContaining("hasn't looked") } });
+      expect(helper.calls).toEqual([]);
+      expect(await client.lookAtScreen(client.id, "regedit.exe", ["Computer"])).toEqual({ refused: "Rig doesn't drive Windows' own management tools." });
+      expect(await client.lookAtScreen(client.id, "NVIDIA Control Panel", screenLook.path)).toEqual(screenLook);
+      expect(await client.previewStep(client.id, step, true)).toMatchObject({ outcome: "ready", verdict: { tier: 3 } });
+      expect(helper.seen.at(-1)?.params).toEqual({ step: { kind: "native", op: { name: "screen", lookId: screenLook.lookId, to: "On", does: "Turns on low latency mode." } } });
+      expect((await client.previewStep(client.id, { kind: "native", op: { name: "screen", lookId: screenLook.lookId, to: "Ultra", does: "x" } }, false)).outcome).toBe("refused");
       client.stop();
     });
 

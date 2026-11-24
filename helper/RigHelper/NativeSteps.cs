@@ -140,13 +140,13 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [];
+    static readonly INativeStep[] All = [new ScreenStep(test: false)];
 
-    /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
-    static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
+    /// Known only inside --selftest, where they come first. Nothing that comes over the pipe can ask for these.
+    static readonly INativeStep[] SelfTestOnly = [new SelftestOp(), new ScreenStep(test: true)];
 
     public static INativeStep? Find(string name, bool selfTest) =>
-        All.Concat(selfTest ? SelfTestOnly : []).FirstOrDefault(s => s.Name == name);
+        (selfTest ? SelfTestOnly : []).Concat(All).FirstOrDefault(s => s.Name == name);
 }
 
 /// The worker: how the helper asks it, and what it does when started.
@@ -201,6 +201,8 @@ public static class NativeWorker
             answer["result"] = req["verb"]?.ToString() switch
             {
                 "preview" => new JsonObject { ["now"] = step.Preview(op) },
+                // A look at an app's window, before there is a step: a read only the screen op offers (Screen.cs).
+                "look" when step is ScreenStep screen => screen.Look(op),
                 "apply" => new JsonObject { ["back"] = step.Apply(op) },
                 "verify" => new JsonObject { ["problem"] = step.Verify(op), ["now"] = step.Preview(op) },
                 "undo" when req["back"] is JsonObject back => Undone(step, op, back),

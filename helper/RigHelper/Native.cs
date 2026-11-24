@@ -37,6 +37,21 @@ static partial class Native
         finally { CloseHandle(p); }
     }
 
+    /// The integrity level a process runs at (see Integrity), or 0 when Windows won't say, as it won't for a process
+    /// with more rights than this one.
+    public static int ProcessIntegrity(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return 0;
+        try
+        {
+            if (!OpenProcessToken(p, TOKEN_QUERY, out var t)) return 0;
+            try { return Integrity(t); }
+            finally { CloseHandle(t); }
+        }
+        finally { CloseHandle(p); }
+    }
+
     // ----- How much a token may do -----
     const int TokenIntegrityLevelClass = 25;
     public const int STD_OUTPUT_HANDLE = -11, MediumIntegrity = 0x2000, HighIntegrity = 0x3000;

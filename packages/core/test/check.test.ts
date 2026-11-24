@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, stepHash, stepsTitle, type Command, type ScriptUse, type Step, type Verdict } from "../src";
-import { canonicalCommand } from "../src/change";
+import { canonicalCommand, canonicalStep, type HelperStep, type ScreenLook } from "../src/change";
 import vectors from "../src/rules/vectors.json";
 
 interface Expect { refused?: true; why?: string; tier?: number; commands?: string[]; reasons?: string[] }
@@ -8,8 +8,10 @@ interface Expect { refused?: true; why?: string; tier?: number; commands?: strin
 interface ScriptVector { script: string; as: ScriptUse; times?: number; expect: Expect; note?: string }
 /** A whole step, checked the way the server and the helper check one before showing a card. */
 interface StepVector { step: Step; as: "step"; expect: Expect; note?: string }
-const everything = vectors as (ScriptVector | StepVector)[];
-const all = everything.filter((v): v is ScriptVector => v.as !== "step");
+/** A program's image for a screen step. Only the helper applies these rules, so its self-test runs them. */
+interface ScreenVector { image: string; as: "screen" }
+const everything = vectors as (ScriptVector | StepVector | ScreenVector)[];
+const all = everything.filter((v): v is ScriptVector => v.as !== "step" && v.as !== "screen");
 const stepVectors = everything.filter((v): v is StepVector => v.as === "step");
 const textOf = (v: ScriptVector) => (v.times ? Array(v.times).fill(v.script).join("; ") : v.script);
 const names = (list: { name: string }[]) => list.map((c) => c.name.toLowerCase());
@@ -212,6 +214,48 @@ describe("checking a step", () => {
   it("refuses a request with a part missing", () => {
     expect(refusal({ kind: "command", cmd: { ...menuDelay, read: "" } })).not.toBeNull();
     expect(refusal({ kind: "command", cmd: { ...menuDelay, does: " " } })).not.toBeNull();
+  });
+});
+
+describe("checking a change in an app's window", () => {
+  const lookId = "0123456789abcdef0123456789abcdef";
+  const look: ScreenLook = { lookId, path: ["Manage 3D settings", "Low Latency Mode"], value: "Off", options: ["Off", "On", "Ultra"], clean: true };
+  const slider: ScreenLook = { lookId, path: ["Brightness"], value: "40", range: { min: 0, max: 100 }, clean: false };
+  const screen = (patch: Record<string, unknown> = {}) => ({ kind: "native", op: { name: "screen", lookId, to: "Ultra", does: "Turns on low latency mode.", ...patch } }) as unknown as Step;
+
+  it("is always the strongest card, and never needs admin rights", () => {
+    expect(checkStep(screen(), { tainted: false, looks: [look] })).toMatchObject({ status: "allowed", tier: 3, admin: false });
+    expect(checkStep(screen({ tier: 1 }), { tainted: false, looks: [look] })).toMatchObject({ tier: 3 });
+    expect(stepsTitle([screen()])).toBe("Turns on low latency mode");
+  });
+
+  it("is refused without the look it came from", () => {
+    expect(refusal(screen())?.refused).toMatch(/hasn't looked/);
+    expect(checkStep(screen({ lookId: "f".repeat(32) }), { tainted: false, looks: [look] })).toMatchObject({ status: "refused" });
+  });
+
+  it("is refused when the new value isn't one the app offers", () => {
+    const at = (s: Step, l: ScreenLook) => checkStep(s, { tainted: false, looks: [l] });
+    expect(at(screen({ to: "Maximum" }), look)).toMatchObject({ status: "refused", refused: "The app doesn't offer that value for this setting." });
+    expect(at(screen({ to: "on" }), look).status).toBe("refused");
+    expect(at(screen({ to: "Off" }), look)).toMatchObject({ status: "refused", refused: "The setting already has that value." });
+    expect(at(screen({ to: "75" }), slider).status).toBe("allowed");
+    expect(at(screen({ to: "12.5" }), slider).status).toBe("allowed");
+    for (const to of ["101", "-1", "1e2", "0x10", " 50", "50 ", "Infinity", ""]) expect(at(screen({ to }), slider).status, to).toBe("refused");
+  });
+
+  it("carries nothing but the look's id, the value and the sentence", async () => {
+    const sent = screen({ hops: ["Restore defaults"], app: "C:\\Windows\\regedit.exe", from: "Off", look: { value: "x" } });
+    expect(canonicalStep(sent as HelperStep)).toEqual({ kind: "native", op: { name: "screen", lookId, to: "Ultra", does: "Turns on low latency mode." } });
+    expect(refusal(screen({ to: "two\nlines" }))?.refused).toMatch(/needs the look/);
+    expect(refusal(screen({ to: "caf\u00e9" }))?.refused).toMatch(/needs the look/);
+    expect(refusal(screen({ lookId: "../../x" }))?.refused).toMatch(/needs the look/);
+  });
+
+  it("in a chat that read outside text, is offered only when the look was clean", () => {
+    expect(checkStep(screen(), { tainted: true, looks: [look] }).status).toBe("allowed");
+    expect(checkStep(screen(), { tainted: true, looks: [{ ...look, clean: false }] })).toMatchObject({ status: "refused", why: "tainted" });
+    expect(cardTier([screen()], { tainted: true, looks: [{ ...look, clean: false }] })).toBe("refused");
   });
 });
 

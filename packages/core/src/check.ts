@@ -46,6 +46,8 @@ interface Rules {
 const R = rulesJson as unknown as Rules;
 export const rulesVersion = R.version;
 export const ruleWords = (construct: string) => R.constructs[construct];
+/** The longest name or value Rig takes from or sends to an app's window. */
+export const screenMaxText = (rulesJson as unknown as { screen: { maxText: number } }).screen.maxText;
 
 /** Characters PowerShell reads as quotes, dashes or spaces but that don't look like them, letters that fold into ASCII, and control characters. */
 const DISGUISED = new RegExp(`[${R.disguised.map((r) => r.split("-").map((h) => `\\u${h.padStart(4, "0")}`).join("-")).join("")}]`);

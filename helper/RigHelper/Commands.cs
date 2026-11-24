@@ -1,5 +1,5 @@
 // The one approval path for every step the helper runs by nonce: "step.check",
-// "step.preview", "step.apply", "step.undo" and "command.read"
+// "step.preview", "step.apply", "step.undo", "command.read" and "screen.look"
 // (packages/core/src/change.ts has the shapes). A step is a command
 // (PowerShell) or a native op (NativeSteps.cs). The same four calls under
 // "command." with `{ cmd }` still answer a Rig app from before native ops.
@@ -314,6 +314,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             case "step.apply" or "command.apply": return Apply(Str(p?["nonce"]) ?? "");
             case "step.undo" or "command.undo": return Undo(Str(p?["id"]) ?? "", p?["force"]?.GetValueKind() == System.Text.Json.JsonValueKind.True);
             case "command.read": return ReadOnly(Str(p?["script"]) ?? "");
+            case "screen.look": { using var person = Person.Find(appPid); return ScreenStep.LookFor(person, store, p, TestOnlyNativeOps); }
             default: throw new RigException($"Rig's helper doesn't know \"{method}\".");
         }
     }

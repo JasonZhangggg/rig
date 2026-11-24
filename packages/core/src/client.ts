@@ -3,7 +3,7 @@
 // the data comes from.
 
 import type { ActionCall } from "./actions";
-import type { AppliedStep, ApplyReply, HelperStep, PreviewReply, Step, Tier, UndoReply } from "./change";
+import type { AppliedStep, ApplyReply, HelperStep, LookReply, PreviewReply, Step, Tier, UndoReply } from "./change";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -198,6 +198,8 @@ export interface RigClient {
 
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];
+  /** Has the helper walk to a control in an app's window and read it, changing nothing. A screen step names the look by its id. Only where changes can be made. */
+  lookAtScreen?(machineId: string, app: string, goal: string[]): Promise<LookReply>;
   /** Has the helper read the current state for a command or native step and check it, so its card can show it. Only where changes can be made. */
   previewStep?(machineId: string, step: HelperStep, tainted: boolean): Promise<PreviewReply>;
   /** Runs a step the helper previewed, by the nonce from its preview. Only where changes can be made. */
