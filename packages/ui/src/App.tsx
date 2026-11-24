@@ -4,6 +4,7 @@ import { AppProvider, useApp, useAppearance, useUI, type AppHost } from "./state
 import { applyAppearance } from "./appearance";
 import { getStage } from "./components/Stage";
 import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
+import { CardAsk } from "./pages/gpu/CardPick";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
 import { sceneThemeFor } from "./themes";
@@ -142,6 +143,7 @@ function Root() {
       <SceneFeed />
       <Sidebar><Page /></Sidebar>
       <ReviewSheet />
+      <CardAsk />
       <ManualViewer />
       <Palette />
       <UpdateNotice />

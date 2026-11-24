@@ -4,6 +4,7 @@
 // cables get to the board are always the usual ones, and the guide says so. Pure, so the list and the 3D board agree.
 
 import { gpuChip, type BoardItem, type BoardShape } from "./build";
+import type { GpuPlug } from "./gpuPorts";
 
 export type CableId = "eps" | "eps2" | "atx24" | "gpu";
 
@@ -51,8 +52,18 @@ export function gpuPlug(name: string): { plug: string; words: string } {
   if (brand === "RTX" && gen >= 50) return tier >= 70 ? sixteen : either;
   if (brand === "RTX" && gen === 40) return tier >= 80 || (tier === 70 && ti) ? sixteen : tier === 70 ? either : { plug: "8-pin PCIe", words: `Most ${of} take one 8-pin PCIe plug.` };
   if (brand === "RTX" && gen === 30) return tier >= 80 ? eights("two or three") : eights("one or two");
-  if (brand === "RX") return n >= 7800 ? eights("two or three") : eights("one or two");
+  if (brand === "RX") return n >= 7800 ? eights("two or three") : { plug: "8-pin or 6-pin PCIe", words: `${chip} cards take one or two PCIe plugs, 8-pin or 6-pin, depending on the maker. Look at the card's top edge.` };
   return eights("one or two");
+}
+
+/** A known card's own plugs: "8-pin + 6-pin PCIe", "This card takes one 8-pin and one 6-pin PCIe plug." */
+function cardPlugs(power: GpuPlug[]): { plug: string; words: string } {
+  if (power.some((x) => x.kind === "16-pin")) return { plug: "16-pin", words: "This card takes one 16-pin plug (12V-2x6)." };
+  const count = (k: string) => power.filter((x) => x.kind === k).length;
+  const word = ["", "one", "two", "three"];
+  const kinds = ["8-pin", "6-pin"].filter((k) => count(k));
+  const words = kinds.map((k) => `${word[count(k)] ?? count(k)} ${k}`).join(" and ");
+  return { plug: `${power.map((x) => x.kind).join(" + ")} PCIe`, words: `This card takes ${words} PCIe plug${power.length > 1 ? "s" : ""}.` };
 }
 
 const text = (it: BoardItem) => `${it.name} ${it.label}`;
@@ -66,7 +77,7 @@ const numberIn = (s: string) => +(/(\d+)\D*$/.exec(s)?.[1] ?? 0);
  * The guide for one PC. gpu is the card's name from Windows, null for no card (the processor's own graphics), and
  * undefined when Rig hasn't read it yet (a typical card).
  */
-export function cableGuide(board: BoardShape, gpu?: string | null): CableGuide {
+export function cableGuide(board: BoardShape, gpu?: string | null, gpuPower?: GpuPlug[]): CableGuide {
   const known = board.source !== "generic" && board.source !== "estimated";
   const power = board.items.filter((i) => i.kind === "power");
   const cpus = power.filter(isCpu).sort((a, b) => numberIn(a.name) - numberIn(b.name));
@@ -85,7 +96,8 @@ export function cableGuide(board: BoardShape, gpu?: string | null): CableGuide {
   });
   if (main) cables.push({ id: "atx24", title: "Board power", plug: "24-pin", to: main.id, code: main.name || undefined, port: "MB or ATX", known, how: "Line the clip up with the latch and press until it clicks. It takes a firm push." });
   if (gpu !== null) {
-    const p = gpuPlug(gpu ?? "");
+    // The card's own plugs where Rig knows the exact card, what most cards of its chip take otherwise.
+    const p = gpuPower?.length ? cardPlugs(gpuPower) : gpuPlug(gpu ?? "");
     cables.push({ id: "gpu", title: "Graphics card power", plug: p.plug, to: null, port: "PCIe or VGA", known: false, how: `${p.words} Push it all the way in, with no gap, and don't bend the cable right at the plug.` });
   }
   return {

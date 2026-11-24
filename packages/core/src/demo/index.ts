@@ -79,7 +79,8 @@ export class DemoClient implements RigClient {
       return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners, scan: demoScan(inv, Date.now() - 3 * 36e5) };
     };
     this.pcs = {
-      "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E" }, 1),
+      // Atlas's owner already told Rig which graphics card it is, since Windows' ids don't name it.
+      "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E", picks: { gpu: "msi-ventus2x-4070s-oc" } }, 1),
       "demo-pebble": mk(fixtures.pebble.inv, fixtures.pebble.facts, { name: "Pebble", accent: "#3C7BF0" }, 0),
     };
     const board = this.pcs["demo-atlas"].inv.board;

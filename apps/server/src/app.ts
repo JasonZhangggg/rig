@@ -139,7 +139,7 @@ export function createApp(deps: AppDeps = {}) {
   app.patch("/api/machines/:id", async (c) => {
     const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
     const patch = cleanIdentity(body);
-    if (!patch) return c.json({ message: "Name must be 1 to 40 characters, color a hex code and the clean date a date." }, 400);
+    if (!patch) return c.json({ message: "Name must be 1 to 40 characters, color a hex code, the clean date a date and picks Rig's own part ids." }, 400);
     const ok = await c.get("store").rename(c.get("user").id, c.req.param("id"), patch, now());
     return ok ? c.body(null, 204) : notFound(c);
   });
@@ -320,6 +320,17 @@ function cleanIdentity(body: Record<string, unknown> | null): Identity | null {
   if (body.cleanedAt !== undefined) {
     if (typeof body.cleanedAt !== "string" || Number.isNaN(Date.parse(body.cleanedAt))) return null;
     out.cleanedAt = new Date(body.cleanedAt).toISOString();
+  }
+  // Picks are short ids from Rig's own lists ("rx6700xt-xfx-qick319", "unsure:RX 6700 XT"), one per kind of part.
+  if (body.picks !== undefined) {
+    const p = body.picks as Record<string, unknown> | null;
+    if (!p || typeof p !== "object" || Array.isArray(p)) return null;
+    const picks: NonNullable<Identity["picks"]> = {};
+    for (const [k, v] of Object.entries(p)) {
+      if (!["case", "cooler", "gpu"].includes(k) || (v != null && (typeof v !== "string" || !/^[\w:+ .-]{1,60}$/.test(v)))) return null;
+      if (typeof v === "string") picks[k as keyof typeof picks] = v;
+    }
+    out.picks = picks;
   }
   return out;
 }

@@ -80,6 +80,8 @@ export function plugPinout(kind: PlugKind): PlugPinout {
 // ---------- which screen is on which output ----------
 
 const kindOf: Partial<Record<DisplayConnection, OutputKind>> = { hdmi: "hdmi", displayport: "dp", "usb-c": "usb-c", dvi: "dvi" };
+/** "On an HDMI output", with its article, for a screen whose output Rig can't place on the card. */
+const connectionName: Partial<Record<DisplayConnection, string>> = { hdmi: "an HDMI", displayport: "a DisplayPort", "usb-c": "a USB-C", dvi: "a DVI", vga: "a VGA" };
 
 /** used and free are what Windows shows. some: a few of these outputs are in use, Windows doesn't say which. unknown: Rig can't tell. */
 export type OutputState = "used" | "free" | "some" | "unknown";
@@ -110,6 +112,11 @@ export interface CardUse {
   elsewhere: { name: string; note: string }[];
   /** Set when Windows didn't say how the screens connect at all. */
   unknown?: string;
+  /**
+   * Set when Rig doesn't know the card's own outputs (an unknown card, or one Rig knows only by name and plugs):
+   * each screen on the card, with the kind of plug Windows names for it. groups is then empty.
+   */
+  screens?: { name: string; /** "2560 × 1440 at 165 Hz" */ detail: string; /** "an HDMI": the kind of output it's on, where Windows names it. */ plug?: string }[];
 }
 
 const screenText = (s: DisplayLink) => `${s.name}, ${s.width} × ${s.height} at ${s.refreshHz} Hz`;
@@ -119,7 +126,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * Lays the screens Windows reports over the card's outputs. A screen counts as on the card when Windows says the
  * card drives it, or when it doesn't say (older helpers) and the PC has only the one graphics card in use.
  */
-export function cardUse(p: GpuPorts, displays: DisplayLink[] | undefined): CardUse {
+export function cardUse(p: GpuPorts | undefined, displays: DisplayLink[] | undefined): CardUse {
   const shown = (displays ?? []).filter((d) => d.connection !== "internal");
   const elsewhere: CardUse["elsewhere"] = [];
   const onCard: DisplayLink[] = [];
@@ -128,6 +135,8 @@ export function cardUse(p: GpuPorts, displays: DisplayLink[] | undefined): CardU
     else if (d.connection === "wireless") elsewhere.push({ name: d.name, note: "Connected wirelessly, not to a plug on the card." });
     else onCard.push(d);
   }
+  // Without the card's own outputs, only what Windows says about each screen.
+  if (!p?.outputs.length) return { groups: [], elsewhere, screens: onCard.map((d) => ({ name: d.name, detail: `${d.width} × ${d.height} at ${d.refreshHz} Hz`, plug: d.connection && connectionName[d.connection] })) };
   // With no screen on the card every output is free; with screens but no plug kinds, Rig can't say.
   const anyKnown = !onCard.length || onCard.some((d) => d.connection);
   const groups: OutputGroup[] = [];

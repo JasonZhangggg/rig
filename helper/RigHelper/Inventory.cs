@@ -109,9 +109,13 @@ public static class Inventory
             double? vram = g?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.SmallData && s.Name.Contains("Memory Total", StringComparison.OrdinalIgnoreCase))?.Value;
             long ram = Num(v, "AdapterRAM");
             var date = CimDate(Str(v, "DriverDate"));
+            // PCI\VEN_1002&DEV_73DF&SUBSYS_E4451DA2&... : the subsystem id (E445) and its vendor (1DA2) name the exact card and its maker.
+            var sub = System.Text.RegularExpressions.Regex.Match(pnp, @"SUBSYS_([0-9A-F]{4})([0-9A-F]{4})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             list.Add(new
             {
                 name, vendor,
+                subsysVendor = sub.Success ? sub.Groups[2].Value.ToLowerInvariant() : null,
+                subsysId = sub.Success ? sub.Groups[1].Value.ToLowerInvariant() : null,
                 vramMb = vram is double mb && mb > 0 ? (long?)Math.Round(mb) : ram > 0 ? ram / (1024 * 1024) : null,
                 driverVersion = DriverVersion(vendor, Str(v, "DriverVersion")),
                 driverDate = date is DateTime d ? Pretty(d, true) : null,

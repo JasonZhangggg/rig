@@ -3,6 +3,7 @@
 // the data comes from.
 
 import type { ActionCall } from "./actions";
+import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
 import type { Shop } from "./shop";
@@ -112,8 +113,8 @@ export interface RigClient {
   machines(): Promise<PC[]>;
   /** Live view of one PC. Calls back now and on every change; returns a stop function. */
   watch(machineId: string, cb: (pc: PC) => void): () => void;
-  /** Name, color and the date of the last dust clean. */
-  rename(machineId: string, patch: { name?: string; accent?: string; cleanedAt?: string }): Promise<void>;
+  /** Name, color, the date of the last dust clean, and the models picked for parts Windows can't name. */
+  rename(machineId: string, patch: Identity): Promise<void>;
 
   history(machineId: string, range: Range): Promise<HistoryPoint[]>;
   upgrades(machineId: string): Promise<Upgrade[]>;

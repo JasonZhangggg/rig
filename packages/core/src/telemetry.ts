@@ -15,7 +15,7 @@ export interface Inventory {
     os: { name: string; version: string; build: string };
   };
   cpu: { name: string; cores: number; threads: number; maxClockMhz?: number };
-  gpus: { name: string; vendor: "nvidia" | "amd" | "intel" | "other"; vramMb?: number; driverVersion?: string; driverDate?: string; integrated: boolean }[];
+  gpus: { name: string; vendor: "nvidia" | "amd" | "intel" | "other"; /** PCI subsystem vendor and id ("1da2", "e445"): the card's maker and its exact model. Missing from older helpers. */ subsysVendor?: string; subsysId?: string; vramMb?: number; driverVersion?: string; driverDate?: string; integrated: boolean }[];
   board: { manufacturer: string; product: string; biosVersion: string; biosDate?: string };
   memory: { totalMb: number; slotsTotal?: number; modules: { manufacturer?: string; partNumber?: string; capacityMb: number; speedMhz?: number; slot?: string }[] };
   disks: Disk[];
