@@ -29,7 +29,8 @@ function AppliedResult({ reply, pcName }: { reply: Applied; pcName: string }) {
 function RolledBackResult({ reply }: { reply: RolledBack }) {
   const touches = reply.result.touches;
   const saved = touches.filter((t) => snapshotted(t.touch));
-  const lost = [...touches.filter((t) => !snapshotted(t.touch)).map((t) => <Claim key={touchName(t.touch)} text={touchName(t.touch)} max={96} />), ...reply.result.alsoChanged];
+  const left = reply.left ?? [];
+  const lost = [...touches.filter((t) => !snapshotted(t.touch)).map((t) => <Claim key={touchName(t.touch)} text={touchName(t.touch)} max={96} />), ...reply.result.alsoChanged, ...left];
   return (
     <>
       <div className="cc-first" role="status">
@@ -44,7 +45,7 @@ function RolledBackResult({ reply }: { reply: RolledBack }) {
         </ul>
       </Fact>
       {saved.length > 0 && <Fact label="Rig put back"><TouchList label="Rig put back" nowWord="to" rows={saved.map((t) => ({ touch: t.touch, now: t.before }))} /></Fact>}
-      {lost.length > 0 && <Fact label="Rig couldn't put back" note="it had no copy"><ul className="cc-plain">{lost.map((x, i) => <li key={i}>{x}</li>)}</ul></Fact>}
+      {lost.length > 0 && <Fact label="Rig couldn't put back" note={left.length ? undefined : "it had no copy"}><ul className="cc-plain">{lost.map((x, i) => <li key={i}>{x}</li>)}</ul></Fact>}
       {reply.result.output.trim() && <Printed label="The change script printed" text={reply.result.output} />}
     </>
   );

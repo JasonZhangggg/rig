@@ -112,6 +112,18 @@ public sealed class CommandStore
     }
 
     public string Work => Path.Combine(Root, "work");
+
+    /// The folder every script starts in, emptied first. Only admins can put anything in it and anyone can open it, so a
+    /// place named without its full path lands nowhere that matters, whoever the script runs as.
+    public string Empty()
+    {
+        string dir = Path.Combine(Root, "empty");
+        if (Directory.Exists(dir) && File.GetAttributes(dir).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(dir);
+        if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        if (secured) Lock(dir, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
+        return dir;
+    }
     public string RecordDir(string id) => Path.Combine(Root, "records", id);
 
     /// Where scripts that run as the person are written: the person can read them and only admins can change them.
@@ -247,6 +259,13 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// Only code in this process can set it; nothing that comes over the pipe reaches it.
     internal string? TestOnlyExtra { get; set; }
 
+    /// The self-test's way to stand in for a Rig app started with "Run as administrator", or, set false, for one started
+    /// normally: with admin rights the self-test is itself the app, and so is elevated.
+    internal bool? TestOnlyElevatedApp { get; set; }
+
+    public const string AppElevated = "Rig is running as administrator, so it can't keep changes to what you approved. Open Rig normally and ask again.";
+    public const string AppElevatedUndo = "Rig is running as administrator, so it can't keep the undo to what you approved. Open Rig normally and undo again.";
+
     static string? Str(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
     static JsonObject Refused(Verdict v) => new() { ["outcome"] = "refused", ["verdict"] = v.ToJson() };
     static JsonObject Refused(string words) => Refused(Verdict.Refuse(words));
@@ -276,7 +295,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         {
             File.WriteAllText(script, CommandCheck.Resource("Rig.Commands.CommandAst.ps1"), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
             File.WriteAllLines(input, scripts.Select(s => Convert.ToBase64String(Encoding.UTF8.GetBytes(s))));
-            var ran = PowerShellHost.RunHere(PowerShellHost.Args(script, input, output), ParseTimeoutMs);
+            var ran = PowerShellHost.RunHere(PowerShellHost.Args(script, input, output), ParseTimeoutMs, store.Empty(), store.Work);
             if (!File.Exists(output)) throw new RigException($"PowerShell's parser didn't answer ({(ran.TimedOut ? "it took too long" : ran.Printed.Split('\n')[0].Trim())})");
             return (JsonNode.Parse(File.ReadAllText(output))?["scripts"] as JsonArray ?? []).ToList();
         }
@@ -311,7 +330,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         try
         {
             PowerShellHost.Write(file, script, stopOnError: false);
-            var ran = person.Run(file, ReadTimeoutMs);
+            var ran = person.Run(file, ReadTimeoutMs, store.Empty());
             return ran.TimedOut ? $"The read didn't finish in {ReadTimeoutMs / 1000} seconds, so Rig stopped it." : ran.Printed;
         }
         finally { try { File.Delete(file); } catch { } }
@@ -389,6 +408,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         if (!Issued.TryGetValue(nonce, out string? issued) || store.Peek(nonce) is not Pending waiting) return expired;
         using var person = Person.Find(appPid);
         if (person.Sid != waiting.Person) return expired;
+        if (TestOnlyElevatedApp ?? person.Elevated) return Refused(AppElevated);
         // Windows' prompt wasn't answered with Yes: nothing ran, and the same card can ask again until it runs out.
         if (waiting.Verdict.Admin && Native.IsAdmin() && waiting.ApprovedAt == 0) return new JsonObject { ["outcome"] = "declined" };
         if (store.Take(nonce) is not Pending pending) return expired;
@@ -425,7 +445,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             return new JsonObject { ["outcome"] = "limit", ["until"] = NextMidnight() };
         }
         var point = verdict.Tier >= 2 && restorePoints ? RestorePoints.Ensure(store) : null;
-        var watch = new Sentinels(person);
+        var watch = new Sentinels(person, store.Work);
         var (guarded, moving) = watch.Baseline();
         string readBefore = Read(person, cmd.Read);
 
@@ -449,8 +469,11 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             left.AddRange(NotBack(states, touches, before));
             store.DropRecord(id);
             string? error = ran.TimedOut ? $"The change didn't finish in {RunTimeoutMs / 1000} seconds, so Rig stopped it." : !ran.Ok ? $"The change stopped with an error (exit code {ran.Exit})." : null;
-            if (left.Count > 0) error = $"{error} Rig couldn't put this back: {string.Join("; ", left.Distinct())}".Trim();
-            var rolled = new JsonObject { ["outcome"] = "rolledBack", ["result"] = result, ["sentinels"] = new JsonArray(Sentinels.Hits(guarded, guardedAfter, hits).Select(h => (JsonNode)h.ToJson()).ToArray()) };
+            var rolled = new JsonObject
+            {
+                ["outcome"] = "rolledBack", ["result"] = result, ["sentinels"] = new JsonArray(Sentinels.Hits(guarded, guardedAfter, hits).Select(h => (JsonNode)h.ToJson()).ToArray()),
+                ["left"] = new JsonArray(left.Distinct().Select(l => (JsonNode)l).ToArray()),
+            };
             if (error != null) rolled["error"] = error;
             return rolled;
         }
@@ -476,7 +499,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         try
         {
             PowerShellHost.Write(file, script, stopOnError);
-            return admin ? PowerShellHost.RunHere(PowerShellHost.Args(file), RunTimeoutMs) : person.Run(file, RunTimeoutMs);
+            return admin ? PowerShellHost.RunHere(PowerShellHost.Args(file), RunTimeoutMs, store.Empty(), store.Work) : person.Run(file, RunTimeoutMs, store.Empty());
         }
         finally { try { File.Delete(file); } catch { } }
     }
@@ -486,7 +509,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     {
         watch.PutBack(guarded, after, hits, admin);
         var now = watch.Read();
-        return Sentinels.Hits(guarded, now, Sentinels.Differences(guarded, now, touches, moving)).Select(h => $"{h.Sentinel}: {h.After}");
+        return Sentinels.Hits(guarded, now, Sentinels.Differences(guarded, now, touches, moving)).Select(h => $"{Sentinels.Words(h.Sentinel)}: {h.After}");
     }
 
     /// The touches that aren't back to their snapshot, read again after a restore.
@@ -538,6 +561,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             return o;
         }
         if (admin && !Native.IsAdmin()) return Failed("This change was made with admin rights, and Rig's helper is running without them. Restart Rig and choose Yes when Windows asks, then undo again.");
+        if (TestOnlyElevatedApp ?? person.Elevated) return Failed(AppElevatedUndo);
 
         var states = new TouchStates(person, admin);
         var touches = cmd.Touches.ToList();
@@ -576,7 +600,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             else if (OtherAccount(admin, Person.Mine(), person.Sid, cmd, writes) != null) scriptProblem = "the undo script would run as another account, so it wasn't run";
             else
             {
-                var watch = new Sentinels(person);
+                var watch = new Sentinels(person, store.Work);
                 var (guarded, moving) = watch.Baseline();
                 var ran = RunScript(person, admin, dir, id + "-undo.ps1", cmd.Undo, stopOnError: false);
                 var guardedAfter = watch.Read();
@@ -584,7 +608,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                 if (hits.Count > 0)
                 {
                     var notBack = GuardBack(watch, guarded, guardedAfter, hits, touches, moving, admin).ToList();
-                    foreach (var h in Sentinels.Hits(guarded, guardedAfter, hits)) left.Add($"the undo script changed a protected place ({h.Sentinel}), so Rig put it back");
+                    foreach (var h in Sentinels.Hits(guarded, guardedAfter, hits)) left.Add($"the undo script changed a protected place ({Sentinels.Words(h.Sentinel)}), so Rig put it back");
                     failed.AddRange(notBack);
                 }
                 if (!ran.Ok) scriptProblem = ran.TimedOut ? "the undo script didn't finish" : $"the undo script stopped with an error: {ran.Printed.Split('\n')[0].Trim()}";

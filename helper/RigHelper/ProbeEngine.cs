@@ -747,13 +747,14 @@ static class UserProcess
 
     /// Runs a program with a primary token. `set` replaces variables in that account's own environment; `desktop` null keeps this process's desktop.
     /// `logonService` has Windows' own logon service start it, which sets the program up on the desktop for that token.
-    public static (int Exit, string Out, string Err, bool TimedOut) RunAs(IntPtr primary, string exe, string args, int timeoutMs, string? desktop, IReadOnlyDictionary<string, string>? set = null, string? cwd = null, bool logonService = false)
+    /// With `keep`, the program gets `set` and only these variables of the account's own, and nothing else.
+    public static (int Exit, string Out, string Err, bool TimedOut) RunAs(IntPtr primary, string exe, string args, int timeoutMs, string? desktop, IReadOnlyDictionary<string, string>? set = null, string? cwd = null, bool logonService = false, IReadOnlyCollection<string>? keep = null)
     {
         IntPtr env = IntPtr.Zero, outR = IntPtr.Zero, outW = IntPtr.Zero, errR = IntPtr.Zero, errW = IntPtr.Zero, inR = IntPtr.Zero, inW = IntPtr.Zero;
         var pi = new PROCESS_INFORMATION();
         try
         {
-            env = EnvironmentFor(primary, set ?? new Dictionary<string, string>());
+            env = EnvironmentFor(primary, set ?? new Dictionary<string, string>(), keep);
             var sa = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf<SECURITY_ATTRIBUTES>(), bInheritHandle = 1 };
             if (!CreatePipe(out outR, out outW, ref sa, 0) || !CreatePipe(out errR, out errW, ref sa, 0) || !CreatePipe(out inR, out inW, ref sa, 0)) throw Win("connect to the script");
             // The script gets only its own ends.
@@ -799,10 +800,11 @@ static class UserProcess
         }
     }
 
-    /// The account's own environment block with `set` on top, as memory the caller frees.
-    static IntPtr EnvironmentFor(IntPtr token, IReadOnlyDictionary<string, string> set)
+    /// The account's own environment block with `set` on top, or with `keep` only `set` and the kept names of the account's own, as memory the caller frees.
+    static IntPtr EnvironmentFor(IntPtr token, IReadOnlyDictionary<string, string> set, IReadOnlyCollection<string>? keep)
     {
         var vars = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var own = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (!CreateEnvironmentBlock(out IntPtr block, token, false))
         {
             if (set.Count == 0) return IntPtr.Zero;
@@ -814,12 +816,14 @@ static class UserProcess
                 for (IntPtr p = block; Marshal.PtrToStringUni(p) is { Length: > 0 } line; p += (line.Length + 1) * 2)
                 {
                     int eq = line.IndexOf('=', 1);
-                    if (eq > 0) vars[line[..eq]] = line[(eq + 1)..];
+                    if (eq > 0) own[line[..eq]] = line[(eq + 1)..];
                 }
             }
             finally { DestroyEnvironmentBlock(block); }
         }
+        foreach (var (k, v) in own) if (keep == null) vars[k] = v;
         foreach (var (k, v) in set) vars[k] = v;
+        foreach (string k in keep ?? []) if (own.TryGetValue(k, out string? v)) vars[k] = v;
         var sb = new StringBuilder();
         foreach (var (k, v) in vars) sb.Append(k).Append('=').Append(v).Append('\0');
         sb.Append('\0');

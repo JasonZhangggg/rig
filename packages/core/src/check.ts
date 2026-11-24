@@ -13,7 +13,7 @@ export type ScriptUse = "read" | "run" | "undo";
 interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[] }
 interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string }
 interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean }
-interface Targets { kind: "path" | "service"; values?: string[]; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
+interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
 interface Entry extends Outcome { name: string; exe?: boolean; literal?: boolean; blocks?: boolean; read?: Form[]; when?: (Match & Outcome)[]; targets?: Targets }
 interface TextRule { says: string; contains: string[] }
 interface ReadRoot { root: string; ends?: string[] }
@@ -25,7 +25,7 @@ interface Rules {
   always: string[];
   readParams: string[];
   roots: { known: string[]; unknown: string[] };
-  paths: { literal: string[]; literalPrefix: string; wildcards: string[]; programs: string[]; readKinds: string[]; readRoots: ReadRoot[]; system: string };
+  paths: { literal: string[]; literalPrefix: string; values: string[]; constants: string[]; wildcards: string[]; programs: string[]; readKinds: string[]; readRoots: ReadRoot[]; system: string };
   adminText: string[];
   safeTypes: string[];
   safeMethods: string[];
@@ -162,22 +162,25 @@ const literalParam = (head: string) => R.paths.literal.includes(head) || (head.l
 
 /** The arguments a command acts on: every argument that isn't a parameter or the value of one listed in `values`, or those at `at`. */
 function targetsOf(call: Call, t: Targets): Target[] {
-  const shown = shownOf(call.args);
+  const shown = shownOf(call.args).filter((a) => a.kind === "hidden" || !R.paths.constants.includes(fold(a.text)));
   const make = (a: Arg, literal: boolean): Target => {
     const hidden = a.kind === "hidden", place = hidden ? "" : placeOf(a.text);
     return { text: a.text, place, kind: hidden ? "name" : kindOf(place), hidden, literal };
   };
   if (t.at) return t.at.flatMap((k) => (shown[k] ? [make(shown[k], false)] : []));
-  const values = t.values ?? [], out: Target[] = [];
+  const values = t.values ?? [], names = t.names ?? [], out: Target[] = [];
+  const plainName = (x: Target) => !x.hidden && x.kind === "name" && !R.paths.wildcards.some((w) => x.text.includes(w)) && !(t.places && R.paths.programs.some((p) => x.place.endsWith(p)));
   for (let k = 0; k < shown.length; k++) {
     const a = shown[k];
     if (!isParam(a)) { out.push(make(a, false)); continue; }
-    const head = headOf(a), role = literalParam(head) ? "literal" : values.includes(head) ? "value" : "path";
+    const head = headOf(a);
+    const role = literalParam(head) ? "literal" : values.includes(head) || R.paths.values.includes(head) ? "value" : names.includes(head) ? "name" : "path";
     const inline = inlineOf(a);
-    if (inline) { if (role !== "value") out.push(make({ kind: "word", text: inline }, role === "literal")); continue; }
+    const add = (x: Target) => { if (role === "literal" || (role === "name" && !plainName(x))) out.push(x); };
+    if (inline) { if (role === "path") out.push(make({ kind: "word", text: inline }, false)); else add(make({ kind: "word", text: inline }, role === "literal")); continue; }
     if (role === "path" || !shown[k + 1] || isParam(shown[k + 1])) continue;
     k++;
-    if (role === "literal") out.push(make(shown[k], true));
+    add(make(shown[k], role === "literal"));
   }
   return out;
 }
@@ -210,7 +213,9 @@ function checkTargets(t: Targets, entry: Entry, call: Call, use: ScriptUse, name
     if (odd) return { stop: ["read-kind", at(odd), "notRead"] };
   } else if (t.write) {
     if (targets.some((x) => x.hidden)) return { stop: ["not-literal-change", name, "refused"] };
-    if (shown.some((x) => x.kind === "relative") || !shown.some((x) => x.kind === "registry" || x.kind === "file" || x.kind === "drive")) return { stop: ["full-path", name, "refused"] };
+    const loose = shown.find((x) => x.kind === "relative" || x.kind === "name");
+    if (loose) return { stop: ["relative", at(loose), "refused"] };
+    if (!shown.some((x) => x.kind === "registry" || x.kind === "file" || x.kind === "drive")) return { stop: ["full-path", name, "refused"] };
   }
   if (t.content) {
     const outside = shown.find((x) => x.kind !== "file" || !R.paths.readRoots.some((r) => underRoot(x.place, r)));
@@ -290,6 +295,7 @@ function judgeFind(f: Find, use: ScriptUse): { refuse?: string; why?: Refusal; r
       if (R.paths.wildcards.some((w) => f.detail.includes(w))) return { refuse: words("wildcard", at), why: "refused" };
       if (dots(place)) return { refuse: words("dots", at), why: "refused" };
       if (R.paths.programs.some((p) => place.endsWith(p))) return { refuse: words("program-file", at), why: "refused" };
+      if (kindOf(place) !== "file") return { refuse: words("relative", at), why: "refused" };
       return { reason: words() };
     }
   }

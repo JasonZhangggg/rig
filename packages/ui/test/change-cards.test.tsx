@@ -479,7 +479,7 @@ describe("a rollback", () => {
     const c = card("rollback");
     const cmd: Command = { ...c.cmd, touches: [...c.cmd.touches, { kind: "task", name: "Cleanup" }] };
     const reply: ApplyReply = {
-      outcome: "rolledBack", sentinels: [], error: "It stopped partway.",
+      outcome: "rolledBack", sentinels: [], error: "It stopped partway.", left: ["how Windows starts up: BCD"],
       result: { before: "", after: "", output: "Made the key.", alsoChanged: ["A value under HKCU\\Software\\Other"],
         touches: [{ touch: cmd.touches[0], before: null, after: "" }, { touch: cmd.touches[1], before: "Off", after: "On" }] },
     };
@@ -489,6 +489,7 @@ describe("a rollback", () => {
     const lost = screen.getByText("Rig couldn't put back").closest(".cc-fact")!.textContent!;
     expect(lost).toContain("Cleanup");
     expect(lost).toContain("A value under HKCU\\Software\\Other");
+    expect(lost).toContain("how Windows starts up: BCD");
     expect(screen.getByRole("region", { name: "The change script printed" }).textContent).toBe("Made the key.");
     expect(within(screen.getByRole("list", { name: "Rig put back" })).getAllByRole("listitem")).toHaveLength(1);
   });

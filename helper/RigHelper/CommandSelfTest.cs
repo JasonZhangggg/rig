@@ -6,6 +6,7 @@
 // store, and is removed. Each check is named, so the output says which passed.
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
@@ -39,6 +40,7 @@ public static class CommandSelfTest
         bool elevated = Native.IsAdmin();
         string root = elevated ? CommandStore.AdminRoot + "-selftest-" + CommandStore.NewId() : Path.Combine(Path.GetTempPath(), "rig-selftest-commands-" + CommandStore.NewId());
         Person? person = null;
+        int elevation = 0;
         void Check(string name, Func<IEnumerable<string>> run)
         {
             var watch = Stopwatch.StartNew();
@@ -57,11 +59,14 @@ public static class CommandSelfTest
             // self-test is that app, so the same path is taken with its own token.
             int? app = elevated ? Environment.ProcessId : null;
             person = Person.Find(app);
-            var ctx = new Context(new Commands(store, app, restorePoints: false), store, person, elevated, root);
+            elevation = person.Elevation;
+            // The self-test with admin rights is an app started as administrator; it stands in for one started normally.
+            var ctx = new Context(new Commands(store, app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null }, store, person, elevated, root);
             Clean(ctx.Person);
             Check("every shared vector through PowerShell's parser", () => Vectors(ctx));
             Check("a command's fingerprint", Fingerprint);
             Check("running as the person", () => AsPerson(ctx));
+            Check("scripts start in an empty folder with a clean environment", () => CleanStart(ctx));
             Check("registry snapshot round trip", () => RegistryRoundTrip(ctx));
             Check("registry restore removes the keys a change made", () => RegistryAnchors(ctx));
             Check("file snapshot round trip", () => FileRoundTrip(ctx));
@@ -73,12 +78,15 @@ public static class CommandSelfTest
             Check("undo after something else changed it", () => Drift(ctx));
             Check("a failed change is rolled back", () => FailedRun(ctx));
             Check("a hidden write to the Run key is caught", () => HiddenRunKey(ctx));
+            Check("an app running as administrator is refused", () => ElevatedApp(ctx));
             Check("command.read", () => ReadOnly(ctx));
             Check("HKCU for another account", OtherAccount);
             if (elevated)
             {
                 Check("the command store is admins' only", () => StoreLocked(ctx));
                 Check("a change that needs admin rights", () => NeedsApproval(ctx));
+                Check("services, tasks and accounts a change made are put back", () => NeverPutBack(ctx));
+                Check("a limited app token", () => LimitedToken(ctx));
             }
             Check("the daily limit", () => Cap(ctx));
         }
@@ -94,7 +102,7 @@ public static class CommandSelfTest
             try { string parent = Path.GetDirectoryName(root)!; if (elevated && !Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent); } catch { }
         }
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
-        return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["checks"] = checks }, problems);
+        return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["appElevation"] = elevation, ["checks"] = checks }, problems);
     }
 
     static RegistryKey Hive(Person person, string sub, out string path)
@@ -210,11 +218,59 @@ public static class CommandSelfTest
         string file = Path.Combine(ctx.Store.PersonScripts(ctx.Person.Sid), "as-person.ps1");
         PowerShellHost.Write(file, "Write-Output ('rig-as-' + 'person'); $env:PSModulePath", stopOnError: true);
         var watch = Stopwatch.StartNew();
-        var ran = ctx.Person.Run(file, Commands.ReadTimeoutMs);
+        var ran = ctx.Person.Run(file, Commands.ReadTimeoutMs, ctx.Store.Empty());
         File.Delete(file);
         if (!ran.Ok || !ran.Out.Contains("rig-as-person")) yield return $"PowerShell didn't run as the person ({(ran.TimedOut ? "timed out" : $"exit {ran.Exit}")}): {ran.Printed}";
         else if (ran.Out.Split('\n').Skip(1).FirstOrDefault()?.Trim() is string modules && modules.Contains(';')) yield return $"the module path wasn't pinned: {modules}";
         if (watch.Elapsed.TotalSeconds > 15) yield return $"it took {watch.Elapsed.TotalSeconds:0} seconds";
+    }
+
+    static IEnumerable<string> CleanStart(Context ctx)
+    {
+        const string Leak = "RIG_SELFTEST_LEAK", Stray = "rig-selftest-stray.txt";
+        string system = Path.Combine(Environment.SystemDirectory, Stray);
+        string script = $"(Get-Location).Path; \"cor=$env:COR_ENABLE_PROFILING\"; \"leak=$env:{Leak}\"; \"path=$env:Path\"; \"temp=$env:TEMP\"; Set-Content -Path {Stray} -Value x -ErrorAction SilentlyContinue";
+        Environment.SetEnvironmentVariable("COR_ENABLE_PROFILING", "1");
+        Environment.SetEnvironmentVariable(Leak, "1");
+        var runs = new List<(string Who, PowerShellHost.Ran Ran, string Folder)>();
+        try
+        {
+            string file = Path.Combine(ctx.Store.PersonScripts(ctx.Person.Sid), "clean-start.ps1");
+            PowerShellHost.Write(file, script, stopOnError: false);
+            string folder = ctx.Store.Empty();
+            runs.Add(("the person", ctx.Person.Run(file, Commands.ReadTimeoutMs, folder), folder));
+            File.Delete(file);
+            if (ctx.Elevated)
+            {
+                file = Path.Combine(ctx.Store.Work, "clean-start.ps1");
+                PowerShellHost.Write(file, script, stopOnError: false);
+                folder = ctx.Store.Empty();
+                runs.Add(("admin rights", PowerShellHost.RunHere(PowerShellHost.Args(file), Commands.ReadTimeoutMs, folder, ctx.Store.Work), folder));
+                File.Delete(file);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COR_ENABLE_PROFILING", null);
+            Environment.SetEnvironmentVariable(Leak, null);
+        }
+        string sys = Environment.SystemDirectory;
+        foreach (var (who, ran, folder) in runs)
+        {
+            var lines = ran.Out.Split('\n').Select(l => l.Trim()).ToList();
+            string Of(string name) => lines.FirstOrDefault(l => l.StartsWith(name + "=", StringComparison.Ordinal))?[(name.Length + 1)..] ?? "(missing)";
+            if (!ran.Ok || lines.Count < 5) { yield return $"with {who}, the script didn't run ({(ran.TimedOut ? "timed out" : $"exit {ran.Exit}")}): {ran.Printed}"; continue; }
+            if (!string.Equals(lines[0].TrimEnd('\\'), folder.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) yield return $"with {who}, it started in {lines[0]}, not the empty folder";
+            if (Of("cor") != "" || Of("leak") != "") yield return $"with {who}, the helper's own environment reached the script";
+            if (!string.Equals(Of("path"), $@"{sys};{sys}\WindowsPowerShell\v1.0", StringComparison.OrdinalIgnoreCase)) yield return $"with {who}, the path was {Of("path")}";
+            if (who == "admin rights" && !string.Equals(Of("temp").TrimEnd('\\'), ctx.Store.Work.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) yield return $"with admin rights, temp was {Of("temp")}";
+        }
+        if (File.Exists(system)) { try { File.Delete(system); } catch { } yield return "a relative write landed in System32"; }
+        string again = ctx.Store.Empty();
+        if (Directory.EnumerateFileSystemEntries(again).Any()) yield return "the empty folder wasn't emptied before the next run";
+        if (ctx.Elevated && new DirectoryInfo(again).GetAccessControl().GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>()
+            .Any(r => r.AccessControlType == AccessControlType.Allow && r.IdentityReference.Value is not ("S-1-5-18" or "S-1-5-32-544") && (r.FileSystemRights & (FileSystemRights.WriteData | FileSystemRights.AppendData | FileSystemRights.Delete | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership)) != 0))
+            yield return "someone besides admins can change the empty folder";
     }
 
     // ----- Snapshots -----
@@ -399,7 +455,7 @@ public static class CommandSelfTest
 
     static IEnumerable<string> SentinelsAgree(Context ctx)
     {
-        var watch = new Sentinels(ctx.Person);
+        var watch = new Sentinels(ctx.Person, ctx.Store.Work);
         var (before, moving) = watch.Baseline();
         var again = watch.Read();
         var off = Sentinels.Differences(before, again, [], moving);
@@ -409,7 +465,7 @@ public static class CommandSelfTest
 
     static IEnumerable<string> SentinelPutBack(Context ctx)
     {
-        var watch = new Sentinels(ctx.Person);
+        var watch = new Sentinels(ctx.Person, ctx.Store.Work);
         bool had = Exists(ctx.Person, RunKey);
         var (before, moving) = watch.Baseline();
         using (var hive = Hive(ctx.Person, RunKey, out string path))
@@ -493,10 +549,26 @@ public static class CommandSelfTest
         finally { ctx.Rig.TestOnlyExtra = null; }
         if (!Is(a, "rolledBack") || a["sentinels"] is not JsonArray hit || !hit.Any(h => h?["sentinel"]?.ToString() == "run" && h["after"]?.ToString().Contains("rig-selftest") == true))
             yield return $"the write wasn't reported as a Run key hit: {a.ToJsonString()}";
-        if (a["error"] != null) yield return $"the rollback reported something left over: {a["error"]}";
+        if (a["error"] != null || a["left"] is not JsonArray { Count: 0 }) yield return $"the rollback reported something left over: {a["error"]} {a["left"]?.ToJsonString()}";
         if (Value(ctx.Person, RunKey, "RigSelftest") != null) yield return "the Run value was left behind";
         if (!had && Exists(ctx.Person, RunKey)) yield return "the Run key the write made was left behind";
         if (Exists(ctx.Person, Key)) yield return "the rollback left the test key behind";
+    }
+
+    static IEnumerable<string> ElevatedApp(Context ctx)
+    {
+        Clean(ctx.Person);
+        var p = ctx.Preview(Harmless());
+        if (!Is(p, "ready")) { yield return $"the test command was refused before it ran: {p.ToJsonString()}"; yield break; }
+        bool? was = ctx.Rig.TestOnlyElevatedApp;
+        ctx.Rig.TestOnlyElevatedApp = true;
+        JsonNode a;
+        try { a = ctx.Apply(p); }
+        finally { ctx.Rig.TestOnlyElevatedApp = was; }
+        if (!Is(a, "refused") || a["verdict"]?["refused"]?.ToString() != Commands.AppElevated) yield return $"it wasn't refused in the app's words: {a.ToJsonString()}";
+        if (Exists(ctx.Person, Key)) yield return "the change ran";
+        if (!Is(ctx.Apply(p), "applied")) yield return "the card couldn't ask again once Rig ran normally";
+        Clean(ctx.Person);
     }
 
     static IEnumerable<string> ReadOnly(Context ctx)
@@ -539,6 +611,166 @@ public static class CommandSelfTest
         if (!Is(a, "applied") || Registry.LocalMachine.OpenSubKey(@"SOFTWARE\RigSelftest")?.GetValue("Flag") is not 1) { yield return $"an approved admin command didn't run: {a.ToJsonString()}"; yield break; }
         var u = ctx.Undo(a);
         if (!Is(u, "undone") || There()) yield return $"undo didn't remove the admin test key: {u.ToJsonString()}";
+    }
+
+    const string TestService = "RigSelftestService", TestTask = "RigSelftestTask", TestUser = "RigSelftestUser", StartService = "W32Time";
+
+    static PowerShellHost.Ran Admin(Context ctx, string script)
+    {
+        string file = Path.Combine(ctx.Store.Work, CommandStore.NewId() + ".ps1");
+        PowerShellHost.Write(file, script, stopOnError: false);
+        try { return PowerShellHost.RunHere(PowerShellHost.Args(file), Commands.RunTimeoutMs, ctx.Store.Empty(), ctx.Store.Work); }
+        finally { File.Delete(file); }
+    }
+
+    static int? StartOf(string service) => Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{service}")?.GetValue("Start") as int?;
+
+    static IEnumerable<string> NeverPutBack(Context ctx)
+    {
+        int? start = StartOf(StartService);
+        if (start == null) { yield return $"{StartService} isn't installed"; yield break; }
+        string other = start == 4 ? "Manual" : "Disabled";
+        var system = new JsonObject
+        {
+            ["does"] = "Sets a test value for all accounts.",
+            ["read"] = @"Get-ItemProperty -Path 'HKLM:\SOFTWARE\RigSelftest' -Name Flag -ErrorAction SilentlyContinue",
+            ["run"] = @"New-Item -Path 'HKLM:\SOFTWARE\RigSelftest' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\SOFTWARE\RigSelftest' -Name Flag -Value 1",
+            ["touches"] = new JsonArray(new JsonObject { ["kind"] = "registry", ["key"] = @"HKLM\SOFTWARE\RigSelftest" }),
+        };
+        var p = ctx.Preview(system);
+        File.WriteAllText(Path.Combine(ctx.Store.Work, "approve.json"), new JsonObject { ["nonce"] = p["nonce"]?.ToString(), ["owner"] = ctx.Person.Sid }.ToJsonString());
+        if (Commands.ApproveFromFile(Path.Combine(ctx.Store.Work, "approve.json"), Command.From(system, out _)!.Hash(), ctx.Store) != RecorderSetup.Ok) { yield return "the test change couldn't be approved"; yield break; }
+        var admins = Accounts.Administrators();
+        ctx.Rig.TestOnlyExtra = $@"New-Service -Name {TestService} -BinaryPathName '%SystemRoot%\System32\svchost.exe -k RigSelftest' -StartupType Disabled | Out-Null
+Register-ScheduledTask -TaskName {TestTask} -Action (New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit') -Trigger (New-ScheduledTaskTrigger -Once -At '2030-01-01T00:00:00') -User 'NT AUTHORITY\SYSTEM' | Out-Null
+New-LocalUser -Name {TestUser} -NoPassword | Out-Null
+Add-LocalGroupMember -SID S-1-5-32-544 -Member {TestUser}
+Set-Service -Name {StartService} -StartupType {other}";
+        JsonNode a;
+        try { a = ctx.Apply(p); }
+        finally { ctx.Rig.TestOnlyExtra = null; }
+        try
+        {
+            var hit = (a["sentinels"] as JsonArray)?.Select(h => h?["sentinel"]?.ToString()).ToHashSet() ?? [];
+            if (!Is(a, "rolledBack")) yield return $"it wasn't rolled back: {a.ToJsonString()}";
+            foreach (string s in new[] { "services", "scheduledTasks", "localUsers", "administrators" })
+                if (!hit.Contains(s)) yield return $"{s} wasn't a hit";
+            if (a["left"] is not JsonArray { Count: 0 }) yield return $"it said it couldn't put back: {a["left"]?.ToJsonString()}";
+            if (Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{TestService}") != null) yield return "the new service is still there";
+            if (File.Exists(Path.Combine(Environment.SystemDirectory, "Tasks", TestTask))) yield return "the new scheduled task is still there";
+            if (Accounts.Users().Any(u => u.Name.Equals(TestUser, StringComparison.OrdinalIgnoreCase))) yield return "the new account is still there";
+            if (!Accounts.Administrators().ToHashSet().SetEquals(admins)) yield return "who is an administrator didn't come back as it was";
+            if (StartOf(StartService) != start) yield return $"{StartService} starts as {StartOf(StartService)}, not {start}";
+            using (var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\RigSelftest")) if (k != null) yield return "the test key the change made is still there";
+        }
+        finally
+        {
+            Admin(ctx, $@"sc.exe delete {TestService} | Out-Null
+Unregister-ScheduledTask -TaskName {TestTask} -Confirm:$false -ErrorAction SilentlyContinue
+Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
+            using (var k = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{StartService}", writable: true)) k?.SetValue("Start", start!.Value, RegistryValueKind.DWord);
+            Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\RigSelftest", throwOnMissingSubKey: false);
+        }
+    }
+
+    static IEnumerable<string> LimitedToken(Context ctx)
+    {
+        IntPtr app = IntPtr.Zero;
+        int pid = 0;
+        string? cant = null;
+        try { app = Limited.Start(Path.Combine(Environment.SystemDirectory, "PING.EXE") + " -n 600 127.0.0.1", out pid); }
+        catch (InvalidOperationException e) { cant = e.Message; }
+        if (cant != null) { yield return $"the runner couldn't make a limited token: {cant}"; yield break; }
+        try
+        {
+            using var person = Person.Find(pid);
+            if (person.Sid != ctx.Person.Sid) yield return "the limited token is another account";
+            var rig = new Commands(ctx.Store, pid, restorePoints: false) { TestOnlyElevatedApp = false };
+            string file = Path.Combine(ctx.Store.PersonScripts(person.Sid), "limited.ps1");
+            PowerShellHost.Write(file, "Write-Output ('rig-' + 'limited'); ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')", stopOnError: true);
+            var ran = person.Run(file, Commands.ReadTimeoutMs, ctx.Store.Empty());
+            File.Delete(file);
+            if (!ran.Ok || !ran.Out.Contains("rig-limited")) { yield return $"PowerShell didn't start with the limited token ({(ran.TimedOut ? "timed out" : $"exit {ran.Exit}")}): {ran.Printed}"; yield break; }
+            if (!ran.Out.Contains("False")) yield return $"the script ran as an administrator: {ran.Out.Trim()}";
+            Clean(ctx.Person);
+            var p = rig.Handle("command.preview", new JsonObject { ["cmd"] = Harmless() });
+            if (!Is(p, "ready") || p["verdict"]?["admin"]?.GetValue<bool>() != false) { yield return $"the test command wasn't ready without admin rights: {p.ToJsonString()}"; yield break; }
+            rig.TestOnlyExtra = @"New-Item -Path 'HKLM:\SOFTWARE\RigSelftest' -Force | Out-Null";
+            JsonNode a;
+            try { a = rig.Handle("command.apply", new JsonObject { ["nonce"] = p["nonce"]?.ToString() }); }
+            finally { rig.TestOnlyExtra = null; }
+            using (var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\RigSelftest")) if (k != null) yield return "a command without admin rights wrote under HKLM";
+            if (!Is(a, "rolledBack")) yield return $"the failed HKLM write wasn't rolled back: {a.ToJsonString()}";
+            if (Exists(ctx.Person, Key)) yield return "the rollback left the test key behind";
+        }
+        finally
+        {
+            Limited.Stop(app);
+            Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\RigSelftest", throwOnMissingSubKey: false);
+            Clean(ctx.Person);
+        }
+    }
+
+    /// A stand-in for a Rig app started normally: the self-test's own token with its administrators group turned off and
+    /// its privileges taken away, at medium integrity, as Windows' everyday token for an administrator is.
+    static class Limited
+    {
+        public static IntPtr Start(string cmd, out int pid)
+        {
+            IntPtr own = IntPtr.Zero, token = IntPtr.Zero, sid = IntPtr.Zero;
+            try
+            {
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT, out own)) throw Win("open its own token");
+                if (!CreateRestrictedToken(own, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out token)) throw Win("CreateRestrictedToken");
+                if (!ConvertStringSidToSidW("S-1-16-8192", out sid)) throw Win("ConvertStringSidToSid");
+                var label = new TOKEN_MANDATORY_LABEL { Sid = sid, Attributes = SE_GROUP_INTEGRITY };
+                if (!SetTokenInformation(token, TokenIntegrityLevel, ref label, Marshal.SizeOf<TOKEN_MANDATORY_LABEL>() + GetLengthSid(sid))) throw Win("set medium integrity");
+                var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
+                if (!CreateProcessAsUserW(token, null, new System.Text.StringBuilder(cmd), IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW, IntPtr.Zero, null, ref si, out PROCESS_INFORMATION pi)) throw Win("CreateProcessAsUser");
+                CloseHandle(pi.hThread);
+                pid = pi.dwProcessId;
+                return pi.hProcess;
+            }
+            finally
+            {
+                if (sid != IntPtr.Zero) LocalFree(sid);
+                if (token != IntPtr.Zero) CloseHandle(token);
+                if (own != IntPtr.Zero) CloseHandle(own);
+            }
+        }
+
+        public static void Stop(IntPtr process)
+        {
+            TerminateProcess(process, 0);
+            CloseHandle(process);
+        }
+
+        static InvalidOperationException Win(string what) => new($"{what} failed with Windows error {Marshal.GetLastWin32Error()}");
+
+        const uint TOKEN_ASSIGN_PRIMARY = 0x1, TOKEN_DUPLICATE = 0x2, TOKEN_QUERY = 0x8, TOKEN_ADJUST_DEFAULT = 0x80, DISABLE_MAX_PRIVILEGE = 0x1, LUA_TOKEN = 0x4, SE_GROUP_INTEGRITY = 0x20, CREATE_NO_WINDOW = 0x08000000;
+        const int TokenIntegrityLevel = 25;
+
+        [StructLayout(LayoutKind.Sequential)] struct TOKEN_MANDATORY_LABEL { public IntPtr Sid; public uint Attributes; }
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct STARTUPINFO
+        {
+            public int cb; public string? lpReserved, lpDesktop, lpTitle; public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+            public short wShowWindow, cbReserved2; public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+        }
+        [StructLayout(LayoutKind.Sequential)] struct PROCESS_INFORMATION { public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
+
+        [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool TerminateProcess(IntPtr process, uint code);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr h);
+        [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr h);
+        [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool CreateRestrictedToken(IntPtr token, uint flags, int disableCount, IntPtr disable, int deleteCount, IntPtr delete, int restrictCount, IntPtr restrict, out IntPtr newToken);
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool ConvertStringSidToSidW(string sid, out IntPtr psid);
+        [DllImport("advapi32.dll")] static extern int GetLengthSid(IntPtr sid);
+        [DllImport("advapi32.dll", SetLastError = true)] static extern bool SetTokenInformation(IntPtr token, int infoClass, ref TOKEN_MANDATORY_LABEL info, int length);
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool CreateProcessAsUserW(IntPtr token, string? app, System.Text.StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string? cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
     }
 
     static IEnumerable<string> Cap(Context ctx)
