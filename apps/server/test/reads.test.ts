@@ -202,26 +202,33 @@ describe("general command steps", () => {
     expect(lastToolResults(site.seen[1])).toContain("can't be offered from the website");
   });
 
-  it("builds firewall, policy, device and driver steps from their shorthands, with the tier the checker gives", async () => {
-    const proposal = async (step: Record<string, unknown>) => {
-      const { live, seen } = await chatSetup([{ tool: { name: "propose_change", input: { title: "Change it", why: "y", steps: [step] } } }, { text: "Review the card." }]);
-      return { p: of(await live(ask("Change it")), "proposal")[0]?.proposal, sent: lastToolResults(seen[1]) };
-    };
+  const proposal = async (step: Record<string, unknown>) => {
+    const { live, seen } = await chatSetup([{ tool: { name: "propose_change", input: { title: "Change it", why: "y", steps: [step] } } }, { text: "Review the card." }]);
+    return { p: of(await live(ask("Change it")), "proposal")[0]?.proposal, sent: lastToolResults(seen[1]) };
+  };
+
+  it("builds firewall steps from their shorthand, with the tier the checker gives", async () => {
     const port = await proposal({ firewall: { add: { name: "Minecraft server", direction: "inbound", action: "allow", protocol: "tcp", ports: [25565] } } });
     expect(port.p).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { does: expect.stringContaining("connect to TCP port 25565"), undo: expect.stringMatching(/^Remove-NetFirewallRule -Name 'Rig-/) } }] });
     expect((await proposal({ firewall: { add: { name: "Game", direction: "inbound", action: "allow", protocol: "udp", ports: [27015], profile: "public" } } })).p?.tier).toBe(3);
     const rdp = await proposal({ firewall: { add: { name: "Remote", direction: "inbound", action: "allow", protocol: "tcp", ports: [3389] } } });
     expect(rdp.p).toBeUndefined();
     expect(rdp.sent).toContain("firewall: Rig never opens the ports Windows uses for remote access");
+  });
 
+  it("builds a policy step from its shorthand", async () => {
     const policy = await proposal({ policy: { scope: "user", key: "Microsoft\\Windows\\Explorer", name: "DisableSearchBoxSuggestions", type: "dword", value: 1 } });
     expect(policy.p).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { touches: [{ kind: "registry", key: "HKCU\\Software\\Policies\\Microsoft\\Windows\\Explorer", value: "DisableSearchBoxSuggestions" }] } }] });
+  });
 
+  it("builds device steps from their shorthand and refuses parts Windows needs", async () => {
     expect((await proposal({ device: { instanceId: "USB\\VID_046D&PID_C52B\\5&1A2B3C&0&2", enabled: false } })).p?.tier).toBe(2);
     const cpu = await proposal({ device: { instanceId: "ACPI\\GenuineIntel_-_Intel64\\_0", enabled: false } });
     expect(cpu.p).toBeUndefined();
     expect(cpu.sent).toContain("a part Windows needs to run");
+  });
 
+  it("builds a driver step from its shorthand at tier 3", async () => {
     const driver = await proposal({ driver: { inf: "C:\\Drivers\\Realtek\\rt640x64.inf", catalog: "C:\\Drivers\\Realtek\\rt640x64.cat" } });
     expect(driver.p).toMatchObject({ tier: 3, steps: [{ kind: "command", cmd: { does: expect.stringContaining("always gets Rig's strongest check") } }] });
     expect((await proposal({ driver: { inf: "C:\\Drivers\\*.inf", catalog: "C:\\Drivers\\x.cat" } })).sent).toContain("driver: inf must be");
