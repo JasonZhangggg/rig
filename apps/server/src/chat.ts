@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, titleFor, toRequest, validateCall,
-  type ActionCall, type Manual, type ChatEvent, type ChatRequest, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
+  cardTier, fixSteps, type ActionCall, type FixStep, type Tier, type Manual, type ChatEvent, type ChatRequest, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
 import type { PageMatch } from "./db";
@@ -286,7 +286,7 @@ export function localTime(d: Date, timeZone?: string): string {
 type ProposeInput = { title?: unknown; why?: unknown; calls?: unknown };
 
 /** Checks a proposal against the catalog and against what's actually on this PC. */
-export function checkProposal(input: ProposeInput, ctx: ChatContext): { calls: ActionCall[]; title: string; why: string } | string {
+export function checkProposal(input: ProposeInput, ctx: ChatContext): { steps: FixStep[]; tier: Tier; title: string; why: string } | string {
   if (!Array.isArray(input.calls) || input.calls.length === 0) return "calls must be a non-empty array";
   const calls: ActionCall[] = [];
   for (const raw of input.calls) {
@@ -310,9 +310,12 @@ export function checkProposal(input: ProposeInput, ctx: ChatContext): { calls: A
       if (d.maxRefreshHz && c.hz > d.maxRefreshHz) return `${c.display} goes up to ${d.maxRefreshHz} Hz`;
     }
   }
+  const steps = fixSteps(calls);
+  const tier = cardTier(steps);
+  if (tier === "refused") return "One of these changes isn't allowed";
   const title = typeof input.title === "string" && input.title.trim() ? input.title.trim().slice(0, 80) : titleFor(calls);
   const why = typeof input.why === "string" ? input.why.trim().slice(0, 300) : "";
-  return { calls, title, why };
+  return { steps, tier, title, why };
 }
 
 /** Turns the app's chat history into API messages: alternating, starting and ending with the person. */
@@ -412,8 +415,8 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
           if (proposed) { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: "Only one card per answer. Mention the other idea in words." }); continue; }
           const checked = checkProposal(input, ctx);
           if (typeof checked === "string") { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: checked }); continue; }
-          const rows = checked.calls.map((c) => describeCall(c, ctx.facts, ctx.inventory?.displays ?? []));
-          const proposal: Proposal = { id: uid(), title: checked.title, why: checked.why, calls: checked.calls, rows, status: "waiting" };
+          const rows = checked.steps.map((s) => describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? []));
+          const proposal: Proposal = { id: uid(), title: checked.title, why: checked.why, steps: checked.steps, tier: checked.tier, rows, status: "waiting" };
           proposed = true;
           await emit({ type: "proposal", proposal });
           results.push({ type: "tool_result", tool_use_id: u.id, content: "Shown as a card with Review and Not now. Nothing has changed yet. Finish with at most one short sentence." });

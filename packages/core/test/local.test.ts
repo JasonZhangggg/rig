@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type PC, type Snapshot } from "../src";
+import { fixSteps, LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type PC, type Snapshot, type Step } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -117,10 +117,10 @@ describe("LocalClient", () => {
     await client.start();
     const id = client.id;
     const call: ActionCall = { kind: "windows.gameMode", enabled: !(await sim.facts()).gameMode };
-    const rows = await client.preview(id, [call]);
+    const rows = await client.preview(id, fixSteps([call]));
     expect(rows[0][0]).toMatch(/game mode/i);
 
-    const change = await client.apply(id, [call], { by: "you" });
+    const change = await client.apply(id, fixSteps([call]), { by: "you" });
     expect((await sim.facts()).gameMode).toBe(call.enabled);
     expect((await client.changes(id))[0].id).toBe(change.id);
 
@@ -138,8 +138,46 @@ describe("LocalClient", () => {
     await client.start();
     const before = await sim.facts();
     const calls: ActionCall[] = [{ kind: "windows.gameMode", enabled: !before.gameMode }, { kind: "display.refreshRate", display: fixtures.atlas.inv.displays[0].name, hz: 165 }];
-    await expect(client.apply(client.id, calls, { by: "rig" })).rejects.toThrow(/Nothing was changed/);
+    await expect(client.apply(client.id, fixSteps(calls), { by: "rig" })).rejects.toThrow(/Nothing was changed/);
     expect((await sim.facts()).gameMode).toBe(before.gameMode);
+    expect(await client.changes(client.id)).toHaveLength(0);
+    client.stop();
+  });
+
+  it("keeps the tier and the chat answer a change came from", async () => {
+    const { client, sim } = setup();
+    await client.start();
+    const call: ActionCall = { kind: "windows.gameMode", enabled: !(await sim.facts()).gameMode };
+    const change = await client.apply(client.id, fixSteps([call]), { by: "rig", from: { proposalId: "p1", messageId: "m1" } });
+    expect((await client.changes(client.id))[0]).toMatchObject({ id: change.id, tier: 1, from: { proposalId: "p1", messageId: "m1" }, applied: [{ step: { kind: "fix", call } }] });
+    client.stop();
+  });
+
+  it("reads, undoes and redoes a change stored before steps", async () => {
+    const { client, store, sim } = setup();
+    await client.start();
+    const was = (await sim.facts()).gameMode;
+    const call: ActionCall = { kind: "windows.gameMode", enabled: !was };
+    await sim.apply(call);
+    const row: [string, string, string] = ["Game Mode", was ? "On" : "Off", was ? "Off" : "On"];
+    await store.putChange({ id: "old", machineId: client.id, at: "2026-11-01T10:00:00.000Z", title: "Turned Game Mode on", by: "you", status: "applied", why: "", result: "", diff: [row],
+      applied: [{ call, undo: { kind: "windows.gameMode", enabled: was }, row }] });
+    expect((await client.changes(client.id))[0]).toMatchObject({ tier: 1, applied: [{ step: { kind: "fix", call }, undo: { kind: "fix", call: { kind: "windows.gameMode", enabled: was } }, rows: [row] }] });
+    expect((await client.undo(client.id, "old")).status).toBe("undone");
+    expect((await sim.facts()).gameMode).toBe(was);
+    expect((await client.redo(client.id, "old")).status).toBe("applied");
+    expect((await sim.facts()).gameMode).toBe(!was);
+    client.stop();
+  });
+
+  it("won't preview or make a command step until the helper can run commands", async () => {
+    const { client, sim } = setup();
+    await client.start();
+    const was = (await sim.facts()).gameMode;
+    const steps: Step[] = [...fixSteps([{ kind: "windows.gameMode", enabled: !was }]), { kind: "command", cmd: { does: "Turns off menu delay.", read: "Get-Date", run: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay -Value 0", touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop" }] } }];
+    await expect(client.preview(client.id, steps)).rejects.toThrow("This PC's Rig helper can't run commands yet.");
+    await expect(client.apply(client.id, steps, { by: "rig" })).rejects.toThrow("This PC's Rig helper can't run commands yet.");
+    expect((await sim.facts()).gameMode).toBe(was);
     expect(await client.changes(client.id)).toHaveLength(0);
     client.stop();
   });
@@ -147,7 +185,7 @@ describe("LocalClient", () => {
   it("refuses anything outside the fix catalog", async () => {
     const { client } = setup();
     await client.start();
-    await expect(client.preview(client.id, [{ kind: "registry.write", key: "x" } as unknown as ActionCall])).rejects.toThrow();
+    await expect(client.preview(client.id, fixSteps([{ kind: "registry.write", key: "x" } as unknown as ActionCall]))).rejects.toThrow();
     client.stop();
   });
 

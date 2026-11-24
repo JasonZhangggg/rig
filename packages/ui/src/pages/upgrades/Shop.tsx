@@ -4,7 +4,7 @@
 // every price on screen says so. Photos come only from that feed.
 
 import { memo, useEffect, useMemo, useState } from "react";
-import { categoryState, drawWith, fitOf, gainOf, makersIn, matchesQuery, photoOf, priceOf, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
+import { categoryState, drawWith, fixSteps, fitOf, gainOf, makersIn, matchesQuery, photoOf, priceOf, psuFor, shopCategories, type Fit, type HardwareFacts, type Shop, type ShopCategory, type ShopItem } from "@rig/core";
 import { useActions, useStillPC, useUI } from "../../state";
 import { partIcon } from "../shared";
 import type { PCUpgrades } from "./PCUpgrades";
@@ -152,7 +152,7 @@ function Lead({ facts, onShow, pickText }: { facts: HardwareFacts; onShow?: () =
   const fix = async () => {
     if (!free?.fix || checking) return;
     setChecking(true);
-    try { await review(free.fix, { by: "you", why: free.title }); } finally { setChecking(false); }
+    try { await review(fixSteps(free.fix), { by: "you", why: free.title }); } finally { setChecking(false); }
   };
   if (!pickText && !free) return null;
   return (

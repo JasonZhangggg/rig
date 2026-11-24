@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPC, coreLoad, coresOf, describeCall, findReadings, sensorKinds, HistoryWindow, keyReadings, livePoint, type Reading, findings, score, validateCall, type Inventory, type Snapshot, type SystemFacts } from "../src";
+import { buildPC, coreLoad, coresOf, describeCall, fixSteps, findReadings, sensorKinds, HistoryWindow, keyReadings, livePoint, type Reading, findings, score, validateCall, type Inventory, type Snapshot, type SystemFacts } from "../src";
 import { DemoClient, fixtures, simulate } from "../src/demo";
 
 const atlas = () => structuredClone(fixtures.atlas.inv);
@@ -96,7 +96,7 @@ describe("actions", () => {
 describe("demo client", () => {
   it("applies, undoes and redoes a change", async () => {
     const c = new DemoClient();
-    const calls = [{ kind: "startup.app" as const, name: "Steam", enabled: false }, { kind: "power.plan" as const, guid: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" }];
+    const calls = fixSteps([{ kind: "startup.app", name: "Steam", enabled: false }, { kind: "power.plan", guid: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" }]);
     const ch = await c.apply("demo-atlas", calls, { by: "you" });
     expect(ch.diff).toEqual([["Steam", "Starts with Windows", "Off"], ["Power plan", "Balanced", "High performance"]]);
     expect(await c.preview("demo-atlas", calls)).toEqual([["Steam", "Off", "Off"], ["Power plan", "High performance", "High performance"]]);
@@ -110,7 +110,7 @@ describe("demo client", () => {
     const c = new DemoClient();
     let pc = (await c.machines())[0];
     expect(pc.issues!.some((i) => i.id.startsWith("hz-"))).toBe(true);
-    await c.apply("demo-atlas", [{ kind: "display.refreshRate", display: "LG 27GP850", hz: 165 }], { by: "you" });
+    await c.apply("demo-atlas", fixSteps([{ kind: "display.refreshRate", display: "LG 27GP850", hz: 165 }]), { by: "you" });
     pc = (await c.machines())[0];
     expect(pc.issues!.some((i) => i.id.startsWith("hz-"))).toBe(false);
   });

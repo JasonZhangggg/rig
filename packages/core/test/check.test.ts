@@ -55,8 +55,8 @@ describe("the shared vectors", () => {
 
 describe("what a refusal says", () => {
   it("names the command and why, in plain words", () => {
-    expect(checkScript("New-LocalUser -Name helper", "run")).toMatchObject({ status: "refused", never: true, refused: "Rig won't run New-LocalUser: it adds a Windows account, which could let someone else in." });
-    expect(checkScript("cmd /c del C:\\x", "run")).toMatchObject({ never: false, refused: "Rig won't run cmd: it starts another shell, and Rig can't check what runs inside it." });
+    expect(checkScript("New-LocalUser -Name helper", "run")).toMatchObject({ status: "refused", why: "never", refused: "Rig won't run New-LocalUser: it adds a Windows account, which could let someone else in." });
+    expect(checkScript("cmd /c del C:\\x", "run")).toMatchObject({ why: "refused", refused: "Rig won't run cmd: it starts another shell, and Rig can't check what runs inside it." });
     expect(checkScript("Get-Service -ComputerName srv", "read")).toMatchObject({ refused: expect.stringContaining("Get-Service with -computername") });
     expect(checkScript("Get-Service | % { $_.Stop() }", "run")).toMatchObject({ refused: expect.stringContaining("calls a method on an object") });
     expect(checkScript("", "run")).toMatchObject({ status: "refused" });
@@ -96,7 +96,7 @@ describe("checking a step", () => {
   });
 
   it("checks the undo script like the change", () => {
-    expect(refusal(command({ undo: "Set-MpPreference -ExclusionPath C:\\Games" }))).toMatchObject({ never: true, refused: expect.stringMatching(/^The undo script was refused\./) });
+    expect(refusal(command({ undo: "Set-MpPreference -ExclusionPath C:\\Games" }))).toMatchObject({ why: "never", refused: expect.stringMatching(/^The undo script was refused\./) });
     expect(checkStep(command({ undo: "Remove-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay" }))).toMatchObject({ tier: 3 });
   });
 
@@ -111,16 +111,29 @@ describe("checking a step", () => {
 
   it("refuses a never-list place in what it touches, even when the script hides the path", () => {
     const hidden = command({ run: "Set-ItemProperty -Path $k -Name Updater -Value 'C:\\x.exe'", touches: [{ kind: "registry", key: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" }] });
-    expect(refusal(hidden)).toMatchObject({ never: true, refused: expect.stringContaining("Run keys") });
-    expect(refusal(command({ touches: [{ kind: "file", path: "C:\\Windows\\System32\\drivers\\etc\\hosts" }] }))).toMatchObject({ never: true });
+    expect(refusal(hidden)).toMatchObject({ why: "never", refused: expect.stringContaining("Run keys") });
+    expect(refusal(command({ touches: [{ kind: "file", path: "C:\\Windows\\System32\\drivers\\etc\\hosts" }] }))).toMatchObject({ why: "never" });
     expect(refusal(command({ touches: [{ kind: "file", path: "\\\\srv\\share\\x" }] }))).not.toBeNull();
     expect(refusal(command({ touches: [{ kind: "registry", key: "Software\\Foo" }] }))).not.toBeNull();
+  });
+
+  it("rates a change tier 3 when what it touches lowers one of Windows' protections, even when the script hides the path", () => {
+    const uac = command({ run: "Set-ItemProperty -Path $k -Name $n -Value 0", touches: [{ kind: "registry", key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value: "EnableLUA" }] });
+    expect(checkStep(uac)).toMatchObject({ status: "allowed", tier: 3, admin: true, reasons: expect.arrayContaining([expect.stringContaining("User Account Control")]) });
+    expect(refusal(uac, true)).toMatchObject({ why: "tainted" });
+  });
+
+  it("says which kind of refusal it is", () => {
+    expect(refusal(command({ read: "Get-Service | Stop-Service" }))).toMatchObject({ why: "notRead" });
+    expect(refusal(command({ run: "iex $code" }))).toMatchObject({ why: "refused" });
+    expect(refusal(command({ run: "$env:Path = 'C:\\x;' + $env:Path" }))).toMatchObject({ why: "refused", refused: expect.stringContaining("$env:Path") });
+    expect(refusal(command({ run: "Disable-ComputerRestore -Drive 'C:\\'" }))).toMatchObject({ why: "never" });
   });
 
   it("refuses a change that can't be undone once the chat has read outside text", () => {
     const wipe = command({ run: "Remove-Item 'C:\\Temp\\old' -Recurse", undo: undefined, touches: [{ kind: "file", path: "C:\\Temp\\old" }] });
     expect(checkStep(wipe)).toMatchObject({ status: "allowed", tier: 3 });
-    expect(refusal(wipe, true)?.refused).toContain("read text from outside");
+    expect(refusal(wipe, true)).toMatchObject({ why: "tainted", refused: expect.stringContaining("read text from outside") });
     expect(checkStep(command(), { tainted: true })).toMatchObject({ status: "allowed", tier: 2 });
   });
 

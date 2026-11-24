@@ -93,7 +93,7 @@ function Message({ m }: { m: ChatMessage }) {
 function ProposalCard({ p }: { p: Proposal }) {
   const { review, declineProposal } = useActions();
   const [reading, setReading] = useState(false);
-  const n = p.calls.length;
+  const n = p.steps.length;
   return (
     <div className="proposal">
       <div className="proposal-head">
@@ -106,7 +106,7 @@ function ProposalCard({ p }: { p: Proposal }) {
         {p.status === "applied" ? <a className="btn ghost sm" href="#changes">View in Changes</a> : p.status === "declined" ? null : (
           <>
             <button className="btn ghost sm" type="button" disabled={reading} onClick={() => declineProposal(p.id)}>Not now</button>
-            <button className="btn primary sm" type="button" disabled={reading} onClick={() => { setReading(true); void review(p.calls, { title: p.title, by: "rig", why: p.why, proposalId: p.id }).finally(() => setReading(false)); }}>{reading ? "Reading settings…" : "Review and apply"}</button>
+            <button className="btn primary sm" type="button" disabled={reading} onClick={() => { setReading(true); void review(p.steps, { title: p.title, by: "rig", why: p.why, proposalId: p.id }).finally(() => setReading(false)); }}>{reading ? "Reading settings…" : "Review and apply"}</button>
           </>
         )}
       </div>

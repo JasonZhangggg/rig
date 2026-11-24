@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
-import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, titleFor, type TempFormat, type TempUnit, type Account, type AlertKind, type ActionCall, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route } from "@rig/core";
+import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
 
@@ -51,7 +51,7 @@ export interface Review {
   title: string;
   body: string;
   rows: DiffRow[];
-  calls: ActionCall[];
+  steps: Step[];
   cta: string;
   by: "you" | "rig";
   why?: string;
@@ -119,7 +119,7 @@ export interface Ctx {
   /** Starts a fresh conversation. Does nothing while Rig is answering. */
   clearChat: () => void;
   /** Opens the review sheet with the current values filled in. Nothing changes until the person confirms. */
-  review: (calls: ActionCall[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
+  review: (steps: Step[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
   confirmReview: () => Promise<void>;
   declineProposal: (proposalId: string) => void;
   /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
@@ -443,12 +443,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
 
       clearChat: () => { if (!dataNow.current.answering) setData((d) => ({ ...d, chat: [] })); },
 
-      review: (calls, meta) => once("review", async () => {
+      review: (steps, meta) => once("review", async () => {
         if (!client.caps.applyChanges) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
         let rows: DiffRow[];
-        try { rows = await client.preview(pcId, calls); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
-        const title = meta.title ?? titleFor(calls);
-        set({ review: { title, body: meta.body ?? "Here's exactly what will change. Nothing happens until you confirm.", rows, calls, cta: meta.cta ?? (calls.length === 1 ? "Make this change" : `Make ${calls.length} changes`), by: meta.by, why: meta.why, proposalId: meta.proposalId } });
+        try { rows = await client.preview(pcId, steps); } catch (e) { toast(`Couldn't read the current settings, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); return; }
+        const title = meta.title ?? stepsTitle(steps);
+        set({ review: { title, body: meta.body ?? "Here's exactly what will change. Nothing happens until you confirm.", rows, steps, cta: meta.cta ?? (steps.length === 1 ? "Make this change" : `Make ${steps.length} changes`), by: meta.by, why: meta.why, proposalId: meta.proposalId } });
       }),
 
       confirmReview: async () => {
@@ -456,11 +456,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         if (!r || r.busy) return;
         set({ review: { ...r, busy: true, error: undefined } });
         try {
-          const change = await client.apply(pcId, r.calls, { title: r.title, why: r.why, by: r.by });
+          const from = r.proposalId ? { proposalId: r.proposalId, messageId: dataNow.current.chat.find((m) => m.proposal?.id === r.proposalId)?.id } : undefined;
+          const change = await client.apply(pcId, r.steps, { title: r.title, why: r.why, by: r.by, from });
           setData((d) => ({ ...d, changes: [change, ...d.changes.filter((c) => c.id !== change.id)] }));
           if (r.proposalId) patchProposal(r.proposalId, { status: "applied", changeId: change.id });
           set({ review: null });
-          toast(r.calls.length === 1 ? "Done." : `${r.calls.length} changes made.`, change.id);
+          toast(r.steps.length === 1 ? "Done." : `${r.steps.length} changes made.`, change.id);
         } catch (e) {
           set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Rig couldn't make this change, so nothing was changed. Try again, and if it keeps happening, restart Rig." } });
         }

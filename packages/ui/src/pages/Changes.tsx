@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Change, DiffRow, Issue } from "@rig/core";
+import { fixSteps, type Change, type DiffRow, type Issue } from "@rig/core";
 import { DiffTable, StatusChip } from "../components/common";
 import { DayLabel, Row, Rows } from "../components/Rows";
 import { useActions, useAppSelector, useLatest } from "../state";
@@ -70,7 +70,7 @@ function usePreviews(fixes: Issue[]) {
   const ids = fixes.map((i) => i.id).join(" ");
   useEffect(() => {
     let live = true;
-    for (const i of fixes) client.preview(pc.id, i.fix!).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
+    for (const i of fixes) client.preview(pc.id, fixSteps(i.fix!)).then((r) => live && setRows((m) => ({ ...m, [i.id]: r }))).catch(() => {});
     return () => { live = false; };
   }, [client, pc.id, ids]); // eslint-disable-line react-hooks/exhaustive-deps
   return rows;
@@ -94,7 +94,7 @@ function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow
   const open = (i: Issue) => {
     if (!i.fix) { issueGo(i, latest().pc, { set, go, ask, review }); return; }
     setReading(i.id);
-    void review(i.fix, { by: "you", why: i.title }).finally(() => setReading(null));
+    void review(fixSteps(i.fix), { by: "you", why: i.title }).finally(() => setReading(null));
   };
   return (
     <section className="card ch-next" aria-labelledby="ch-next-h">

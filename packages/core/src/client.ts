@@ -2,7 +2,7 @@
 // the demo each provide their own implementation, so the UI never knows where
 // the data comes from.
 
-import type { ActionCall } from "./actions";
+import type { AppliedStep, Step, Tier } from "./change";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -16,7 +16,9 @@ export interface Proposal {
   id: string;
   title: string;
   why?: string;
-  calls: ActionCall[];
+  steps: Step[];
+  /** The riskiest step's tier, worked out by Rig. */
+  tier: Tier;
   rows: DiffRow[];
   status: "waiting" | "applied" | "declined";
   changeId?: string;
@@ -41,7 +43,8 @@ export interface ChatMessage {
   error?: boolean;
 }
 
-export interface AppliedCall { call: ActionCall; undo: ActionCall; row: DiffRow }
+/** The chat answer a change came from. */
+export interface Provenance { proposalId: string; /** The chat message that showed the card. */ messageId?: string }
 
 export interface Change {
   id: string;
@@ -54,8 +57,12 @@ export interface Change {
   why: string;
   diff: DiffRow[];
   result: string;
-  applied: AppliedCall[];
+  tier: Tier;
+  applied: AppliedStep[];
+  from?: Provenance;
 }
+
+export interface ApplyMeta { title?: string; why?: string; by: "you" | "rig"; from?: Provenance }
 
 export interface Account { id: string; name: string; email: string }
 
@@ -124,8 +131,8 @@ export interface RigClient {
 
   changes(machineId: string): Promise<Change[]>;
   /** Fills in the current values so the person sees exactly what will change. */
-  preview(machineId: string, calls: ActionCall[]): Promise<DiffRow[]>;
-  apply(machineId: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change>;
+  preview(machineId: string, steps: Step[]): Promise<DiffRow[]>;
+  apply(machineId: string, steps: Step[], meta: ApplyMeta): Promise<Change>;
   undo(machineId: string, changeId: string): Promise<Change>;
   redo(machineId: string, changeId: string): Promise<Change>;
 

@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import { scriptHash, type ActionCall, Change, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, SystemFacts } from "@rig/core";
+import { scriptHash, type ActionCall, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -26,7 +26,7 @@ export const tauriStore: LocalStore = {
   set: (key, value) => invoke("kv_set", { key, value }),
   addHistory: (point) => invoke("history_add", { point }),
   history: (since) => invoke<HistoryPoint[]>("history_since", { since }),
-  changes: () => invoke<Change[]>("changes_list"),
+  changes: () => invoke<StoredChange[]>("changes_list"),
   putChange: (change) => invoke("change_put", { change }),
 };
 

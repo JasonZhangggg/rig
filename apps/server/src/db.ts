@@ -4,8 +4,8 @@
 
 import { sql, type Selectable } from "kysely";
 import {
-  cleanEvents, isActive, makeExport, newRecording, toInfo, toRequest,
-  type Change, type DataExport, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type Manual, type ManualDiagram,
+  changeOf, cleanEvents, isActive, makeExport, newRecording, toInfo, toRequest,
+  type Change, type DataExport, type StoredChange, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type Manual, type ManualDiagram,
   type ManualKind, type ManualPage, type PC, type PCEvent, type Recording, type RecordingInfo, type RecordingRequest, type SystemFacts,
 } from "@rig/core";
 import type { Found } from "./manuals";
@@ -45,7 +45,7 @@ const whole = (v: number | null | undefined) => (v == null || !Number.isFinite(v
 function fromRow(r: Row): MachineRow {
   return {
     id: r.id, view: r.view as PC, inventory: (r.inventory as Inventory | null) ?? null, facts: (r.facts as SystemFacts | null) ?? null,
-    changes: (r.changes as Change[]) ?? [], games: (r.games as Game[]) ?? [], identity: (r.identity as Identity) ?? {},
+    changes: ((r.changes as StoredChange[] | null) ?? []).map(changeOf), games: (r.games as Game[]) ?? [], identity: (r.identity as Identity) ?? {},
     identityAt: iso(r.identity_at), syncedAt: iso(r.synced_at)!, events: (r.events as PCEvent[]) ?? [],
   };
 }

@@ -1,7 +1,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
-import type { ActionCall } from "../actions";
-import { describeCall, titleFor } from "../actions";
-import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
+import { describeCall } from "../actions";
+import { cardTier, fixSteps, stepsTitle, type AppliedStep, type FixStep, type Step } from "../change";
+import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
@@ -54,6 +54,10 @@ function see(seen: Record<string, [number, number]>, s: Sensor) {
   seen[s.id] = [Math.min(lo, s.value), Math.max(hi, s.value)];
 }
 
+function fixesOnly(steps: Step[]): FixStep[] {
+  return steps.map((s) => { if (s.kind !== "fix") throw new Error("The demo can't run commands yet."); return s; });
+}
+
 export class DemoClient implements RigClient {
   readonly kind = "demo" as const;
   readonly caps = { local: true, applyChanges: true };
@@ -91,7 +95,7 @@ export class DemoClient implements RigClient {
     this.pcs["demo-atlas"].changes.push({
       id: "seed1", machineId: "demo-atlas", at: new Date(Date.now() - 5 * day).toISOString(), title: "Turned off NVIDIA Broadcast at startup", by: "rig", status: "applied",
       why: "It started with Windows but you never use it.", result: "", diff: [["NVIDIA Broadcast", "Starts with Windows", "Off"]],
-      applied: [{ call: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: false }, undo: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: true }, row: ["NVIDIA Broadcast", "Starts with Windows", "Off"] }],
+      tier: 1, applied: [{ step: { kind: "fix", call: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: false } }, undo: { kind: "fix", call: { kind: "startup.app", name: "NVIDIA Broadcast", enabled: true } }, rows: [["NVIDIA Broadcast", "Starts with Windows", "Off"]] }],
     });
   }
 
@@ -251,17 +255,18 @@ export class DemoClient implements RigClient {
 
   async changes(id: string) { return [...(this.pcs[id]?.changes ?? [])].sort((a, b) => b.at.localeCompare(a.at)); }
 
-  async preview(id: string, calls: ActionCall[]): Promise<DiffRow[]> {
+  async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
     const p = this.pcs[id];
-    return calls.map((c) => describeCall(c, p.facts, p.inv.displays));
+    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays));
   }
 
-  async apply(id: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change> {
+  async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
     const p = this.pcs[id];
-    const rows = await this.preview(id, calls);
+    const rows = await this.preview(id, steps);
     await sleep(400);
-    const applied = calls.map((call, i) => ({ call, undo: applyToFacts(p.inv, p.facts, call), row: rows[i] }));
-    const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? titleFor(calls), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, applied };
+    const applied: AppliedStep[] = fixesOnly(steps).map((step, i) => ({ step, undo: { kind: "fix", call: applyToFacts(p.inv, p.facts, step.call) }, rows: [rows[i]] }));
+    const tier = cardTier(steps);
+    const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? stepsTitle(steps), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: tier === "refused" ? 3 : tier, applied, from: meta.from };
     p.changes.unshift(change);
     this.emit(id);
     return change;
@@ -270,7 +275,7 @@ export class DemoClient implements RigClient {
   async undo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
-    [...c.applied].reverse().forEach((a) => applyToFacts(p.inv, p.facts, a.undo));
+    [...c.applied].reverse().forEach((a) => { if (a.undo.kind === "fix") applyToFacts(p.inv, p.facts, a.undo.call); });
     c.status = "undone";
     this.emit(id);
     return { ...c };
@@ -279,7 +284,7 @@ export class DemoClient implements RigClient {
   async redo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
-    c.applied = c.applied.map((a) => ({ ...a, undo: applyToFacts(p.inv, p.facts, a.call) }));
+    c.applied = c.applied.map((a) => (a.step.kind === "fix" ? { ...a, step: a.step, undo: { kind: "fix", call: applyToFacts(p.inv, p.facts, a.step.call) } } : a));
     c.status = "applied";
     this.emit(id);
     return { ...c };
@@ -335,12 +340,12 @@ export class DemoClient implements RigClient {
     } else if (/startup|slow|boot/.test(q)) {
       const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
       await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
-      const calls: ActionCall[] = on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false }));
-      onEvent({ type: "proposal", proposal: { id: uid(), title: titleFor(calls), calls, rows: await this.preview(id, calls), status: "waiting" } });
+      const steps = fixSteps(on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false })));
+      onEvent({ type: "proposal", proposal: { id: uid(), title: stepsTitle(steps), steps, tier: 1, rows: await this.preview(id, steps), status: "waiting" } });
     } else if (display && /screen|monitor|smooth|hz|refresh|fps|stutter/.test(q)) {
       await say(`Your ${display.name} can run at ${display.maxRefreshHz} Hz, but Windows has it at ${display.refreshHz} Hz. That's a common default after a new cable or driver. Switching makes games and scrolling look smoother and changes nothing else.`);
-      const calls: ActionCall[] = [{ kind: "display.refreshRate", display: display.name, hz: display.maxRefreshHz }];
-      onEvent({ type: "proposal", proposal: { id: uid(), title: `Run ${display.name} at ${display.maxRefreshHz} Hz`, calls, rows: await this.preview(id, calls), status: "waiting" } });
+      const steps = fixSteps([{ kind: "display.refreshRate", display: display.name, hz: display.maxRefreshHz }]);
+      onEvent({ type: "proposal", proposal: { id: uid(), title: `Run ${display.name} at ${display.maxRefreshHz} Hz`, steps, tier: 1, rows: await this.preview(id, steps), status: "waiting" } });
     } else if (/loud|hot|fan|temp|noise|dust/.test(q)) {
       await say("Some noise while gaming is normal. A steady rise in graphics card temperature at the same settings usually means dust on the intake filters, and cleaning them takes about five minutes.");
       onEvent({ type: "steps", steps: ["Shut down and unplug the PC.", "Take off the front panel; most pull off from the bottom edge.", "Slide the mesh filter out and rinse or vacuum it.", "Let it dry fully, then put it back."] });

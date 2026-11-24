@@ -1,4 +1,4 @@
-import type { Alert, Issue, PC, Severity } from "@rig/core";
+import { fixSteps, type Alert, type Issue, type PC, type Severity } from "@rig/core";
 import type { Ctx } from "../state";
 
 export const partIcon: Record<string, JSX.Element> = {
@@ -20,7 +20,7 @@ export const shopCatOf: Record<string, string> = { ram: "memory", ssd: "storage"
 
 // What clicking an issue does everywhere
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
-  if (i.fix) { ctx.review(i.fix, { by: "you", why: i.title }); return; }
+  if (i.fix) { ctx.review(fixSteps(i.fix), { by: "you", why: i.title }); return; }
   if (i.ask) { ctx.ask(i.ask); return; }
   if (i.part && i.go === "upgrades") ctx.set({ shopCat: shopCatOf[i.part] ?? null });
   else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });

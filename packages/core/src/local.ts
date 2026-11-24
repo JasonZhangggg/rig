@@ -5,12 +5,13 @@
 
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
-import { describeCall, titleFor, validateCall, type ActionCall } from "./actions";
+import { describeCall, validateCall, type ActionCall } from "./actions";
+import { cardTier, changeOf, stepsTitle, type AppliedStep, type FixStep, type FixUndo, type Step, type StoredChange } from "./change";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
 import type { CloudClient } from "./cloud";
 import { makeExport, type DataExport } from "./export";
-import { rangeMs, type AppliedCall, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
+import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
@@ -51,7 +52,8 @@ export interface LocalStore {
   set(key: string, value: unknown): Promise<void>;
   addHistory(p: HistoryPoint): Promise<void>;
   history(sinceMs: number): Promise<HistoryPoint[]>;
-  changes(): Promise<Change[]>;
+  /** May hold changes stored by older versions; LocalClient reads them through changeOf. */
+  changes(): Promise<StoredChange[]>;
   putChange(c: Change): Promise<void>;
 }
 
@@ -466,7 +468,7 @@ export class LocalClient implements RigClient {
 
   async changes(id: string): Promise<Change[]> {
     if (!(await this.isLocal(id))) return this.cloud?.changes(id) ?? [];
-    return (await this.store.changes()).sort((a, b) => b.at.localeCompare(a.at));
+    return (await this.store.changes()).map(changeOf).sort((a, b) => b.at.localeCompare(a.at));
   }
 
   // ----- Logs and recordings -----
@@ -662,7 +664,8 @@ export class LocalClient implements RigClient {
     return this.facts;
   }
 
-  async preview(id: string, calls: ActionCall[]): Promise<DiffRow[]> {
+  async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
+    const calls = fixes(steps).map((s) => s.call);
     await this.local(id);
     await this.start();
     for (const c of calls) { const bad = validateCall(c); if (bad) throw new Error(bad); }
@@ -670,14 +673,14 @@ export class LocalClient implements RigClient {
     return calls.map((c) => describeCall(c, facts, this.inv!.displays));
   }
 
-  /** Runs calls in order. If one fails, the ones before it are put back and nothing is left half done. */
-  private async run(pairs: { call: ActionCall; row: DiffRow }[]): Promise<AppliedCall[]> {
-    const done: AppliedCall[] = [];
+  /** Runs fix steps in order. If one fails, the ones before it are put back and nothing is left half done. */
+  private async run(todo: { step: FixStep; rows: DiffRow[] }[]): Promise<AppliedFix[]> {
+    const done: AppliedFix[] = [];
     try {
-      for (const { call, row } of pairs) done.push({ call, undo: await this.link.apply(call), row });
+      for (const { step, rows } of todo) done.push({ step, undo: { kind: "fix", call: await this.link.apply(step.call) }, rows });
       return done;
     } catch (e) {
-      for (const a of [...done].reverse()) await this.link.apply(a.undo).catch(() => {});
+      for (const a of [...done].reverse()) await this.link.apply(a.undo.call).catch(() => {});
       throw new Error(`${e instanceof Error ? e.message : String(e)} Nothing was changed.`);
     } finally {
       await this.freshFacts().catch(() => {});
@@ -686,12 +689,14 @@ export class LocalClient implements RigClient {
     }
   }
 
-  async apply(id: string, calls: ActionCall[], meta: { title?: string; why?: string; by: "you" | "rig" }): Promise<Change> {
-    const rows = await this.preview(id, calls);
-    const applied = await this.run(calls.map((call, i) => ({ call, row: rows[i] })));
+  async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
+    const rows = await this.preview(id, steps);
+    const tier = cardTier(steps);
+    if (tier === "refused") throw new Error("Rig won't make this change.");
+    const applied = await this.run(fixes(steps).map((step, i) => ({ step, rows: [rows[i]] })));
     const change: Change = {
-      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? titleFor(calls),
-      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, applied,
+      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle(steps),
+      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier, applied, from: meta.from,
     };
     await this.store.putChange(change);
     void this.sync();
@@ -700,7 +705,7 @@ export class LocalClient implements RigClient {
 
   private async change(id: string, changeId: string) {
     await this.local(id);
-    const c = (await this.store.changes()).find((x) => x.id === changeId);
+    const c = (await this.store.changes()).map(changeOf).find((x) => x.id === changeId);
     if (!c) throw new Error("That change isn't in the log.");
     return c;
   }
@@ -708,7 +713,7 @@ export class LocalClient implements RigClient {
   async undo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status !== "applied") return c;
-    await this.run([...c.applied].reverse().map((a) => ({ call: a.undo, row: a.row })));
+    await this.run(appliedFixes(c.applied).reverse().map((a) => ({ step: { kind: "fix", call: a.undo.call }, rows: a.rows })));
     const next: Change = { ...c, status: "undone" };
     await this.store.putChange(next);
     void this.sync();
@@ -718,7 +723,7 @@ export class LocalClient implements RigClient {
   async redo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status === "applied") return c;
-    const applied = await this.run(c.applied.map((a) => ({ call: a.call, row: a.row })));
+    const applied = await this.run(appliedFixes(c.applied).map((a) => ({ step: a.step, rows: a.rows })));
     const next: Change = { ...c, status: "applied", applied };
     await this.store.putChange(next);
     void this.sync();
@@ -835,15 +840,27 @@ export class LocalClient implements RigClient {
   }
 }
 
+type AppliedFix = Extract<AppliedStep, { undo: FixUndo }>;
+
+const noCommands = () => new Error("This PC's Rig helper can't run commands yet.");
+
+function fixes(steps: Step[]): FixStep[] {
+  return steps.map((s) => { if (s.kind !== "fix") throw noCommands(); return s; });
+}
+
+function appliedFixes(applied: AppliedStep[]): AppliedFix[] {
+  return applied.map((a) => { if (a.step.kind !== "fix") throw noCommands(); return a as AppliedFix; });
+}
+
 /** A LocalStore in memory, for tests and for running the desktop UI in a browser. */
 export class MemoryStore implements LocalStore {
   private kv = new Map<string, unknown>();
   private points: HistoryPoint[] = [];
-  private log = new Map<string, Change>();
+  private log = new Map<string, StoredChange>();
   async get<T>(k: string) { return (this.kv.has(k) ? structuredClone(this.kv.get(k)) : null) as T | null; }
   async set(k: string, v: unknown) { this.kv.set(k, structuredClone(v)); }
   async addHistory(p: HistoryPoint) { this.points.push(p); }
   async history(since: number) { return this.points.filter((p) => p.t >= since); }
   async changes() { return [...this.log.values()].map((c) => structuredClone(c)); }
-  async putChange(c: Change) { this.log.set(c.id, structuredClone(c)); }
+  async putChange(c: StoredChange) { this.log.set(c.id, structuredClone(c)); }
 }
