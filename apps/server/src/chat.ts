@@ -16,7 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, toRequest, validateCall,
-  appCommand, cardTier, canonicalNative, checkRead, checkStep, deviceCommand, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
+  appCommand, cardTier, canonicalNative, canonicalRecipe, checkRead, checkStep, commandShape, deviceCommand, RECIPES, recipeCommand, recipeDoes, takesEffectWords, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
   type Manual, type ChatEvent, type ChatRequest, type DiffRow, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
@@ -65,6 +65,10 @@ export interface ChatContext {
   seal?: (text: string, tainted: boolean, at: SealAt) => Promise<string>;
   /** The Rig app on this PC can show and run command steps. Only then does propose_change take them. */
   commandSteps?: boolean;
+  /** The Rig app on this PC can show recipe steps. Older ones get the command a recipe compiles to. */
+  recipeSteps?: boolean;
+  /** Counts general command proposals by shape, for Jason to see which recipe to add next. */
+  countShapes?: (shapes: string[]) => Promise<void>;
 }
 
 /** Where an answer sits: the chat (an id the app sends) and the question it answers, counted from 1. */
@@ -136,7 +140,8 @@ Looking at the PC:
 Changes:
 - You can change this PC only with the propose_change tool. The person sees a card and decides. Nothing changes until they approve in the app on that PC.
 - Prefer a catalog fix (a fix step) when one fits; they show the value now and after and always undo. Use the exact GUIDs, app names and display names from the PC block.
-- Command steps, and the shorthand steps below ({registry}, {service}, {firewall}, {policy}, {device}, {driver}, {app}, {gpu}), work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
+- Command steps, recipes and the shorthand steps below ({recipe}, {registry}, {service}, {firewall}, {policy}, {device}, {driver}, {app}, {gpu}), work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
+- For a common Windows setting, use one of Rig's recipes ({recipe: {id, params}}) when one fits (the list is in propose_change). Rig built and tested each one, and the card says when it takes effect, so prefer a recipe to {registry} or a command. Use a catalog fix for Game Mode and visual effects.
 - For one registry value, use a registry step ({registry: {key, name, type, value}}); for how a service starts, a service step ({service: {name, startType}}). Rig writes the PowerShell for them, so prefer these to writing it yourself.
 - To change values in a program's or game's own settings file, use {fileEdit}: the file's full path, its format (json, or ini for key=value files, .cfg included) and each value's place as a list of keys. Rig changes only those values' text, saves a copy first and keeps the rest of the file as it is. Look at the file with read_pc first. A key the file doesn't have yet needs add: true.
 - Likewise use {firewall} to add one firewall rule or turn a rule on or off, {policy} for one value under Software\\Policies (not on a PC a work or school manages), {device} to turn one device off or on by its instance id, {driver} to install a signed .inf already on the PC (never a download), and {gpu} for one NVIDIA graphics setting from Rig's list (read it first with read_pc kind gpu; AMD and Intel settings can't be changed yet, so give the steps). Look with read_pc first for rule names, instance ids and file paths.
@@ -330,6 +335,18 @@ const gpuSchema = {
   required: ["vendor", "setting", "value", "does"],
 };
 
+const recipeText = RECIPES.map((r) => `- ${r.id} (${r.title}): ${r.when}. params: ${Object.entries(r.params).map(([k, p]) => `${k} (${"values" in p ? p.values.join(", ") : `${p.min} to ${p.max}`})`).join(", ")}. ${takesEffectWords(r)}`).join("\n");
+
+const recipeSchema = {
+  type: "object",
+  description: "One of Rig's own recipes for a common Windows setting. Rig builds the command from its own list and checks it like any other.",
+  properties: {
+    id: { type: "string", enum: RECIPES.map((r) => r.id) },
+    params: { type: "object", description: "The recipe's params, like {\"state\": \"show\"}: each one a word from its list or a whole number in its range." },
+  },
+  required: ["id", "params"],
+};
+
 /** The steps the helper's own code makes, by their key in a proposal. */
 const natives: Record<string, (raw: unknown) => NativeOp | string> = {
   gpu: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "gpu" }),
@@ -340,13 +357,13 @@ const natives: Record<string, (raw: unknown) => NativeOp | string> = {
 const shorthands: Record<string, (raw: unknown) => Command | string> = {
   registry: registryCommand, service: serviceCommand, firewall: firewallCommand, policy: policyCommand, device: deviceCommand, driver: driverCommand, app: appCommand,
 };
-const stepKinds = ["fix", ...Object.keys(shorthands), ...Object.keys(natives), "command"];
+const stepKinds = ["fix", "recipe", ...Object.keys(shorthands), ...Object.keys(natives), "command"];
 const stepList = stepKinds.map((k) => `{${k}}`).join(", ");
 
 export const tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "propose_change",
-    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, to install, update or uninstall an app {app}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
+    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor a common Windows setting, use one of Rig's recipes when one fits; these are the recipes:\n${recipeText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, to install, update or uninstall an app {app}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -355,7 +372,7 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
         why: { type: "string", description: "One sentence on why this helps with what they asked." },
         steps: {
           type: "array", minItems: 1, maxItems: 8,
-          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, app: appSchema, gpu: gpuSchema, fileEdit: fileEditSchema, command: commandSchema } },
+          items: { type: "object", properties: { fix: callSchema, recipe: recipeSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, app: appSchema, gpu: gpuSchema, fileEdit: fileEditSchema, command: commandSchema } },
         },
       },
       required: ["title", "why", "steps"],
@@ -615,6 +632,7 @@ function rowsFor(steps: Step[], ctx: ChatContext): DiffRow[] {
     switch (s.kind) {
       case "fix": return [describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? [])];
       case "command": return [[s.cmd.does, "As it is now", "Changed by this command"]];
+      case "recipe": return [[recipeDoes(s), "As it is now", "Changed by Rig's recipe"]];
       case "native": return nativeRows(s.op) ?? [[stepsTitle([s]), "As it is now", "Changed by Rig"]];
     }
   });
@@ -623,9 +641,10 @@ function rowsFor(steps: Step[], ctx: ChatContext): DiffRow[] {
 /**
  * Checks a proposal: fixes against the catalog and what's on this PC, commands with the shared checker and the chat's taint.
  * Takes `steps` ([{fix} | {command} | a shorthand, such as {registry}]) or, from before commands, `calls`. A shorthand step
- * becomes the command Rig writes for it, checked like any other. Errors are plain words for the model.
+ * becomes the command Rig writes for it, checked like any other; a recipe stays a recipe step for an app that can show one.
+ * Each general command's shape goes to `shapes`, refused or not. Errors are plain words for the model.
  */
-export function checkProposal(input: ProposeInput, ctx: ChatContext, tainted = false): { steps: Step[]; tier: Tier; title: string; why: string } | string {
+export function checkProposal(input: ProposeInput, ctx: ChatContext, tainted = false, shapes: string[] = []): { steps: Step[]; tier: Tier; title: string; why: string } | string {
   const raws: unknown[] | null = Array.isArray(input.steps) && input.steps.length
     ? input.steps
     : Array.isArray(input.calls) && input.calls.length ? input.calls.map((fix) => ({ fix })) : null;
@@ -647,11 +666,21 @@ export function checkProposal(input: ProposeInput, ctx: ChatContext, tainted = f
           ? `Step ${i + 1}: command steps need the newer Rig app on ${ctx.view.name}, and this one is older. Use a catalog fix, or give the steps with show_steps and suggest updating Rig.`
           : `Step ${i + 1}: command steps need the newer Rig app on ${ctx.view.name}; they can't be offered from the website. Use a catalog fix, or give the steps with show_steps and say they can ask in the Rig app on that PC.`;
       }
-      const native = Object.hasOwn(natives, given[0]) ? natives[given[0]] : undefined;
-      const made = native ? native(r[given[0]]) : given[0] === "command" ? commandOf(r.command) : shorthands[given[0]](r[given[0]]);
-      if (typeof made === "string") return `Step ${i + 1}: ${given[0] === "command" ? "" : `${given[0]}: `}${made}`;
-      const step: Step = native ? { kind: "native", op: made as NativeOp } : { kind: "command", cmd: made as Command };
+      let step: Step;
+      if (given[0] === "recipe") {
+        const recipe = canonicalRecipe(r.recipe);
+        const cmd = typeof recipe === "string" ? recipe : recipeCommand(recipe);
+        if (typeof recipe === "string" || typeof cmd === "string") return `Step ${i + 1}: recipe: ${cmd}`;
+        step = ctx.recipeSteps ? recipe : { kind: "command", cmd };
+      } else {
+        const native = Object.hasOwn(natives, given[0]) ? natives[given[0]] : undefined;
+        const made = native ? native(r[given[0]]) : given[0] === "command" ? commandOf(r.command) : shorthands[given[0]](r[given[0]]);
+        if (given[0] === "command" && typeof made === "string") shapes.push(commandShape(null, null));
+        if (typeof made === "string") return `Step ${i + 1}: ${given[0] === "command" ? "" : `${given[0]}: `}${made}`;
+        step = native ? { kind: "native", op: made as NativeOp } : { kind: "command", cmd: made as Command };
+      }
       const v = checkStep(step, { tainted });
+      if (step.kind === "command" && given[0] === "command") shapes.push(commandShape(step.cmd, v));
       if (v.status === "refused") return `Step ${i + 1} was refused: ${v.refused} Don't ask for it another way. If the person can do it themselves, give the steps with show_steps.`;
       steps.push(step);
     }
@@ -854,7 +883,10 @@ export async function answer(client: Streamer, ctx: ChatContext, turn: Turn, emi
           reads.push({ ...spec, id: u.id });
         } else if (u.name === "propose_change") {
           if (p.proposed) { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: "Only one card per answer. Mention the other idea in words." }); continue; }
-          const checked = checkProposal(input, ctx, p.tainted);
+          const shapes: string[] = [];
+          const checked = checkProposal(input, ctx, p.tainted, shapes);
+          // The count is only for Jason; an answer never waits on it or fails for it.
+          if (shapes.length && ctx.countShapes) await ctx.countShapes(shapes).catch(() => {});
           if (typeof checked === "string") { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: checked }); continue; }
           const calls = checked.steps.flatMap((s) => (s.kind === "fix" ? [s.call] : []));
           const proposal: Proposal = {

@@ -55,6 +55,8 @@ export interface ChatRequest {
   reads?: boolean;
   /** The desktop can show and run command steps on proposals. Apps before them read only `calls`. */
   steps?: boolean;
+  /** The desktop can show recipe steps. Apps before them get the command a recipe compiles to. */
+  recipes?: boolean;
   /** Which conversation this is: the id of its first question. The server binds each answer's seal to it. */
   chatId?: string;
   /** Going on with an answer after its reads: the `resume` from the `reads` event, and what each read found. */

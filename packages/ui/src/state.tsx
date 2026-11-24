@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
 import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
-import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply } from "@rig/core";
+import { alertRules, formatTemp, helperStep, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
 
@@ -507,8 +507,10 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         const patch = (f: (q: NonNullable<ChatMessage["proposal"]>) => Partial<NonNullable<ChatMessage["proposal"]>>) =>
           setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...f(m.proposal) } } : m)) }));
         const keep = (o: StepOutcome) => patch((q) => ({ outcomes: at(q.outcomes, o) }));
-        const step = p.steps[index];
-        if (!step || step.kind === "fix") return;
+        const asked = p.steps[index];
+        if (!asked || asked.kind === "fix") return;
+        const step = helperStep(asked);
+        if (typeof step === "string") return;
         try {
           if (act === "read" && p.status !== "declined" && (!was || was.apply.outcome === "expired" || was.apply.outcome === "refused" || was.apply.outcome === "declined")) {
             const fresh = await client.previewStep(pcId, step, !!p.tainted);
@@ -517,7 +519,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           }
           if (act === "apply" && preview?.outcome === "ready" && (!was || was.apply.outcome === "declined") && p.status !== "declined" && !waitingOn(p, index)) {
             if (stale(preview.expiresAt)) { patch((q) => ({ previews: at(q.previews, null) })); return; }
-            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(step, preview.verdict.commands), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
+            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(asked, preview.verdict.commands), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
             keep({ apply });
           } else if (act === "undo" && was?.apply.outcome === "applied" && was.undo?.outcome !== "undone") {
             keep({ ...was, undo: await client.undoStep(pcId, was.apply.undo.id) });

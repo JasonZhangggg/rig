@@ -1,5 +1,5 @@
 {
-  "version": 13,
+  "version": 14,
   "about": [
     "One table for the server, the app and the helper. The helper reads scripts with PowerShell's own parser; everything else here says how Rig's TypeScript reader sees a script, so the helper can match it. The vectors file holds examples of each rule, for scripts (`script`, `as`) and for whole steps (`cmd`).",
     "Text: a script is refused when it is empty or only spaces, longer than `maxLength` characters (UTF-16 code units), or holds any character in `disguised` (hex ranges, inclusive). Case is folded for ASCII A-Z only, and only space, tab, CR and LF count as spaces; `disguised` holds the letters that fold into ASCII in .NET (U+017F, U+0130, U+0131, U+212A), so ASCII folding can't be tricked. CR LF and lone CR read as LF.",

@@ -455,3 +455,86 @@ describe("advisor round: seals", () => {
     expect(dn).toMatchObject({ turn: 1, chat: "c1" });
   });
 });
+
+describe("Rig's recipes", () => {
+  const extensions = { id: "fileExtensions", params: { state: "show" } };
+  const card = (step: Record<string, unknown>): FakeRound[] => [{ tool: { name: "propose_change", input: { title: "Show file extensions", why: "You asked.", steps: [step] } } }, { text: "Review the card." }];
+
+  it("are listed for Claude with their ids, params and when they take effect", async () => {
+    const { live, seen } = await chatSetup([{ text: "Hi." }]);
+    await live(ask("Hi"));
+    const tool = (seen[0].tools as { name: string; description?: string; input_schema?: { properties: { steps: { items: { properties: { recipe: { properties: { id: { enum: string[] } } } } } } } } }[]).find((t) => t.name === "propose_change")!;
+    expect(tool.input_schema!.properties.steps.items.properties.recipe.properties.id.enum).toContain("fileExtensions");
+    expect(tool.description).toContain("- fileExtensions (File extensions): show or hide extensions like .txt on file names in File Explorer. params: state (show, hide). Takes effect once you close File Explorer and open it again.");
+    expect(tool.description).toContain("menuDelay (How fast menus open)");
+    expect(tool.description).toContain("ms (0 to 4000)");
+  });
+
+  it("go to an app that shows them as the recipe step, with Rig's tier and sentence", async () => {
+    const { live } = await chatSetup(card({ recipe: extensions }));
+    const p = of(await live(ask("Show file extensions"), { recipes: true }), "proposal")[0].proposal;
+    expect(p.steps).toEqual([{ kind: "recipe", ...extensions }]);
+    expect(p.tier).toBe(2);
+    expect(p.rows).toEqual([["Shows file extensions, like .txt, on file names in File Explorer.", "As it is now", "Changed by Rig's recipe"]]);
+  });
+
+  it("go to an older app as the command they compile to", async () => {
+    const { live } = await chatSetup(card({ recipe: extensions }));
+    const p = of(await live(ask("Show file extensions")), "proposal")[0].proposal;
+    const step = p.steps![0];
+    expect(step.kind).toBe("command");
+    expect(step.kind === "command" && step.cmd.run).toContain("-Name 'HideFileExt' -Type DWord -Value 0");
+  });
+
+  it("refuse a recipe Rig doesn't have or a value off its list, with plain words for Claude", async () => {
+    const { live, seen } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ recipe: { id: "mouseAcceleration", params: { state: "off" } } }] } } },
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ recipe: { id: "menuDelay", params: { ms: 99999 } } }] } } },
+      { text: "." },
+    ]);
+    expect(of(await live(ask("Faster menus"), { recipes: true }), "proposal")).toHaveLength(0);
+    expect(lastToolResults(seen[1])).toContain("Step 1: recipe: This isn't one of Rig's recipes");
+    expect(lastToolResults(seen[2])).toContain("Step 1: recipe: ms must be a whole number from 0 to 4000");
+  });
+
+  it("can't be offered from the website, like any command step", async () => {
+    const site = await chatSetup(card({ recipe: extensions }));
+    expect(of(await site.web(ask("Show file extensions"), { steps: true, recipes: true }), "proposal")).toHaveLength(0);
+    expect(lastToolResults(site.seen[1])).toContain("can't be offered from the website");
+  });
+});
+
+describe("the no-speed-up log", () => {
+  it("counts each general command proposal by a shape of Rig's own words, and keeps nothing else", async () => {
+    const secretPath = "C:\\Users\\Lee\\Private\\taxes-2026.txt";
+    const leaky = {
+      does: "Copies lee@example.com's tax file for Sam Rivera.",
+      read: `Test-Path -LiteralPath '${secretPath}'`,
+      run: `Copy-Item -LiteralPath '${secretPath}' -Destination 'C:\\Users\\Lee\\Private\\taxes-copy.txt'\nInvoke-LeeSync -Token 'hunter2'`,
+      touches: [{ kind: "file", path: "C:\\Users\\Lee\\Private\\taxes-copy.txt" }],
+    };
+    const run = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    const t = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Dark mode", why: "y", steps: [{ command: darkMode }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Copy it", why: "y", steps: [{ command: leaky }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Autostart", why: "y", steps: [{ command: { does: "Starts it.", read: `Get-ItemProperty -Path '${run}'`, run: `Set-ItemProperty -Path '${run}' -Name Helper -Value 'C:\\Tools\\helper.exe'`, touches: [{ kind: "registry", key: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" }] } }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Dark mode", why: "y", steps: [{ command: darkMode }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Broken", why: "y", steps: [{ command: { does: "x" } }] } } }, { text: "." },
+      // Rig's own steps aren't general commands, so they aren't counted.
+      { tool: { name: "propose_change", input: { title: "Menus", why: "y", steps: [{ registry: { key: "HKCU\\Control Panel\\Desktop", name: "MenuShowDelay", type: "string", value: "100" } }, { recipe: { id: "hiddenFiles", params: { state: "show" } } }] } } }, { text: "." },
+    ]);
+    for (let n = 0; n < 6; n++) await t.live(ask(`Change ${n}`), { recipes: true });
+    const rows = await t.db.selectFrom("command_shapes").selectAll().orderBy("shape").execute();
+    expect(rows.map((r) => [r.shape, r.count])).toEqual([
+      ["runs -; touches -; unreadable", 1],
+      ["runs -; touches registry; refused never", 1],
+      ["runs Copy-Item other; touches file; refused refused", 1],
+      ["runs Set-ItemProperty; touches registry; tier 2", 2],
+    ]);
+    const cols = await t.db.selectFrom("information_schema.columns" as never).select("column_name" as never).where("table_name" as never, "=", "command_shapes" as never).execute();
+    expect((cols as { column_name: string }[]).map((c) => c.column_name).sort()).toEqual(["count", "day", "shape"]);
+    const kept = JSON.stringify(rows);
+    for (const leak of ["Lee", "lee@", "Sam", "taxes", "Private", "hunter2", "Invoke-LeeSync", "Tools", "helper.exe", "Dark mode", t.machineId]) expect(kept).not.toContain(leak);
+    expect(rows.every((r) => /^runs [A-Za-z-]+( [A-Za-z-]+)*; touches [a-z-]+( [a-z]+)*; (tier [0-3]|refused [a-zA-Z]+|unreadable)$/.test(r.shape))).toBe(true);
+  });
+});

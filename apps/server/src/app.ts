@@ -269,11 +269,13 @@ export function createApp(deps: AppDeps = {}) {
           readRecording: (id) => later((s) => s.recording(user.id, row.id, id)),
           searchManuals: (query, part) => later((s) => s.searchManuals(user.id, row.id, query, { part, limit: 4 })),
         } : {}),
+        countShapes: (shapes) => later((s) => s.countShapes(shapes, now())),
       };
       const limit = dailyLimit(c);
       const overLimit = { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.` };
       // Only an app that can show and run command steps gets them, and only on the PC itself.
       if (ctx.live && body.steps === true) ctx.commandSteps = true;
+      if (ctx.commandSteps && body.recipes === true) ctx.recipeSteps = true;
       // Signed notes: where an answer stopped for the PC's reads, and whether an answer read outside text.
       const secret = c.env.CHAT_STATE_SECRET;
       const pc = row?.id ?? body.machineId;

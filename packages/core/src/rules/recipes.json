@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "about": [
+    "Rig's own recipes for common requests, read by shorthand.ts. Curated by hand, never learned from chats. A recipe step is { kind: \"recipe\", id, params }; Rig compiles it to the registry, policy or service shorthand below and checks the command it makes like any other, with the same tier and daily limit. No text from the model reaches a script.",
+    "`params`: each one either `values` (a list of words) or `min` and `max` (a whole number in that range, inclusive). `does`: Rig's sentence for the card, by the value of the recipe's one param, or one sentence for a number. `takesEffect`: now, sign out, restart, or app restart (with `app`, the app to close and open again).",
+    "`registry` and `policy` entries take `value` (a map from the param's words to the value written) or `from` (the param whose number is written). `service` takes `startType` the same way.",
+    "Only settings that Windows reads from the registry as written. Settings that take effect only through a Windows call (mouse acceleration through SystemParametersInfo, HDR through the display API) are left out until Rig has a native step for them. Each recipe has a vector in vectors.json for each value."
+  ],
+  "recipes": [
+    {
+      "id": "fileExtensions", "title": "File extensions", "when": "show or hide extensions like .txt on file names in File Explorer",
+      "params": {"state": {"values": ["show", "hide"]}},
+      "does": {"show": "Shows file extensions, like .txt, on file names in File Explorer.", "hide": "Hides file extensions, like .txt, on file names in File Explorer."},
+      "takesEffect": "app restart", "app": "File Explorer",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideFileExt", "type": "dword", "value": {"show": 0, "hide": 1}}]
+    },
+    {
+      "id": "hiddenFiles", "title": "Hidden files", "when": "show or hide hidden files and folders in File Explorer",
+      "params": {"state": {"values": ["show", "hide"]}},
+      "does": {"show": "Shows hidden files and folders in File Explorer.", "hide": "Hides hidden files and folders in File Explorer again."},
+      "takesEffect": "app restart", "app": "File Explorer",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "Hidden", "type": "dword", "value": {"show": 1, "hide": 2}}]
+    },
+    {
+      "id": "explorerOpensTo", "title": "Where File Explorer opens", "when": "make File Explorer open to This PC or to Home",
+      "params": {"state": {"values": ["thisPC", "home"]}},
+      "does": {"thisPC": "Makes File Explorer open to This PC.", "home": "Makes File Explorer open to Home."},
+      "takesEffect": "app restart", "app": "File Explorer",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "LaunchTo", "type": "dword", "value": {"thisPC": 1, "home": 2}}]
+    },
+    {
+      "id": "darkMode", "title": "Dark mode", "when": "dark or light colors for Windows and apps",
+      "params": {"state": {"values": ["dark", "light"]}},
+      "does": {"dark": "Turns on dark mode for Windows and your apps.", "light": "Turns on light mode for Windows and your apps."},
+      "takesEffect": "sign out",
+      "registry": [
+        {"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "AppsUseLightTheme", "type": "dword", "value": {"dark": 0, "light": 1}},
+        {"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "SystemUsesLightTheme", "type": "dword", "value": {"dark": 0, "light": 1}}
+      ]
+    },
+    {
+      "id": "transparency", "title": "Transparency effects", "when": "see-through windows, taskbar and Start menu",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Turns on transparency effects for windows, the taskbar and Start.", "off": "Turns off transparency effects for windows, the taskbar and Start."},
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "EnableTransparency", "type": "dword", "value": {"on": 1, "off": 0}}]
+    },
+    {
+      "id": "taskbarAlignment", "title": "Taskbar alignment", "when": "taskbar icons in the middle or on the left",
+      "params": {"state": {"values": ["left", "center"]}},
+      "does": {"left": "Moves the taskbar's icons and Start button to the left.", "center": "Puts the taskbar's icons and Start button in the middle."},
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "TaskbarAl", "type": "dword", "value": {"left": 0, "center": 1}}]
+    },
+    {
+      "id": "taskbarSearch", "title": "Search on the taskbar", "when": "hide the taskbar's search, or show it as an icon or a box",
+      "params": {"state": {"values": ["hidden", "icon", "box"]}},
+      "does": {"hidden": "Hides search on the taskbar.", "icon": "Shows search on the taskbar as an icon.", "box": "Shows search on the taskbar as a box."},
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "SearchboxTaskbarMode", "type": "dword", "value": {"hidden": 0, "icon": 1, "box": 2}}]
+    },
+    {
+      "id": "taskViewButton", "title": "Task view button", "when": "show or hide the Task view button on the taskbar",
+      "params": {"state": {"values": ["show", "hide"]}},
+      "does": {"show": "Shows the Task view button on the taskbar.", "hide": "Hides the Task view button on the taskbar."},
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "ShowTaskViewButton", "type": "dword", "value": {"show": 1, "hide": 0}}]
+    },
+    {
+      "id": "startRecentItems", "title": "Recent files in Start", "when": "show or hide recently opened files in Start, jump lists and File Explorer",
+      "params": {"state": {"values": ["show", "hide"]}},
+      "does": {"show": "Shows recently opened files in Start, jump lists and File Explorer.", "hide": "Stops showing recently opened files in Start, jump lists and File Explorer."},
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "Start_TrackDocs", "type": "dword", "value": {"show": 1, "hide": 0}}]
+    },
+    {
+      "id": "startWebSearch", "title": "Web results in Start search", "when": "turn web (Bing) results in Start and taskbar search on or off",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Lets Start and taskbar search show web results from Bing.", "off": "Stops Start and taskbar search from showing web results from Bing."},
+      "takesEffect": "restart",
+      "policy": [{"scope": "user", "key": "Microsoft\\Windows\\Explorer", "name": "DisableSearchBoxSuggestions", "type": "dword", "value": {"on": 0, "off": 1}}]
+    },
+    {
+      "id": "stickyKeysShortcut", "title": "Sticky Keys shortcut", "when": "stop pressing Shift five times from turning on Sticky Keys, or bring that shortcut back",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Turns the Sticky Keys shortcut back on, so pressing Shift five times asks to turn on Sticky Keys. Sticky Keys itself is left off.", "off": "Turns off the Sticky Keys shortcut, so pressing Shift five times does nothing. Sticky Keys itself is left off."},
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Control Panel\\Accessibility\\StickyKeys", "name": "Flags", "type": "string", "value": {"on": "510", "off": "506"}}]
+    },
+    {
+      "id": "menuDelay", "title": "How fast menus open", "when": "how long a menu waits before it opens when you point at it, in milliseconds (Windows' default is 400)",
+      "params": {"ms": {"min": 0, "max": 4000}},
+      "does": "Changes how long menus wait before they open when you point at them.",
+      "takesEffect": "sign out",
+      "registry": [{"key": "HKCU\\Control Panel\\Desktop", "name": "MenuShowDelay", "type": "string", "from": "ms"}]
+    },
+    {
+      "id": "storageSense", "title": "Storage Sense", "when": "let Windows free up space by itself when the drive gets low",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Turns on Storage Sense, so Windows frees up space by itself when the drive gets low.", "off": "Turns off Storage Sense, so Windows no longer frees up space by itself."},
+      "takesEffect": "now",
+      "registry": [{"key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy", "name": "01", "type": "dword", "value": {"on": 1, "off": 0}}]
+    },
+    {
+      "id": "gpuScheduling", "title": "Hardware-accelerated GPU scheduling", "when": "let the graphics card schedule its own work",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Turns on hardware-accelerated GPU scheduling for the whole PC.", "off": "Turns off hardware-accelerated GPU scheduling for the whole PC."},
+      "takesEffect": "restart",
+      "registry": [{"key": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", "name": "HwSchMode", "type": "dword", "value": {"on": 2, "off": 1}}]
+    },
+    {
+      "id": "gameRecording", "title": "Game Bar recording", "when": "let Xbox Game Bar record and broadcast games, or stop it for everyone on this PC",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Lets Xbox Game Bar record and broadcast games.", "off": "Stops Xbox Game Bar from recording or broadcasting games, for everyone on this PC."},
+      "takesEffect": "restart",
+      "policy": [{"scope": "machine", "key": "Microsoft\\Windows\\GameDVR", "name": "AllowGameDVR", "type": "dword", "value": {"on": 1, "off": 0}}]
+    },
+    {
+      "id": "fastStartup", "title": "Fast startup", "when": "Windows' fast startup, which saves part of Windows at shut down; off makes every shut down a full one",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Turns on fast startup, so shutting down saves part of Windows to start faster. It works only while hibernation is on.", "off": "Turns off fast startup, so every shut down closes Windows fully."},
+      "takesEffect": "now",
+      "registry": [{"key": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", "name": "HiberbootEnabled", "type": "dword", "value": {"on": 1, "off": 0}}]
+    },
+    {
+      "id": "sysMain", "title": "SysMain (Superfetch)", "when": "the SysMain service, which preloads apps you use often",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Makes the SysMain service start with Windows again.", "off": "Stops the SysMain service from starting with Windows. It keeps running until you restart."},
+      "takesEffect": "restart",
+      "service": {"name": "SysMain", "startType": {"on": "automatic", "off": "disabled"}}
+    },
+    {
+      "id": "searchIndexing", "title": "Search indexing", "when": "the Windows Search service, which indexes files so search finds them fast",
+      "params": {"state": {"values": ["on", "off"]}},
+      "does": {"on": "Makes Windows Search start a little after Windows again, so it indexes your files.", "off": "Stops Windows Search from starting with Windows, so it stops indexing your files. Searches get slower."},
+      "takesEffect": "restart",
+      "service": {"name": "WSearch", "startType": {"on": "automaticDelayed", "off": "disabled"}}
+    }
+  ]
+}

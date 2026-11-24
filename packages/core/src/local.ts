@@ -948,7 +948,7 @@ export class LocalClient implements RigClient {
     }
     const here = await this.isLocal(id);
     const probes = here ? await this.customLogs() : null;
-    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}), ...(this.link.read ? { reads: true } : {}), steps: true } : undefined;
+    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}), ...(this.link.read ? { reads: true } : {}), steps: true, recipes: true } : undefined;
     // Rig reads recordings on the server, so it needs the latest ones before it answers.
     if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
     // Custom log changes are made here, on the PC, in the order they came; the answer's events wait for them.
