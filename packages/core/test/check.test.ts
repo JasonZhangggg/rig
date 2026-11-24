@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import { cardTier, catalog, checkScript, checkStep, rulesVersion, type Command, type ScriptUse, type Step } from "../src";
+import vectors from "../src/rules/vectors.json";
+
+interface Vector { script: string; as: ScriptUse; expect: { refused?: true; tier?: number; commands?: string[] } }
+const all = vectors as Vector[];
+const names = (list: { name: string }[]) => list.map((c) => c.name.toLowerCase());
+
+const menuDelay: Command = {
+  does: "Makes menus open faster.",
+  read: "Get-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay",
+  run: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay -Value 100",
+  undo: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay -Value 400",
+  touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" }],
+};
+const command = (patch: Partial<Command> = {}): Step => ({ kind: "command", cmd: { ...menuDelay, ...patch } });
+const gameMode: Step = { kind: "fix", call: { kind: "windows.gameMode", enabled: true } };
+const refusal = (s: Step, tainted = false) => {
+  const v = checkStep(s, { tainted });
+  return v.status === "refused" ? v : null;
+};
+
+describe("the shared vectors", () => {
+  it("cover reads, changes and undos", () => {
+    expect(all.length).toBeGreaterThanOrEqual(40);
+    expect(new Set(all.map((v) => v.as))).toEqual(new Set(["read", "run", "undo"]));
+  });
+
+  it.each(all.map((v) => [v.as, v.script, v] as const))("%s: %s", (_as, _script, v) => {
+    const got = checkScript(v.script, v.as);
+    expect(got.rulesVersion).toBe(rulesVersion);
+    if (v.expect.refused) {
+      expect(got.status).toBe("refused");
+      if (got.status === "refused") expect(got.refused.length).toBeGreaterThan(20);
+    } else {
+      expect(got).toMatchObject({ status: "allowed", ...(v.expect.tier === undefined ? {} : { tier: v.expect.tier }) });
+    }
+    if (v.expect.commands) expect(names(got.commands)).toEqual(v.expect.commands.map((n) => n.toLowerCase()));
+  });
+
+  it("never lets a read through as anything but tier 0", () => {
+    for (const v of all.filter((x) => x.as === "read")) {
+      const got = checkScript(v.script, "read");
+      if (got.status === "allowed") expect(got).toMatchObject({ tier: 0, admin: false });
+    }
+  });
+
+  it("never rates a change below tier 2", () => {
+    for (const v of all.filter((x) => x.as !== "read")) {
+      const got = checkScript(v.script, v.as);
+      if (got.status === "allowed") expect(got.tier).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
+describe("what a refusal says", () => {
+  it("names the command and why, in plain words", () => {
+    expect(checkScript("New-LocalUser -Name helper", "run")).toMatchObject({ status: "refused", never: true, refused: "Rig won't run New-LocalUser: it adds a Windows account, which could let someone else in." });
+    expect(checkScript("cmd /c del C:\\x", "run")).toMatchObject({ never: false, refused: "Rig won't run cmd: it starts another shell, and Rig can't check what runs inside it." });
+    expect(checkScript("Get-Service -ComputerName srv", "read")).toMatchObject({ refused: expect.stringContaining("Get-Service with -computername") });
+    expect(checkScript("Get-Service | % { $_.Stop() }", "run")).toMatchObject({ refused: expect.stringContaining("calls a method on an object") });
+    expect(checkScript("", "run")).toMatchObject({ status: "refused" });
+  });
+
+  it("still lists the commands it found", () => {
+    const got = checkScript("Get-Service -Name Spooler; iex $x", "run");
+    expect(got.status).toBe("refused");
+    expect(names(got.commands)).toEqual(["get-service", "invoke-expression"]);
+  });
+});
+
+describe("checking a step", () => {
+  it("gives a fix its tier from the catalog, and the six fixes are tier 1", () => {
+    expect(catalog).toHaveLength(6);
+    expect(catalog.map((a) => a.tier)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(checkStep(gameMode)).toMatchObject({ status: "allowed", tier: 1, commands: [] });
+    expect(refusal({ kind: "fix", call: { kind: "power.plan", guid: "nope" } })?.refused).toContain("power plan GUID");
+  });
+
+  it("rates a registry change with an undo tier 2 and lists its commands in plain words", () => {
+    const got = checkStep(command());
+    expect(got).toMatchObject({ status: "allowed", tier: 2, admin: false, rulesVersion });
+    expect(got.commands).toContainEqual({ name: "Set-ItemProperty", says: "Set-ItemProperty: changes a registry value", tier: 2 });
+    expect(got.commands[0]).toEqual({ name: "Get-ItemProperty", says: "Get-ItemProperty: reads a registry value or file details", tier: 0 });
+  });
+
+  it("works out admin from the commands and what they touch", () => {
+    expect(checkStep(command({ run: "Set-Service -Name Spooler -StartupType Manual", touches: [{ kind: "service", name: "Spooler" }] }))).toMatchObject({ admin: true });
+    expect(checkStep(command({ touches: [{ kind: "registry", key: "HKLM\\SOFTWARE\\Foo" }] }))).toMatchObject({ admin: true });
+    expect(checkStep(command({ run: "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Foo' -Name Bar -Value 1" }))).toMatchObject({ admin: true });
+  });
+
+  it("refuses a read script that could change something, and says which part", () => {
+    expect(refusal(command({ read: "Set-ItemProperty -Path 'HKCU:\\Software\\Foo' -Name Bar -Value 1" }))?.refused).toMatch(/^The read script was refused\. .*Set-ItemProperty/);
+    expect(refusal(command({ read: "Get-Service > C:\\out.txt" }))?.refused).toContain("writes its output to a file");
+  });
+
+  it("checks the undo script like the change", () => {
+    expect(refusal(command({ undo: "Set-MpPreference -ExclusionPath C:\\Games" }))).toMatchObject({ never: true, refused: expect.stringMatching(/^The undo script was refused\./) });
+    expect(checkStep(command({ undo: "Remove-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay" }))).toMatchObject({ tier: 3 });
+  });
+
+  it("rates a change tier 3 when there is no undo and Rig can't snapshot what it touches", () => {
+    const rule = { run: "New-NetFirewallRule -DisplayName 'Game' -Direction Inbound -LocalPort 27015 -Protocol TCP -Action Allow", read: "Get-NetFirewallRule -DisplayName 'Game'" };
+    expect(checkStep(command({ ...rule, undo: undefined, touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 3 });
+    expect(checkStep(command({ ...rule, undo: undefined, touches: [] }))).toMatchObject({ tier: 3 });
+    expect(checkStep(command({ ...rule, undo: "Remove-NetFirewallRule -DisplayName 'Game'", touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 3 });
+    expect(checkStep(command({ ...rule, undo: "Disable-NetFirewallRule -DisplayName 'Game'", touches: [{ kind: "firewall", name: "Game" }] }))).toMatchObject({ tier: 2, admin: true });
+    expect(checkStep(command({ undo: undefined }))).toMatchObject({ tier: 2 });
+  });
+
+  it("refuses a never-list place in what it touches, even when the script hides the path", () => {
+    const hidden = command({ run: "Set-ItemProperty -Path $k -Name Updater -Value 'C:\\x.exe'", touches: [{ kind: "registry", key: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" }] });
+    expect(refusal(hidden)).toMatchObject({ never: true, refused: expect.stringContaining("Run keys") });
+    expect(refusal(command({ touches: [{ kind: "file", path: "C:\\Windows\\System32\\drivers\\etc\\hosts" }] }))).toMatchObject({ never: true });
+    expect(refusal(command({ touches: [{ kind: "file", path: "\\\\srv\\share\\x" }] }))).not.toBeNull();
+    expect(refusal(command({ touches: [{ kind: "registry", key: "Software\\Foo" }] }))).not.toBeNull();
+  });
+
+  it("refuses a change that can't be undone once the chat has read outside text", () => {
+    const wipe = command({ run: "Remove-Item 'C:\\Temp\\old' -Recurse", undo: undefined, touches: [{ kind: "file", path: "C:\\Temp\\old" }] });
+    expect(checkStep(wipe)).toMatchObject({ status: "allowed", tier: 3 });
+    expect(refusal(wipe, true)?.refused).toContain("read text from outside");
+    expect(checkStep(command(), { tainted: true })).toMatchObject({ status: "allowed", tier: 2 });
+  });
+
+  it("refuses a request with a part missing", () => {
+    expect(refusal({ kind: "command", cmd: { ...menuDelay, read: "" } })).not.toBeNull();
+    expect(refusal({ kind: "command", cmd: { ...menuDelay, does: " " } })).not.toBeNull();
+  });
+});
+
+describe("the card's tier", () => {
+  it("is that of its riskiest step", () => {
+    expect(cardTier([])).toBe(0);
+    expect(cardTier([gameMode])).toBe(1);
+    expect(cardTier([gameMode, command()])).toBe(2);
+    expect(cardTier([command(), command({ run: "Stop-Process -Name chrome" }), gameMode])).toBe(3);
+  });
+
+  it("is refused when any step is", () => {
+    expect(cardTier([gameMode, command({ run: "bcdedit /set testsigning on" })])).toBe("refused");
+    expect(cardTier([command({ run: "Stop-Process -Name chrome" })], { tainted: true })).toBe("refused");
+  });
+});

@@ -22,6 +22,8 @@ export interface ActionInfo {
   /** For the model: when this fix helps. */
   when: string;
   needsRestart: boolean;
+  /** How risky it is, on the scale in change.ts. Every fix here is small and puts itself back, so 1. */
+  tier: 1 | 2;
   /** JSON schema of the call's fields, without `kind`. */
   schema: Record<string, unknown>;
 }
@@ -32,6 +34,7 @@ export const catalog: ActionInfo[] = [
     title: "Switch power plan",
     when: "Heat or noise at idle on a high-performance plan, or low performance on a power saver plan.",
     needsRestart: false,
+    tier: 1,
     schema: { type: "object", properties: { guid: { type: "string", description: "GUID of an existing power plan from the facts." } }, required: ["guid"] },
   },
   {
@@ -39,6 +42,7 @@ export const catalog: ActionInfo[] = [
     title: "Turn a startup app on or off",
     when: "Slow startup or background apps using memory and CPU.",
     needsRestart: false,
+    tier: 1,
     schema: { type: "object", properties: { name: { type: "string", description: "Exact startup app name from the facts." }, enabled: { type: "boolean" } }, required: ["name", "enabled"] },
   },
   {
@@ -46,6 +50,7 @@ export const catalog: ActionInfo[] = [
     title: "Game Mode",
     when: "Stutter while background work runs during games.",
     needsRestart: false,
+    tier: 1,
     schema: { type: "object", properties: { enabled: { type: "boolean" } }, required: ["enabled"] },
   },
   {
@@ -53,6 +58,7 @@ export const catalog: ActionInfo[] = [
     title: "Windows visual effects",
     when: "An older or slower PC feels sluggish in Windows itself.",
     needsRestart: false,
+    tier: 1,
     schema: { type: "object", properties: { mode: { type: "string", enum: ["auto", "appearance", "performance"] } }, required: ["mode"] },
   },
   {
@@ -60,6 +66,7 @@ export const catalog: ActionInfo[] = [
     title: "Processor speed cap",
     when: "A laptop runs hot or loud. A cap of 99% turns off boost and runs much cooler for a small speed cost.",
     needsRestart: false,
+    tier: 1,
     schema: { type: "object", properties: { ac: { type: "integer", minimum: 50, maximum: 100 }, dc: { type: "integer", minimum: 50, maximum: 100 } }, required: ["ac", "dc"] },
   },
   {
@@ -67,6 +74,7 @@ export const catalog: ActionInfo[] = [
     title: "Screen refresh rate",
     when: "The screen runs below its highest refresh rate, so games and scrolling look less smooth than they could.",
     needsRestart: false,
+    tier: 1,
     schema: { type: "object", properties: { display: { type: "string", description: "Display name from the inventory." }, hz: { type: "integer", minimum: 24, maximum: 600 } }, required: ["display", "hz"] },
   },
 ];
