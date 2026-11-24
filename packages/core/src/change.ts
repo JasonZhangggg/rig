@@ -6,7 +6,7 @@
 // check from the same rules file, and the helper's answer is the one shown.
 
 import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
-import { checkScript, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList } from "./check";
+import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
 import type { Change } from "./client";
 import type { DiffRow } from "./model";
 
@@ -28,21 +28,24 @@ export interface Command {
   read: string;
   /** PowerShell that makes the change. */
   run: string;
-  /** PowerShell that puts it back, when one exists. Checked like `run`. */
-  undo?: string;
+  /** PowerShell that puts it back, when one exists. Checked like `run`. Null reads as absent. */
+  undo?: string | null;
   /** What it expects to change. Drives the snapshot. */
   touches: Touch[];
 }
 
-/** Registry keys, files and services are snapshotted. The rest aren't, so they need an undo script or the step is tier 3. */
+/**
+ * Registry keys, files and services are snapshotted. The rest aren't, so they need an undo script or the step is tier 3.
+ * A registry key may come as HKCU\, HKCU:\, HKEY_CURRENT_USER\ (or the same for HKLM); Rig stores it as HKCU\ or HKLM\.
+ */
 export type Touch =
   | { kind: "registry"; key: string; value?: string }
   | { kind: "file"; path: string }
   | { kind: "service"; name: string }
   | { kind: "task" | "firewall" | "other"; name: string };
 
-/** One command Rig found in a script, in plain words for the card. */
-export interface FoundCommand { name: string; says: string; tier: Tier }
+/** One command Rig found in a script, in plain words for the card, and which of the step's scripts it is in. */
+export interface FoundCommand { name: string; says: string; tier: Tier; script: ScriptUse }
 
 /** `never`: on the never list. `refused`: something Rig can't check. `notRead`: a read script that does more than look. `tainted`: tier 3 after the chat read outside text. */
 export type Refusal = "never" | "refused" | "notRead" | "tainted";
@@ -76,20 +79,44 @@ export interface CheckContext {
 
 const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []): Refused => ({ status: "refused", why, refused, commands, rulesVersion });
 const snapshotted = (t: Touch) => t.kind === "registry" || t.kind === "file" || t.kind === "service";
+const wild = (text: string) => /[*?[]/.test(text);
 
-function touchText(t: unknown): string | null {
+/** A touch as Rig stores it, or null when Rig can't use it. */
+function touchOf(t: unknown): Touch | null {
   if (!t || typeof t !== "object") return null;
   const x = t as Record<string, unknown>;
   const text = x.kind === "registry" ? x.key : x.kind === "file" ? x.path : x.name;
-  if (typeof text !== "string" || !text.trim() || text.includes("\\\\")) return null;
-  const low = text.toLowerCase();
+  if (typeof text !== "string" || !text.trim() || text.includes("\\\\") || text.startsWith("//") || wild(text)) return null;
   switch (x.kind) {
-    case "registry": return low.startsWith("hklm\\") || low.startsWith("hkcu\\") ? `${text}\\${typeof x.value === "string" ? x.value : ""}` : null;
-    case "file": return /^[a-z]:\\/.test(low) ? text : null;
-    case "service": case "task": case "firewall": case "other": return text;
+    case "registry": {
+      if (x.value !== undefined && (typeof x.value !== "string" || wild(x.value))) return null;
+      const m = /^(?:registry::)?(hkey_current_user|hkcu|hkey_local_machine|hklm)(?::\\|:$|\\|$)(.*)$/i.exec(text);
+      if (!m || !m[2].replace(/\\+$/, "")) return null;
+      const key = `${/^(hkey_current_user|hkcu)$/i.test(m[1]) ? "HKCU" : "HKLM"}\\${m[2].replace(/\\+$/, "")}`;
+      return typeof x.value === "string" ? { kind: "registry", key, value: x.value } : { kind: "registry", key };
+    }
+    case "file": return /^[a-z]:\\/i.test(text) && !/(^|\\)\.\.(\\|$)/.test(text) && !/[a-z0-9]~\d/i.test(text) ? { kind: "file", path: text } : null;
+    case "service": case "task": case "firewall": case "other": return { kind: x.kind, name: text };
     default: return null;
   }
 }
+
+/** The command as the helper stores and checks it, or what is wrong with it. `undo: null` reads as absent, and registry keys are written HKCU\ or HKLM\. */
+export function canonicalCommand(raw: unknown): Command | string {
+  const cmd = raw as Partial<Command> | null;
+  const undo = cmd?.undo ?? undefined;
+  if (!cmd || typeof cmd !== "object" || typeof cmd.does !== "string" || !cmd.does.trim() || typeof cmd.read !== "string" || typeof cmd.run !== "string" || !Array.isArray(cmd.touches) || (undo !== undefined && typeof undo !== "string")) {
+    return "This change request is missing a part: it needs a sentence, a read script, a change script and a list of what it changes.";
+  }
+  const touches = cmd.touches.map(touchOf);
+  if (touches.includes(null)) return `${ruleWords("touch")}.`;
+  return { does: cmd.does, read: cmd.read, run: cmd.run, ...(undo === undefined ? {} : { undo }), touches: touches as Touch[] };
+}
+
+const touchText = (t: Touch) => (t.kind === "registry" ? `${t.key}\\${t.value ?? ""}` : t.kind === "file" ? t.path : t.name);
+/** Where a snapshotted touch is, compared the way writes are. */
+const touchPlace = (t: Touch) => (t.kind === "registry" ? placeOf(t.key) : t.kind === "file" ? placeOf(t.path) : t.kind === "service" ? placeOf(t.name) : "");
+const touchKind = (t: Touch): Write["kind"] => (t.kind === "service" ? "service" : "path");
 
 /** The verdict on one step. Refusals say in plain words what was refused. */
 export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): Verdict {
@@ -98,37 +125,41 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
     if (bad) return refuse(`This isn't one of Rig's fixes: ${bad}.`);
     return { status: "allowed", tier: actionInfo(step.call.kind).tier, admin: false, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
   }
-  const cmd = step.cmd;
-  if (!cmd || typeof cmd.does !== "string" || !cmd.does.trim() || typeof cmd.read !== "string" || typeof cmd.run !== "string" || !Array.isArray(cmd.touches) || (cmd.undo !== undefined && typeof cmd.undo !== "string")) {
-    return refuse("This change request is missing a part: it needs a sentence, a read script, a change script and a list of what it changes.");
+  const cmd = canonicalCommand(step.cmd);
+  if (typeof cmd === "string") return refuse(cmd);
+  // What it says it touches is held to the never list first, so a script that hides the place can't get past it.
+  for (const t of cmd.touches) {
+    const never = textOnNeverList(touchText(t), "run");
+    if (never) return refuse(`${never}.`, "never");
   }
-  const parts: [string, Verdict][] = [["The read script", checkScript(cmd.read, "read")], ["The change script", checkScript(cmd.run, "run")]];
-  if (cmd.undo !== undefined) parts.push(["The undo script", checkScript(cmd.undo, "undo")]);
+  const run = inspectScript(cmd.run, "run");
+  const parts: [string, Verdict][] = [["The read script", checkScript(cmd.read, "read")], ["The change script", run.verdict]];
+  if (typeof cmd.undo === "string") parts.push(["The undo script", checkScript(cmd.undo, "undo")]);
   const commands = parts.flatMap(([, v]) => v.commands);
   const stopped = parts.find(([, v]) => v.status === "refused" && v.why === "never") ?? parts.find(([, v]) => v.status === "refused");
   if (stopped && stopped[1].status === "refused") return refuse(`${stopped[0]} was refused. ${stopped[1].refused}`, stopped[1].why, commands);
 
-  const touches = cmd.touches.map(touchText);
-  if (touches.includes(null)) return refuse(`${ruleWords("touch")}.`, "refused", commands);
-  for (const t of touches as string[]) {
-    const never = textOnNeverList(t, "run");
-    if (never) return refuse(`${never}.`, "never", commands);
-  }
-
   const allowed = parts.map(([, v]) => v as Allowed);
   let tier = Math.max(...allowed.map((v) => v.tier)) as Tier;
   const reasons = allowed.flatMap((v) => v.reasons);
-  const lowers = (touches as string[]).map(textLowersProtection).find((x) => x);
+  const lowers = cmd.touches.map((t) => textLowersProtection(touchText(t))).find((x) => x);
   if (lowers) {
     tier = 3;
     reasons.push(`${lowers}.`);
   }
-  if (cmd.undo === undefined && (cmd.touches.length === 0 || !cmd.touches.every(snapshotted))) {
+  // A write is covered when a snapshotted touch holds every place it writes; a touch is used when some write reaches it.
+  const held = cmd.touches.filter(snapshotted);
+  const covered = (w: Write) => w.kind !== "none" && w.places.length > 0 && w.places.every((p) => held.some((t) => touchKind(t) === w.kind && covers(touchPlace(t), p)));
+  for (const t of held) {
+    const used = run.writes.some((w) => w.kind === touchKind(t) && w.places.some((p) => covers(touchPlace(t), p) || covers(p, touchPlace(t))));
+    if (!used) reasons.push(`${ruleWords("unused-touch")} (${touchText(t).replace(/\\$/, "")}).`);
+  }
+  if (typeof cmd.undo !== "string" && (cmd.touches.length === 0 || held.length < cmd.touches.length || !run.writes.every(covered))) {
     tier = 3;
     reasons.push(`${ruleWords("no-undo")}.`);
   }
   if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted", commands);
-  const admin = allowed.some((v) => v.admin) || cmd.touches.some((t) => t.kind === "service") || (touches as string[]).some(textNeedsAdmin);
+  const admin = allowed.some((v) => v.admin) || cmd.touches.some((t) => t.kind === "service") || cmd.touches.map(touchText).some(textNeedsAdmin);
   return { status: "allowed", tier, admin, commands, reasons, rulesVersion };
 }
 
@@ -233,22 +264,34 @@ export type PreviewReply =
 export type ApplyReply =
   /** The nonce is unknown, used or too old. Preview again. */
   | { outcome: "expired" }
-  /** The check at apply time no longer passes, the daily limit is reached, or the person said no at Windows' prompt. Nothing ran. */
+  /** The check at apply time no longer passes. Nothing ran. */
   | { outcome: "refused"; verdict: Refused }
+  /** This PC has had its daily number of tier 2 and 3 changes. Nothing ran. */
+  | { outcome: "limit"; /** ISO time when the next one is allowed. */ until: string }
+  /** The person said no at Windows' permission prompt. Nothing ran. */
+  | { outcome: "declined" }
   | { outcome: "applied"; result: RunResult; undo: CommandUndo }
   /** It ran, then the helper put everything back: a never-list write (`sentinels`) or a failure (`error`). Nothing to undo. */
   | { outcome: "rolledBack"; result: RunResult; sentinels: SentinelHit[]; error?: string };
 
 export type UndoReply =
   | { outcome: "undone"; /** What `read` printed after. */ printed: string; /** What it couldn't put back. */ left: string[] }
+  /** Something else changed these places since the change, so undo would overwrite that. Nothing ran; undo again with `force` to put them back anyway. */
+  | { outcome: "drifted"; changed: string[] }
   | { outcome: "unknown" }
   | { outcome: "failed"; error: string; /** The last resort, named for the person. */ restorePoint?: RestorePoint };
 
+/**
+ * The helper checks everything again itself except taint: it can't see the chat, so a tainted chat's tier 3 card is
+ * refused by the server before it is shown.
+ */
 export interface CommandRpc {
-  "command.check": { params: { cmd: Command; tainted: boolean }; reply: { verdict: Verdict } };
-  "command.preview": { params: { cmd: Command; tainted: boolean }; reply: PreviewReply };
+  "command.check": { params: { cmd: Command }; reply: { verdict: Verdict } };
+  "command.preview": { params: { cmd: Command }; reply: PreviewReply };
   "command.apply": { params: { nonce: string }; reply: ApplyReply };
-  "command.undo": { params: { id: string }; reply: UndoReply };
+  "command.undo": { params: { id: string; /** Put it back even when something else changed it since. */ force?: boolean }; reply: UndoReply };
+  /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
+  "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
 }
 
 /** The part of the helper link that carries commands. */

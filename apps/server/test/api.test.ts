@@ -208,6 +208,8 @@ describe("chat", () => {
     const p = events.find((e) => e.type === "proposal") as Extract<ChatEvent, { type: "proposal" }>;
     expect(p.proposal.steps).toEqual([{ kind: "fix", call: { kind: "windows.gameMode", enabled: true } }]);
     expect(p.proposal.tier).toBe(1);
+    // An older desktop app reads the same change from `calls`.
+    expect(p.proposal.calls).toEqual([{ kind: "windows.gameMode", enabled: true }]);
     expect(p.proposal.rows[0]).toEqual(["Game Mode", s.facts.gameMode ? "On" : "Off", "On"]);
     expect(events.at(-1)).toEqual({ type: "done" });
     expect(events.some((e) => e.type === "sources")).toBe(true);
