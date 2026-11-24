@@ -43,6 +43,9 @@ public static class Program
             var (gpuChecks, gpuProblems) = Gpu.SelfTest();
             all["gpu"] = gpuChecks;
             problems.AddRange(gpuProblems);
+            var (firmwareChecks, firmwareProblems) = FirmwareSelfTest.Run();
+            all["firmware"] = firmwareChecks;
+            problems.AddRange(firmwareProblems);
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -353,7 +356,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
         "read" => Reads.Read(p?["read"] as JsonObject, owner, commands.Value.WorkerRead),
-        "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" or "screen.look" => commands.Value.Handle(method, p),
+        "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" or "screen.look" or "firmware.after" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

@@ -416,6 +416,8 @@ describe("LocalClient", () => {
       let drifted = !!o.drifts;
       let previewed: HelperStep | null = null;
       const command = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
+        // Asked once at start, for what is due after a restart; nothing is here.
+        if (method === "firmware.after") return { found: [] } as StepRpc[K]["reply"];
         calls.push(method);
         seen.push({ method, params });
         let reply: unknown;
@@ -485,6 +487,42 @@ describe("LocalClient", () => {
       client.stop();
     });
 
+    it("puts what the helper checked after a restart on the firmware change, and tells the person", async () => {
+      const step = { kind: "native", op: { name: "firmware", setting: "virtualization", value: "on", does: "Turns on virtualization for WSL 2." } } as HelperStep;
+      const before = "Virtualization (Intel VT-x or AMD-V): Off\nDrive encryption on drive C: off";
+      const says = "After the restart, Windows reads Virtualization (Intel VT-x or AMD-V) as on: the change took.";
+      let due: { id: string; says: string }[] = [];
+      const helper = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
+        const replies: Partial<{ [M in keyof StepRpc]: StepRpc[M]["reply"] }> = {
+          "firmware.after": { found: due },
+          "step.preview": { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step) as Allowed, read: before, touches: [], hash: method === "step.preview" ? await stepHash((params as { step: HelperStep }).step) : "" },
+          "step.apply": { outcome: "applied", result: { before, after: before.replace("Off", "On"), output: "", alsoChanged: [], touches: [] }, undo: { kind: "native", id: "u7", outside: [], fingerprint: "f7" } },
+        };
+        return replies[method] as StepRpc[K]["reply"];
+      };
+      const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => 0 });
+      const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => sim.facts(), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c), step: helper };
+      const store = new MemoryStore();
+      const approve = vi.fn(async () => {});
+      const opts = { tickMs: 1e9, syncEveryMs: 1e9, now: () => new Date("2026-11-17T20:00:00").getTime(), approveStep: approve };
+      const first = new LocalClient(link, store, null, opts);
+      await first.start();
+      expect(await first.previewStep(first.id, step, false)).toMatchObject({ outcome: "ready", verdict: { tier: 3, admin: true } });
+      expect((await first.applyStep(first.id, "n1", { by: "rig" })).outcome).toBe("applied");
+      expect(approve).toHaveBeenCalledOnce();
+      expect((await first.changes(first.id))[0]).toMatchObject({ title: "Set Virtualization (Intel VT-x or AMD-V) to On", result: "", diff: [["Virtualization (Intel VT-x or AMD-V)", "Off", "On"]] });
+      first.stop();
+
+      // The PC restarted; the next Rig to start hears what Windows reads now.
+      due = [{ id: "u7", says }];
+      const notify = vi.fn();
+      const next = new LocalClient(link, store, null, { ...opts, notify });
+      await next.start();
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledWith({ title: "Rig checked a firmware change", body: says }));
+      expect((await next.changes(next.id))[0]).toMatchObject({ result: says, status: "applied" });
+      next.stop();
+    });
+
     it("logs a file edit with each value's file, place, before and after, as the helper read them", async () => {
       const path = "C:\\Users\\Sam\\AppData\\Roaming\\Game\\settings.json";
       const before = 'graphics › vsync: true\nFile fingerprint 0123456789ab, 80 bytes\n\nLine 3:\n-     "vsync": true\n+     "vsync": false';
@@ -493,7 +531,7 @@ describe("LocalClient", () => {
       const seen: unknown[] = [];
       const step: StepRpc["step.preview"]["params"]["step"] = { kind: "native", op: { name: "fileEdit", does: "Turns off vertical sync.", path, format: "json", edits: [{ at: ["graphics", "vsync"], value: false }] } };
       const helper = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
-        seen.push({ method, params });
+        if (method !== "firmware.after") seen.push({ method, params });
         const replies: Partial<{ [M in keyof StepRpc]: StepRpc[M]["reply"] }> = {
           "step.preview": { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step) as Allowed, read: before, touches: [{ touch, value: "80 bytes, fingerprint 0123456789ab" }], hash: method === "step.preview" ? await stepHash((params as { step: HelperStep }).step) : "" },
           "step.apply": { outcome: "applied", result: { before, after, output: "", alsoChanged: [], touches: [{ touch, before: "80 bytes, fingerprint 0123456789ab", after: "81 bytes, fingerprint ba9876543210" }] }, undo: { kind: "native", id: "u1", outside: [], fingerprint: "f1" } },
@@ -624,6 +662,8 @@ describe("LocalClient", () => {
       const seen: { method: string; params: unknown }[] = [];
       const step: HelperStep = { kind: "native", op: { name: "screen", lookId, to: "Full", does: "Sets the output dynamic range to Full." } };
       const helper = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
+        // Asked once at start, for what is due after a restart; nothing is here.
+        if (method === "firmware.after") return { found: [] } as StepRpc[K]["reply"];
         seen.push({ method, params });
         if (method === "screen.look") return ((params as { goal: string[] }).goal[0] === "Broken" ? { lookId: "nope", path: [], extra: true } : { ...look, hops: [{ name: "Change resolution" }] }) as unknown as StepRpc[K]["reply"];
         return { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step, { tainted: false, looks: [look] }) as Allowed, read: "Output dynamic range: Limited", touches: [], hash: await stepHash(step) } as StepRpc[K]["reply"];

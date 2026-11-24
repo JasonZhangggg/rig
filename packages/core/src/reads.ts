@@ -23,7 +23,13 @@ export type PcReadSpec =
   /** Graphics driver settings from Rig's table (rules/gpu.json): one game's (by its exe name) or the whole PC's. */
   | { kind: "gpu"; vendor: GpuVendor; app?: string; settings?: string[] }
   /** A walk to one control in an app's window, read without changing anything: the app by Rig's name for it, and each control's name on the way. */
-  | { kind: "screen"; app: string; goal: string[] };
+  | { kind: "screen"; app: string; goal: string[] }
+  /**
+   * Firmware (BIOS) settings: the PC's maker, whether its management class is there, whether a firmware password is set,
+   * the settings on Rig's list with their values now and the ones Rig may set, the security chip (TPM), Secure Boot,
+   * drive encryption on the system drive, and whether Windows can open firmware setup at a restart.
+   */
+  | { kind: "firmware" };
 
 /** A read the server asks the PC for. `id` ties the answer to the model's tool call. */
 export type PcRead = PcReadSpec & { id: string };
@@ -113,6 +119,8 @@ export function readTaints(r: PcReadSpec): boolean {
       return false;
     // Whether a look's text is Rig's own depends on the window the helper found, so its answer decides.
     case "screen":
+    // Only the table's settings, with values the table knows; anything else reads as a fixed "not one Rig knows".
+    case "firmware":
       return false;
     default:
       return true;
@@ -130,7 +138,7 @@ function hiveKey(key: string): string | null {
 
 /** Checks a read the model asked for. Returns the read with only its own fields, or why it can't be done, in plain words. */
 export function checkRead(raw: unknown): PcReadSpec | string {
-  if (!raw || typeof raw !== "object") return "A read needs a kind: registry, cim, cmdlet, script or gpu.";
+  if (!raw || typeof raw !== "object") return "A read needs a kind: registry, cim, cmdlet, script, gpu or firmware.";
   const r = raw as Record<string, unknown>;
   switch (r.kind) {
     case "registry": {
@@ -201,8 +209,10 @@ export function checkRead(raw: unknown): PcReadSpec | string {
       if (goal.some(screenNeverName)) return screenWords("never-name");
       return { kind: "screen", app, goal };
     }
+    case "firmware":
+      return { kind: "firmware" };
     default:
-      return "A read needs a kind: registry, cim, cmdlet, script or gpu.";
+      return "A read needs a kind: registry, cim, cmdlet, script, gpu or firmware.";
   }
 }
 
@@ -215,5 +225,6 @@ export function readWhat(r: PcReadSpec): string {
     case "script": return "a read-only script";
     case "gpu": return `${r.vendor} graphics settings${r.app ? ` for ${r.app}` : ""}`;
     case "screen": return `${r.app}: ${r.goal.join(" › ")}`;
+    case "firmware": return "firmware settings";
   }
 }

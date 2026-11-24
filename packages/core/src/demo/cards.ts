@@ -36,7 +36,7 @@ export interface DemoCard extends DemoBase {
   recipe?: RecipeStep;
 }
 /** A native op the demo can show, preview, apply and undo. */
-export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
+export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen" | "firmware" | "restartToFirmware"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
 export type AnyDemoCard = DemoCard | DemoNativeCard;
 
 const extensions: RecipeStep = { kind: "recipe", id: "fileExtensions", params: { state: "show" } };
@@ -154,6 +154,23 @@ export const demoNativeCards: DemoNativeCard[] = [
     op: { name: "screen", lookId: DEMO_LOOK, to: "Full", does: "Sets the output dynamic range to Full, so blacks look black." },
     look: { lookId: DEMO_LOOK, path: ["NVIDIA Control Panel", "Change resolution", "Output dynamic range"], value: "Limited", options: ["Limited", "Full"], clean: true, expiresAt: "2099-01-01T00:00:00.000Z" },
     read: "Output dynamic range: Limited", values: [], after: "Output dynamic range: Full",
+  },
+  {
+    key: "firmware", ask: "Turn on virtualization so WSL 2 works", asks: /virtuali[sz]ation|wsl|vt-x/,
+    says: "WSL 2 needs the processor's virtualization, and it's off in this PC's firmware. Rig can turn it on through Dell's own firmware tools; it applies the next time the PC restarts.",
+    title: "Turn on virtualization",
+    op: { name: "firmware", setting: "virtualization", value: "on", does: "Turns on virtualization in firmware so WSL 2 can run." },
+    read: "Virtualization (Intel VT-x or AMD-V): Off\nDrive encryption on drive C: on\nMaker: Dell",
+    values: [], after: "Virtualization (Intel VT-x or AMD-V): On\nDrive encryption on drive C: on\nMaker: Dell",
+  },
+  {
+    key: "restartToFirmware", ask: "How do I turn on Secure Boot?", asks: /secure boot|firmware setup|bios/,
+    says: "This PC's maker doesn't let Windows change Secure Boot, so it's done in firmware setup. Here are the steps from your board's manual.",
+    title: "Restart into firmware setup",
+    op: { name: "restartToFirmware" },
+    read: "Windows can open firmware setup at the next restart.\nDrive encryption on drive C: off",
+    values: [], after: "",
+    steps: ["Save your work.", "Restart into firmware setup with the button below.", "Open the Boot tab, then Secure Boot.", "Set Secure Boot to Enabled.", "Press F10 to save and restart."],
   },
 ];
 

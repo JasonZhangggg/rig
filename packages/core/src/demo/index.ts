@@ -358,6 +358,9 @@ export class DemoClient implements RigClient {
     if (refused) {
       await say("Here's how to do it yourself in Windows Security. Rig doesn't change anything.");
       onEvent({ type: "steps", steps: refused.steps! });
+    } else if (card?.key === "restartToFirmware") {
+      await say(card.says);
+      onEvent({ type: "steps", steps: card.steps!, firmwareSetup: true });
     } else if (card) {
       await say(card.says);
       onEvent({ type: "proposal", proposal: demoProposal(card, uid()) });

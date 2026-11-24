@@ -76,6 +76,8 @@
 .proposal-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 0 8px; }
 .proposal-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 0 2px; border-top: 1px solid var(--line); }
 .proposal-foot .faint { margin-right: auto; font-size: 12.5px; }
+.restart-offer { margin-top: 8px; }
+.restart-card { display: grid; gap: 10px; margin-top: 8px; }
 /* A command's card takes its rule from how careful the change needs the person to be. */
 .step-cards { display: grid; gap: 22px; }
 .step-card.t2 { border-left-color: var(--look); }

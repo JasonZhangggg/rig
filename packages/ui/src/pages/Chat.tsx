@@ -4,6 +4,7 @@ import { ChangeCards } from "../components/change";
 import { useActions, useData, useStillPC, useTempText } from "../state";
 import { RecordingCard } from "./logs/RecordingCard";
 import { ChatBar } from "./chat/ChatBar";
+import { FirmwareRestart } from "./chat/FirmwareRestart";
 import { ProbeNote, ScriptCard } from "./chat/ScriptCard";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
@@ -67,7 +68,7 @@ function useStickToBottom(chat: ChatMessage[], answering: boolean) {
     if (!stick.current || !chat.length) return;
     const el = document.scrollingElement ?? document.documentElement;
     el.scrollTop = el.scrollHeight;
-  }, [chat.length, last?.text, last?.steps, last?.sources, last?.proposal, last?.script, answering]);
+  }, [chat.length, last?.text, last?.steps, last?.sources, last?.proposal, last?.script, last?.restart, answering]);
 }
 
 function Message({ m }: { m: ChatMessage }) {
@@ -80,6 +81,7 @@ function Message({ m }: { m: ChatMessage }) {
       <div className="body">
         {paras.length ? paras.map((p, i) => <p key={i}>{p}</p>) : m.pending ? <p className="typing" aria-label="Rig is thinking"><i /><i /><i /></p> : null}
         {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{inUnit(s)}</li>)}</ol>}
+        {m.steps && m.firmwareSetup && <FirmwareRestart m={m} />}
         {m.sources && <Sources sources={m.sources} />}
         {m.proposal && <ProposalCard p={m.proposal} />}
         {m.recording && <RecordingCard request={m.recording} />}

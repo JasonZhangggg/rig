@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
+import { atLabel, canonicalNative, FIRMWARE_MAKER_NAMES, FIRMWARE_MAKERS, firmwareRows, firmwareSealed, firmwareSetting, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, RESTART_WORDS, type FileEditOp, type FirmwareOp, type GpuOp, type GpuSetting, type NativeOp, type RestartFirmwareOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
 import { Claim, Printed } from "./parts";
 import { clip, type RedKind } from "./words";
 
@@ -13,17 +13,25 @@ export interface NativeChange { place: string; before: string; after: string }
 interface NativePart<O extends NativeOp> {
   /** The card's heading, like a command card's: "Changes Vertical sync for game.exe". */
   title(op: O, look?: ScreenLook): string;
-  /** What it changes and where, above the values. `note` says whose words the value is. */
-  where(op: O, look?: ScreenLook): { label: string; value: string; full?: string; note?: string }[];
+  /** What it changes and where, above the values, from the op and the helper's read. `note` says whose words the value is. */
+  where(op: O, read?: string, look?: ScreenLook): { label: string; value: string; full?: string; note?: string }[];
   /** Each value, from the helper's read before and, once it ran, after. */
   changes(op: O, before?: string, after?: string, look?: ScreenLook): NativeChange[];
   /** What else the person should see from the helper's read. */
   more?(op: O, read: string | undefined, pcName: string, look?: ScreenLook): ReactNode;
-  /** What a tier 3 card leads with, when it isn't that the change lowers a protection. */
-  red?: { kind: RedKind; undo: string };
+  /** A tier 3 card's words, when it isn't the usual "lowers a protection" with Undo. */
+  red?(op: O): NativeRed;
+  /** What the person ticks to say they're ready, from the helper's read, or null when nothing needs ticking. */
+  confirm?(op: O, read: string | undefined): string | null;
   /** What the result says once it ran, in place of the values before and after. */
   done?(op: O, result: RunResult, look?: ScreenLook): ReactNode;
 }
+
+/**
+ * A tier 3 card's lead and its answer to "Can it be undone". `kind` picks Rig's usual words; `words` replaces them, and a
+ * part with its own words also says what Undo can reach once the change ran.
+ */
+export interface NativeRed { kind: RedKind; undo: string; noUndo: boolean; words?: { head: string; chip: string; word: string } }
 
 const fileName = (path: string) => path.split("\\").filter(Boolean).pop() ?? path;
 
@@ -76,7 +84,7 @@ const inApp = (look?: ScreenLook) => (look ? lookApp(look) : "the app");
 
 const screen: NativePart<ScreenOp> = {
   title: (_op, look) => `Changes a setting in ${look ? lookApp(look) : "an app's window"}`,
-  where: (_op, look) => (look ? [{ label: "App", value: lookApp(look) }, { label: "Path", value: lookSteps(look), note: appWords }] : []),
+  where: (_op, _read, look) => (look ? [{ label: "App", value: lookApp(look) }, { label: "Path", value: lookSteps(look), note: appWords }] : []),
   changes: (op, before, after, look) => {
     const [name, was, to] = (nativeRows(op, before, after) ?? [])[0] ?? [];
     return [{ place: look ? lookControl(look) : name ?? "Setting", before: before === undefined ? look?.value || "As it is now" : was ?? before, after: to ?? op.to }];
@@ -84,7 +92,7 @@ const screen: NativePart<ScreenOp> = {
   more: (_op, _read, _pcName, look) => (
     <p className="cc-note">Rig will click through {look ? `${lookApp(look)}'s` : "the app's"} window to set it, the way you would. A Stop bar shows at the top of the screen while it does; press Stop to end it at once.</p>
   ),
-  red: { kind: "unsure", undo: "Not for sure. Undo walks the same path in the app and sets the old value again, which can miss if the app changed." },
+  red: () => ({ kind: "unsure", undo: "Not for sure. Undo walks the same path in the app and sets the old value again, which can miss if the app changed.", noUndo: false }),
   done: (op, result, look) => {
     const control = look ? lookControl(look) : "the setting";
     if (result.stopped) {
@@ -100,8 +108,54 @@ const screen: NativePart<ScreenOp> = {
   },
 };
 
+/** The maker the helper's firmware read names, like "Dell". */
+const firmwareMaker = (read: string | undefined) => /^Maker: (.+)$/m.exec(read ?? "")?.[1]?.trim();
+
+export const sealedLine = "Drive encryption (BitLocker) is on. Windows may ask for its recovery key at the next start.";
+export const recoveryKey = "I have my BitLocker recovery key.";
+
+const firmware: NativePart<FirmwareOp> = {
+  title: (op) => {
+    const s = firmwareSetting(op.setting);
+    return s ? `Changes ${s.name} in firmware` : "Changes a firmware setting";
+  },
+  where: (op, read) => {
+    const maker = firmwareMaker(read);
+    return [{ label: "Setting", value: firmwareSetting(op.setting)?.name ?? op.setting }, ...(maker ? [{ label: "Maker", value: maker }] : [])];
+  },
+  changes: (op, before, after) => firmwareRows(op, before, after).map(([place, was, to]) => ({ place, before: was, after: to })),
+  more: (op, read) => {
+    const s = firmwareSetting(op.setting);
+    const maker = FIRMWARE_MAKERS.find((m) => FIRMWARE_MAKER_NAMES[m] === firmwareMaker(read));
+    const asks = maker && s?.makers[maker]?.asks;
+    return (
+      <>
+        <p className="cc-note">{s?.says} It applies at the next restart. Rig won't restart the PC for you.</p>
+        {asks && <p className="cc-note">{asks}</p>}
+        {firmwareSealed(read) && <p className="cc-note cc-no" role="note">{sealedLine}</p>}
+      </>
+    );
+  },
+  red: (op) => {
+    const s = firmwareSetting(op.setting);
+    return s?.undo === false
+      ? { kind: "none", words: { head: "This changes a firmware setting, and Rig won't change it back.", chip: "Firmware", word: "firmware" }, undo: `No. Rig won't turn ${s.name} off again. You can in firmware setup.`, noUndo: true }
+      : { kind: "lowers", words: { head: "This changes a firmware setting.", chip: "Firmware", word: "firmware" }, undo: "Yes. Undo sets the old value back, and that also applies at the next restart.", noUndo: false };
+  },
+  confirm: (_op, read) => (firmwareSealed(read) ? recoveryKey : null),
+};
+
+const restartToFirmware: NativePart<RestartFirmwareOp> = {
+  title: () => "Restarts into firmware setup",
+  where: () => [],
+  changes: () => [{ place: RESTART_WORDS.row[0], before: RESTART_WORDS.row[1], after: RESTART_WORDS.row[2] }],
+  more: (_op, read) => (firmwareSealed(read) ? <p className="cc-note cc-no" role="note">{sealedLine}</p> : null),
+  red: () => ({ kind: "lowers", words: { head: "This restarts your PC in one minute.", chip: "Restarts the PC", word: "restart" }, undo: "Cancel stops the restart during that minute.", noUndo: false }),
+  confirm: (_op, read) => (firmwareSealed(read) ? recoveryKey : null),
+};
+
 /** One entry per kind of native op. A new op is one more entry here. */
-export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen };
+export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen, firmware, restartToFirmware };
 
 /** The op's kind, when this copy of Rig knows it. A newer Rig may send kinds this one doesn't. */
 export const knownNative = (raw: unknown) => {
@@ -115,6 +169,12 @@ export function nativeOf(raw: unknown, looks?: ScreenLook[]): { op: NativeOp; pa
   if (typeof op === "string" || !knownNative(op)) return null;
   const look = op.name === "screen" ? looks?.find((l) => l.lookId === op.lookId) : undefined;
   return { op, part: nativeParts[op.name] as NativePart<NativeOp>, ...(look ? { look } : {}) };
+}
+
+/** Whether Rig won't put this native op back, by its part's own words. */
+export function nativeNoUndo(raw: unknown): boolean {
+  const n = nativeOf(raw);
+  return !!n?.part.red?.(n.op).noUndo;
 }
 
 /** Claude's sentence on a native op, whatever its kind. */
@@ -145,7 +205,7 @@ export function ChangeList({ changes, label = "What changes" }: { changes: Nativ
 export function NativeWhat({ op, part, read, look }: { op: NativeOp; part: NativePart<NativeOp>; read?: string; look?: ScreenLook }) {
   return (
     <>
-      {part.where(op, look).map((w) => (
+      {part.where(op, read, look).map((w) => (
         <p key={w.label} className="cc-where-line">
           <span className="cc-tag">{w.label}</span> <b>{w.value}</b>{w.note && <span className="faint"> · {w.note}</span>}
           {w.full && w.full !== w.value && <Claim className="cc-where" text={w.full} max={96} />}

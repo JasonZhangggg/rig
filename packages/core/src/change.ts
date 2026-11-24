@@ -13,6 +13,7 @@ import { checkScript, covers, inspectScript, localFile, placeOf, rulesVersion, r
 import type { Change } from "./client";
 import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
+import { canonicalFirmware, firmwareReasons, firmwareRefused, firmwareRows, firmwareTitle, RESTART_WORDS, type FirmwareOp, type RestartFirmwareOp } from "./firmware";
 import type { DiffRow } from "./model";
 import rulesJson from "./rules/commands.json";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
@@ -40,10 +41,11 @@ export function helperStep(step: HelperStep | RecipeStep): HelperStep | string {
 }
 
 /**
- * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
- * `nativeOps`, and one class in the helper (NativeSteps.cs).
+ * A change the helper's own code makes: as the person and never elevated, or, for the few ops whose rule says `admin`,
+ * in the helper itself after Windows' permission prompt. A new op is one member here, one entry in `nativeOps`, and one
+ * class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp | FirmwareOp | RestartFirmwareOp;
 
 /**
  * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
@@ -72,6 +74,8 @@ export interface NativeRule<O extends NativeOp> {
   /** The op as the helper stores and fingerprints it, with anything Rig doesn't know dropped, or what is wrong with it in plain words. */
   canonical(raw: Record<string, unknown>): O | string;
   tier(op: O): Tier;
+  /** It runs in the helper with admin rights, behind Windows' permission prompt, because Windows allows it no other way. */
+  admin?: true;
   /** Why this tier. */
   reasons(op: O): string[];
   /** A short past-tense title for the changes log. */
@@ -124,6 +128,23 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
       const [name, was] = lineParts(before);
       return [[name ?? "Setting", was ?? before ?? "As it is now", after === undefined ? op.to : lineParts(after)[1] ?? after]];
     },
+  },
+  firmware: {
+    canonical: canonicalFirmware,
+    tier: () => 3,
+    admin: true,
+    reasons: firmwareReasons,
+    title: firmwareTitle,
+    never: firmwareRefused,
+    rows: firmwareRows,
+  },
+  restartToFirmware: {
+    canonical: () => ({ name: "restartToFirmware" }),
+    tier: () => 3,
+    admin: true,
+    reasons: () => [RESTART_WORDS.tier],
+    title: () => RESTART_WORDS.title,
+    rows: () => [RESTART_WORDS.row],
   },
 };
 
@@ -288,8 +309,8 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
         reasons.push(`${lowers}.`);
       }
       if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
-      // The helper's worker makes it with the person's own rights, so it never needs admin rights.
-      return { status: "allowed", tier, admin: false, commands: [], reasons, rulesVersion };
+      // The helper's worker makes it with the person's own rights, unless Windows allows it only with admin rights.
+      return { status: "allowed", tier, admin: rule.admin === true, commands: [], reasons, rulesVersion };
     }
   }
 }
@@ -591,6 +612,8 @@ export interface StepRpc {
    * way, ending with the one to read.
    */
   "screen.look": { params: { app: string; goal: string[] }; reply: ScreenLookReply };
+  /** What is due since this PC last restarted after a firmware change: the id of each change and what Windows reads now. Each is answered once. */
+  "firmware.after": { params: Record<string, never>; reply: { found: { id: string; says: string }[] } };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
 }

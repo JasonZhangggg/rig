@@ -292,6 +292,37 @@ describe("general command steps", () => {
     expect(lastToolResults(never.seen[1])).toContain("Rig never reads saved passwords");
   });
 
+  it("reads firmware settings without tainting, proposes one from Rig's list at tier 3, and never turns protection off", async () => {
+    const vt = { setting: "virtualization", value: "on", does: "Turns on virtualization so WSL 2 can run." };
+    const { live, seen } = await chatSetup([
+      { tool: { name: "read_pc", input: { kind: "firmware", namespace: "root\\HP\\InstrumentedBIOS" } } },
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ firmware: { setting: "secureBoot", value: "off", does: "Turns Secure Boot off." } }] } } },
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ firmware: { setting: "SATA Operation", value: "ahci", does: "Switches to AHCI." } }] } } },
+      { tool: { name: "propose_change", input: { title: "Turn on virtualization", why: "WSL 2 needs it.", steps: [{ firmware: vt }] } } },
+      { text: "Review the card. It applies at the next restart." },
+    ]);
+    const stop = of(await live(ask("Turn on virtualization")), "reads")[0];
+    expect(stop.reads).toEqual([{ id: "tu_1", kind: "firmware" }]);
+    const text = JSON.stringify({ maker: "Dell", makerTools: true, settings: [{ setting: "virtualization", name: "Virtualization (Intel VT-x or AMD-V)", now: "off", canSet: true }] });
+    const rest = await live(ask("Turn on virtualization"), { resume: stop.resume, results: [{ id: "tu_1", ok: true, text }] });
+    expect(lastToolResults(seen[2])).toContain("Rig never turns Secure Boot off");
+    expect(lastToolResults(seen[3])).toContain("Rig never changes the storage controller's mode");
+    const p = of(rest, "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 3, title: "Turn on virtualization", steps: [{ kind: "native", op: { name: "firmware", ...vt } }] });
+    expect(p.rows).toEqual([["Virtualization (Intel VT-x or AMD-V)", "As it is now", "On"]]);
+  });
+
+  it("won't offer a firmware change after a web page, and offers the restart into firmware setup only in the app on the PC", async () => {
+    const vt = { setting: "virtualization", value: "on", does: "Turns on virtualization." };
+    const after = await chatSetup([{ blocks: [webFetch], tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ firmware: vt }] } } }, { tool: { name: "show_steps", input: { steps: ["Press F2 while the PC starts.", "Turn on Intel Virtualization Technology."], firmwareSetup: true } } }, { text: "." }]);
+    const events = await after.live(ask("Turn on virtualization"));
+    expect(of(events, "proposal")).toHaveLength(0);
+    expect(of(events, "steps")).toEqual([{ type: "steps", steps: ["Press F2 while the PC starts.", "Turn on Intel Virtualization Technology."], firmwareSetup: true }]);
+
+    const web = await chatSetup([{ tool: { name: "show_steps", input: { steps: ["Press F2 while the PC starts."], firmwareSetup: true } } }, { text: "." }]);
+    expect(of(await web.web(ask("Turn on virtualization")), "steps")).toEqual([{ type: "steps", steps: ["Press F2 while the PC starts."] }]);
+  });
+
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {
     const clean = await chatSetup([{ tool: { name: "propose_change", input: { title: "Delete the old installers", why: "Frees space.", steps: [{ command: deleteFolder }] } } }, { text: "Review it." }]);
     expect(of(await clean.live(ask("Delete C:\\Installers\\old")), "proposal")[0].proposal.tier).toBe(3);

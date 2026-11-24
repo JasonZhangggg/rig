@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type Issue } from "@rig/core";
 import { DiffTable, StatusChip } from "../components/common";
-import { recordRuns, StepRecord, undoReach } from "../components/change";
+import { nativeNoUndo, recordRuns, StepRecord, undoReach } from "../components/change";
 import { DayLabel, Row, Rows } from "../components/Rows";
 import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
@@ -122,7 +122,8 @@ function Entry({ c }: { c: Change }) {
   const toggle = () => { setBusy(true); void toggleChange(c.id).finally(() => setBusy(false)); };
   const commands = c.applied.filter((a): a is CommandApplied => a.step.kind === "command");
   const word = c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
-  const canToggle = commands.length ? c.status === "applied" && commands.some((a) => undoReach(a.step.cmd, a.undo, recordRuns(a.step.cmd)).can) : true;
+  const fixed = c.applied.some((a) => a.step.kind === "native" && nativeNoUndo(a.step.op));
+  const canToggle = fixed ? false : commands.length ? c.status === "applied" && commands.some((a) => undoReach(a.step.cmd, a.undo, recordRuns(a.step.cmd)).can) : true;
   const state = commands.length ? (c.status === "applied" ? "Open it to see what Undo can put back." : "Undone.") : c.status === "applied" ? "Old values saved." : "Old values put back.";
   const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${state}`;
   return (
