@@ -289,7 +289,7 @@ describe("general command steps", () => {
       { text: "." },
     ]);
     expect(of(await never.live(ask("Change it")), "proposal")).toHaveLength(0);
-    expect(lastToolResults(never.seen[1])).toContain("Rig never reads saved passwords");
+    expect(lastToolResults(never.seen[1])).toContain("Rig never edits sign-in, key or browser profile files");
   });
 
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {

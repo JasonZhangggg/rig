@@ -72,6 +72,7 @@ public static partial class CommandSelfTest
             Check("running as the person", () => AsPerson(ctx));
             Check("scripts start in an empty folder with a clean environment", () => CleanStart(ctx));
             Check("registry snapshot round trip", () => RegistryRoundTrip(ctx));
+            Check("a device's state for the card", () => DeviceState(ctx));
             Check("registry restore removes the keys a change made", () => RegistryAnchors(ctx));
             Check("file snapshot round trip", () => FileRoundTrip(ctx));
             Check("admin file access refuses links", () => AdminFiles(ctx));
@@ -355,6 +356,18 @@ public static partial class CommandSelfTest
         using (var k = hive.OpenSubKey(path)!)
             if (k.GetValueKind("Dword") != RegistryValueKind.DWord || unchecked((uint)(int)k.GetValue("Dword")!) != 0xFFFFFFF0) yield return "one value didn't come back with its type";
         if (TouchStates.Show(one, keptOne) != "4294967280") yield return $"the card would show the value as {TouchStates.Show(one, keptOne)}";
+    }
+
+    /// A device touch reads on or off for the card, and a device Windows doesn't have reads as not there.
+    static IEnumerable<string> DeviceState(Context ctx)
+    {
+        var states = new TouchStates(ctx.Person, admin: false);
+        // The root of Windows' device tree is on every PC and is always on.
+        var root = new Touch("device", @"HTREE\ROOT\0", null);
+        if (TouchStates.Show(root, states.Read(root)) != "On") yield return $"the root device read as {TouchStates.Show(root, states.Read(root)) ?? "not there"}";
+        var gone = new Touch("device", @"ROOT\RIG_NOT_THERE\0000", null);
+        if (TouchStates.Show(gone, states.Read(gone)) != null) yield return "a device Windows doesn't have read as there";
+        if (TouchStates.Show(root, JsonNode.Parse("{\"problem\":22}")) != "Off") yield return "a turned off device wouldn't read as off";
     }
 
     static IEnumerable<string> RegistryAnchors(Context ctx)

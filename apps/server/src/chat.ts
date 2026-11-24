@@ -197,7 +197,7 @@ const commandSchema = {
       type: "array", maxItems: 20, description: "Everything it changes.",
       items: {
         type: "object",
-        properties: { kind: { type: "string", enum: ["registry", "file", "service", "task", "firewall", "other"] }, key: { type: "string", description: "registry: full key, HKLM\\... or HKCU\\..." }, value: { type: "string" }, path: { type: "string", description: "file: full path" }, name: { type: "string", description: "service, task, firewall or other: its name" } },
+        properties: { kind: { type: "string", enum: ["registry", "file", "service", "task", "firewall", "device", "other"] }, key: { type: "string", description: "registry: full key, HKLM\\... or HKCU\\..." }, value: { type: "string" }, path: { type: "string", description: "file: full path" }, name: { type: "string", description: "service, task, firewall or other: its name; device: its instance id" } },
         required: ["kind"],
       },
     },
@@ -623,7 +623,7 @@ function commandOf(raw: unknown): Command | string {
     const kind = t?.kind;
     if (kind === "registry") touches.push(typeof t.value === "string" ? { kind, key: String(t.key ?? ""), value: t.value } : { kind, key: String(t.key ?? "") });
     else if (kind === "file") touches.push({ kind, path: String(t.path ?? "") });
-    else if (kind === "service" || kind === "task" || kind === "firewall" || kind === "other") touches.push({ kind, name: String(t.name ?? "") });
+    else if (kind === "service" || kind === "task" || kind === "firewall" || kind === "device" || kind === "other") touches.push({ kind, name: String(t.name ?? "") });
     else return `Unknown kind in touches: ${String(kind)}`;
   }
   return {

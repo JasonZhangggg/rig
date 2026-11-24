@@ -70,7 +70,7 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
                 return new Touch("registry", $@"{(m.Groups[1].Value.ToLowerInvariant() is "hkey_current_user" or "hkcu" ? "HKCU" : "HKLM")}\{rest}", value);
             case "file":
                 return LocalFile(text) ? new Touch("file", text, null) : null;
-            case "service" or "task" or "firewall" or "other":
+            case "service" or "task" or "firewall" or "other" or "device":
                 return new Touch(kind, text, null);
             default:
                 return null;

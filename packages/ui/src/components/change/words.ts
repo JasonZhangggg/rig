@@ -1,13 +1,13 @@
-import { checkScript, secondLook, type Allowed, type Command, type HelperUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
+import { checkScript, secondLook, writtenTouches, type Allowed, type Command, type HelperUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
 
 const kinds: Record<Touch["kind"], [one: string, many: string]> = {
   registry: ["a registry value", "registry values"], file: ["a file", "files"], service: ["a service", "services"],
-  task: ["a scheduled task", "scheduled tasks"], firewall: ["a firewall rule", "firewall rules"], other: ["something else on this PC", "other things on this PC"],
+  task: ["a scheduled task", "scheduled tasks"], firewall: ["a firewall rule", "firewall rules"], device: ["a device", "devices"], other: ["something else on this PC", "other things on this PC"],
 };
 
 const last = (path: string) => path.split("\\").filter(Boolean).pop() ?? path;
 
-export const touchKind = (t: Touch) => ({ registry: "Registry", file: "File", service: "Service", task: "Scheduled task", firewall: "Firewall rule", other: "Other" })[t.kind];
+export const touchKind = (t: Touch) => ({ registry: "Registry", file: "File", service: "Service", task: "Scheduled task", firewall: "Firewall rule", device: "Device", other: "Other" })[t.kind];
 export const touchName = (t: Touch) => (t.kind === "registry" ? `${t.key}${t.value ? `\\${t.value}` : ""}` : t.kind === "file" ? t.path : t.name);
 /** A touch's own name, without the path in front. */
 export const touchShort = (t: Touch) => (t.kind === "registry" ? t.value || last(t.key) : t.kind === "file" ? last(t.path) : t.name);
@@ -106,7 +106,8 @@ export interface UndoPlan {
 
 /** Whether Rig can put this back, and how, before it runs. It promises only what's listed, since the list is Claude's. */
 export function undoPlan(cmd: Command, runs: FoundCommand[]): UndoPlan {
-  const saved = cmd.touches.filter(snapshotted);
+  // A listed place the change script doesn't write to has nothing for Rig's copy to put back.
+  const saved = writtenTouches(cmd);
   const rest = cmd.touches.filter((t) => !snapshotted(t));
   const off = saved.length ? untied(cmd, runs) : [];
   const values = saved.length === 1 ? "the listed value" : "the listed values";
@@ -147,20 +148,25 @@ export const restoreLine = (r: RestorePoint) => `As a last resort, Windows has a
 /** What Undo can and can't put back, after the change ran. `can` is false when there's nothing to undo it with. */
 export function undoReach(cmd: Command, undo: HelperUndo, runs: FoundCommand[]): { can: boolean; line: string; untied: string[] } {
   const script = undo.kind === "command" ? undo.script : undefined;
-  const saved = cmd.touches.filter(snapshotted).length;
+  // Only what the change script writes can be put back from Rig's copy, like a driver's install, which writes none of
+  // the files Rig keeps a copy of.
+  const saved = writtenTouches(cmd).length;
   const rest = cmd.touches.filter((t) => !snapshotted(t)).length;
   const restore = undo.restorePoint ? ` ${restoreLine(undo.restorePoint)}` : "";
-  if (!saved && !script) return { can: false, untied: [], line: `Rig can't undo this: it had no copy to save and no undo script.${restore}` };
+  if (!saved && !script) return { can: false, untied: [], line: `Rig can't undo this: it has no copy of what this changed, and no undo script.${restore}` };
   const can = saved ? `Undo puts back ${saved === 1 ? "the listed value" : "the listed values"} Rig saved${script ? ", then runs the undo script" : ""}.` : "Undo runs the undo script.";
   const cant = [...(rest && !script ? ["the listed things Rig had no copy of"] : []), ...(undo.outside.length ? ["what's under Also changed"] : [])];
   const off = saved ? untied(cmd, runs) : [];
   return { can: true, untied: off, line: `${can}${cant.length ? ` It can't put back ${list(cant)}.` : ""}${cant.length || off.length ? restore : ""}` };
 }
 
-/** What Undo can put back after a native op ran. Its way back was approved with it, so there is always one. */
-export function nativeReach(undo: HelperUndo): { can: true; line: string; untied: string[] } {
+/**
+ * What Undo can put back after a native op ran. Its way back was approved with it, so there is always one. `back` is the
+ * op's own words for it when it isn't exact, like a screen step's, which walks the same path again.
+ */
+export function nativeReach(undo: HelperUndo, back?: string): { can: true; line: string; untied: string[] } {
   const restore = undo.restorePoint ? ` ${restoreLine(undo.restorePoint)}` : "";
-  return { can: true, untied: [], line: `Undo puts it back the way Rig read it before.${undo.outside.length ? ` It can't put back what's under Also changed.${restore}` : ""}` };
+  return { can: true, untied: [], line: `${back ?? "Undo puts it back the way Rig read it before."}${undo.outside.length ? ` It can't put back what's under Also changed.${restore}` : ""}` };
 }
 
 const sentinels: Record<Sentinel, string> = {

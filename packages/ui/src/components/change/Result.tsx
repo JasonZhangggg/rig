@@ -97,7 +97,8 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
   if (a.outcome === "rolledBack") return <RolledBackResult reply={a} native={step.kind === "native"} />;
   if (a.outcome === "limit") return <p className="cc-note" role="status">{limitLine(a.until, pcName)}</p>;
   if (a.outcome === "declined") return <p className="cc-note" role="status">{declinedLine(pcName)}</p>;
-  const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo);
+  const native = step.kind === "native" ? nativeOf(step.op, looks) : null;
+  const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo, native?.part.back?.(native.op, native.look));
   const again = outcome.undo?.outcome === "failed";
   const drifted = outcome.undo?.outcome === "drifted";
   return (

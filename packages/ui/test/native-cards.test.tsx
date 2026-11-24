@@ -48,6 +48,16 @@ describe("a settings file card", () => {
     expect(screen.queryByLabelText("Change script")).toBeNull();
   });
 
+  it("says in its own words why it won't edit a browser profile", () => {
+    const on = show(unread({ name: "fileEdit", does: "Turns off Firefox asking which app opens PDF files.", path: "C:\\Users\\Sam\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\k2x9.default-release\\handlers.json", format: "json", edits: [{ at: ["mimeTypes", "application/pdf", "ask"], value: false }] }));
+    expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
+    expect(screen.getByText(/^Rig never edits sign-in, key or browser profile files\./)).toBeTruthy();
+    expect(screen.queryByText(/saved passwords/)).toBeNull();
+    expect(button(/Apply|Review|Read current settings/)).toBeNull();
+    fireEvent.click(button("Show me the steps")!);
+    expect(on.onSteps).toHaveBeenCalledWith(0);
+  });
+
   it("says when it adds a key or reaches past your own folders, and asks more for it", () => {
     show(unread({ name: "fileEdit", does: "Turns off the intro.", path: "C:\\Users\\Public\\Game\\settings.json", format: "json", edits: [{ at: ["intro"], value: false, add: true }] }));
     const risk = glance("How risky");
@@ -110,11 +120,16 @@ describe("an app window card", () => {
     expect(screen.getByText(/Rig hasn't looked at this control/)).toBeTruthy();
   });
 
-  it("says what Rig set once it ran", () => {
+  const walksBack = "Rig can't promise this undo. It walks the same path in NVIDIA Control Panel and sets Output dynamic range back to Limited, which can miss if the app changed.";
+
+  it("says what Rig set once it ran, and that undo walks the same path, as the card said before", () => {
     show(demoProposal(screenCard()), { outcomes: [{ apply: demoApply(screenCard()) }] });
     expect(screen.getByText("Applied")).toBeTruthy();
     expect(screen.getByText("Rig set Output dynamic range to Full in NVIDIA Control Panel and read it back.")).toBeTruthy();
     expect(changes("What changed")).toEqual(["Output dynamic range:Limited→ changed to Full"]);
+    expect(screen.getByText(walksBack)).toBeTruthy();
+    expect(screen.queryByText(/the way Rig read it before/)).toBeNull();
+    expect(button("Undo")).toBeTruthy();
   });
 
   it("says Rig stopped when the person pressed Stop, and offers undo", () => {
@@ -124,7 +139,8 @@ describe("an app window card", () => {
     const on = show(demoProposal(screenCard()), { outcomes: [{ apply: stopped }] });
     expect(screen.getByRole("status").textContent).toBe("Rig stopped part way.");
     expect(screen.getByText(/You pressed Stop, so Rig stopped\. It had started setting Output dynamic range/)).toBeTruthy();
-    expect(screen.getByText("Undo walks the same path and sets Output dynamic range back to Limited.")).toBeTruthy();
+    expect(screen.getByText(walksBack)).toBeTruthy();
+    expect(screen.queryByText(/the way Rig read it before/)).toBeNull();
     expect(screen.queryByRole("list", { name: "What changed" })).toBeNull();
     fireEvent.click(button("Undo")!);
     expect(on.onCommandStep).toHaveBeenCalledWith(0, "undo");
