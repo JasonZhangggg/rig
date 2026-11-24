@@ -77,19 +77,40 @@ public sealed class CommandStore
     {
         Root = root;
         this.secured = secured;
+        Setup();
+    }
+
+    void Setup()
+    {
         if (secured)
         {
-            // ProgramData lets anyone make folders. A parent someone else made is taken over; a store someone else made,
-            // or a link in its place, is replaced, so nothing planted there is ever read.
-            string parent = Path.GetDirectoryName(root)!;
+            // ProgramData lets anyone make folders. The parent is always taken over and locked, so no one else can add or
+            // swap anything beside the store; a store someone else made, or a link in its place, is replaced, so nothing
+            // planted there is ever read.
+            string parent = Path.GetDirectoryName(Root)!;
             if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(parent);
-            if (Directory.Exists(parent) && !OwnedByAdmins(parent)) Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
-            if (Directory.Exists(root) && File.GetAttributes(root).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(root);
-            if (Directory.Exists(root) && !OwnedByAdmins(root)) Directory.Delete(root, recursive: true);
-            Directory.CreateDirectory(root);
-            Lock(root, reader: null);
+            Directory.CreateDirectory(parent);
+            Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
+            if (Directory.Exists(Root) && File.GetAttributes(Root).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(Root);
+            if (Directory.Exists(Root) && !OwnedByAdmins(Root)) Directory.Delete(Root, recursive: true);
+            Directory.CreateDirectory(Root);
+            Lock(Root, reader: null);
         }
-        foreach (string sub in new[] { "pending", "records", "work", "scripts" }) Directory.CreateDirectory(Path.Combine(root, sub));
+        foreach (string sub in new[] { "pending", "records", "work", "scripts" }) Directory.CreateDirectory(Path.Combine(Root, sub));
+    }
+
+    /// Whether only admins could have put anything in the store: it, the folders above it and every folder and file in it
+    /// are owned by admins, the system or Windows' installer, and none is a link. Always true for the person's own store.
+    public bool Sound() => !secured || AdminFile.TrustedTree(Root);
+
+    /// Whether only admins could have put what is at this path in the store.
+    public bool Trusted(string path) => !secured || AdminFile.Trusted(path);
+
+    /// Empties the store and sets it up again. What it held, the records of past changes among them, is gone.
+    public void Rebuild()
+    {
+        if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+        Setup();
     }
 
     static bool OwnedByAdmins(string dir)
@@ -264,6 +285,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     internal bool? TestOnlyElevatedApp { get; set; }
 
     public const string AppElevated = "Rig is running as administrator, so it can't keep changes to what you approved. Open Rig normally and ask again.";
+    public const string StoreRebuilt = "Rig found something in its own store of changes that it didn't put there, so it cleared the store and nothing ran. Ask again.";
     public const string AppElevatedUndo = "Rig is running as administrator, so it can't keep the undo to what you approved. Open Rig normally and undo again.";
 
     static string? Str(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
@@ -295,6 +317,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         {
             PowerShellHost.Write(script, CommandCheck.Resource("Rig.Commands.CommandAst.ps1"), stopOnError: false);
             File.WriteAllLines(input, scripts.Select(s => Convert.ToBase64String(Encoding.UTF8.GetBytes(s))));
+            if (!store.Trusted(script) || !store.Trusted(input)) throw new RigException("Rig's own folder has something in it that Rig didn't put there");
             var ran = PowerShellHost.RunHere(PowerShellHost.Args(script, input, output), ParseTimeoutMs, store.Empty(), store.Work);
             if (!File.Exists(output)) throw new RigException($"PowerShell's parser didn't answer ({(ran.TimedOut ? "it took too long" : ran.Printed.Split('\n')[0].Trim())})");
             return (JsonNode.Parse(File.ReadAllText(output))?["scripts"] as JsonArray ?? []).ToList();
@@ -409,6 +432,12 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         using var person = Person.Find(appPid);
         if (person.Sid != waiting.Person) return expired;
         if (TestOnlyElevatedApp ?? person.Elevated) return Refused(AppElevated);
+        if (!store.Sound())
+        {
+            store.Rebuild();
+            Issued.TryRemove(nonce, out _);
+            return Refused(StoreRebuilt);
+        }
         // Windows' prompt wasn't answered with Yes: nothing ran, and the same card can ask again until it runs out.
         if (waiting.Verdict.Admin && Native.IsAdmin() && waiting.ApprovedAt == 0) return new JsonObject { ["outcome"] = "declined" };
         if (store.Take(nonce) is not Pending pending) return expired;
@@ -562,6 +591,11 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         }
         if (admin && !Native.IsAdmin()) return Failed("This change was made with admin rights, and Rig's helper is running without them. Restart Rig and choose Yes when Windows asks, then undo again.");
         if (TestOnlyElevatedApp ?? person.Elevated) return Failed(AppElevatedUndo);
+        if (!store.Sound())
+        {
+            store.Rebuild();
+            return Failed("Rig found something in its own store of changes that it didn't put there, so it cleared the store, and this change's snapshot with it. Nothing ran.");
+        }
 
         var states = new TouchStates(person, admin);
         var touches = cmd.Touches.ToList();

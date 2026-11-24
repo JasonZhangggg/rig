@@ -88,6 +88,7 @@ public static class CommandSelfTest
             if (elevated)
             {
                 Check("the command store is admins' only", () => StoreLocked(ctx));
+                Check("a link planted in the store is refused and the store rebuilt", () => PlantedStore(ctx));
                 Check("a change that needs admin rights", () => NeedsApproval(ctx));
                 Check("services, tasks and accounts a change made are put back", () => NeverPutBack(ctx));
                 Check("a limited app token", () => LimitedToken(ctx));
@@ -591,6 +592,29 @@ public static class CommandSelfTest
     {
         var rules = new DirectoryInfo(ctx.Root).GetAccessControl().GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>();
         if (rules.Any(r => r.IdentityReference.Value is not ("S-1-5-18" or "S-1-5-32-544"))) yield return "more than admins and the system can reach it";
+        if (!ctx.Store.Sound()) yield return "the store as Rig set it up has something in it that isn't admins' own";
+    }
+
+    static IEnumerable<string> PlantedStore(Context ctx)
+    {
+        Clean(ctx.Person);
+        var p = ctx.Preview(Harmless());
+        if (!Is(p, "ready")) { yield return $"the test command was refused before it ran: {p.ToJsonString()}"; yield break; }
+        string target = Path.Combine(Path.GetTempPath(), "rig-selftest-planted-" + CommandStore.NewId()), link = Path.Combine(ctx.Root, "records", "planted");
+        Directory.CreateDirectory(target);
+        JsonNode a;
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            a = ctx.Apply(p);
+        }
+        finally { try { Directory.Delete(target, recursive: true); } catch { } }
+        if (!Is(a, "refused") || a["verdict"]?["refused"]?.ToString() != Commands.StoreRebuilt) yield return $"it wasn't refused in the store's words: {a.ToJsonString()}";
+        if (Exists(ctx.Person, Key)) yield return "the change ran";
+        if (new DirectoryInfo(link).Exists || File.Exists(link)) yield return "the planted link was left in the store";
+        if (!ctx.Store.Sound()) yield return "the rebuilt store isn't sound";
+        if (!Is(ctx.Apply(ctx.Preview(Harmless())), "applied")) yield return "a change couldn't run once the store was rebuilt";
+        Clean(ctx.Person);
     }
 
     static IEnumerable<string> NeedsApproval(Context ctx)

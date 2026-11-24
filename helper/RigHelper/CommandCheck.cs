@@ -131,7 +131,7 @@ public static class CommandCheck
     class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
     sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } }
     sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } }
-    sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
+    sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public string[]? Renames { get; set; } public bool Leaves { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
     sealed class ReadRoot { public string Root { get; set; } = ""; public string[]? Ends { get; set; } }
@@ -158,6 +158,7 @@ public static class CommandCheck
         public string[] ReadParams { get; set; } = [];
         public RootList Roots { get; set; } = new();
         public PathRules Paths { get; set; } = new();
+        public string[] WriterVerbs { get; set; } = [];
         public string[] AdminText { get; set; } = [];
         public string[] SafeTypes { get; set; } = [];
         public string[] SafeMethods { get; set; } = [];
@@ -178,7 +179,10 @@ public static class CommandCheck
     sealed record Call(string Name, List<Arg> Args, bool Piped);
     sealed record Find(string What, string Detail, bool Hidden = false);
     sealed record Target(string Text, string Place, string Kind, bool Hidden, bool Literal);
-    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused");
+    /// `Joined`: the places a command's plain names make, held to the text rules like the script itself.
+    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null);
+    /// A plain name a command gives what it makes or renames, which Rig joins to the place it is in.
+    sealed record Named(string Text, bool Rename);
 
     static readonly RuleSet R = JsonSerializer.Deserialize<RuleSet>(Resource("Rig.Rules.commands.json"), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
     public static int RulesVersion => R.Version;
@@ -324,7 +328,7 @@ public static class CommandCheck
 
     static bool LiteralParam(string head) => R.Paths.Literal.Contains(head) || (head.Length > 1 && R.Paths.LiteralPrefix.StartsWith(head, StringComparison.Ordinal));
 
-    static List<Target> TargetsOf(Call call, Targets t)
+    static List<Target> TargetsOf(Call call, Targets t, List<Named> named)
     {
         var shown = Shown(call.Args).Where(a => a.Kind == "hidden" || !R.Paths.Constants.Contains(Fold(a.Text))).ToList();
         Target Make(Arg a, bool literal)
@@ -334,7 +338,7 @@ public static class CommandCheck
             return new Target(a.Text, place, hidden ? "name" : KindOf(place), hidden, literal);
         }
         if (t.At != null) return t.At.Where(k => k < shown.Count).Select(k => Make(shown[k], false)).ToList();
-        string[] values = t.Values ?? [], names = t.Names ?? [];
+        string[] values = t.Values ?? [], names = t.Names ?? [], renames = t.Renames ?? [];
         bool PlainName(Target x) => !x.Hidden && x.Kind == "name" && !R.Paths.Wildcards.Any(w => x.Text.Contains(w, StringComparison.Ordinal))
             && !(t.Places && R.Paths.Programs.Any(p => x.Place.EndsWith(p, StringComparison.Ordinal)));
         var o = new List<Target>();
@@ -343,8 +347,12 @@ public static class CommandCheck
             var a = shown[k];
             if (!IsParam(a)) { o.Add(Make(a, false)); continue; }
             string head = HeadOf(a);
-            string role = LiteralParam(head) ? "literal" : values.Contains(head) || R.Paths.Values.Contains(head) ? "value" : names.Contains(head) ? "name" : "path";
-            void Add(Target x) { if (role == "literal" || (role == "name" && !PlainName(x))) o.Add(x); }
+            string role = LiteralParam(head) ? "literal" : values.Contains(head) || R.Paths.Values.Contains(head) ? "value" : names.Contains(head) || renames.Contains(head) ? "name" : "path";
+            void Add(Target x)
+            {
+                if (role == "literal" || (role == "name" && !PlainName(x))) o.Add(x);
+                else if (role == "name") named.Add(new Named(x.Place, renames.Contains(head)));
+            }
             string? inline = InlineOf(a);
             if (!string.IsNullOrEmpty(inline))
             {
@@ -368,10 +376,12 @@ public static class CommandCheck
     }
 
     /// Refuses what the targets of a file, registry or service command can't be, and says what it writes to.
-    static (string Key, string Detail, string Why)? CheckTargets(Targets t, Entry entry, Call call, string use, string name, out Write write)
+    static (string Key, string Detail, string Why)? CheckTargets(Targets t, Entry entry, Call call, string use, string name, out Write write, out List<string> joined)
     {
         write = Write.None;
-        var targets = TargetsOf(call, t);
+        joined = [];
+        var named = new List<Named>();
+        var targets = TargetsOf(call, t, named);
         var shown = targets.Where(x => !x.Hidden).ToList();
         string At(Target x) => $"{name} {x.Text}";
         if (t.Kind == "service")
@@ -398,7 +408,26 @@ public static class CommandCheck
             if (outside != null || shown.Count == 0) return ("read-place", outside != null ? At(outside) : name, use == "read" ? "notRead" : "refused");
         }
         if (t.Places && use != "read" && shown.FirstOrDefault(x => R.Paths.Programs.Any(p => x.Place.EndsWith(p, StringComparison.Ordinal))) is Target prog) return ("program-file", At(prog), "refused");
-        if (!shown.Any(x => x.Kind == "drive")) write = new Write("path", shown.Where(x => x.Kind is "registry" or "file").Select(x => x.Place).ToList());
+        var places = shown.Where(x => x.Kind is "registry" or "file").Select(x => x.Place).ToList();
+        // A plain name is made inside each place, or, for a rename, beside it; a copy or move can land inside the other place under its own last name.
+        static string Leaf(string p) => p[(p.LastIndexOf('\\') + 1)..];
+        joined = named.SelectMany(n => places.Select(p => $@"{(n.Rename && p.Contains('\\') ? p[..p.LastIndexOf('\\')] : p)}\{n.Text}")).ToList();
+        if (t.Leaves) joined.AddRange(places.SelectMany(p => places.Where(q => q != p).Select(q => $@"{p}\{Leaf(q)}")));
+        if (!shown.Any(x => x.Kind == "drive")) write = new Write("path", places.Concat(joined).ToList());
+        return null;
+    }
+
+    /// Refuses what a cmdlet Rig doesn't know by name can't be given in a change: anything hidden, a place with `..`, a wildcard in a full path, and for a writer a program file.
+    static (string Key, string Detail)? CheckUnlisted(Call call, string verb, string name)
+    {
+        var shown = Shown(call.Args);
+        if (shown.Any(a => a.Kind == "hidden")) return ("not-literal-change", name);
+        var values = shown.SelectMany(a => !IsParam(a) ? [a.Text] : InlineOf(a) is string inline && inline.Length > 0 ? new[] { inline } : []).ToList();
+        string At(string v) => $"{name} {v}";
+        if (values.FirstOrDefault(v => Dots(PlaceOf(v))) is string up) return ("dots", At(up));
+        bool Full(string v) => KindOf(PlaceOf(v)) is "file" or "registry";
+        if (values.FirstOrDefault(v => Full(v) && R.Paths.Wildcards.Any(w => v.Contains(w, StringComparison.Ordinal))) is string wild) return ("wildcard", At(wild));
+        if (R.WriterVerbs.Contains(verb) && values.FirstOrDefault(v => Full(v) && R.Paths.Programs.Any(p => PlaceOf(v).EndsWith(p, StringComparison.Ordinal))) is string prog) return ("program-file", At(prog));
         return null;
     }
 
@@ -429,6 +458,7 @@ public static class CommandCheck
             if (pathed) return R.Roots.Unknown.Any(r => raw.StartsWith(r, StringComparison.Ordinal)) ? Pass(new Outcome { Says = R.Constructs["unknown-program"], Admin = true }, 2) : Construct("unknown", name);
             int dash = b.IndexOf('-');
             if (dash <= 0 || exe || !R.Verbs.TryGetValue(b[..dash], out int verbTier)) return Construct("unknown", name);
+            if (CheckUnlisted(call, b[..dash], name) is var (oddKey, oddDetail)) return Construct(oddKey, oddDetail);
             return new Judged(Found($"{name}: {R.VerbSays[verbTier]}", verbTier), verbTier >= 2, verbTier > 0 ? Write.None : null);
         }
         if (entry.Blocks && call.Args.Any(a => a.Kind is "word" or "hidden")) return Construct("member-by-name", name);
@@ -436,10 +466,12 @@ public static class CommandCheck
         if (rule != null && (rule.Never != null || rule.Refused != null)) return Block(rule)!;
 
         var write = Write.None;
+        List<string> joined = [];
         if (entry.Targets != null)
         {
-            if (CheckTargets(entry.Targets, entry, call, use, name, out write) is var (key, detail, why)) return Construct(key, detail, why);
+            if (CheckTargets(entry.Targets, entry, call, use, name, out write, out joined) is var (key, detail, why)) return Construct(key, detail, why);
         }
+        Judged Done(Judged j) => joined.Count > 0 ? j with { Joined = joined } : j;
 
         var off = entry.Read != null ? entry.Read.Select(f => OffForm(f, call.Args)).ToList() : ["anything"];
         bool reads = off.Contains(null);
@@ -449,9 +481,9 @@ public static class CommandCheck
             if (entry.Literal && call.Args.Any(a => a.Kind == "hidden")) return Construct("not-literal", name, "notRead");
             return Pass(new Outcome { Says = entry.Says }, 0);
         }
-        if (rule != null) return Pass(rule, rule.Tier ?? 2, write);
-        if (reads) return Pass(new Outcome { Says = entry.Says }, 0);
-        return Block(entry) ?? Pass(entry, entry.Tier ?? 2, write);
+        if (rule != null) return Done(Pass(rule, rule.Tier ?? 2, write));
+        if (reads) return Done(Pass(new Outcome { Says = entry.Says }, 0));
+        return Block(entry) ?? Done(Pass(entry, entry.Tier ?? 2, write));
     }
 
     /// Why a script with this find is refused, or null when it may stay. `Reason` is what a change may do but must say.
@@ -573,7 +605,8 @@ public static class CommandCheck
 
         var judged = calls.Select(c => Judge(c, use)).ToList();
         var commands = judged.Select(j => j.Found).ToList();
-        string? never = OnNeverList(script, use) ?? judged.FirstOrDefault(j => j.StopWhy == "never")?.Stop;
+        var texts = judged.SelectMany(j => j.Joined ?? []).Prepend(script).ToList();
+        string? never = texts.Select(x => OnNeverList(x, use)).FirstOrDefault(x => x != null) ?? judged.FirstOrDefault(j => j.StopWhy == "never")?.Stop;
         if (never != null) return Refuse(never.EndsWith('.') ? never : $"{never}.", "never", commands);
 
         var assigned = finds.Where(f => f.What == "assigns").Select(f => f.Detail);
@@ -591,14 +624,14 @@ public static class CommandCheck
         if (use != "read" && WroteProgram(calls, judged, finds) is string wrote) return Refuse($"{R.Constructs["wrote-program"]} ({wrote}).", "refused", commands);
 
         int top = commands.Select(c => c.Tier).DefaultIfEmpty(0).Max();
-        string? lowers = use == "read" ? null : LowersProtection(script);
+        string? lowers = use == "read" ? null : texts.Select(LowersProtection).FirstOrDefault(x => x != null);
         int tier = use == "read" ? 0 : lowers != null ? 3 : Math.Max(2, top);
         foreach (var c in commands.Where(c => c.Tier == 3)) reasons.Add($"{c.Says}. Rig can't promise to put this back.");
         if (lowers != null) reasons.Add($"{lowers}.");
         if (use != "read" && reasons.Count == 0) reasons.Add(SecondLook);
         var writes = use == "read" ? [] : judged.Where(j => j.Write != null).Select(j => j.Write!)
             .Concat(finds.Where(f => f.What == "redirect").Select(f => new Write("path", [PlaceOf(f.Detail)]))).ToList();
-        return (new Verdict(true, tier, use != "read" && (judged.Any(j => j.Admin) || NeedsAdmin(script)), "", "", commands, reasons), writes);
+        return (new Verdict(true, tier, use != "read" && (judged.Any(j => j.Admin) || texts.Any(NeedsAdmin)), "", "", commands, reasons), writes);
     }
 
     public static Verdict CheckScript(string script, string use, JsonNode? parsed) => InspectScript(script, use, parsed).Verdict;

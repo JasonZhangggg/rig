@@ -13,7 +13,7 @@ export type ScriptUse = "read" | "run" | "undo";
 interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[] }
 interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string }
 interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean }
-interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
+interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; renames?: string[]; leaves?: boolean; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
 interface Entry extends Outcome { name: string; exe?: boolean; literal?: boolean; blocks?: boolean; read?: Form[]; when?: (Match & Outcome)[]; targets?: Targets }
 interface TextRule { says: string; contains: string[] }
 interface ReadRoot { root: string; ends?: string[] }
@@ -26,6 +26,7 @@ interface Rules {
   readParams: string[];
   roots: { known: string[]; unknown: string[] };
   paths: { literal: string[]; literalPrefix: string; values: string[]; constants: string[]; wildcards: string[]; programs: string[]; readKinds: string[]; readRoots: ReadRoot[]; system: string };
+  writerVerbs: string[];
   adminText: string[];
   safeTypes: string[];
   safeMethods: string[];
@@ -160,29 +161,35 @@ export interface Target { text: string; place: string; kind: PlaceKind; hidden: 
 
 const literalParam = (head: string) => R.paths.literal.includes(head) || (head.length > 1 && R.paths.literalPrefix.startsWith(head));
 
-/** The arguments a command acts on: every argument that isn't a parameter or the value of one listed in `values`, or those at `at`. */
-function targetsOf(call: Call, t: Targets): Target[] {
+/** A plain name a command gives what it makes or renames, which Rig joins to the place it is in. */
+interface Named { text: string; rename: boolean }
+
+/** The arguments a command acts on: every argument that isn't a parameter or the value of one listed in `values`, or those at `at`; and the plain names it skipped. */
+function targetsOf(call: Call, t: Targets): { targets: Target[]; named: Named[] } {
   const shown = shownOf(call.args).filter((a) => a.kind === "hidden" || !R.paths.constants.includes(fold(a.text)));
   const make = (a: Arg, literal: boolean): Target => {
     const hidden = a.kind === "hidden", place = hidden ? "" : placeOf(a.text);
     return { text: a.text, place, kind: hidden ? "name" : kindOf(place), hidden, literal };
   };
-  if (t.at) return t.at.flatMap((k) => (shown[k] ? [make(shown[k], false)] : []));
-  const values = t.values ?? [], names = t.names ?? [], out: Target[] = [];
+  if (t.at) return { targets: t.at.flatMap((k) => (shown[k] ? [make(shown[k], false)] : [])), named: [] };
+  const values = t.values ?? [], names = t.names ?? [], renames = t.renames ?? [], out: Target[] = [], named: Named[] = [];
   const plainName = (x: Target) => !x.hidden && x.kind === "name" && !R.paths.wildcards.some((w) => x.text.includes(w)) && !(t.places && R.paths.programs.some((p) => x.place.endsWith(p)));
   for (let k = 0; k < shown.length; k++) {
     const a = shown[k];
     if (!isParam(a)) { out.push(make(a, false)); continue; }
     const head = headOf(a);
-    const role = literalParam(head) ? "literal" : values.includes(head) || R.paths.values.includes(head) ? "value" : names.includes(head) ? "name" : "path";
+    const role = literalParam(head) ? "literal" : values.includes(head) || R.paths.values.includes(head) ? "value" : names.includes(head) || renames.includes(head) ? "name" : "path";
     const inline = inlineOf(a);
-    const add = (x: Target) => { if (role === "literal" || (role === "name" && !plainName(x))) out.push(x); };
+    const add = (x: Target) => {
+      if (role === "literal" || (role === "name" && !plainName(x))) out.push(x);
+      else if (role === "name") named.push({ text: x.place, rename: renames.includes(head) });
+    };
     if (inline) { if (role === "path") out.push(make({ kind: "word", text: inline }, false)); else add(make({ kind: "word", text: inline }, role === "literal")); continue; }
     if (role === "path" || !shown[k + 1] || isParam(shown[k + 1])) continue;
     k++;
     add(make(shown[k], role === "literal"));
   }
-  return out;
+  return { targets: out, named };
 }
 
 /** Matches a place against a read root, where * stands for one folder name. */
@@ -195,14 +202,15 @@ function underRoot(place: string, r: ReadRoot): boolean {
 /** What one change in a script acts on. `none`: something Rig can't name, so no touch can cover it. */
 export interface Write { kind: "path" | "service" | "none"; places: string[] }
 
-interface Judged { found: FoundCommand; admin: boolean; write?: Write; stop?: { words: string; why: Refusal } }
+/** `joined`: the places a command's plain names make, held to the text rules like the script itself. */
+interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; stop?: { words: string; why: Refusal } }
 const NONE: Write = { kind: "none", places: [] };
 
 /** Refuses what the targets of a file, registry or service command can't be, and says what it writes to. */
-function checkTargets(t: Targets, entry: Entry, call: Call, use: ScriptUse, name: string): { stop: [string, string, Refusal] } | { write: Write } {
-  const targets = targetsOf(call, t), shown = targets.filter((x) => !x.hidden);
+function checkTargets(t: Targets, entry: Entry, call: Call, use: ScriptUse, name: string): { stop: [string, string, Refusal] } | { write: Write; joined: string[] } {
+  const { targets, named } = targetsOf(call, t), shown = targets.filter((x) => !x.hidden);
   const at = (x: Target) => `${name} ${x.text}`;
-  if (t.kind === "service") return { write: targets.some((x) => x.hidden) ? NONE : { kind: "service", places: shown.map((x) => x.place) } };
+  if (t.kind === "service") return { write: targets.some((x) => x.hidden) ? NONE : { kind: "service", places: shown.map((x) => x.place) }, joined: [] };
   const wild = shown.find((x) => !x.literal && R.paths.wildcards.some((w) => x.text.includes(w)));
   if (wild) return { stop: ["wildcard", at(wild), "refused"] };
   const up = shown.find((x) => dots(x.place));
@@ -225,8 +233,28 @@ function checkTargets(t: Targets, entry: Entry, call: Call, use: ScriptUse, name
     const prog = shown.find((x) => R.paths.programs.some((p) => x.place.endsWith(p)));
     if (prog) return { stop: ["program-file", at(prog), "refused"] };
   }
-  if (shown.some((x) => x.kind === "drive")) return { write: NONE };
-  return { write: { kind: "path", places: shown.filter((x) => x.kind === "registry" || x.kind === "file").map((x) => x.place) } };
+  const places = shown.filter((x) => x.kind === "registry" || x.kind === "file").map((x) => x.place);
+  // A plain name is made inside each place, or, for a rename, beside it; a copy or move can land inside the other place under its own last name.
+  const leaf = (p: string) => p.slice(p.lastIndexOf("\\") + 1);
+  const joined = [...named.flatMap((n) => places.map((p) => `${n.rename && p.includes("\\") ? p.slice(0, p.lastIndexOf("\\")) : p}\\${n.text}`)),
+    ...(t.leaves ? places.flatMap((p) => places.filter((q) => q !== p).map((q) => `${p}\\${leaf(q)}`)) : [])];
+  if (shown.some((x) => x.kind === "drive")) return { write: NONE, joined };
+  return { write: { kind: "path", places: [...places, ...joined] }, joined };
+}
+
+/** Refuses what a cmdlet Rig doesn't know by name can't be given in a change: anything hidden, a place with `..`, a wildcard in a full path, and for a writer a program file. */
+function checkUnlisted(call: Call, verb: string, name: string): [string, string] | null {
+  const shown = shownOf(call.args);
+  if (shown.some((a) => a.kind === "hidden")) return ["not-literal-change", name];
+  const values = shown.flatMap((a) => (!isParam(a) ? [a.text] : inlineOf(a) ? [inlineOf(a)!] : []));
+  const at = (v: string) => `${name} ${v}`;
+  const up = values.find((v) => dots(placeOf(v)));
+  if (up) return ["dots", at(up)];
+  const full = (v: string) => ["file", "registry"].includes(kindOf(placeOf(v)));
+  const wild = values.find((v) => full(v) && R.paths.wildcards.some((w) => v.includes(w)));
+  if (wild) return ["wildcard", at(wild)];
+  const prog = R.writerVerbs.includes(verb) ? values.find((v) => full(v) && R.paths.programs.some((p) => placeOf(v).endsWith(p))) : undefined;
+  return prog ? ["program-file", at(prog)] : null;
 }
 
 function judge(call: Call, use: ScriptUse): Judged {
@@ -252,6 +280,8 @@ function judge(call: Call, use: ScriptUse): Judged {
     if (pathed) return R.roots.unknown.some((r) => raw.startsWith(r)) ? pass({ says: R.constructs["unknown-program"], admin: true }, 2) : construct("unknown", name);
     const dash = base.indexOf("-"), tier = dash > 0 && !exe ? R.verbs[base.slice(0, dash)] : undefined;
     if (tier === undefined) return construct("unknown", name);
+    const odd = checkUnlisted(call, base.slice(0, dash), name);
+    if (odd) return construct(...odd);
     return { found: found(`${name}: ${R.verbSays[tier]}`, tier), admin: tier >= 2, ...(tier > 0 ? { write: NONE } : {}) };
   }
   if (entry.blocks && call.args.some((a) => a.kind === "word" || a.kind === "hidden")) return construct("member-by-name", name);
@@ -259,12 +289,13 @@ function judge(call: Call, use: ScriptUse): Judged {
   const block = (o: Outcome) => (o.never ? stop(`Rig won't run ${name}: it ${o.never}.`, "never") : o.refused ? stop(`Rig won't run ${name}: it ${o.refused}.`) : null);
   if (rule && (rule.never || rule.refused)) return block(rule)!;
 
-  let write = NONE;
+  let write = NONE, joined: string[] = [];
   if (entry.targets) {
     const t = checkTargets(entry.targets, entry, call, use, name);
     if ("stop" in t) return construct(...t.stop);
-    write = t.write;
+    ({ write, joined } = t);
   }
+  const done = (j: Judged): Judged => (joined.length ? { ...j, joined } : j);
 
   const off = entry.read ? entry.read.map((f) => offForm(f, call.args)) : ["anything"];
   const reads = off.includes(null);
@@ -273,9 +304,9 @@ function judge(call: Call, use: ScriptUse): Judged {
     if (entry.literal && call.args.some((a) => a.kind === "hidden")) return construct("not-literal", name, "notRead");
     return pass({ says: entry.says }, 0);
   }
-  if (rule) return pass(rule, rule.tier ?? 2, write);
-  if (reads) return pass({ says: entry.says }, 0);
-  return block(entry) ?? pass(entry, entry.tier ?? 2, write);
+  if (rule) return done(pass(rule, rule.tier ?? 2, write));
+  if (reads) return done(pass({ says: entry.says }, 0));
+  return block(entry) ?? done(pass(entry, entry.tier ?? 2, write));
 }
 
 /** Why a script with this find is refused, or null when it may stay. `reason` is what a change may do but must say. */
@@ -344,7 +375,8 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
   }
   const judged = parsed.calls.map((c) => judge(c, use));
   const commands = judged.map((j) => j.found);
-  const never = textOnNeverList(script, use) ?? judged.find((j) => j.stop?.why === "never")?.stop!.words;
+  const joined = judged.flatMap((j) => j.joined ?? []);
+  const never = [script, ...joined].map((x) => textOnNeverList(x, use)).find((x) => x) ?? judged.find((j) => j.stop?.why === "never")?.stop!.words;
   if (never) return refuse(never.endsWith(".") ? never : `${never}.`, "never", commands);
 
   const assigned = parsed.finds.filter((f) => f.what === "assigns").map((f) => f.detail);
@@ -364,14 +396,14 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
   if (wrote) return refuse(`${R.constructs["wrote-program"]} (${wrote}).`, "refused", commands);
 
   const top = Math.max(0, ...commands.map((c) => c.tier)) as Tier;
-  const lowers = use === "read" ? null : textLowersProtection(script);
+  const lowers = use === "read" ? null : [script, ...joined].map(textLowersProtection).find((x) => x) ?? null;
   const tier = use === "read" ? 0 : lowers ? 3 : (Math.max(2, top) as Tier);
   for (const c of commands) if (c.tier === 3) reasons.push(`${c.says}. Rig can't promise to put this back.`);
   if (lowers) reasons.push(`${lowers}.`);
   if (use !== "read" && !reasons.length) reasons.push(secondLook);
   const writes = use === "read" ? [] : [...judged.flatMap((j) => (j.write ? [j.write] : [])),
     ...parsed.finds.filter((f) => f.what === "redirect").map((f): Write => ({ kind: "path", places: [placeOf(f.detail)] }))];
-  const allowed: Allowed = { status: "allowed", tier, admin: use !== "read" && (judged.some((j) => j.admin) || textNeedsAdmin(script)), commands, reasons, rulesVersion };
+  const allowed: Allowed = { status: "allowed", tier, admin: use !== "read" && (judged.some((j) => j.admin) || [script, ...joined].some(textNeedsAdmin)), commands, reasons, rulesVersion };
   return { verdict: allowed, writes };
 }
 
