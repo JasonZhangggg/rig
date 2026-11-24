@@ -416,7 +416,8 @@ export async function answer(client: Streamer, ctx: ChatContext, history: ChatRe
           const checked = checkProposal(input, ctx);
           if (typeof checked === "string") { results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: checked }); continue; }
           const rows = checked.steps.map((s) => describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? []));
-          const proposal: Proposal = { id: uid(), title: checked.title, why: checked.why, steps: checked.steps, tier: checked.tier, rows, status: "waiting" };
+          // Desktop apps from before steps read `calls`, so an all-fix card carries both.
+          const proposal: Proposal = { id: uid(), title: checked.title, why: checked.why, steps: checked.steps, calls: checked.steps.map((st) => st.call), tier: checked.tier, rows, status: "waiting" };
           proposed = true;
           await emit({ type: "proposal", proposal });
           results.push({ type: "tool_result", tool_use_id: u.id, content: "Shown as a card with Review and Not now. Nothing has changed yet. Finish with at most one short sentence." });

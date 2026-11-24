@@ -2,6 +2,7 @@
 // the demo each provide their own implementation, so the UI never knows where
 // the data comes from.
 
+import type { ActionCall } from "./actions";
 import type { AppliedStep, Step, Tier } from "./change";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
@@ -17,6 +18,8 @@ export interface Proposal {
   title: string;
   why?: string;
   steps: Step[];
+  /** The same changes as `steps`, for desktop apps from before steps (0.1.9 and older). Sent only when every step is a fix. */
+  calls?: ActionCall[];
   /** The riskiest step's tier, worked out by Rig. */
   tier: Tier;
   rows: DiffRow[];

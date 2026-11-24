@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, type Command, type ScriptUse, type Step } from "../src";
+import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, type Command, type ScriptUse, type Step, type Verdict } from "../src";
+import { canonicalCommand } from "../src/change";
 import vectors from "../src/rules/vectors.json";
 
-interface Vector { script: string; as: ScriptUse; expect: { refused?: true; tier?: number; commands?: string[] } }
-const all = vectors as Vector[];
+interface Expect { refused?: true; why?: string; tier?: number; commands?: string[]; reasons?: string[] }
+/** A script vector, with `times` when the script is repeated (joined with "; ") to make a long one. */
+interface ScriptVector { script: string; as: ScriptUse; times?: number; expect: Expect; note?: string }
+/** A whole step, checked the way the server and the helper check one before showing a card. */
+interface StepVector { step: Step; as: "step"; expect: Expect; note?: string }
+const everything = vectors as (ScriptVector | StepVector)[];
+const all = everything.filter((v): v is ScriptVector => v.as !== "step");
+const stepVectors = everything.filter((v): v is StepVector => v.as === "step");
+const textOf = (v: ScriptVector) => (v.times ? Array(v.times).fill(v.script).join("; ") : v.script);
 const names = (list: { name: string }[]) => list.map((c) => c.name.toLowerCase());
 
 const menuDelay: Command = {
@@ -35,30 +43,41 @@ describe("the shared vectors", () => {
   it("cover reads, changes and undos", () => {
     expect(all.length).toBeGreaterThanOrEqual(40);
     expect(new Set(all.map((v) => v.as))).toEqual(new Set(["read", "run", "undo"]));
+    expect(stepVectors.length).toBeGreaterThanOrEqual(10);
   });
 
-  it.each(all.map((v) => [v.as, v.script, v] as const))("%s: %s", (_as, _script, v) => {
-    const got = checkScript(v.script, v.as);
+  const meets = (got: Verdict, e: Expect) => {
     expect(got.rulesVersion).toBe(rulesVersion);
-    if (v.expect.refused) {
+    if (e.refused) {
       expect(got.status).toBe("refused");
-      if (got.status === "refused") expect(got.refused.length).toBeGreaterThan(20);
+      if (got.status === "refused") {
+        expect(got.refused.length).toBeGreaterThan(20);
+        if (e.why) expect(got.why).toBe(e.why);
+      }
     } else {
-      expect(got).toMatchObject({ status: "allowed", ...(v.expect.tier === undefined ? {} : { tier: v.expect.tier }) });
+      expect(got).toMatchObject({ status: "allowed", ...(e.tier === undefined ? {} : { tier: e.tier }) });
     }
-    if (v.expect.commands) expect(names(got.commands)).toEqual(v.expect.commands.map((n) => n.toLowerCase()));
-  });
+    if (e.commands) expect(names(got.commands)).toEqual(e.commands.map((n) => n.toLowerCase()));
+    if (e.reasons) {
+      const said = got.status === "allowed" ? got.reasons.join(" ").toLowerCase() : "";
+      for (const r of e.reasons) expect(said).toContain(r.toLowerCase());
+    }
+  };
+
+  it.each(all.map((v) => [v.as, v.script.slice(0, 120), v] as const))("%s: %s", (_as, _script, v) => meets(checkScript(textOf(v), v.as), v.expect));
+
+  it.each(stepVectors.map((v) => [v.note ?? "", v.step.kind === "command" ? v.step.cmd.run : "", v] as const))("step (%s): %s", (_note, _run, v) => meets(checkStep(v.step), v.expect));
 
   it("never lets a read through as anything but tier 0", () => {
     for (const v of all.filter((x) => x.as === "read")) {
-      const got = checkScript(v.script, "read");
+      const got = checkScript(textOf(v), "read");
       if (got.status === "allowed") expect(got).toMatchObject({ tier: 0, admin: false });
     }
   });
 
   it("never rates a change below tier 2", () => {
     for (const v of all.filter((x) => x.as !== "read")) {
-      const got = checkScript(v.script, v.as);
+      const got = checkScript(textOf(v), v.as);
       if (got.status === "allowed") expect(got.tier).toBeGreaterThanOrEqual(2);
     }
   });
@@ -91,8 +110,8 @@ describe("checking a step", () => {
   it("rates a registry change with an undo tier 2 and lists its commands in plain words", () => {
     const got = checkStep(command());
     expect(got).toMatchObject({ status: "allowed", tier: 2, admin: false, rulesVersion });
-    expect(got.commands).toContainEqual({ name: "Set-ItemProperty", says: "Set-ItemProperty: changes a registry value", tier: 2 });
-    expect(got.commands[0]).toEqual({ name: "Get-ItemProperty", says: "Get-ItemProperty: reads a registry value or file details", tier: 0 });
+    expect(got.commands).toContainEqual({ name: "Set-ItemProperty", says: "Set-ItemProperty: changes a registry value", tier: 2, script: "run" });
+    expect(got.commands[0]).toEqual({ name: "Get-ItemProperty", says: "Get-ItemProperty: reads a registry value or file details", tier: 0, script: "read" });
   });
 
   it("works out admin from the commands and what they touch", () => {
@@ -128,10 +147,28 @@ describe("checking a step", () => {
     expect(refusal(command({ touches: [{ kind: "registry", key: "Software\\Foo" }] }))).not.toBeNull();
   });
 
-  it("rates a change tier 3 when what it touches lowers one of Windows' protections, even when the script hides the path", () => {
-    const uac = command({ run: "Set-ItemProperty -Path $k -Name $n -Value 0", touches: [{ kind: "registry", key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value: "EnableLUA" }] });
+  it("rates a change tier 3 when what it touches lowers one of Windows' protections, and refuses one that hides where it writes", () => {
+    const key = "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System";
+    const uac = command({ run: `Set-ItemProperty -Path 'HKLM:\\${key.slice(5)}' -Name EnableLUA -Value $v`, touches: [{ kind: "registry", key, value: "EnableLUA" }] });
     expect(checkStep(uac)).toMatchObject({ status: "allowed", tier: 3, admin: true, reasons: expect.arrayContaining([expect.stringContaining("User Account Control")]) });
     expect(refusal(uac, true)).toMatchObject({ why: "tainted" });
+    expect(refusal(command({ run: "Set-ItemProperty -Path $k -Name $n -Value 0", touches: uac.kind === "command" ? uac.cmd.touches : [] }))?.refused).toContain("worked out while the script runs");
+  });
+
+  it("stores a command the same way however it arrives", () => {
+    const got = canonicalCommand({ ...menuDelay, undo: null, touches: [{ kind: "registry", key: "HKEY_CURRENT_USER\\Control Panel\\Desktop\\", value: "MenuShowDelay" }] });
+    expect(got).toEqual({ ...menuDelay, undo: undefined, touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" }] });
+    expect(got).not.toHaveProperty("undo");
+    expect(canonicalCommand({ ...menuDelay, touches: [{ kind: "registry", key: "HKCU:\\Control Panel\\Desktop" }] })).toMatchObject({ touches: [{ key: "HKCU\\Control Panel\\Desktop" }] });
+    expect(typeof canonicalCommand({ ...menuDelay, touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: 5 }] })).toBe("string");
+    expect(typeof canonicalCommand({ ...menuDelay, undo: 5 })).toBe("string");
+  });
+
+  it("says when a touch isn't written, and needs every write covered when there is no undo", () => {
+    const stray = checkStep(command({ undo: undefined, touches: [{ kind: "registry", key: "HKCU\\Software\\Rig" }] }));
+    expect(stray).toMatchObject({ status: "allowed", tier: 3, reasons: expect.arrayContaining([expect.stringContaining("doesn't write there"), expect.stringContaining("no undo script")]) });
+    expect(checkStep(command({ undo: undefined }))).toMatchObject({ status: "allowed", tier: 2 });
+    expect(checkStep(command({ undo: undefined, touches: [{ kind: "registry", key: "HKCU\\Control Panel" }] }))).toMatchObject({ tier: 2 });
   });
 
   it("says which kind of refusal it is", () => {

@@ -3,11 +3,19 @@
 // redirection, dynamic names). It knows nothing about the rules; check.ts
 // judges what it finds.
 
-/** `variable`: the variable this argument names, with any scope, even when it is indexed or a member of it is used. */
-export interface Arg { kind: "switch" | "word" | "block" | "hidden"; text: string; bare?: boolean; variable?: string }
+/**
+ * `variable`: the variable this argument names, with any scope, even when it is indexed or a member of it is used.
+ * `param`: set when the argument is a PowerShell parameter (`-Name`, or `-Name:` with its value joined on); the name, folded.
+ * `member`: a member of it was used (`.Name`, `::Name`). `redirect`: the `>` that stands where a redirection was.
+ */
+export interface Arg { kind: "switch" | "word" | "block" | "hidden"; text: string; bare?: boolean; variable?: string; param?: string; member?: boolean; redirect?: boolean }
 /** `piped`: the command gets its input from the one before it in a pipeline. */
 export interface Call { name: string; args: Arg[]; piped: boolean }
-export interface Find { what: string; detail: string }
+/** `hidden`: for a redirect, the target is worked out while the script runs. */
+export interface Find { what: string; detail: string; hidden?: boolean }
+
+/** ASCII-only lower case, as the helper does it. Letters outside ASCII that fold into ASCII are refused before this runs. */
+export const fold = (text: string) => text.replace(/[A-Z]+/g, (m) => m.toLowerCase());
 
 export class Unreadable extends Error {}
 
@@ -16,8 +24,6 @@ const BLOCKED = new Set(["function", "filter", "class", "enum", "switch", "trap"
 const ASSIGN = new Set(["=", "+=", "-=", "*=", "/=", "%="]);
 const SCOPES = new Set(["env", "global", "script", "local", "private", "using"]);
 const ENDS = "\n;|)}]";
-// Characters PowerShell reads as quotes, dashes or spaces but that don't look like them, and control characters.
-export const DISGUISED = /[\u2018-\u201f\u2013-\u2015\u00a0\u0085\u1680\u2000-\u200f\u2028-\u202f\u205f\u2060\u3000\ufeff]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const UNARY = new Set(["-", "+", "!", "++", "--", "-not", "-bnot", "-split", "-join"]);
 const OPERATORS = new Set([...UNARY, "*", "/", "%", "..", "-is", "-isnot", "-as", "-and", "-or", "-xor", "-band", "-bor", "-bxor", "-shl", "-shr", "-f",
   ...["eq", "ne", "gt", "ge", "lt", "le", "like", "notlike", "match", "notmatch", "contains", "notcontains", "in", "notin", "replace", "split", "join"].flatMap((o) => [`-${o}`, `-c${o}`, `-i${o}`])]);
@@ -29,12 +35,14 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
   let i = 0, depth = 0;
   const calls: Call[] = [], finds: Find[] = [];
   const bad = (detail: string): never => { throw new Unreadable(detail); };
-  const find = (what: string, detail = "") => { finds.push({ what, detail }); };
+  const find = (what: string, detail = "", hide?: boolean) => { finds.push(hide ? { what, detail, hidden: true } : { what, detail }); };
   const hidden = (): Arg => ({ kind: "hidden", text: "" });
   const seen = (t: string) => {
-    const low = t.toLowerCase();
-    if (t.includes("\\\\") || t.startsWith("//")) find("unc", t);
-    if (low.startsWith("alias:") || low.startsWith("function:")) find("provider-variable", t);
+    const low = fold(t), slashed = low.replaceAll("/", "\\");
+    // A web address's scheme (two letters or more, not file:) may be followed by //; any other \\ or // reaches for another computer.
+    if (slashed.replace(/[a-z][a-z0-9+.-]+:\\\\/g, (m) => (m.startsWith("file:") ? m : "")).includes("\\\\")) find("unc", t);
+    if (/(^|\\)(alias|function|variable):/.test(low)) find("provider", t);
+    if (/[a-z0-9]~\d/.test(low)) find("short-name", t);
     return t;
   };
   const at = (re: RegExp) => { re.lastIndex = i; return re.exec(s); };
@@ -89,10 +97,16 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
     return { kind: q === '"' && text.includes("$") ? "hidden" : "word", text: seen(text) };
   }
 
-  function word(): { text: string; plain: boolean; dyn: boolean } {
+  function word(): { text: string; plain: boolean; dyn: boolean; param?: string } {
     const op = at(/[+\-*\/%]?=(?!=)/y);
     if (op) { i += op[0].length; return { text: op[0], plain: true, dyn: false }; }
-    let text = "", plain = true, dyn = false;
+    let text = "", plain = true, dyn = false, param: string | undefined;
+    // A parameter is - and a name, then a colon or the end of the word; a value may follow the colon.
+    const p = at(/-[A-Za-z_][\w-]*(:?)/y);
+    if (p && (p[1] || i + p[0].length >= n || " \t\n;|)}".includes(s[i + p[0].length]))) {
+      param = fold(p[0].replace(/:$/, ""));
+      text = p[0]; i += p[0].length;
+    }
     while (i < n) {
       const c = s[i];
       if (c === " " || c === "\t" || c === "\n" || "|;(){},<>&".includes(c)) break;
@@ -104,12 +118,12 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
       else if (c === '"') { const q = double(); plain = false; dyn ||= q.dyn; text += q.text; }
       else { text += c; i++; }
     }
-    return { text, plain, dyn };
+    return { text, plain, dyn, param };
   }
 
   function provider(name: string): void {
     const colon = name.indexOf(":");
-    if (colon > 0 && !SCOPES.has(name.slice(0, colon).toLowerCase())) find("provider-variable", name);
+    if (colon > 0 && !SCOPES.has(fold(name.slice(0, colon)))) find("provider-variable", name);
   }
 
   function redirect(): Arg {
@@ -119,37 +133,46 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
       inline();
       const target = i < n && !ENDS.includes(s[i]) ? token() : null;
       if (!target) bad("a > with nothing after it");
-      else if (target.text !== "$null") find("redirect", target.text);
+      else if (target.text !== "$null") find("redirect", target.text, target.kind === "hidden");
     }
-    return { kind: "word", text: ">" };
+    return { kind: "word", text: ">", redirect: true };
   }
 
-  function postfix(): boolean {
-    let any = false;
+  /** One `.Name` or `::Name` after something, with its call when there is one. */
+  function member(statik: boolean, type?: string): void {
+    const name = at(/[A-Za-z_]\w*/y);
+    if (!name) {
+      find("dynamic-member");
+      if (i < n && !" \t\n".includes(s[i]) && !ENDS.includes(s[i])) token();
+      return;
+    }
+    i += name[0].length;
+    const low = fold(name[0]);
+    if (type !== undefined) find("static", `${type}${statik ? "::" : "."}${low}`);
+    else if (statik) find("static-variable", low);
+    if (s[i] === "(") {
+      if (type === undefined) find("method", low);
+      i++; nested(")");
+    }
+  }
+
+  function postfix(): { any: boolean; member: boolean } {
+    let any = false, used = false;
     for (;;) {
       const c = s[i], d = s[i + 1] ?? "";
       if (c === "[") { i++; nested("]"); }
       else if ((c === "." && d !== "." && d !== "" && !" \t\n;|)}".includes(d)) || (c === ":" && d === ":")) {
         i += c === "." ? 1 : 2;
-        const name = at(/[A-Za-z_]\w*/y);
-        if (name) {
-          i += name[0].length;
-          if (s[i] === "(") {
-            if (c === ".") find("method", name[0].toLowerCase());
-            i++; nested(")");
-          }
-        } else {
-          find("dynamic-member");
-          if (i < n && !" \t\n".includes(s[i]) && !ENDS.includes(s[i])) token();
-        }
-      } else return any;
+        member(c === ":");
+        used = true;
+      } else return { any, member: used };
       any = true;
     }
   }
 
   function token(): Arg | null {
     const c = s[i], d = s[i + 1] ?? "";
-    let arg: Arg, variable: string | undefined;
+    let arg: Arg, variable: string | undefined, statik = false;
     if (c === ",") { i++; return null; }
     if (c === "<") bad("a < redirection");
     if (c === ">" || ((c === "*" || (c >= "0" && c <= "9")) && d === ">")) return redirect();
@@ -164,11 +187,13 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
       if (e < 0) bad("a ${ that never closes");
       variable = s.slice(i + 2, e);
       provider(variable); i = e + 1; arg = hidden();
+      find("variable", fold(variable));
     } else if (c === "$" && /[\w?$^]/.test(d)) {
       variable = at(/\$(?:[\w?]+(?::\w+)?|\$|\^)/y)![0].slice(1);
       i += variable.length + 1;
       provider(variable);
-      arg = ["null", "true", "false"].includes(variable.toLowerCase()) ? { kind: "word", text: `$${variable.toLowerCase()}` } : hidden();
+      find("variable", fold(variable));
+      arg = ["null", "true", "false"].includes(fold(variable)) ? { kind: "word", text: `$${fold(variable)}` } : hidden();
     } else if (c === "(") { i++; nested(")"); arg = hidden(); }
     else if (c === "{") { i++; nested("}"); arg = { kind: "block", text: "" }; }
     else if (c === "[") {
@@ -178,24 +203,32 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
         else if (s[j] === "]" && --open === 0) break;
       }
       if (s[j] !== "]") bad("a [ that never closes");
-      find("type", s.slice(i + 1, j).replace(/[\s`]/g, "").toLowerCase());
+      const type = fold(s.slice(i + 1, j).replace(/[\s`]/g, "")).replace(/^system\./, "");
       i = j + 1; arg = hidden();
+      // A member of a type literal ([math]::Round, [int].Assembly) is a static use, judged by its own list.
+      const sep = s[i] === ":" && s[i + 1] === ":" ? 2 : s[i] === "." && /[A-Za-z_]/.test(s[i + 1] ?? "") ? 1 : 0;
+      if (sep) { i += sep; member(sep === 2, type); statik = true; }
+      else find("type", type);
     } else {
       const w = word();
       if (!w.text) bad(`a stray ${c}`);
       if (w.text === "--%") bad("the --% marker");
-      const text = seen(w.text).toLowerCase();
+      const text = fold(seen(w.text));
       const switchLike = w.plain && /^(-[a-z]|--[a-z]|\/[a-z?])/.test(text);
-      return { kind: w.dyn ? "hidden" : switchLike ? "switch" : "word", text, bare: w.plain };
+      const out: Arg = { kind: w.dyn ? "hidden" : switchLike ? "switch" : "word", text, bare: w.plain };
+      if (w.param) out.param = w.param;
+      return out;
     }
-    const out = postfix() ? hidden() : arg;
+    const post = postfix();
+    const out = post.any || statik ? hidden() : arg;
     if (variable) out.variable = variable;
+    if (post.member || statik) out.member = true;
     return out;
   }
 
   function rest(call: Call | null, operand = false): void {
     const vars: string[] = [];
-    let first = !operand;
+    let first = !operand, members = 0, prev: Arg | null = null;
     for (;;) {
       inline();
       if (i >= n || ENDS.includes(s[i])) return;
@@ -203,11 +236,21 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
       const a = token();
       if (!a) continue;
       if (call) { call.args.push(a); continue; }
-      const lead = first;
-      first = false;
+      const lead = first, before = prev;
+      first = false; prev = a;
       if (a.variable) vars.push(a.variable);
+      // Setting a member (`$x.Prop = 1`, `$x.Count++`, `++$x.Count`) changes the object, so it is never a read.
+      if (a.member) {
+        members++;
+        if (before?.bare && (before.text === "++" || before.text === "--")) find("member-assign", a.variable ? `$${a.variable}` : "");
+      }
       if (!a.bare || a.kind === "block" || a.kind === "hidden") continue;
-      if (ASSIGN.has(a.text)) { for (const v of vars) find("assigns", v); return element(false); }
+      if ((a.text === "++" || a.text === "--") && before?.member) find("member-assign", before.variable ? `$${before.variable}` : "");
+      if (ASSIGN.has(a.text)) {
+        if (members) find("member-assign");
+        for (const v of vars) find("assigns", v);
+        return element(false);
+      }
       if (a.text === "in" || FLOW.has(a.text)) return element(false);
       const number = NUMBER.test(a.text.replace(/^[+-]/, ""));
       if (!number && !(lead ? UNARY : OPERATORS).has(a.text)) find("stray", a.text);
@@ -241,7 +284,7 @@ export function scan(src: string): { calls: Call[]; finds: Find[] } {
     if (!called && "$[({@'\"-+!,<>*".includes(c)) return rest(null);
     const w = word();
     if (!w.text) bad(`a stray ${c}`);
-    const low = w.text.toLowerCase();
+    const low = fold(w.text);
     if (!called && w.plain) {
       if (NUMBER.test(low)) return rest(null, true);
       if (FLOW.has(low) && !(piped && low === "foreach")) return element(false);
