@@ -203,6 +203,7 @@ describe("general command steps", () => {
   });
 
   it("builds firewall, policy, device and driver steps from their shorthands, with the tier the checker gives", async () => {
+    // Close to 30 s on a busy CI runner, though it takes about 13 s alone.
     const proposal = async (step: Record<string, unknown>) => {
       const { live, seen } = await chatSetup([{ tool: { name: "propose_change", input: { title: "Change it", why: "y", steps: [step] } } }, { text: "Review the card." }]);
       return { p: of(await live(ask("Change it")), "proposal")[0]?.proposal, sent: lastToolResults(seen[1]) };
@@ -225,7 +226,7 @@ describe("general command steps", () => {
     const driver = await proposal({ driver: { inf: "C:\\Drivers\\Realtek\\rt640x64.inf", catalog: "C:\\Drivers\\Realtek\\rt640x64.cat" } });
     expect(driver.p).toMatchObject({ tier: 3, steps: [{ kind: "command", cmd: { does: expect.stringContaining("always gets Rig's strongest check") } }] });
     expect((await proposal({ driver: { inf: "C:\\Drivers\\*.inf", catalog: "C:\\Drivers\\x.cat" } })).sent).toContain("driver: inf must be");
-  });
+  }, 90_000);
 
   it("builds a file edit as Rig's own step, with a row for each value, and refuses a never-list file", async () => {
     const path = "C:\\Users\\Lee\\AppData\\Local\\Game\\GameUserSettings.ini";
