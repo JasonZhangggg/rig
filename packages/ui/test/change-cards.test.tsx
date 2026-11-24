@@ -41,10 +41,10 @@ describe("a card of Rig's own fixes", () => {
 const uac = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System";
 const lowersUac: Command = {
   does: "Stops Windows asking before apps get admin rights.",
-  read: `Get-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin`,
-  run: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 0`,
-  undo: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 5`,
-  touches: [{ kind: "registry", key: uac.replace(":", ""), value: "ConsentPromptBehaviorAdmin" }],
+  read: `Get-ItemProperty -Path '${uac}' -Name FilterAdministratorToken`,
+  run: `Set-ItemProperty -Path '${uac}' -Name FilterAdministratorToken -Value 0`,
+  undo: `Set-ItemProperty -Path '${uac}' -Name FilterAdministratorToken -Value 5`,
+  touches: [{ kind: "registry", key: uac.replace(":", ""), value: "FilterAdministratorToken" }],
 };
 const uninstall: Command = { does: "Uninstalls Foo.", read: "winget list --id Foo.Bar --exact --source winget", run: "winget uninstall --exact --source winget --id Foo.Bar --silent", touches: [{ kind: "other", name: "Foo" }] };
 const fooLog = "C:\\Users\\Sam\\AppData\\Local\\Foo\\foo.log";

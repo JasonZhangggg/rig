@@ -22,13 +22,22 @@ namespace Rig.Helper;
 
 public static class RecorderPaths
 {
-    public const string ServiceName = "RigRecorder";
-    public const string ExeName = "RigRecorder.exe";
+    /// Set only by --selftest and by the service it installs (--service --selftest-service): the service, its folders
+    /// and the ledger get names of their own, so a self-test never touches an installed Rig.
+    public static bool SelfTest;
+    public const string SelfTestFlag = "--selftest-service";
+    static string Tail => SelfTest ? "Selftest" : "";
+
+    public static string ServiceName => "RigRecorder" + Tail;
+    public static string ExeName => $"RigRecorder{Tail}.exe";
+    public static string ServiceArgs => SelfTest ? $"--service {SelfTestFlag}" : "--service";
 
     /// %ProgramData%\Rig\Recorder: the log, the status file and the list of Rig installs.
-    public static string Data => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Rig", "Recorder");
+    public static string Data => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Rig", "Recorder" + Tail);
     /// %ProgramFiles%\Rig\Recorder: the service's own copy of the helper, where only admins can change it.
-    public static string Program => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Rig", "Recorder");
+    public static string Program => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Rig", "Recorder" + Tail);
+    /// %ProgramData%\Rig\Reverts: the ledger of protections that are off for now (Reverts.cs). Admins and the system only.
+    public static string Reverts => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Rig", "Reverts" + Tail);
     public static string Logs(string data) => Path.Combine(data, "logs");
     public static string Status(string data) => Path.Combine(data, "status.json");
     public static string Config(string data) => Path.Combine(data, "config.json");

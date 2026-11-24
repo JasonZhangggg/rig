@@ -3,8 +3,9 @@
 // request per line. It reads sensors, the PC's parts, a few settings, the
 // Windows event log and the busiest apps, and makes only the changes in Rig's
 // fix catalog and the steps the person approved (Commands.cs). It quits when
-// the app does. Run with --service it is Rig's background recorder instead
-// (RecorderService.cs).
+// the app does. Run with --service it is Rig's background service instead:
+// the recorder (RecorderService.cs), which also turns back on the protections
+// Rig turned off for a while (Reverts.cs).
 
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -56,6 +57,10 @@ public static class Program
             var (commandChecks, commandProblems) = CommandSelfTest.Run();
             all["commands"] = commandChecks;
             problems.AddRange(commandProblems);
+            // Protections that come back on by themselves, through a service installed for the test.
+            var (revertChecks, revertProblems) = RevertSelfTest.Run();
+            all["reverts"] = revertChecks;
+            problems.AddRange(revertProblems);
             // Each sensor's id is worked out once, not with every reading.
             var (r1, r2) = (hw0.Readings(), hw0.Readings());
             if (r1.Count == r2.Count && r1.Zip(r2).Any(x => !ReferenceEquals(x.First.Id, x.Second.Id))) problems.Add("sensor ids are built again with every reading");
@@ -65,7 +70,13 @@ public static class Program
         }
 
         // The background recorder: run by Windows as a service, installed and removed by Rig's installer and Settings.
-        if (args.Contains("--service")) { System.ServiceProcess.ServiceBase.Run(new RecorderService()); return 0; }
+        if (args.Contains("--service"))
+        {
+            // The self-test installs the service under its own name, with its own folders and test rows.
+            RecorderPaths.SelfTest = args.Contains(RecorderPaths.SelfTestFlag);
+            System.ServiceProcess.ServiceBase.Run(new RecorderService());
+            return 0;
+        }
         // The installer also passes --pawnio <PawnIO's setup>, so the same prompt adds or removes PawnIO.
         if (args.Contains("--install-recorder"))
         {
@@ -353,6 +364,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
         "read" => Reads.Read(p?["read"] as JsonObject, owner, commands.Value.WorkerRead),
+        "protection.reverts" => Protections.Reverts(),
         "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" or "screen.look" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };

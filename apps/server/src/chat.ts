@@ -16,7 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, toRequest, validateCall,
-  appCommand, isLook, lookText, SCREEN_APPS, cardTier, canonicalNative, canonicalRecipe, checkRead, checkStep, commandShape, deviceCommand, RECIPES, recipeCommand, recipeDoes, takesEffectWords, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
+  appCommand, PROTECTIONS, REVERT_AFTER, DEFAULT_REVERT_AFTER, isLook, lookText, SCREEN_APPS, cardTier, canonicalNative, canonicalRecipe, checkRead, checkStep, commandShape, deviceCommand, RECIPES, recipeCommand, recipeDoes, takesEffectWords, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
   type Manual, type ChatEvent, type ChatRequest, type DiffRow, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type ScreenLook, type ScreenLookReply, type Source, type SystemFacts,
 } from "@rig/core";
@@ -350,11 +350,22 @@ const recipeSchema = {
   required: ["id", "params"],
 };
 
+const protectionSchema = {
+  type: "object",
+  description: `Turns one of Windows' protections off for a while. Rig turns it back on by itself when the time is up, also after a restart, and the card says when. Only the person can choose to keep it off, in the Rig app. Rig never lowers User Account Control. These are the protections:\n${PROTECTIONS.map((r) => `- ${r.id}: ${r.name}`).join("\n")}`,
+  properties: {
+    id: { type: "string", enum: PROTECTIONS.map((r) => r.id) },
+    revertAfter: { type: "integer", enum: REVERT_AFTER, description: `Minutes until Rig turns it back on. Pick the shortest that fits the job. Left out: ${DEFAULT_REVERT_AFTER}.` },
+  },
+  required: ["id"],
+};
+
 /** The steps the helper's own code makes, by their key in a proposal. */
 const natives: Record<string, (raw: unknown) => NativeOp | string> = {
   gpu: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "gpu" }),
   fileEdit: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "fileEdit" }),
   screen: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "screen" }),
+  protection: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "protection" }),
 };
 
 /** The steps Rig writes the command for, by their key in a proposal. */
@@ -368,7 +379,7 @@ const stepList = stepKinds.filter((k) => k !== "screen").map((k) => `{${k}}`).jo
 export const tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "propose_change",
-    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor a common Windows setting, use one of Rig's recipes when one fits; these are the recipes:\n${recipeText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, to install, update or uninstall an app {app}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
+    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor a common Windows setting, use one of Rig's recipes when one fits; these are the recipes:\n${recipeText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, to install, update or uninstall an app {app}, for an NVIDIA graphics setting {gpu}, and to turn Windows Firewall, Defender's real-time protection or SmartScreen off for a while {protection}, never a command, so that it comes back on by itself: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -377,7 +388,7 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
         why: { type: "string", description: "One sentence on why this helps with what they asked." },
         steps: {
           type: "array", minItems: 1, maxItems: 8,
-          items: { type: "object", properties: { fix: callSchema, recipe: recipeSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, app: appSchema, gpu: gpuSchema, fileEdit: fileEditSchema, command: commandSchema } },
+          items: { type: "object", properties: { fix: callSchema, recipe: recipeSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, app: appSchema, gpu: gpuSchema, fileEdit: fileEditSchema, protection: protectionSchema, command: commandSchema } },
         },
       },
       required: ["title", "why", "steps"],

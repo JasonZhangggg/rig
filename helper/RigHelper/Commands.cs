@@ -89,25 +89,28 @@ public sealed class CommandStore
 
     void Setup()
     {
-        if (secured)
-        {
-            // Under the "object creator" owner policy, what an admin makes is owned by the admin's own account, which the
-            // store's owner check refuses. From here on this process and the programs it starts make everything owned by
-            // Administrators, so the store is admins' own whatever the policy.
-            Native.SetDefaultOwner(Admins);
-            // ProgramData lets anyone make folders. The parent is always taken over and locked, so no one else can add or
-            // swap anything beside the store; a store someone else made, or a link in its place, is replaced, so nothing
-            // planted there is ever read.
-            string parent = Path.GetDirectoryName(Root)!;
-            if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(parent);
-            Directory.CreateDirectory(parent);
-            Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
-            if (Directory.Exists(Root) && File.GetAttributes(Root).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(Root);
-            if (Directory.Exists(Root) && !OwnedByAdmins(Root)) Directory.Delete(Root, recursive: true);
-            Directory.CreateDirectory(Root);
-            Lock(Root, reader: null);
-        }
+        if (secured) Secure(Root);
         foreach (string sub in new[] { "pending", "records", "work", "scripts" }) Directory.CreateDirectory(Path.Combine(Root, sub));
+    }
+
+    /// Makes `dir` a folder only admins and the system can read or change, under a parent no one else can add to.
+    internal static void Secure(string dir)
+    {
+        // Under the "object creator" owner policy, what an admin makes is owned by the admin's own account, which the
+        // store's owner check refuses. From here on this process and the programs it starts make everything owned by
+        // Administrators, so the store is admins' own whatever the policy.
+        Native.SetDefaultOwner(Admins);
+        // ProgramData lets anyone make folders. The parent is always taken over and locked, so no one else can add or
+        // swap anything beside the store; a store someone else made, or a link in its place, is replaced, so nothing
+        // planted there is ever read.
+        string parent = Path.GetDirectoryName(dir)!;
+        if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(parent);
+        Directory.CreateDirectory(parent);
+        Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
+        if (Directory.Exists(dir) && File.GetAttributes(dir).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(dir);
+        if (Directory.Exists(dir) && !OwnedByAdmins(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        Lock(dir, reader: null);
     }
 
     /// Whether only admins could have put anything in the store: it, the folders above it and every folder and file in it
@@ -395,8 +398,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                     tier = 3;
                     reasons.Add($"{lowers}.");
                 }
-                // A native op is made by the worker with the person's own rights, so it never needs admin rights.
-                return new Checked(new Verdict(true, tier, false, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
+                // A native op is made by the worker with the person's own rights, unless it says it needs admin rights.
+                return new Checked(new Verdict(true, tier, op.Admin, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
             default:
                 return No(Verdict.Refuse(problem ?? "This change request is missing a part."));
         }
@@ -477,7 +480,9 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     }
 
     NativeWorker.Answer Ask(Person person, string verb, NativeOpStep step, JsonObject? held, JsonObject? back = null) =>
-        NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
+        NativeSteps.Find(step.Name, TestOnlyNativeOps) is { Admin: true }
+            ? NativeWorker.Here(verb, step, back, TestOnlyNativeOps, held)
+            : NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
 
     static string Moved(string now, string expect) =>
         $"What this changes has moved since Rig looked: it reads \"{now}\" now, not \"{expect}\". Nothing ran. Look again.";
@@ -681,6 +686,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             ["output"] = made.Printed, ["alsoChanged"] = new JsonArray(),
         };
         if (step is NativeOpStep && meant != null) result["stopped"] = true;
+        // A protection turned off for a while: when Rig's service turns it back on.
+        if (step is NativeOpStep && made.Back?["revert"] is JsonObject revert) result["revert"] = revert.DeepClone();
 
         if (hits.Count > 0 || error != null)
         {

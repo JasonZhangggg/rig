@@ -14,6 +14,7 @@ import type { Change } from "./client";
 import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
 import type { DiffRow } from "./model";
+import { protectionKeepRule, protectionRule, type ProtectionKeepOp, type ProtectionOp, type RevertNote, type RevertsReply } from "./protection";
 import rulesJson from "./rules/commands.json";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
 import { recipeCommand, type RecipeStep } from "./shorthand";
@@ -40,10 +41,11 @@ export function helperStep(step: HelperStep | RecipeStep): HelperStep | string {
 }
 
 /**
- * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
- * `nativeOps`, and one class in the helper (NativeSteps.cs).
+ * A change the helper's own code makes, as the person and never elevated, except the protection ops, which need admin
+ * rights and wait for Windows' prompt. A new op is one member here, one entry in `nativeOps`, and one class in the helper
+ * (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp | ProtectionOp | ProtectionKeepOp;
 
 /**
  * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
@@ -72,6 +74,8 @@ export interface NativeRule<O extends NativeOp> {
   /** The op as the helper stores and fingerprints it, with anything Rig doesn't know dropped, or what is wrong with it in plain words. */
   canonical(raw: Record<string, unknown>): O | string;
   tier(op: O): Tier;
+  /** The op needs admin rights, so it waits for Windows' prompt. The helper's check gives the same. */
+  admin?(op: O): boolean;
   /** Why this tier. */
   reasons(op: O): string[];
   /** A short past-tense title for the changes log. */
@@ -125,6 +129,8 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
       return [[name ?? "Setting", was ?? before ?? "As it is now", after === undefined ? op.to : lineParts(after)[1] ?? after]];
     },
   },
+  protection: protectionRule,
+  protectionKeep: protectionKeepRule,
 };
 
 /** The control's name and value from the helper's one-line read of it, when it is one. */
@@ -206,6 +212,8 @@ export interface CheckContext {
   tainted: boolean;
   /** The looks the helper answered in this chat (`screen.look`). A screen step is checked against the one it names. */
   looks?: ScreenLook[];
+  /** The step comes from a button the person pressed in the Rig app, not from Claude. Only the app's own code sets it. */
+  byPerson?: boolean;
 }
 
 /** Programs that run only as the person, never with admin rights (`person` in the rules). */
@@ -288,8 +296,8 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
         reasons.push(`${lowers}.`);
       }
       if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
-      // The helper's worker makes it with the person's own rights, so it never needs admin rights.
-      return { status: "allowed", tier, admin: false, commands: [], reasons, rulesVersion };
+      // The helper's worker makes it with the person's own rights, unless the op says it needs admin rights.
+      return { status: "allowed", tier, admin: rule.admin?.(op) ?? false, commands: [], reasons, rulesVersion };
     }
   }
 }
@@ -433,13 +441,14 @@ export type AppliedStep =
   /** `unverified`: what the helper saw when it read the fix back and the change wasn't there, in plain words. */
   | { step: FixStep; undo: FixUndo; rows: DiffRow[]; unverified?: string }
   | { step: CommandStep; undo: CommandUndo; rows: DiffRow[]; verify?: VerifyResult }
-  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult };
+  /** `revert`: a protection turned off for a while, and when it comes back on. */
+  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult; revert?: RevertNote };
 
 /** A helper step as the changes log keeps it once applied: the undo record is filed under the step's own kind. */
-export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult): AppliedStep {
+export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult, revert?: RevertNote): AppliedStep {
   switch (step.kind) {
     case "command": return { step, undo: { ...undo, kind: "command" }, rows, verify };
-    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify };
+    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify, ...(revert ? { revert } : {}) };
   }
 }
 
@@ -481,6 +490,8 @@ export interface RunResult {
   alsoChanged: string[];
   /** A screen step that stopped part way, by the Stop bar or the app: the control may be half set, wasn't read back, `after` says why, and undo is offered. */
   stopped?: true;
+  /** A protection turned off for a while: the ledger's id for it and when Rig's service turns it back on (ISO time). */
+  revert?: { id: string; dueAt: string };
 }
 
 /** A run's touches as rows for the changes log: what, before, after. */
@@ -593,6 +604,8 @@ export interface StepRpc {
   "screen.look": { params: { app: string; goal: string[] }; reply: ScreenLookReply };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
+  /** The protections that are off for now and how the last ones ended. Missing on helpers from before them. */
+  "protection.reverts": { params: Record<string, never>; reply: RevertsReply };
 }
 
 /** The part of the helper link that carries steps. */

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
+import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, protectionRow, revertWords, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type ProtectionKeepOp, type ProtectionOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
 import { Claim, Printed } from "./parts";
+import { Countdown } from "./Revert";
 import { clip, type RedKind } from "./words";
 
 /** One value a native op changes: where, as it is (or was), and as it will be (or came out). */
@@ -23,6 +24,8 @@ interface NativePart<O extends NativeOp> {
   red?: { kind: RedKind; undo: string };
   /** What the result says once it ran, in place of the values before and after. */
   done?(op: O, result: RunResult, look?: ScreenLook): ReactNode;
+  /** The Undo button's own words, or "none" when the step has nothing to undo. */
+  back?: string | "none";
 }
 
 const fileName = (path: string) => path.split("\\").filter(Boolean).pop() ?? path;
@@ -100,8 +103,38 @@ const screen: NativePart<ScreenOp> = {
   },
 };
 
+const rowName = (id: string) => protectionRow(id)?.name ?? "A protection";
+export const TURN_BACK_ON = "Turn it back on now";
+
+const protection: NativePart<ProtectionOp> = {
+  title: (op) => `Turns off ${rowName(op.id)} for ${revertWords(op.revertAfter)}`,
+  where: (op) => [{ label: "Protection", value: rowName(op.id) }, { label: "Off for", value: revertWords(op.revertAfter) }],
+  changes: (op, before, after) => [{ place: rowName(op.id), before: before?.trim() || "On", after: after?.trim() || `Off for ${revertWords(op.revertAfter)}` }],
+  more: (op) => (
+    <>
+      <p className="cc-note">{protectionRow(op.id)?.risk}</p>
+      <p className="cc-note">Rig turns it back on by itself after {revertWords(op.revertAfter)}, also if the PC restarts or Rig is closed. You can turn it back on sooner in Changes. Keeping it off is a separate choice only you can make there.</p>
+    </>
+  ),
+  red: { kind: "lowers", undo: `Yes. Rig turns it back on by itself, and ${TURN_BACK_ON} does it sooner. Until then, the PC is less protected.` },
+  done: (op, result) => (
+    <p className="cc-note" role="status">
+      {rowName(op.id)} is off. {result.revert ? <Countdown dueAt={result.revert.dueAt} /> : `Rig turns it back on by itself after ${revertWords(op.revertAfter)}.`}
+    </p>
+  ),
+  back: TURN_BACK_ON,
+};
+
+const protectionKeep: NativePart<ProtectionKeepOp> = {
+  title: (op) => `Keeps ${rowName(op.id)} off`,
+  where: (op) => [{ label: "Protection", value: rowName(op.id) }],
+  changes: (op, before, after) => [{ place: rowName(op.id), before: before?.trim() || "Off for now", after: after?.trim() || "Off until you turn it back on" }],
+  red: { kind: "lowers", undo: `Yes. ${TURN_BACK_ON} in Changes turns it on again.` },
+  back: "none",
+};
+
 /** One entry per kind of native op. A new op is one more entry here. */
-export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen };
+export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen, protection, protectionKeep };
 
 /** The op's kind, when this copy of Rig knows it. A newer Rig may send kinds this one doesn't. */
 export const knownNative = (raw: unknown) => {

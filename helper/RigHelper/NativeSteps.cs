@@ -13,6 +13,12 @@
 // it can do nothing the person couldn't. What the worker answers is read as
 // data from outside, like a script's output.
 //
+// The one exception is an op that says it needs admin rights (`Admin`, the
+// protection ops in Protection.cs). The helper makes it itself, only after
+// Windows' prompt approved it like an admin command, so such an op may hold
+// nothing but Rig's own fixed reads and writes: no driver's code, no app's
+// window, no text from the step.
+//
 // The gpu read is made by the worker the same way, because it loads the
 // graphics driver's own code.
 //
@@ -121,6 +127,9 @@ public interface INativeStep
     /// The op's name: `name` in its payload.
     string Name { get; }
 
+    /// The op needs admin rights: it waits for Windows' prompt and is then made by the helper itself, not the worker.
+    bool Admin => false;
+
     /// Runs in the helper, before the op is stored, again before it runs and again before it is undone. Changes nothing.
     /// Throws a RigException that says in plain words why the op is refused. The tier is this code's own judgment, never
     /// something the payload says. The touches are held to the never list like a command's. Checking what it returned
@@ -149,13 +158,14 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp()];
+    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp(), new ProtectionStep(), new ProtectionKeepStep()];
 
-    /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
-    static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
+    /// Known only inside --selftest. Nothing that comes over the pipe can ask for these. The protection ops' own copies
+    /// there know the test rows, and stand in for the real ones.
+    static readonly INativeStep[] SelfTestOnly = [new SelftestOp(), new ProtectionStep(selfTest: true), new ProtectionKeepStep(selfTest: true)];
 
     public static INativeStep? Find(string name, bool selfTest) =>
-        All.Concat(selfTest ? SelfTestOnly : []).FirstOrDefault(s => s.Name == name);
+        (selfTest ? SelfTestOnly : []).Concat(All).FirstOrDefault(s => s.Name == name);
 }
 
 /// The worker: how the helper asks it, and what it does when started.
@@ -181,6 +191,17 @@ public static class NativeWorker
         Send(person, store, new JsonObject { ["verb"] = "read", ["read"] = read.DeepClone() }, selfTest, timeoutMs);
 
     public const int ReadTimeoutMs = 30_000;
+
+    /// Does one part of an op that needs admin rights here, in the helper (INativeStep.Admin).
+    public static Answer Here(string verb, NativeOpStep step, JsonObject? back, bool selfTest, JsonObject? held)
+    {
+        try
+        {
+            var result = Step(new JsonObject { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone(), ["held"] = held?.DeepClone() }, selfTest);
+            return new Answer(true, false, result, "", 0, -1);
+        }
+        catch (Exception e) { return Failed(e is RigException ? e.Message : $"Rig's helper hit a problem: {e.Message}"); }
+    }
 
     static Answer Send(Person person, CommandStore store, JsonObject request, bool selfTest, int timeoutMs)
     {

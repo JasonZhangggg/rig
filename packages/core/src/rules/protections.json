@@ -1,0 +1,55 @@
+{
+  "about": [
+    "Windows protections Rig may turn off for a while, and how. A `protection` step names one row by `id` and how long (`revertAfter`, minutes). There is no script text anywhere: the helper's own code reads, lowers and raises each row by its `kind` (helper/RigHelper/Protection.cs), and the same file is built into the helper.",
+    "Before a row is lowered, Rig's background service notes that it must come back on (helper/RigHelper/Reverts.cs). When the time is up the service raises it, reads it back and logs it, also after a restart. The service only ever raises.",
+    "`how` says in plain words what the code does. `kind` firewall uses Windows Firewall's own interface (HNetCfg.FwPolicy2) for one `profile`; defenderRealtime uses Defender's own settings class (MSFT_MpPreference) and reads MSFT_MpComputerStatus; registry writes one text value, `off` to lower and `on[0]` to raise, and counts any `on` value or none as on.",
+    "`policy` is a place that, when set, means an organisation owns the setting: the row is refused there.",
+    "`never` rows are never lowered by anything Rig does."
+  ],
+  "revertAfter": [15, 60, 240],
+  "defaultRevertAfter": 60,
+  "rows": [
+    {
+      "id": "firewall-public", "kind": "firewall", "profile": "public",
+      "name": "Windows Firewall on public networks",
+      "risk": "Other devices on a public network, like a cafe's or an airport's Wi-Fi, can reach this PC while it is off.",
+      "how": {"read": "FirewallEnabled for the Public profile.", "lower": "Sets FirewallEnabled for the Public profile to off.", "raise": "Sets FirewallEnabled for the Public profile to on."}
+    },
+    {
+      "id": "firewall-private", "kind": "firewall", "profile": "private",
+      "name": "Windows Firewall on private networks",
+      "risk": "Other devices on your home or work network can reach this PC while it is off.",
+      "how": {"read": "FirewallEnabled for the Private profile.", "lower": "Sets FirewallEnabled for the Private profile to off.", "raise": "Sets FirewallEnabled for the Private profile to on."}
+    },
+    {
+      "id": "firewall-domain", "kind": "firewall", "profile": "domain",
+      "name": "Windows Firewall on domain networks",
+      "risk": "Other devices on your organisation's network can reach this PC while it is off.",
+      "how": {"read": "FirewallEnabled for the Domain profile.", "lower": "Sets FirewallEnabled for the Domain profile to off.", "raise": "Sets FirewallEnabled for the Domain profile to on."}
+    },
+    {
+      "id": "defender-realtime", "kind": "defenderRealtime",
+      "name": "Microsoft Defender real-time protection",
+      "risk": "Files you open, download or install aren't checked for viruses while it is off.",
+      "how": {"read": "RealTimeProtectionEnabled and IsTamperProtected from MSFT_MpComputerStatus.", "lower": "Sets DisableRealtimeMonitoring to true through MSFT_MpPreference. Refused while Tamper Protection is on, because Windows would ignore it.", "raise": "Sets DisableRealtimeMonitoring to false through MSFT_MpPreference."}
+    },
+    {
+      "id": "smartscreen-apps", "kind": "registry",
+      "key": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", "value": "SmartScreenEnabled", "on": ["Warn", "RequireAdmin", "Prompt", "Block"], "off": "Off",
+      "policy": {"key": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "value": "EnableSmartScreen"},
+      "name": "SmartScreen for apps and files",
+      "risk": "Windows doesn't warn before an unrecognised app or download runs while it is off.",
+      "how": {"read": "The SmartScreenEnabled value; anything but Off is on.", "lower": "Sets SmartScreenEnabled to Off.", "raise": "Sets SmartScreenEnabled back to what it was (Warn when Rig can't tell)."}
+    }
+  ],
+  "never": [
+    {"id": "uac", "name": "User Account Control", "says": "Rig never lowers User Account Control. Windows' own prompt is how you approve Rig's changes, so Rig leaves it alone"}
+  ],
+  "words": {
+    "unknown": "Rig doesn't turn that protection off. It can turn off, for a while",
+    "revertAfter": "Rig turns a protection off for 15 minutes, 1 hour or 4 hours, then turns it back on",
+    "tier": "It turns off a Windows protection for a while. Rig's background service turns it back on by itself when the time is up, even after a restart or with Rig closed",
+    "keep": "It stops Rig from turning this protection back on by itself. It stays off until you turn it back on",
+    "keepOnlyYou": "Only you can choose to keep a protection off, with the Keep it off button in the Rig app"
+  }
+}

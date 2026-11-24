@@ -8,6 +8,7 @@ export * from "./fileEdit";
 export * from "./shorthand";
 export * from "./reads";
 export * from "./gpu";
+export * from "./protection";
 export { checkScript, rulesVersion, secondLook, type ScriptUse } from "./check";
 export * from "./client";
 export * from "./health";
