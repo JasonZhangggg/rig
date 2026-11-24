@@ -226,15 +226,16 @@ public sealed class ProtectionStep(bool selfTest = false) : INativeStep
         return (row, new JsonObject { ["name"] = Name, ["id"] = row.Id, ["revertAfter"] = after }, seconds);
     }
 
-    NativeCheck Checked(JsonObject kept, string? never = null) => new(kept, 3, [$"{Protections.Words("tier")}."], [], Never: never);
+    // Held marks a step that was checked before, so its way back is rechecked as one that is already off.
+    NativeCheck Checked(JsonObject kept, string? never = null) => new(kept, 3, [$"{Protections.Words("tier")}."], [], Held: new JsonObject { ["row"] = kept["id"]?.ToString() }, Never: never);
 
     public NativeCheck Check(JsonObject op)
     {
         if (Protections.Never(IdOf(op)) is string never) return Checked(new JsonObject { ["name"] = Name, ["id"] = IdOf(op) }, never);
         var (row, kept, _) = Read(op);
+        if (Native.IsAdmin() && Ledger.Open().Read(row.Id) != null) throw new RigException(Ledger.Busy);
         if (Asked(row, row.Blocked) is string blocked) throw new RigException(blocked);
         if (!Asked(row, row.On)) throw new RigException($"{row.Name} is already off, so there is nothing to turn off.");
-        if (Native.IsAdmin() && Ledger.Open().Read(row.Id) != null) throw new RigException(Ledger.Busy);
         return Checked(kept);
     }
 
@@ -288,7 +289,7 @@ public sealed class ProtectionKeepStep(bool selfTest = false) : INativeStep
         return (row, new JsonObject { ["name"] = Name, ["id"] = row.Id });
     }
 
-    NativeCheck Checked(JsonObject kept) => new(kept, 3, [$"{Protections.Words("keep")}."], []);
+    NativeCheck Checked(JsonObject kept) => new(kept, 3, [$"{Protections.Words("keep")}."], [], Held: new JsonObject { ["row"] = kept["id"]?.ToString() });
 
     public NativeCheck Check(JsonObject op)
     {
