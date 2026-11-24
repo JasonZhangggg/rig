@@ -428,3 +428,10 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
 export function checkScript(script: string, use: ScriptUse): Verdict {
   return inspectScript(script, use).verdict;
 }
+
+/** A file named by its full local path: a drive letter, no .., no short names such as PROGRA~1, no wildcards, nothing on another computer. */
+export const localFile = (text: string) =>
+  /^[a-z]:\\/i.test(text) && !text.includes("\\\\") && !/[*?[]/.test(text) && !/(^|\\)\.\.(\\|$)/.test(text) && !/[a-z0-9]~\d/i.test(text);
+
+/** A program, script or shortcut by its name's ending, which Rig never writes. */
+export const programFile = (text: string) => R.paths.programs.some((p) => placeOf(text).endsWith(p));

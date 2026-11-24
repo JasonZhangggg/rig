@@ -16,7 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, toRequest, validateCall,
-  cardTier, canonicalNative, checkRead, checkStep, deviceCommand, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
+  cardTier, canonicalNative, checkRead, checkStep, deviceCommand, GPU_SETTINGS, driverCommand, firewallCommand, policyCommand, readTaints, readWhat, nativeRows, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type NativeOp, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
   type Manual, type ChatEvent, type ChatRequest, type DiffRow, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
@@ -138,6 +138,7 @@ Changes:
 - Prefer a catalog fix (a fix step) when one fits; they show the value now and after and always undo. Use the exact GUIDs, app names and display names from the PC block.
 - Command steps, and the shorthand steps below ({registry}, {service}, {firewall}, {policy}, {device}, {driver}, {gpu}), work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
 - For one registry value, use a registry step ({registry: {key, name, type, value}}); for how a service starts, a service step ({service: {name, startType}}). Rig writes the PowerShell for them, so prefer these to writing it yourself.
+- To change values in a program's or game's own settings file, use {fileEdit}: the file's full path, its format (json, or ini for key=value files, .cfg included) and each value's place as a list of keys. Rig changes only those values' text, saves a copy first and keeps the rest of the file as it is. Look at the file with read_pc first. A key the file doesn't have yet needs add: true.
 - Likewise use {firewall} to add one firewall rule or turn a rule on or off, {policy} for one value under Software\\Policies (not on a PC a work or school manages), {device} to turn one device off or on by its instance id, {driver} to install a signed .inf already on the PC (never a download), and {gpu} for one NVIDIA graphics setting from Rig's list (read it first with read_pc kind gpu; AMD and Intel settings can't be changed yet, so give the steps). Look with read_pc first for rule names, instance ids and file paths.
 - For any other Windows setting, use a command step: does (one plain sentence), read (a PowerShell script that prints the current state; it must only look, like a read_pc script), run (the PowerShell that makes the change; write every path and key in full, like C:\\... or HKCU:\\..., and name -Path, -Name and -Value, since Rig refuses a place it can't tell the full path of), undo (the PowerShell that puts it back, whenever one exists) and touches (every registry key, file, service, task or firewall rule it changes, with full paths). Look with read_pc first so the script fits this PC.
 - Rig checks every step in code and sets the card's risk itself. A step it refuses comes back as an error with the reason: don't try to get around it; give the steps with show_steps instead if the person can do it themselves.
@@ -277,6 +278,29 @@ const driverSchema = {
   required: ["inf", "catalog"],
 };
 
+const fileEditSchema = {
+  type: "object",
+  description: "Change values in one settings file of a program or game, JSON or INI. Rig replaces only those values' text, keeps the rest of the file byte for byte, and saves a copy first so undo puts it back.",
+  properties: {
+    does: { type: "string", description: "One plain sentence on what it changes, like \"Turn off vertical sync in the game's settings.\"" },
+    path: { type: "string", description: "The file's full path, like C:\\Users\\Sam\\AppData\\Roaming\\Game\\settings.json." },
+    format: { type: "string", enum: ["json", "ini"], description: "ini also for .cfg files of key=value lines under [sections]." },
+    edits: {
+      type: "array", minItems: 1, maxItems: 20,
+      items: {
+        type: "object",
+        properties: {
+          at: { type: "array", items: { type: "string" }, description: "JSON: the keys from the outside in, array places as \"0\", \"1\". INI: [section, key], with \"\" as the section for keys above the first one." },
+          value: { description: "JSON: text, a number, true, false or null. INI: the text after =, or a number." },
+          add: { type: "boolean", description: "true when the key may not be in the file yet." },
+        },
+        required: ["at", "value"],
+      },
+    },
+  },
+  required: ["does", "path", "format", "edits"],
+};
+
 const gpuSettings = Object.entries(GPU_SETTINGS).map(([k, v]) => `${k} (${[...Object.keys(v.values), ...(v.range ? [`${v.range.min}-${v.range.max}`] : [])].join(", ")}${v.scope === "global" ? "; whole PC only" : ""})`).join("; ");
 
 const gpuSchema = {
@@ -295,6 +319,7 @@ const gpuSchema = {
 /** The steps the helper's own code makes, by their key in a proposal. */
 const natives: Record<string, (raw: unknown) => NativeOp | string> = {
   gpu: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "gpu" }),
+  fileEdit: (raw) => canonicalNative({ ...(raw && typeof raw === "object" ? raw : {}), name: "fileEdit" }),
 };
 
 /** The steps Rig writes the command for, by their key in a proposal. */
@@ -307,7 +332,7 @@ const stepList = stepKinds.map((k) => `{${k}}`).join(", ");
 export const tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "propose_change",
-    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
+    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of ${stepList}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, for values in a program's JSON or INI settings file {fileEdit}, for how a service starts {service}, for a firewall rule {firewall}, for a policy value {policy}, to turn a device off or on {device}, for a driver on disk {driver}, and for an NVIDIA graphics setting {gpu}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -316,7 +341,7 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
         why: { type: "string", description: "One sentence on why this helps with what they asked." },
         steps: {
           type: "array", minItems: 1, maxItems: 8,
-          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, gpu: gpuSchema, command: commandSchema } },
+          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, firewall: firewallSchema, policy: policySchema, device: deviceSchema, driver: driverSchema, gpu: gpuSchema, fileEdit: fileEditSchema, command: commandSchema } },
         },
       },
       required: ["title", "why", "steps"],
@@ -572,11 +597,11 @@ function commandOf(raw: unknown): Command | string {
 
 /** Plain rows for the card, before the app reads the current values. */
 function rowsFor(steps: Step[], ctx: ChatContext): DiffRow[] {
-  return steps.map((s): DiffRow => {
+  return steps.flatMap((s): DiffRow[] => {
     switch (s.kind) {
-      case "fix": return describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? []);
-      case "command": return [s.cmd.does, "As it is now", "Changed by this command"];
-      case "native": return [stepsTitle([s]), "As it is now", "Changed by Rig"];
+      case "fix": return [describeCall(s.call, ctx.facts, ctx.inventory?.displays ?? [])];
+      case "command": return [[s.cmd.does, "As it is now", "Changed by this command"]];
+      case "native": return nativeRows(s.op) ?? [[stepsTitle([s]), "As it is now", "Changed by Rig"]];
     }
   });
 }

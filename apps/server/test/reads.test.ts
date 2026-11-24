@@ -256,6 +256,27 @@ describe("general command steps", () => {
     expect(p.rows![0]).toEqual(["Set Vertical sync to Off for game.exe", "As it is now", "Changed by Rig"]);
   });
 
+  it("builds a file edit as Rig's own step, with a row for each value, and refuses a never-list file", async () => {
+    const path = "C:\\Users\\Lee\\AppData\\Local\\Game\\GameUserSettings.ini";
+    const { live } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Turn off vsync", why: "y", steps: [{ fileEdit: { name: "other", does: "Turns off vertical sync.", path, format: "ini", edits: [{ at: ["/Script/Engine.GameUserSettings", "bUseVSync"], value: "False" }, { at: ["/Script/Engine.GameUserSettings", "FrameRateLimit"], value: 144.5, add: true }] } }] } } },
+      { text: "Review the card." },
+    ]);
+    const p = of(await live(ask("Turn off vsync in my game")), "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 2, steps: [{ kind: "native", op: { name: "fileEdit", path, edits: [{ value: "False" }, { value: { number: "144.5" }, add: true }] } }] });
+    expect(p.rows).toEqual([
+      ["GameUserSettings.ini › /Script/Engine.GameUserSettings › bUseVSync", "As it is now", "False"],
+      ["GameUserSettings.ini › /Script/Engine.GameUserSettings › FrameRateLimit", "As it is now", "144.5"],
+    ]);
+
+    const never = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ fileEdit: { does: "Edits saved sign-ins.", path: "C:\\Users\\Lee\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\a\\logins.json", format: "json", edits: [{ at: ["x"], value: 1 }] } }] } } },
+      { text: "." },
+    ]);
+    expect(of(await never.live(ask("Change it")), "proposal")).toHaveLength(0);
+    expect(lastToolResults(never.seen[1])).toContain("Rig never reads saved passwords");
+  });
+
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {
     const clean = await chatSetup([{ tool: { name: "propose_change", input: { title: "Delete the old installers", why: "Frees space.", steps: [{ command: deleteFolder }] } } }, { text: "Review it." }]);
     expect(of(await clean.live(ask("Delete C:\\Installers\\old")), "proposal")[0].proposal.tier).toBe(3);
