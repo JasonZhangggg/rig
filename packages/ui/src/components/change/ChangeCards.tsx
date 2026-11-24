@@ -3,8 +3,8 @@ import { FixCard } from "./FixCard";
 import { waitingOn } from "./order";
 import { StepCard } from "./StepCard";
 
-/** `read` has the helper read the current settings and check the step; the card shows its preview. */
-export type CommandAct = "read" | "apply" | "undo";
+/** `read` has the helper read the current settings and check the step; the card shows its preview. `forceUndo` puts it back even though something else changed it since. */
+export type CommandAct = "read" | "apply" | "undo" | "forceUndo";
 
 export interface ChangeCardsProps {
   proposal: Proposal;
@@ -43,7 +43,7 @@ export function ChangeCards({ proposal: p, previews = [], outcomes = [], pcName,
       {p.steps.map((s, i) => s.kind === "command" && (
         <StepCard key={`${i}|${nonce(i)}`} cmd={s.cmd} preview={previews[i]} outcome={outcomes[i]} pcName={pcName} canApply={canApply} tainted={tainted}
           declined={p.status === "declined"} place={places[i]} waitsFor={waits(i) ?? undefined}
-          onRead={() => onCommandStep(i, "read")} onApply={() => onCommandStep(i, "apply")} onUndo={() => onCommandStep(i, "undo")} onDecline={onDecline} onSteps={() => onSteps(i)} />
+          onRead={() => onCommandStep(i, "read")} onApply={() => onCommandStep(i, "apply")} onUndo={(force) => onCommandStep(i, force ? "forceUndo" : "undo")} onDecline={onDecline} onSteps={() => onSteps(i)} />
       ))}
     </div>
   );
