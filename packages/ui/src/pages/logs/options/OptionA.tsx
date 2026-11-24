@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Row, RowFigure, Rows } from "../../../components/Rows";
 import { useStillPC, useTemp } from "../../../state";
-import { clock, DAY0, DAY1, day, games, limits, looks, moments, span, stat, watch } from "./data";
+import { clock, DAY0, DAY1, day, games, limits, looks, moments, span, stat } from "./data";
 import { Lanes, Overview, type Lane } from "./Lanes";
-import { DayStep, OptHead, PartRail, partLanes, RecorderLine, Seg } from "./Shared";
+import { DayStep, OptHead, PartRail, partLanes, Seg } from "./Shared";
 import type { PartId } from "./data";
 
 const H = 36e5;
@@ -28,34 +28,35 @@ export function OptionA() {
   const hot = stat("gpu.temp", from, to);
   const game = games[1];
 
+  const crashMem = "1.9 GB";
   return (
     <div className="page lg-page op-page">
-      <OptHead sub={`Everything Rig recorded on ${pc.name}, on one timeline.`} right={!phone && <Seg label="Range" items={["Live", "Day", "Week", "Month"]} on="Day" />} />
-      <RecorderLine pcName={pc.name} />
+      <OptHead sub={`${pc.name} · every sensor, every 30 s`} right={!phone && <Seg label="Range" items={["Live", "Day", "Week", "Month"]} on="Day" />} />
+
+      <div className="op-bar">
+        <DayStep label="Sunday, Nov 22" />
+        <span className="op-bar-end">
+          {!phone && <button type="button" className="btn ghost sm">Export CSV</button>}
+        </span>
+      </div>
+
+      <section className="op-in" aria-labelledby="op-in-h">
+        <h2 id="op-in-h" className="lg-h">What happened</h2>
+        <Rows timeline>
+          <Row time={clock(marks[1].t)} mark="look" title="Discord crashed" meta="Memory leak likely" figure={<RowFigure value={crashMem} word="memory" look />} name="Discord crash" pick={{ pressed: false, onPick: () => setCursor(marks[1].t) }} />
+          <Row time={clock(hot.maxAt)} mark="look" title={`Graphics card hit ${temp(hot.max)}`} meta={`${game.title} · limit ${temp(limits["gpu.temp"])}`} figure={<RowFigure value={temp(hot.max)} word="GPU core" look />} name="Graphics card" pick={{ pressed: true, onPick: () => setCursor(marks[0].t) }} />
+          <Row time={clock(game.from)} mark="dot" title={game.title} meta={span(game.from, game.to)} figure={<RowFigure value={temp(stat("gpu.temp", game.from, game.to).max)} word="GPU peak" />} name={game.title} />
+          <Row time={clock(games[0].from)} mark="dot" title={games[0].title} meta={span(games[0].from, games[0].to)} figure={<RowFigure value={temp(stat("gpu.temp", games[0].from, games[0].to).max)} word="GPU peak" />} name="Afternoon game" />
+        </Rows>
+      </section>
 
       <section className="op-tl" aria-label="Recorded readings">
-        <div className="op-bar">
-          <DayStep label="Sunday, Nov 22" />
-          <span className="faint op-range">Showing {clock(from)} to midnight</span>
-          <span className="op-bar-end">
-            {!phone && <button type="button" className="btn ghost sm">Export CSV</button>}
-          </span>
-        </div>
+        <span className="faint op-range">{clock(from)} to midnight</span>
         <Overview points={day} id="gpu.temp" from={from} to={to} t0={DAY0} t1={DAY1} bands={[...games, ...looks]} marks={moments} />
         <div className="op-tl-grid">
           <PartRail pick={part} onPick={setPart} from={from} to={to} whole />
           <Lanes points={day} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={(t) => setCursor(t ?? moments[0].t)} bands={[...games, ...looks]} marks={marks} compact={phone} />
         </div>
-      </section>
-
-      <section className="lg-section op-in" aria-labelledby="op-in-h">
-        <h2 id="op-in-h" className="lg-h">In this stretch</h2>
-        <Rows timeline>
-          <Row time={clock(marks[0].t)} mark="look" title={`Graphics card reached ${temp(watch["gpu.temp"])}`} meta={`During ${game.title}. Highest ${temp(hot.max)}, ${temp(limits["gpu.temp"] - Math.round(hot.max), { delta: true, mark: "degree" })} under its limit.`} figure={<RowFigure value={temp(hot.max)} word="graphics card" look />} name="Graphics card" pick={{ pressed: true, onPick: () => setCursor(marks[0].t) }} />
-          <Row time={clock(looks[0].from)} mark="dot" title="Closer look" meta={`Readings every 5 seconds for ${span(looks[0].from, looks[0].to)}, because the graphics card reached ${temp(watch["gpu.temp"])}.`} name="Closer look" />
-          <Row time={clock(game.from)} mark="dot" title={game.title} meta={`${span(game.from, game.to)}, until ${clock(game.to)}.`} figure={<RowFigure value={temp(stat("gpu.temp", game.from, game.to).max)} word="graphics card" />} name={game.title} />
-          <Row time={clock(marks[1].t)} mark="look" title="Discord.exe crashed" meta="Crash, logged by Application Error. Rig took a closer look."  name="Discord crash" pick={{ pressed: false, onPick: () => setCursor(marks[1].t) }} />
-        </Rows>
       </section>
     </div>
   );

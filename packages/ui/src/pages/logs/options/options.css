@@ -141,3 +141,7 @@
 .op-log .op-cap .rows { max-width: 760px; }
 .op-log .op-logtitle { font-size: 26px; }
 .op-why .op-verdict { font-size: 16px; }
+.op-keyfigs { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); padding: 2px 0 4px; }
+.op-src { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 12.5px; }
+.op-log .op-when { margin: 0; color: var(--text-2); font-size: 14px; }
+@media (max-width: 760px) { .op-keyfigs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
