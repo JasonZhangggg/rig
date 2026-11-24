@@ -12,6 +12,7 @@ import { arrowKeys } from "../components/modal";
 import { Warm } from "../components/common";
 import { BoardView } from "./board/BoardView";
 import { BoardUsage } from "./board/BoardUsage";
+import { BoardCables } from "./board/BoardCables";
 import { boardStage } from "./board/boardStage";
 import { GpuView } from "./gpu/GpuView";
 import { GpuPorts } from "./gpu/GpuPorts";
@@ -212,7 +213,7 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   const part = pc.parts![id];
   const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
   // The motherboard opens on what's plugged into it, a tower's graphics card on its outputs and power.
-  const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"]] : id === "gpu" && pc.kind === "tower" ? [["ports", "Ports"]] : [];
+  const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"], ["cables", "Cables"]] : id === "gpu" && pc.kind === "tower" ? [["ports", "Ports"]] : [];
   const tabs: [string, string][] = [...first, ["specs", "Specs"], ["manual", "Manual"]];
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
@@ -280,6 +281,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const inUnit = useTempText();
   if (tab === "manual") return <PartManual id={id} about={part.name} />;
   if (tab === "slots") return <BoardUsage />;
+  if (tab === "cables") return <BoardCables />;
   if (tab === "ports") return <GpuPorts />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;

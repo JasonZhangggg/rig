@@ -8,7 +8,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { BoardItem, BoardShape } from "@rig/core";
 import { makeBoard, pinNumber, type BoardNode } from "./board3d";
-import { canvasTex, isSharedTexture, realMaterial, type Kit } from "./parts3d";
+import { canvasTex, isSharedTexture, rbox, realMaterial, type Kit } from "./parts3d";
 import { contrast, reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelItem, type LabelPoint } from "./sceneLabels";
 
@@ -29,6 +29,26 @@ export interface BoardScene {
   dispose(): void;
   /** Triangles and draw calls in the last frame, for the size and speed checks. */
   stats(): { triangles: number; calls: number; ms: number; frames: number };
+  /** Draws the power cables from the supply to their plugs (the cable guide), or takes them away with null. */
+  setCables(cables: CableDraw[] | null): void;
+  /** Lights one cable and fades the rest, or lights them all again. */
+  hoverCable(id: string | null): void;
+  /** Moves the camera to one cable's plug. */
+  focusCable(id: string): void;
+}
+
+/** One power cable for the board to draw: the board item it plugs into, or null for the graphics card. */
+export interface CableDraw {
+  id: string;
+  /** Its number in the order to plug them in. */
+  step: number;
+  title: string;
+  /** Printed name of the plug on the board, or the plug's kind ("16-pin"). */
+  code?: string;
+  to: string | null;
+  optional?: boolean;
+  /** The graphics card's size in mm, for the card's outline and where its plug sits. */
+  card?: { length: number; height: number; thick: number };
 }
 
 export interface PinGroup {
@@ -52,6 +72,8 @@ const wireColor: Record<string, string> = {
   "Power switch": soft.clay, Reset: soft.ochre, "Power LED": soft.sage, "HDD LED": soft.slate, Reserved: soft.grey,
 };
 const spare = [soft.slate, soft.sage, soft.clay, soft.plum, soft.ochre, soft.grey];
+/** Each cable's color, on the board and beside its row in the Cables tab. */
+export const cableColor: Record<string, string> = { eps: soft.clay, eps2: soft.plum, atx24: soft.ochre, gpu: soft.slate };
 /** Dark ink on a light pin, white on a dark one. */
 export const pinInk = (hex: string) => (contrast(hex, "#1B1B1F") >= contrast(hex, "#FFFFFF") ? "#1B1B1F" : "#FFFFFF");
 
@@ -126,6 +148,10 @@ export function createBoardScene(
     onHover: (id) => { hovered = id; invalidate(); },
   });
   let hovered: string | null = null, roomKey = "";
+  // The cable guide's numbers, one at each cable's plug, in the cable's own color. The list beside the board says what each is.
+  const tags = document.createElement("div");
+  tags.className = "cable-tags";
+  container.appendChild(tags);
   const card = document.createElement("div");
   card.className = "pinout";
   card.hidden = true;
@@ -421,13 +447,16 @@ export function createBoardScene(
 
   function highlight(sel: { kind?: BoardItem["kind"]; id?: string } | null) {
     clearFocus();
+    if (sel) cableFocus = null;
     focus = sel ? nodes.filter((n) => (sel.id ? n.item.id === sel.id : n.item.kind === sel.kind)) : [];
     const dim = focus.length > 0;
+    // With the cables drawn, the board steps back so they stand out, and their plugs stay lit.
+    const keep = dim ? focus : cables.flatMap((c) => c.lit);
     for (const [m, c] of baseColor) { const sm = m as THREE.MeshStandardMaterial; sm.color.copy(c); sm.envMapIntensity = sm.userData.envI ??= sm.envMapIntensity; }
-    if (dim) {
+    if (keep.length) {
       // Step the rest back: the board darker, every other part darker still
       const lit = new Set<THREE.Material>();
-      for (const n of focus) for (const m of nodeMats.get(n)!) lit.add(m);
+      for (const n of keep) for (const m of nodeMats.get(n)!) lit.add(m);
       for (const [m, c] of baseColor) if (!lit.has(m)) { const sm = m as THREE.MeshStandardMaterial; sm.color.copy(c).multiplyScalar(0.34); sm.envMapIntensity = sm.userData.envI * 0.3; }
     }
     for (const n of focus) addHalo(n);
@@ -445,7 +474,7 @@ export function createBoardScene(
       showCard(one, groups);
     }
     // Labels: every lit item, or a few landmarks when nothing is picked. A header with a pin map is named by the map.
-    const named = dim ? focus.filter((n) => !(n === one && groups.length)) : opts.landmarks === false ? [] : nodes.filter((n) => landmarks.includes(n.item.id));
+    const named = dim ? focus.filter((n) => !(n === one && groups.length)) : opts.landmarks === false || cables.length ? [] : nodes.filter((n) => landmarks.includes(n.item.id));
     const items: LabelItem[] = [];
     for (const n of named) {
       const it = n.item;
@@ -468,19 +497,191 @@ export function createBoardScene(
   function frame() {
     scene.updateMatrixWorld(true);
     const box = new THREE.Box3();
+    const one = !focus.length && cableFocus ? cables.find((c) => c.draw.id === cableFocus) : undefined;
     if (focus.length) for (const n of focus) box.expandByObject(n.group);
-    else box.setFromObject(built.pcb);
+    else if (one) { for (const o of one.near) box.expandByObject(o); one.start.getWorldPosition(c1); box.expandByPoint(c1); }
+    else {
+      box.setFromObject(built.pcb);
+      // The cables come in past the board's edges: keep where each comes in in view, but not the card's height.
+      for (const c of cables) { c.start.getWorldPosition(c1); box.expandByPoint(c1); }
+    }
     box.getCenter(target);
     // One small header near an edge: lean the view a little toward the board's middle so it shows where on the board it is
     // One header: close enough to count its pins. A slot or anything bigger: framed whole.
-    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focus.length === 1 ? (focus[0].item.pins ? 0.16 : 0.3) : 0.3);
-    const fit = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * (focus.length ? 1.25 : 0.98);
-    const dir = new THREE.Vector3(0.08, focus.length ? 0.5 : 0.32, 1).normalize();
+    const close = focus.length > 0 || !!one;
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, focus.length === 1 ? (focus[0].item.pins ? 0.16 : 0.3) : one ? 0.55 : 0.3);
+    const fit = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * (close ? 1.25 : 0.98);
+    const dir = new THREE.Vector3(0.08, close ? 0.5 : 0.32, 1).normalize();
     // The callout columns, or a phone's list, take room beside the board: fit the board in what's left.
     const room = w && labels.length ? callouts.room(w) : null;
     const uw = Math.max(1, w - (room ? room.l + room.r : 0)), uh = Math.max(1, h - (room ? room.t + room.b : 0));
     const squeeze = room ? (h / uh) / Math.min(1, uw / uh) * Math.min(1, camera.aspect) : 1;
     camGoal.copy(target).addScaledVector(dir, Math.max(fit * squeeze / Math.min(1, camera.aspect), controls.minDistance + 0.05));
+  }
+
+  // ---------- cables ----------
+  // The cable guide: each power cable comes through the case's cable hole nearest its plug (where most cases have one)
+  // and ends in a plug sitting on its connector. The graphics card isn't part of the board, so it shows as an outline
+  // standing in its slot, with its power plug on its top edge where most cards have it.
+  interface CableNode {
+    draw: CableDraw;
+    to: BoardNode | null;
+    /** Plugs that stay lit while the board steps back. */
+    lit: BoardNode[];
+    plug: THREE.Object3D;
+    /** What the camera frames for this cable: its plug and what it plugs into. */
+    near: THREE.Object3D[];
+    start: THREE.Object3D;
+    end: THREE.Vector3;
+    mats: THREE.Material[];
+    tag: HTMLButtonElement;
+  }
+  let cables: CableNode[] = [], cableKey = "", cableRoot: THREE.Group | null = null, cableFocus: string | null = null, cableLit: string | null = null;
+  const PLUG = 0.14; // a plug's height above its connector, 14 mm
+  const noPick = (o: THREE.Object3D) => { o.raycast = () => {}; return o; };
+
+  function freeCables() {
+    cableRoot?.traverse((o) => {
+      if (!(o instanceof THREE.Mesh || o instanceof THREE.LineSegments)) return;
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    });
+    cableRoot?.removeFromParent();
+    cableRoot = null;
+    cables = [];
+    tags.replaceChildren();
+  }
+
+  function setCables(list: CableDraw[] | null) {
+    const key = JSON.stringify(list);
+    if (key === cableKey) return;
+    cableKey = key;
+    freeCables();
+    cableFocus = null; cableLit = null;
+    if (list?.length) {
+      cableRoot = new THREE.Group();
+      built.group.add(cableRoot);
+      for (const d of list) {
+        const c = makeCable(d);
+        if (c) cables.push(c);
+      }
+    }
+    labels = []; // the old anchors went with the old cables
+    highlight(null);
+  }
+
+  // A dark slot in the tray where a cable comes through, facing the viewer.
+  function grommet(at: THREE.Vector3, w: number, h: number, mats: THREE.Material[]) {
+    const m = new THREE.MeshStandardMaterial({ color: "#0d0e10", roughness: 0.8 });
+    mats.push(m);
+    const g = new THREE.Mesh(new THREE.ShapeGeometry(rounded(w, h, Math.min(w, h) / 2) as THREE.Shape, 6), m);
+    g.position.copy(at).setZ(at.z - 0.004);
+    return noPick(g);
+  }
+
+  function makeCable(d: CableDraw): CableNode | null {
+    const color = cableColor[d.id] ?? soft.grey;
+    const mats: THREE.Material[] = [];
+    const group = new THREE.Group();
+    const sleeve = realMaterial(color, { metal: 0.05, rough: 0.62 });
+    const housing = realMaterial("#1c1d20", { metal: 0.05, rough: 0.5 });
+    const band = realMaterial(color, { metal: 0.05, rough: 0.5 });
+    mats.push(sleeve, housing, band);
+    let to: BoardNode | null = null, end: THREE.Vector3, route: THREE.Vector3[], radius: number, hole: [number, number];
+    const lit: BoardNode[] = [];
+    let plug: THREE.Object3D;
+    const near: THREE.Object3D[] = [];
+    if (d.to) {
+      to = nodes.find((n) => n.item.id === d.to) ?? null;
+      if (!to) return null;
+      lit.push(to);
+      near.push(to.group);
+      const p = to.group.position, w = to.item.w / 100, h = to.item.h / 100, top = to.top;
+      end = new THREE.Vector3(p.x, p.y, top + PLUG);
+      plug = rbox(w + 0.012, h + 0.012, PLUG, housing, p.x, p.y, top + PLUG / 2, 0.006);
+      group.add(plug, rbox(w + 0.016, h + 0.016, 0.03, band, p.x, p.y, top + PLUG - 0.018, 0.004));
+      if (d.id === "atx24") {
+        // Through the hole beside the board's front edge
+        const g = new THREE.Vector3(BW + 0.22, p.y - 0.05, -0.06);
+        route = [g, new THREE.Vector3(BW + 0.2, p.y - 0.02, 0.16), new THREE.Vector3(p.x + 0.06, p.y, top + PLUG + 0.24), end];
+        radius = 0.07; hole = [0.13, 0.24];
+      } else {
+        // Through the hole above the board's top rear corner
+        const g = new THREE.Vector3(p.x - 0.04, 0.17, -0.06);
+        route = [g, new THREE.Vector3(p.x - 0.03, 0.1, 0.1), new THREE.Vector3(p.x, p.y + 0.04, top + PLUG + 0.14), end];
+        radius = 0.042; hole = [0.16, 0.11];
+      }
+    } else {
+      // The graphics card: an outline standing in its slot, its cooler hanging below it as in a tower.
+      const slot = nodes.find((n) => n.item.id === "pcie1") ?? nodes.find((n) => n.item.kind === "pcie");
+      if (!slot) return null;
+      lit.push(slot);
+      const card = d.card ?? { length: 267, height: 134, thick: 42 };
+      const L = card.length / 100, Hc = card.height / 100, T = card.thick / 100;
+      const x0 = -0.02, y1 = slot.group.position.y + 0.006;
+      const ghost = new THREE.MeshStandardMaterial({ color: "#3a3c42", roughness: 0.6, metalness: 0.2, transparent: true, opacity: 0.42, depthWrite: false });
+      const edges = new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.5, toneMapped: false });
+      mats.push(ghost, edges);
+      const shape = new THREE.BoxGeometry(L, T, Hc);
+      const body = new THREE.Mesh(shape, ghost);
+      body.position.set(x0 + L / 2, y1 - T / 2, Hc / 2);
+      body.renderOrder = 3;
+      const outline = new THREE.LineSegments(new THREE.EdgesGeometry(shape), edges);
+      outline.position.copy(body.position);
+      group.add(noPick(body), noPick(outline));
+      near.push(body);
+      // Its power plug: on the top edge, a little past the middle toward the front.
+      const px = x0 + L * 0.62, py = y1 - 0.03;
+      end = new THREE.Vector3(px, py, Hc + PLUG);
+      plug = rbox(0.21, 0.08, PLUG, housing, px, py, Hc + PLUG / 2, 0.006);
+      group.add(plug, rbox(0.214, 0.084, 0.03, band, px, py, Hc + PLUG - 0.018, 0.004));
+      // Up from the power supply's cover below the board, then over the card's edge to the plug.
+      const g = new THREE.Vector3(px + 0.4, -BH - 0.2, -0.06);
+      route = [g, new THREE.Vector3(px + 0.42, -BH - 0.06, 0.24), new THREE.Vector3(px + 0.36, y1 - T - 0.32, Hc * 0.8), new THREE.Vector3(px + 0.12, py, Hc + PLUG + 0.24), end];
+      radius = 0.045; hole = [0.16, 0.11];
+    }
+    const curve = new THREE.CatmullRomCurve3(route, false, "centripetal");
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, radius, 12, false), sleeve);
+    tube.castShadow = true;
+    group.add(noPick(tube), grommet(route[0], hole[0], hole[1], mats));
+    plug.castShadow = true;
+    group.traverse(noPick);
+    for (const m of mats) { m.transparent = true; m.userData.op = m.opacity; }
+    const start = new THREE.Object3D();
+    start.position.copy(route[0]);
+    group.add(start);
+    cableRoot!.add(group);
+    const tag = document.createElement("button");
+    tag.type = "button";
+    tag.className = "cable-tag";
+    tag.textContent = String(d.step);
+    tag.style.setProperty("--c", color);
+    tag.setAttribute("aria-label", `${d.step}. ${d.title}. Show its plug`);
+    tag.addEventListener("pointerenter", () => lightCables(d.id));
+    tag.addEventListener("pointerleave", () => lightCables(null));
+    tag.addEventListener("click", () => focusCable(d.id));
+    tags.append(tag);
+    near.push(plug);
+    return { draw: d, to, lit, plug, near, start, end, mats, tag };
+  }
+
+  /** One cable at full strength and the rest faded, or all of them as they are. */
+  function lightCables(id: string | null) {
+    const on = id ?? cableFocus;
+    if (on === cableLit) return;
+    cableLit = on;
+    for (const c of cables) {
+      for (const m of c.mats) m.opacity = (m.userData.op as number) * (!on || c.draw.id === on ? 1 : 0.2);
+      c.tag.classList.toggle("is-faded", !!on && c.draw.id !== on);
+    }
+    invalidate();
+  }
+  function hoverCable(id: string | null) { lightCables(id); }
+  function focusCable(id: string) {
+    if (!cables.some((c) => c.draw.id === id)) return;
+    cableFocus = id;
+    lightCables(null);
+    highlight(null);
   }
 
   // ---------- picking ----------
@@ -606,6 +807,19 @@ export function createBoardScene(
     }
     const right = card.hidden || offsetFor !== "right" ? w : w - card.offsetWidth - 24;
     callouts.layout(points, { width: right, height: h, box: { x0, y0, x1: Math.min(x1, right), y1 }, hovered, selected: focus.length === 1 ? focus[0].item.id : null });
+    // Each cable's number sits just above its plug; hidden while one part is picked.
+    tags.hidden = !cables.length || focus.length > 0;
+    if (!tags.hidden) {
+      // Two plugs side by side (the processor's two) keep their numbers apart, the later one nudged to the right.
+      const at: [number, number][] = [];
+      for (const c of cables) {
+        let [x, y, z] = toScreen(c0.copy(c.end).setZ(c.end.z + 0.04).applyMatrix4(built.group.matrixWorld));
+        for (const [px, py] of at) if (Math.abs(x - px) < 28 && Math.abs(y - py) < 28) x = px + 28;
+        at.push([x, y]);
+        c.tag.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+        c.tag.hidden = z > 1;
+      }
+    }
   }
 
   const wasT = new THREE.Vector3(), wasP = new THREE.Vector3();
@@ -643,13 +857,17 @@ export function createBoardScene(
     highlight,
     hover,
     setUsage,
-    reset() { highlight(null); },
+    setCables,
+    hoverCable,
+    focusCable,
+    reset() { cableFocus = null; cableLit = null; lightCables(null); highlight(null); },
     stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls, ms: lastMs, frames }),
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
       clearFocus();
       hoverHalos.forEach(freeMesh);
+      freeCables();
       controls.dispose();
       // Geometry and materials are the board's own; textures drawn once and shared between views stay.
       scene.traverse((o) => {
@@ -665,6 +883,7 @@ export function createBoardScene(
       renderer.domElement.remove();
       callouts.dispose();
       layer.remove();
+      tags.remove();
       card.remove();
     },
   };

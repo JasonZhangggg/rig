@@ -82,3 +82,40 @@
 .po-pin.is-small { width: calc(var(--po-pin) * .62); height: calc(var(--po-pin) * .62); justify-self: center; align-self: end; }
 /* Six pins a row (the 16-pin plug) fit the card's width. */
 .po-grid.is-labeled.is-wide { --po-pin: 26px; column-gap: 8px; padding: 12px; }
+
+/* Cables: one row per power cable, numbered in the order to plug them in, its number in the cable's own color on the board. */
+.bc { display: flex; flex-direction: column; gap: 10px; }
+.bc-lead { margin: 0; font-size: 14px; }
+.bc-list { display: flex; flex-direction: column; margin: 0 -12px; padding: 0; list-style: none; }
+.bc-list li + li .bc-row { background: linear-gradient(var(--line), var(--line)) 12px 0 / calc(100% - 24px) 1px no-repeat; }
+.bc-row {
+  display: grid; grid-template-columns: 26px 1fr; gap: 12px; width: 100%; padding: 14px 12px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.bc-row:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .bc-row:hover { background-color: var(--sel); }
+}
+.bc-step {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--c);
+  color: #1B1B1F; font-size: 13px; font-weight: 650;
+}
+.bc-txt { display: grid; gap: 3px; min-width: 0; }
+.bc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.bc-head b { font-size: 15px; font-weight: 600; }
+.bc-head small { color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.bc-tag { align-self: center; height: 20px; padding: 0 8px; font-size: 11px; }
+.bc-plug { color: var(--text-2); font-size: 13px; }
+.bc-how { color: var(--text-3); font-size: 13px; line-height: 1.4; }
+.bc-notes { display: grid; gap: 6px; margin: 0; padding: 0 0 0 18px; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.bc-from { margin: 0; font-size: 12px; line-height: 1.4; }
+/* The cable guide's numbers on the board, each just above its cable's plug. */
+.cable-tags { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+.cable-tag {
+  position: absolute; top: -32px; left: -12px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0;
+  border-radius: 50%; background: var(--c); color: #1B1B1F; font: 650 12px/1 var(--font); font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px rgba(20, 21, 23, .55), 0 2px 6px rgba(0, 0, 0, .35); pointer-events: auto; cursor: pointer; will-change: transform;
+  transition: opacity .15s;
+}
+.cable-tag.is-faded { opacity: .35; }
+.cable-tag:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
