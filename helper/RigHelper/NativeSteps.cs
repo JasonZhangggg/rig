@@ -107,8 +107,11 @@ public sealed record NativeOpStep(string Name, JsonObject Op) : HelperStep
 }
 
 /// What an op's check found: the op as Rig keeps and fingerprints it, with anything it doesn't know dropped, its tier
-/// (1 to 3) and why, and the places it changes that Rig can snapshot and put back itself.
-public sealed record NativeCheck(JsonObject Op, int Tier, IReadOnlyList<string> Reasons, IReadOnlyList<Touch> Touches);
+/// (1 to 3) and why, and the places it changes that Rig can snapshot and put back itself. `Held` is what the helper
+/// itself knows about the op and the app never sent: the worker gets it as the op's `held`, and it is kept with the
+/// record of an applied step. `Expect` is the line Preview must give for the change to be the one the person saw; when
+/// the state reads otherwise, nothing is approved or run.
+public sealed record NativeCheck(JsonObject Op, int Tier, IReadOnlyList<string> Reasons, IReadOnlyList<Touch> Touches, JsonObject? Held = null, string? Expect = null);
 
 public interface INativeStep
 {
@@ -121,7 +124,10 @@ public interface INativeStep
     /// must return the same op, or the step is refused as changed.
     NativeCheck Check(JsonObject op);
 
-    // The four below run only in the worker, as the person, with the op exactly as Check returned it.
+    /// The check of a step that was applied, before its undo, with what its check held when it ran.
+    NativeCheck Recheck(JsonObject op, JsonObject held) => Check(op);
+
+    // The four below run only in the worker, as the person, with the op exactly as Check returned it, plus `held`.
 
     /// The state the op changes, as one line that reads the same whenever the state is the same. It is shown on the card,
     /// and compared before an undo to tell whether something else changed the state since.
@@ -140,7 +146,7 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [];
+    static readonly INativeStep[] All = [new ScreenStep()];
 
     /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
     static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
@@ -163,7 +169,7 @@ public static class NativeWorker
     static string Short(string text) => text.Length <= 300 ? text : text[..300] + "…";
 
     /// Has a worker with the person's own sign-in do one part of a native op, and waits for its answer.
-    public static Answer Ask(Person person, CommandStore store, string verb, NativeOpStep step, JsonObject? back, bool selfTest, int timeoutMs = TimeoutMs)
+    public static Answer Ask(Person person, CommandStore store, string verb, NativeOpStep step, JsonObject? back, bool selfTest, int timeoutMs = TimeoutMs, JsonObject? held = null)
     {
         // Windows' services have no desktop of the person's to work on, and no Rig app to take the person's sign-in from.
         if (!selfTest && Process.GetCurrentProcess().SessionId == 0) return Failed(NoDesktop);
@@ -171,7 +177,7 @@ public static class NativeWorker
         string file = Path.Combine(store.PersonScripts(person.Sid), CommandStore.NewId() + ".json");
         try
         {
-            var request = new JsonObject { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone() };
+            var request = new JsonObject { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone(), ["held"] = held?.DeepClone() };
             File.WriteAllText(file, request.ToJsonString());
             var ran = person.Start(exe, $"{Flag} \"{file}\"" + (selfTest ? $" {SelfTestFlag}" : ""), timeoutMs, store.Empty());
             if (ran.TimedOut) return Failed($"It didn't finish in {timeoutMs / 1000} seconds, so Rig stopped it.", timedOut: true);
@@ -186,7 +192,21 @@ public static class NativeWorker
         finally { try { File.Delete(file); } catch { } }
     }
 
-    /// RigHelper.exe --native-worker <file>: does the one part the file asks for and prints its answer as one line of JSON.
+    static int said;
+
+    /// Prints the worker's answer as one line of JSON, once: a walk the person stopped answers from the Stop bar's own thread.
+    public static void Say(JsonObject answer)
+    {
+        if (Interlocked.Exchange(ref said, 1) != 0) return;
+        using var me = WindowsIdentity.GetCurrent();
+        answer["integrity"] = Native.Integrity(me.Token);
+        answer["session"] = Process.GetCurrentProcess().SessionId;
+        // A windowed program has no console, so the answer goes straight to the handle the helper gave it.
+        using var o = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(Native.GetStdHandle(Native.STD_OUTPUT_HANDLE), ownsHandle: false), FileAccess.Write);
+        o.Write(Encoding.UTF8.GetBytes(answer.ToJsonString()));
+    }
+
+    /// RigHelper.exe --native-worker <file>: does the one part the file asks for and prints its answer.
     public static int Run(string file, bool selfTest)
     {
         var answer = new JsonObject();
@@ -198,8 +218,10 @@ public static class NativeWorker
             if (!selfTest && Person.IsElevated(me.Token)) throw new RigException(Commands.AppElevated);
             if (JsonNode.Parse(File.ReadAllText(file)) is not JsonObject req || req["op"] is not JsonObject op) throw new RigException("Rig's worker was started without anything to do.");
             if (NativeSteps.Find(req["name"]?.ToString() ?? "", selfTest) is not INativeStep step) throw new RigException(Commands.UnknownOp);
+            if (req["held"] is JsonObject held) op["held"] = held.DeepClone();
             answer["result"] = req["verb"]?.ToString() switch
             {
+                "look" when step is ScreenStep screen => screen.Look(op, selfTest),
                 "preview" => new JsonObject { ["now"] = step.Preview(op) },
                 "apply" => new JsonObject { ["back"] = step.Apply(op) },
                 "verify" => new JsonObject { ["problem"] = step.Verify(op), ["now"] = step.Preview(op) },
@@ -213,12 +235,9 @@ public static class NativeWorker
             answer["ok"] = false;
             answer["error"] = e is RigException ? e.Message : $"Rig's worker hit a problem: {e.Message}";
         }
-        answer["integrity"] = Native.Integrity(me.Token);
-        answer["session"] = Process.GetCurrentProcess().SessionId;
-        // A windowed program has no console, so the answer goes straight to the handle the helper gave it.
-        using (var o = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(Native.GetStdHandle(Native.STD_OUTPUT_HANDLE), ownsHandle: false), FileAccess.Write))
-            o.Write(Encoding.UTF8.GetBytes(answer.ToJsonString()));
-        return answer["ok"]!.GetValue<bool>() ? 0 : 1;
+        bool ok = answer["ok"]!.GetValue<bool>();
+        Say(answer);
+        return ok ? 0 : 1;
     }
 
     static JsonObject Undone(INativeStep step, JsonObject op, JsonObject back)

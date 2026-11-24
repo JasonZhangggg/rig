@@ -37,6 +37,36 @@ static partial class Native
         finally { CloseHandle(p); }
     }
 
+    /// The integrity level a process runs at (see Integrity), or 0 when Windows won't say.
+    public static int ProcessIntegrity(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return 0;
+        try
+        {
+            if (!OpenProcessToken(p, TOKEN_QUERY, out var t)) return 0;
+            try { return Integrity(t); }
+            finally { CloseHandle(t); }
+        }
+        finally { CloseHandle(p); }
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, System.Text.StringBuilder name, ref int size);
+
+    /// The full path of the program a process runs, or null when Windows won't say.
+    public static string? ProcessImage(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return null;
+        try
+        {
+            var name = new System.Text.StringBuilder(1024);
+            int size = name.Capacity;
+            return QueryFullProcessImageNameW(p, 0, name, ref size) ? name.ToString(0, size) : null;
+        }
+        finally { CloseHandle(p); }
+    }
+
     // ----- How much a token may do -----
     const int TokenIntegrityLevelClass = 25;
     public const int STD_OUTPUT_HANDLE = -11, MediumIntegrity = 0x2000, HighIntegrity = 0x3000;

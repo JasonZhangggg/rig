@@ -350,7 +350,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
         "read" => Reads.Read(p?["read"] as JsonObject, owner),
-        "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" => commands.Value.Handle(method, p),
+        "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" or "screen.look" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }
