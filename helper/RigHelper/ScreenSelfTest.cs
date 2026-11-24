@@ -4,7 +4,10 @@
 // three tabs, on the second a checkbox and a drop-down, on the third a list
 // and a rich text box holding tabs of its own (UI Automation calls such
 // a box a Document, as it does a web page); below them two checkboxes with the
-// same name and an Apply button. The controls only take effect when Apply is
+// same name, an Advanced... button that opens a small window of its own with
+// a checkbox, OK and Cancel, and an Apply button, with a Cancel beside it that
+// only one check shows. The controls only take effect when Apply (or the small
+// window's OK) is
 // pressed, and Apply is on only while a control differs from what it last
 // took, as in a Windows settings dialog, so a check can tell a walk that set a
 // control from one that also pressed Apply. The worker drives that window from
@@ -21,19 +24,20 @@ namespace Rig.Helper;
 
 static class ScreenSelfTest
 {
-    const string WindowClass = "RigSelftestWindow", App = ScreenRules.SelfTestApp, Skip = CommandSelfTest.Skip;
-    const int ApplyId = 1, SharpenId = 10, QualityId = 11;
+    const string WindowClass = "RigSelftestWindow", DialogClass = "RigSelftestDialog", App = ScreenRules.SelfTestApp, Skip = CommandSelfTest.Skip;
+    const int ApplyId = 1, SharpenId = 10, QualityId = 11, AdvancedId = 40, SmoothId = 41, OkId = 42, CancelId = 43;
     const uint BM_GETCHECK = 0xf0, BM_SETCHECK = 0xf1, CB_ADDSTRING = 0x143, CB_GETCURSEL = 0x147, CB_SETCURSEL = 0x14e, CB_SHOWDROPDOWN = 0x14f, TCM_GETCURSEL = 0x130b, TCM_SETCURSEL = 0x130c, TCM_INSERTITEMW = 0x133e;
     const uint LB_ADDSTRING = 0x180, LB_SETCURSEL = 0x186, LB_GETCURSEL = 0x188;
 
-    static IntPtr window, tab, nothing, sharpen, label, quality, modes, page, pageTabs, twin, apply;
+    static IntPtr window, tab, nothing, sharpen, label, quality, modes, page, pageTabs, twin, apply, cancel, smooth;
     static int shown = -1;
     static bool hidden;
-    /// What the window's Apply last took from its controls, and how often it was pressed.
-    static volatile int applied, appliedSharpen, appliedQuality;
+    /// What the window's Apply last took from its controls, and how often it was pressed; what the small window's OK took.
+    static volatile int applied, appliedSharpen, appliedQuality, appliedSmooth;
     /// `hide` takes the second tab's controls away, as a page an app is still loading; `linked` makes the first Twin
-    /// follow the checkbox, as a setting that changes another.
-    static volatile bool hide, linked, linkedSeen;
+    /// follow the checkbox, as a setting that changes another; `alwaysOn` keeps Apply on; `swap` names Apply "Use these"
+    /// while a control differs from what it last took.
+    static volatile bool hide, linked, linkedSeen, alwaysOn, swap;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct TCITEM { public uint mask, dwState, dwStateMask; public string pszText; public int cchTextMax, iImage; public IntPtr lParam; }
@@ -64,6 +68,9 @@ static class ScreenSelfTest
                 appliedQuality = Quality;
                 applied++;
                 return 0;
+            case Win.WM_COMMAND when ((long)w & 0xffff) == AdvancedId && (((long)w >> 16) & 0xffff) == 0:
+                if (Win.FindWindowW(DialogClass, null) == IntPtr.Zero) Advanced(hwnd);
+                return 0;
             case Win.WM_TIMER:
                 if (Tab != shown || hide != hidden)
                 {
@@ -78,11 +85,34 @@ static class ScreenSelfTest
                     linkedSeen = Sharpen;
                     Win.SendMessageW(twin, BM_SETCHECK, Sharpen ? 1 : 0, 0);
                 }
-                if (IsWindowEnabled(apply) != Dirty) EnableWindow(apply, Dirty);
+                if (IsWindowEnabled(apply) != (alwaysOn || Dirty)) EnableWindow(apply, alwaysOn || Dirty);
+                if (swap && Title(apply) != (Dirty ? "Use these" : "Apply")) SetWindowTextW(apply, Dirty ? "Use these" : "Apply");
                 return 0;
             case Win.WM_DESTROY:
                 Win.PostQuitMessage(0);
                 break;
+        }
+        return Win.DefWindowProcW(hwnd, msg, w, l);
+    }
+
+    /// The small window Advanced... opens: its checkbox shows what its OK last took, and OK takes it.
+    static void Advanced(IntPtr owner)
+    {
+        const uint popup = Win.WS_POPUP | 0x00C00000 | 0x00080000 | Win.WS_VISIBLE, seen = Win.WS_CHILD | Win.WS_VISIBLE;
+        IntPtr made = Win.Make(0, DialogClass, "Advanced", popup, 200, 200, 260, 140, owner);
+        smooth = Win.Make(0, "BUTTON", "Smooth edges", seen | 0x3, 20, 15, 200, 24, made, SmoothId);
+        Win.SendMessageW(smooth, BM_SETCHECK, appliedSmooth, 0);
+        Win.Make(0, "BUTTON", "OK", seen, 40, 60, 80, 28, made, OkId);
+        Win.Make(0, "BUTTON", "Cancel", seen, 130, 60, 80, 28, made, CancelId);
+    }
+
+    static IntPtr DialogProc(IntPtr hwnd, uint msg, IntPtr w, IntPtr l)
+    {
+        if (msg == Win.WM_COMMAND && (((long)w >> 16) & 0xffff) == 0 && ((long)w & 0xffff) is OkId or CancelId)
+        {
+            if (((long)w & 0xffff) == OkId) appliedSmooth = Win.SendMessageW(smooth, BM_GETCHECK, 0, 0) == 1 ? 1 : 0;
+            Win.DestroyWindow(hwnd);
+            return 0;
         }
         return Win.DefWindowProcW(hwnd, msg, w, l);
     }
@@ -95,8 +125,9 @@ static class ScreenSelfTest
             var which = new INITCOMMONCONTROLSEX { dwSize = 8, dwICC = 0x8 };
             InitCommonControlsEx(ref which);
             Win.Class(WindowClass, Proc);
+            Win.Class(DialogClass, DialogProc);
             const uint child = Win.WS_CHILD, seen = Win.WS_CHILD | Win.WS_VISIBLE, checkbox = 0x3, dropList = 0x3;
-            IntPtr made = Win.Make(0, WindowClass, "Rig self-test", Win.WS_OVERLAPPEDWINDOW | Win.WS_VISIBLE, 120, 120, 470, 300);
+            IntPtr made = Win.Make(0, WindowClass, "Rig self-test", Win.WS_OVERLAPPEDWINDOW | Win.WS_VISIBLE, 120, 120, 470, 340);
             if (made != IntPtr.Zero)
             {
                 tab = Win.Make(0, "SysTabControl32", "", seen, 10, 10, 430, 180, made, 2);
@@ -116,7 +147,9 @@ static class ScreenSelfTest
                 Tabs(pageTabs, "Page one", "Page two");
                 twin = Win.Make(0, "BUTTON", "Twin", seen | checkbox, 30, 205, 90, 24, made, 20);
                 Win.Make(0, "BUTTON", "Twin", seen | checkbox, 130, 205, 90, 24, made, 21);
+                Win.Make(0, "BUTTON", "Advanced...", seen, 230, 203, 100, 28, made, AdvancedId);
                 apply = Win.Make(0, "BUTTON", "Apply", seen | 0x08000000, 340, 203, 96, 28, made, ApplyId);
+                cancel = Win.Make(0, "BUTTON", "Cancel", child, 340, 240, 96, 28, made, CancelId);
                 Win.SetTimer(made, 1, 50, IntPtr.Zero);
                 Win.SetWindowPos(made, 0, 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x40);
             }
@@ -149,15 +182,17 @@ static class ScreenSelfTest
 
     static void Reset()
     {
-        hide = linked = linkedSeen = false;
+        hide = linked = linkedSeen = alwaysOn = swap = false;
+        if (Win.FindWindowW(DialogClass, null) is var open && open != IntPtr.Zero) Win.SendMessageW(open, Win.WM_CLOSE, 0, 0);
         SetWindowTextW(apply, "Apply");
+        Win.ShowWindow(cancel, 0);
         Win.SendMessageW(tab, TCM_SETCURSEL, 0, 0);
         Win.SendMessageW(pageTabs, TCM_SETCURSEL, 0, 0);
         Win.SendMessageW(modes, LB_SETCURSEL, 0, 0);
         Win.SendMessageW(sharpen, BM_SETCHECK, 0, 0);
         Win.SendMessageW(twin, BM_SETCHECK, 0, 0);
         Win.SendMessageW(quality, CB_SETCURSEL, 0, 0);
-        appliedSharpen = appliedQuality = 0;
+        appliedSharpen = appliedQuality = appliedSmooth = 0;
         Thread.Sleep(200);
         applied = 0;
     }
@@ -184,10 +219,12 @@ static class ScreenSelfTest
         ("screen: a value that moved since the look is refused at apply", () => OnDesktop(rig, store, Moved)),
         ("screen: Stop ends a walk", () => OnDesktop(rig, store, Stopped)),
         ("screen: after Stop during an apply nothing walks the window again", () => OnDesktop(rig, store, StoppedApply)),
+        ("screen: after Stop during the read-back the change stands and nothing walks the window again", () => OnDesktop(rig, store, StoppedVerify)),
         ("screen: an app that wants a button Rig doesn't know pressed isn't reported as changed", () => OnDesktop(rig, store, UnknownCommit)),
         ("screen: Apply isn't pressed over changes the card didn't show", () => OnDesktop(rig, store, NotShown)),
+        ("screen: OK is pressed only in a window the walk opened", () => OnDesktop(rig, store, OkWindow)),
         ("screen: a look picks no list row and presses nothing in web content", () => OnDesktop(rig, store, LookActs)),
-        ("screen: a look at a program that ships with Windows", () => OnDesktop(rig, store, RealProgram, last: true)),
+        ("screen: a look at a program that ships with Windows and saves nothing with a button", () => OnDesktop(rig, store, RealProgram, last: true)),
     ];
 
     /// Runs a check that drives the self-test's window, with the worker's self-test switch on. What the check adds to
@@ -429,14 +466,107 @@ static class ScreenSelfTest
         if (Sharpen || applied != 0) yield return "a stopped apply changed the checkbox or pressed Apply";
     }
 
-    /// The window's Apply reads "Use these", a name not on Rig's list.
+    /// A commit button named "Use these", not on Rig's list: always on, the look is refused; put in Apply's place by the
+    /// change, the change is put back.
     static IEnumerable<string> UnknownCommit(Commands rig)
     {
         SetWindowTextW(apply, "Use these");
+        alwaysOn = true;
+        Thread.Sleep(200);
+        var on = LookAt(rig, App, "Display", "Sharpen images");
+        if (on["refused"]?.ToString() != "Rig can't tell how Rig's self-test window saves this, so it won't change it." || on["lookId"] != null)
+            yield return $"a look in a window whose only commit button Rig doesn't know answered {on.ToJsonString()}";
+        if (Sharpen || applied != 0) yield return $"that look left the checkbox {(Sharpen ? "ticked" : "clear")} and pressed the unknown button {applied} times";
+
+        Reset();
+        swap = true;
         var look = LookAt(rig, App, "Display", "Sharpen images");
         var a = Apply(rig, Preview(rig, Step(look, "On")));
         if (!Is(a, "rolledBack") || !Error(a).Contains("Use these") || !Error(a).Contains("put Sharpen images back to Off")) yield return $"apply with a commit button Rig doesn't know answered {a.ToJsonString()}";
         if (Sharpen || applied != 0) yield return $"the checkbox is {(Sharpen ? "ticked" : "clear")} and the unknown button was pressed {applied} times";
+    }
+
+    /// The window's Apply reads OK beside a Cancel: OK there keeps whatever else is changed in it, so a look is refused and
+    /// a change looked at before is refused before it sets anything. Advanced... opens a window of its own with OK and
+    /// Cancel, and there the walk presses OK and reads the change back.
+    static IEnumerable<string> OkWindow(Commands rig)
+    {
+        const string onlyMine = "Rig presses OK only in a window it opened itself";
+        var look = LookAt(rig, App, "Display", "Sharpen images");
+        var p = Preview(rig, Step(look, "On"));
+        if (!Is(p, "ready")) { yield return $"the preview answered {p.ToJsonString()}"; yield break; }
+        SetWindowTextW(apply, "OK");
+        Win.ShowWindow(cancel, 8);
+        Thread.Sleep(200);
+        var refused = LookAt(rig, App, "Display", "Sharpen images");
+        if (refused["refused"]?.ToString().Contains(onlyMine) != true || refused["lookId"] != null) yield return $"a look in a window with OK and Cancel that Rig didn't open answered {refused.ToJsonString()}";
+        var a = Apply(rig, p);
+        if (!Is(a, "rolledBack") || !Error(a).Contains(onlyMine) || Left(a).Length > 0) yield return $"apply in a window with OK and Cancel that Rig didn't open answered {a.ToJsonString()}";
+        if (Sharpen || applied != 0) yield return $"apply in a window Rig didn't open left the checkbox {(Sharpen ? "ticked" : "clear")} and pressed OK {applied} times";
+
+        Reset();
+        var opened = LookAt(rig, App, "Advanced...", "Smooth edges");
+        if (opened["lookId"] == null || opened["value"]?.ToString() != "Off" || Options(opened) != "On,Off" || opened["clean"]?.GetValue<bool>() != true)
+        {
+            yield return $"the look in the window Advanced... opens answered {opened.ToJsonString()}";
+            yield break;
+        }
+        if (Win.FindWindowW(DialogClass, null) != IntPtr.Zero || appliedSmooth != 0) yield return "the look left the window it opened open, or pressed its OK";
+        var q = Preview(rig, Step(opened, "On"));
+        if (!Is(q, "ready") || q["read"]?.ToString() != "Smooth edges: Off") { yield return $"the preview in the opened window answered {q.ToJsonString()}"; yield break; }
+        var b = Apply(rig, q);
+        if (!Is(b, "applied") || b["result"]?["after"]?.ToString() != "Smooth edges: On") yield return $"apply in the window the walk opened answered {b.ToJsonString()}";
+        if (appliedSmooth != 1 || Win.FindWindowW(DialogClass, null) != IntPtr.Zero) yield return $"after apply the opened window's OK took {appliedSmooth}, and the window is {(Win.FindWindowW(DialogClass, null) != IntPtr.Zero ? "still open" : "closed")}";
+        if (applied != 0) yield return $"apply in the opened window pressed the main window's Apply {applied} times";
+        var u = Undo(rig, b);
+        if (!Is(u, "undone") || appliedSmooth != 0 || Win.FindWindowW(DialogClass, null) != IntPtr.Zero) yield return $"undo in the opened window answered {u.ToJsonString()}, and its OK took {appliedSmooth}";
+    }
+
+    /// Stop is pressed on the bar of the read-back, after the checkbox was set and Apply pressed (its tab is emptied so the
+    /// read waits there). The change stands, nothing puts it back or reads the window again, and the answer says it stopped.
+    static IEnumerable<string> StoppedVerify(Commands rig)
+    {
+        var look = LookAt(rig, App, "Display", "Sharpen images");
+        var p = Preview(rig, Step(look, "On"));
+        if (!Is(p, "ready")) { yield return $"the preview answered {p.ToJsonString()}"; yield break; }
+        var bars = new List<string>();
+        using var over = new ManualResetEventSlim();
+        var watch = Task.Run(() =>
+        {
+            IntPtr last = IntPtr.Zero;
+            bool changing = false, pressed = false;
+            while (!over.IsSet)
+            {
+                IntPtr bar = Win.FindWindowW(StopBar.Class, null);
+                if (bar == IntPtr.Zero) last = IntPtr.Zero;
+                else if (bar != last)
+                {
+                    last = bar;
+                    string text = Title(bar);
+                    lock (bars) bars.Add((pressed ? "after Stop: " : "") + text);
+                    if (text.StartsWith("Rig is changing", StringComparison.Ordinal)) changing = true;
+                    else if (changing && !pressed && text.StartsWith("Rig is reading", StringComparison.Ordinal))
+                    {
+                        hide = true;
+                        pressed = Win.PostMessageW(bar, Win.WM_COMMAND, StopBar.StopId, 0);
+                    }
+                }
+                Thread.Sleep(10);
+            }
+            return pressed;
+        });
+        JsonNode a;
+        try { a = Apply(rig, p); }
+        finally
+        {
+            over.Set();
+            hide = false;
+        }
+        if (!watch.Result) yield return $"the read-back showed no Stop bar to press (bars: {string.Join(" | ", bars)})";
+        if (bars.Any(b => b.StartsWith("after Stop", StringComparison.Ordinal))) yield return $"after Stop Rig walked the window again: {string.Join(" | ", bars)}";
+        if (!Is(a, "applied") || a["result"]?["stopped"]?.GetValue<bool>() != true || a["result"]?["after"]?.ToString().Contains("didn't finish reading") != true)
+            yield return $"the apply stopped during its read-back answered {a.ToJsonString()}";
+        if (!Sharpen || applied != 1 || appliedSharpen != 1) yield return $"after Stop during the read-back the checkbox is {(Sharpen ? "ticked" : "clear")}, and Apply was pressed {applied} times and took {appliedSharpen}";
     }
 
     /// Apply is pressed neither over the person's own unapplied edit nor over a control the change moved by itself.
@@ -481,6 +611,7 @@ static class ScreenSelfTest
     }
 
     /// A program named by its .exe is never started by a look, only used once it is open: here the self-test opens it.
+    /// Character Map keeps its checkbox without a button, so Rig won't change it and says so at the look.
     static IEnumerable<string> RealProgram(Commands rig)
     {
         string exe = Path.Combine(Environment.SystemDirectory, "charmap.exe");
@@ -511,8 +642,8 @@ static class ScreenSelfTest
             foreach (var p in Process.GetProcessesByName("charmap").Where(p => !before.Contains(p.Id)))
                 try { p.Kill(); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
         }
-        if (look["lookId"] == null || look["value"]?.ToString() is not ("On" or "Off") || Options(look) != "On,Off" || look["path"]?[0]?.ToString() != "charmap")
+        if (look["refused"]?.ToString() != "Rig can't tell how charmap saves this, so it won't change it." || look["lookId"] != null)
             yield return $"the look at Character Map's Advanced view checkbox answered {look.ToJsonString()}";
-        else if (look["clean"]?.GetValue<bool>() != true) yield return $"a signed program in Windows' own folder didn't give a clean look: {look.ToJsonString()}";
+        else if (look["clean"]?.GetValue<bool>() != true) yield return $"a signed program in Windows' own folder didn't count as clean: {look.ToJsonString()}";
     }
 }

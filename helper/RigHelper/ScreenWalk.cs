@@ -3,9 +3,12 @@
 // Everything goes through Windows UI Automation's COM interface. Nothing here
 // types, moves the mouse or presses a place on the screen. The only calls that
 // act are SelectionItem.Select, ExpandCollapse.Expand and Collapse,
-// Toggle.Toggle, RangeValue.SetValue and Invoke, and Invoke is only ever made
-// on the app's own Apply or OK button at the end of an approved change. None
-// is ever made on a control inside web content (under a Document). A
+// Toggle.Toggle, RangeValue.SetValue and Invoke. Invoke is made on the app's
+// own Apply button at the end of an approved change, on OK only in a window
+// the walk itself opened, and on the way only on a button whose name ends in
+// an ellipsis, which by Windows' convention opens a window; the walk goes on
+// in that window and closes it as it ends. None is ever made on a control
+// inside web content (under a Document). A
 // classic Windows drop-down list, which UI Automation can't set, takes the
 // approved entry inside an approved change by three messages to its own
 // window, the ones its list sends when a person picks an entry. Each call goes
@@ -84,7 +87,7 @@ static class Uia
         ValueValue = 30045, RangeValue = 30047, RangeReadOnly = 30048, RangeMin = 30049, RangeMax = 30050, ExpandState = 30070, IsSelected = 30079, ToggleState = 30086;
     public const int Invoke = 10000, Range = 10003, ExpandCollapse = 10005, SelectionItem = 10010, Toggle = 10015;
     public const int Button = 50000, CheckBox = 50002, ComboBox = 50003, ListItem = 50007, RadioButton = 50013, Slider = 50015, TabItem = 50019, TreeItem = 50024,
-        Group = 50026, DataItem = 50029, Document = 50030;
+        Group = 50026, DataItem = 50029, Document = 50030, MenuBar = 50010, ToolBar = 50021, TitleBar = 50037;
     const int Children = 2;
 
     static object? Value(IUIAutomationElement el, int property)
@@ -170,6 +173,7 @@ static class Win
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder name, int size);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint ms, out IntPtr result);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, string l, uint flags, uint ms, out IntPtr result);
@@ -327,7 +331,8 @@ sealed class StopBar : IDisposable
 sealed class ScreenWalk : IDisposable
 {
     const int MaxNodes = 5000, MaxDepth = 48, OpenMs = 30_000, FirstHopMs = 12_000, HopMs = 6_000, SettleMs = 3_000;
-    static readonly int[] WayTypes = [Uia.TabItem, Uia.TreeItem, Uia.ListItem, Uia.DataItem, Uia.Group];
+    static readonly int[] WayTypes = [Uia.TabItem, Uia.TreeItem, Uia.ListItem, Uia.DataItem, Uia.Group, Uia.Button];
+    static readonly int[] NotCommits = [Uia.TabItem, Uia.TreeItem, Uia.ListItem, Uia.DataItem, Uia.MenuBar, Uia.ToolBar, Uia.TitleBar];
     static readonly int[] TargetTypes = [Uia.CheckBox, Uia.ComboBox, Uia.Slider, Uia.Button, Uia.Group, Uia.ListItem, Uia.TreeItem, Uia.DataItem];
     static readonly int[] CleanTypes = [Uia.Button, Uia.CheckBox, Uia.ComboBox, Uia.ListItem, Uia.RadioButton, Uia.Slider, Uia.TabItem, Uia.TreeItem];
 
@@ -358,9 +363,9 @@ sealed class ScreenWalk : IDisposable
             return false;
         }
 
-        public bool InComboBox()
+        public bool Within(params int[] types)
         {
-            for (var n = parent; n != null; n = n.Up) if (n.Type == Uia.ComboBox) return true;
+            for (var n = parent; n != null; n = n.Up) if (types.Contains(n.Type)) return true;
             return false;
         }
     }
@@ -373,7 +378,7 @@ sealed class ScreenWalk : IDisposable
     readonly StopBar bar;
     readonly IUIAutomation uia;
     readonly IntPtr controls;
-    IntPtr hwnd;
+    IntPtr hwnd, dialog;
     int pid;
     string image = "";
     HashSet<IntPtr> before = [];
@@ -397,7 +402,11 @@ sealed class ScreenWalk : IDisposable
         }
     }
 
-    public void Dispose() => bar.Dispose();
+    public void Dispose()
+    {
+        Leave();
+        bar.Dispose();
+    }
 
     // ----- The app's window -----
 
@@ -431,6 +440,7 @@ sealed class ScreenWalk : IDisposable
     /// Finds the app's one window, starting an app from Rig's list when it has none to show. Settings is always opened at its page.
     void Open()
     {
+        Leave();
         var found = Windows(out bool minimised);
         if (found.Count == 0 && minimised && !app.Settings) throw new RigException($"{app.Name} {ScreenRules.Words("minimised")}");
         if (found.Count == 0 || app.Settings)
@@ -578,8 +588,13 @@ sealed class ScreenWalk : IDisposable
     /// Opens a stop on the way: selects a tab or a tree row, and expands a row or a group that is folded.
     void Enter(Node node)
     {
+        if (node.Type == Uia.Button)
+        {
+            Opens(node);
+            return;
+        }
         if (!node.Enabled) throw new RigException($"{node.Says} is greyed out in {app.Name}.");
-        if (node.InComboBox()) throw new RigException(ScreenRules.Words("combo-row"));
+        if (node.Within(Uia.ComboBox)) throw new RigException(ScreenRules.Words("combo-row"));
         if (node.Type is Uia.TabItem or Uia.TreeItem or Uia.ListItem or Uia.DataItem && !app.Settings
             && Uia.Pattern<IUIAutomationSelectionItemPattern>(node.El, Uia.SelectionItem) is { } item && !Uia.Bool(node.El, Uia.IsSelected))
         {
@@ -595,6 +610,43 @@ sealed class ScreenWalk : IDisposable
             Guard(node);
             Did(fold.Expand(), node);
         }
+    }
+
+    static bool Opener(Node n) => n.Name.TrimEnd() is var name && (name.EndsWith("...", StringComparison.Ordinal) || name.EndsWith('\u2026'));
+
+    /// Presses a button on the way that opens a window of the app's own, and goes on in that window. Only a button named
+    /// with an ellipsis, which by Windows' convention asks for more before it does anything, and only one in a walk.
+    void Opens(Node node)
+    {
+        if (app.Settings || dialog != IntPtr.Zero || !Opener(node) || KindOf(node) != null
+            || Commits(node, ScreenRules.Commit.Apply) || Commits(node, ScreenRules.Commit.Ok) || Commits(node, ScreenRules.Commit.Cancel))
+            throw new RigException($"Rig only presses a button on the way when its name ends in ... and it opens a window, and only one in a walk, so it didn't press {node.Says}.");
+        var invoke = Uia.Pattern<IUIAutomationInvokePattern>(node.El, Uia.Invoke) ?? throw new RigException($"Rig couldn't press {node.Says} in {app.Name}.");
+        Guard(node);
+        Did(invoke.Invoke(), node);
+        var clock = Stopwatch.StartNew();
+        while (true)
+        {
+            bar.Check();
+            if (Win.Tops().FirstOrDefault(t => !before.Contains(t) && !Win.Passing(t) && Win.Content(t).Pid == pid) is var opened && opened != IntPtr.Zero)
+            {
+                before.Add(opened);
+                dialog = hwnd = Win.Content(opened).Hwnd;
+                return;
+            }
+            if (clock.ElapsedMilliseconds > HopMs) throw new RigException($"Rig pressed {node.Says} in {app.Name} and no window opened, so it stopped.");
+            Thread.Sleep(150);
+        }
+    }
+
+    /// Closes the window an opening button showed, as its close box would, unless the person pressed Stop.
+    void Leave()
+    {
+        IntPtr shut = dialog;
+        dialog = IntPtr.Zero;
+        if (shut == IntPtr.Zero || bar.Pressed || !Win.IsWindow(shut) || Win.Pid(shut) != pid) return;
+        Win.PostMessageW(shut, Win.WM_CLOSE, 0, 0);
+        for (var clock = Stopwatch.StartNew(); Win.IsWindow(shut) && clock.ElapsedMilliseconds < SettleMs;) Thread.Sleep(100);
     }
 
     static string? KindOf(Node n) =>
@@ -658,7 +710,7 @@ sealed class ScreenWalk : IDisposable
     /// Closes a drop-down the walk opened, when Guard allows it. It runs as a walk ends, so a refusal leaves it open.
     void Close(Spot spot)
     {
-        if (!spot.Opened || Uia.Pattern<IUIAutomationExpandCollapsePattern>(spot.Control.El, Uia.ExpandCollapse) is not { } fold || Uia.Int(spot.Control.El, Uia.ExpandState) == 0) return;
+        if (bar.Pressed || !spot.Opened || Uia.Pattern<IUIAutomationExpandCollapsePattern>(spot.Control.El, Uia.ExpandCollapse) is not { } fold || Uia.Int(spot.Control.El, Uia.ExpandState) == 0) return;
         try { Guard(spot.Control); }
         catch (RigException) { return; }
         fold.Collapse();
@@ -723,6 +775,7 @@ sealed class ScreenWalk : IDisposable
         if (Target(new Hop("", goal[^1], 0, "", ""), previous, out var all, out int count) is not Spot spot) return Missing(goal[^1], count, all);
         try
         {
+            if (Unkept(Snapshot()) is string why) return new JsonObject { ["refused"] = why, ["clean"] = trusted };
             string value = Settled(spot);
             var options = spot.Kind switch
             {
@@ -791,10 +844,11 @@ sealed class ScreenWalk : IDisposable
                 if (look.Same(was, to)) return null;
                 var before = Baseline(spot);
                 if (before.Waiting) throw new RigException($"{app.Name} {ScreenRules.Words("waiting")}");
+                if (before.Unkept is string why) throw new RigException(why);
                 try
                 {
                     Put(look, spot, to);
-                    Commit(before, spot.Control, demand: true);
+                    Commit(before, spot.Control);
                 }
                 catch (RigException e) when (armed)
                 {
@@ -811,16 +865,31 @@ sealed class ScreenWalk : IDisposable
         catch (RigException) when (bar.Pressed && !armed) { throw new RigException($"{StopBar.Stopped} It hadn't changed {look.Target.Says} yet."); }
     }
 
-    /// What the window shows before Rig sets anything: the buttons a person could press, what every other control Rig
-    /// can read holds, and whether one of the app's Apply buttons is already on (changes are waiting that Rig didn't make).
-    sealed record Shown(HashSet<string> Buttons, Dictionary<string, (string Says, string Value)> States, bool Waiting);
+    /// What the window shows before Rig sets anything: what every other control Rig can read holds, whether one of the
+    /// app's Apply buttons is already on (changes are waiting that Rig didn't make), and why Rig can't keep a change there.
+    sealed record Shown(Dictionary<string, (string Says, string Value)> States, bool Waiting, string? Unkept);
 
     Shown Baseline(Spot spot)
     {
         var all = Snapshot();
-        var buttons = Buttons(all);
-        return new Shown(buttons.Select(Key).ToHashSet(), States(all, spot.Control), buttons.Any(b => Commits(b, ScreenRules.Commit.Apply)));
+        return new Shown(States(all, spot.Control), Buttons(all).Any(b => Commits(b, ScreenRules.Commit.Apply)), Unkept(all));
     }
+
+    /// Why Rig won't change a control in this window, by how the window keeps a change, or null. It keeps one with a button
+    /// on Rig's Apply list, on or not yet; with OK beside Cancel only in a window this walk opened, since OK keeps everything
+    /// changed in its window; and with no button only in an app marked as taking each change as it is made.
+    string? Unkept(List<Node> all)
+    {
+        var buttons = all.Where(n => n.Type == Uia.Button && !n.InDocument()).ToList();
+        if (buttons.Any(b => Commits(b, ScreenRules.Commit.Apply))) return null;
+        if (buttons.Any(b => Commits(b, ScreenRules.Commit.Ok)) && buttons.Any(b => Commits(b, ScreenRules.Commit.Cancel)))
+            return dialog != IntPtr.Zero ? null : $"{app.Name} keeps this with OK, which keeps everything changed in that window, and Rig presses OK only in a window it opened itself, so it won't change it.";
+        return app.AppliesOnChange ? null : $"Rig can't tell how {app.Name} saves this, so it won't change it.";
+    }
+
+    /// A button that could be what keeps a change: on, not a way out, a switch, a window opener or part of a bar, tab or row.
+    static bool Unlisted(Node b) =>
+        !Commits(b, ScreenRules.Commit.Cancel) && !string.Equals(b.Name.Trim(), "Close", StringComparison.OrdinalIgnoreCase) && KindOf(b) == null && !Opener(b) && !b.Within(NotCommits);
 
     static string Key(Node n) => $"{n.Type}|{n.Name}|{n.Id}|{n.Cls}";
     static List<Node> Buttons(List<Node> all) => all.Where(n => n.Type == Uia.Button && n.Enabled && !n.InDocument()).ToList();
@@ -937,10 +1006,10 @@ sealed class ScreenWalk : IDisposable
         return true;
     }
 
-    /// Presses the app's own Apply button, or OK in a window that also has Cancel, never one in web content, and only when
-    /// no other control Rig can read has moved since `before`. With `demand`, a button the change switched on that isn't on
-    /// Rig's lists, with none on them to press, means the app wants it pressed to keep the change, so the change isn't finished.
-    void Commit(Shown before, Node control, bool demand)
+    /// Presses the app's own Apply button, or OK beside Cancel in a window this walk opened, never one in web content, and
+    /// only when no other control Rig can read has moved since `before`. With none to press, only an app that takes each
+    /// change as it is made has kept it; in any other the change isn't finished.
+    void Commit(Shown before, Node control)
     {
         Thread.Sleep(300);
         var all = Snapshot();
@@ -948,12 +1017,13 @@ sealed class ScreenWalk : IDisposable
         var apply = buttons.Where(b => Commits(b, ScreenRules.Commit.Apply)).ToList();
         if (apply.Count > 1) throw new RigException($"{app.Name} shows more than one Apply button, so Rig pressed none.");
         Node? press = apply is [var one] ? one
-            : buttons.Where(b => Commits(b, ScreenRules.Commit.Ok)).ToList() is [var ok] && buttons.Any(b => Commits(b, ScreenRules.Commit.Cancel)) ? ok : null;
+            : dialog != IntPtr.Zero && buttons.Where(b => Commits(b, ScreenRules.Commit.Ok)).ToList() is [var ok] && buttons.Any(b => Commits(b, ScreenRules.Commit.Cancel)) ? ok : null;
         if (press == null)
         {
-            if (demand && !app.AppliesOnChange && buttons.FirstOrDefault(b => !before.Buttons.Contains(Key(b)) && !Commits(b, ScreenRules.Commit.Cancel)) is Node wants)
-                throw new RigException($"{app.Name} wants {(wants.Says.Length > 0 ? wants.Says : "a button")} pressed to keep this, and Rig only presses the buttons on its own list, so the change isn't finished.");
-            return;
+            if (app.AppliesOnChange) return;
+            throw new RigException(buttons.FirstOrDefault(Unlisted) is Node wants
+                ? $"{app.Name} wants {(wants.Says.Length > 0 ? wants.Says : "a button")} pressed to keep this, and Rig only presses the buttons on its own list, so the change isn't finished."
+                : $"{app.Name} didn't switch on a button Rig can press to keep this, so the change isn't finished.");
         }
         var now = States(all, control);
         if (before.States.FirstOrDefault(s => now.TryGetValue(s.Key, out var n) && n.Value != s.Value.Value) is { Key: not null } moved)
@@ -979,7 +1049,7 @@ sealed class ScreenWalk : IDisposable
                 {
                     var before = Baseline(spot);
                     Put(look, spot, was);
-                    if (committed) Commit(before, spot.Control, demand: false);
+                    if (committed) Commit(before, spot.Control);
                 }
             }
             finally { Close(spot); }
