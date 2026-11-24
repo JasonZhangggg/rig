@@ -225,7 +225,7 @@ describe("general command steps", () => {
     const driver = await proposal({ driver: { inf: "C:\\Drivers\\Realtek\\rt640x64.inf", catalog: "C:\\Drivers\\Realtek\\rt640x64.cat" } });
     expect(driver.p).toMatchObject({ tier: 3, steps: [{ kind: "command", cmd: { does: expect.stringContaining("always gets Rig's strongest check") } }] });
     expect((await proposal({ driver: { inf: "C:\\Drivers\\*.inf", catalog: "C:\\Drivers\\x.cat" } })).sent).toContain("driver: inf must be");
-  });
+  }, 60_000); // Eight chats in one test: near the default 30 seconds on a busy CI runner.
 
   it("reads NVIDIA's settings without tainting the chat, and proposes a gpu step from Rig's table", async () => {
     const vsyncOff = { vendor: "nvidia", app: "Game.exe", setting: "vsync", value: "off", does: "Turns vertical sync off for this game." };
