@@ -36,13 +36,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function openCard() {
   location.hash = "pc";
   render(<RigApp client={new DemoClient()} />);
-  // The first test pays for the app's cold start, which takes a few seconds on CI.
   fireEvent.click(await screen.findByRole("button", { name: /^Graphics card/ }, { timeout: 5000 }));
   await screen.findByRole("tab", { name: "Ports" }, { timeout: 5000 });
 }
 const group = (title: string) => screen.getByRole("heading", { name: title }).closest("li")!;
 
-describe("The graphics card on My PC", () => {
+// The first test pays for the app's cold start, which takes several seconds on a busy CI runner, so each test
+// gets as long as the waits above allow.
+describe("The graphics card on My PC", { timeout: 15000 }, () => {
   it("opens on the Ports tab with the screen on its one HDMI output named", async () => {
     await openCard();
     expect(screen.getByRole("tab", { name: "Ports" }).getAttribute("aria-selected")).toBe("true");
