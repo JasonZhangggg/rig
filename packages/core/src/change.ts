@@ -9,8 +9,10 @@
 // approval in the helper: preview, a nonce, apply, undo.
 
 import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
-import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
+import { checkScript, covers, inspectScript, localFile, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
 import type { Change } from "./client";
+import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
+import { fileEditRule, type FileEditOp } from "./fileEdit";
 import type { DiffRow } from "./model";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
 
@@ -31,7 +33,7 @@ export type HelperStep = CommandStep | NativeStep;
  * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
  * `nativeOps`, and one class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | ScreenOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp;
 
 /**
  * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
@@ -66,6 +68,10 @@ export interface NativeRule<O extends NativeOp> {
   title(op: O): string;
   /** Why this op is refused in this chat, when it is. */
   refusal?(op: O, ctx: CheckContext): { why: Refusal; refused: string } | undefined;
+  /** The places it changes that Rig snapshots and puts back itself, held to the never list. The helper's check gives the same. */
+  touches?(op: O): Touch[];
+  /** Rows for the card and the changes log: with the state the helper read before and after, once it has. */
+  rows?(op: O, before?: string, after?: string): DiffRow[];
 }
 
 const LOOK_ID = /^[0-9a-f]{32}$/;
@@ -79,6 +85,13 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
     reasons: () => ["Rig's own self-test change."],
     title: () => "Ran Rig's self-test change",
   },
+  gpu: {
+    canonical: canonicalGpu,
+    tier: (op) => GPU_SETTINGS[op.setting].tier,
+    reasons: () => ["A graphics driver setting from Rig's own list. Rig notes how it was and puts it back exactly on undo."],
+    title: gpuTitle,
+  },
+  fileEdit: fileEditRule,
   screen: {
     canonical: (raw) =>
       typeof raw.lookId !== "string" || !LOOK_ID.test(raw.lookId) || typeof raw.to !== "string" || !LINE.test(raw.to) || typeof raw.does !== "string" || !raw.does.trim() || raw.does.length > 500
@@ -99,6 +112,12 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
 
 const nativeRule = (name: unknown): NativeRule<NativeOp> | undefined =>
   typeof name === "string" && Object.hasOwn(nativeOps, name) ? (nativeOps[name as NativeOp["name"]] as NativeRule<NativeOp>) : undefined;
+
+/** A native op's rows for the card and the changes log, or null when its kind has none of its own. */
+export function nativeRows(raw: NativeOp, before?: string, after?: string): DiffRow[] | null {
+  const op = canonicalNative(raw);
+  return typeof op === "string" ? null : nativeRule(op.name)!.rows?.(op, before, after) ?? null;
+}
 
 /** The native op as the helper stores and checks it, or what is wrong with it. */
 export function canonicalNative(raw: unknown): NativeOp | string {
@@ -184,7 +203,7 @@ function touchOf(t: unknown): Touch | null {
       const key = `${/^(hkey_current_user|hkcu)$/i.test(m[1]) ? "HKCU" : "HKLM"}\\${m[2].replace(/\\+$/, "")}`;
       return typeof x.value === "string" ? { kind: "registry", key, value: x.value } : { kind: "registry", key };
     }
-    case "file": return /^[a-z]:\\/i.test(text) && !/(^|\\)\.\.(\\|$)/.test(text) && !/[a-z0-9]~\d/i.test(text) ? { kind: "file", path: text } : null;
+    case "file": return localFile(text) ? { kind: "file", path: text } : null;
     case "service": case "task": case "firewall": case "other": return { kind: x.kind, name: text };
     default: return null;
   }
@@ -222,10 +241,21 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
       const rule = nativeRule(op.name)!;
       const no = rule.refusal?.(op, ctx);
       if (no) return refuse(no.refused, no.why);
-      const tier = rule.tier(op);
+      const touches = rule.touches?.(op) ?? [];
+      for (const t of touches) {
+        const never = textOnNeverList(touchText(t), "run");
+        if (never) return refuse(`${never}.`, "never");
+      }
+      let tier = rule.tier(op);
+      const reasons = rule.reasons(op);
+      const lowers = touches.map((t) => textLowersProtection(touchText(t))).find((x) => x);
+      if (lowers) {
+        tier = 3;
+        reasons.push(`${lowers}.`);
+      }
       if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
       // The helper's worker makes it with the person's own rights, so it never needs admin rights.
-      return { status: "allowed", tier, admin: false, commands: [], reasons: rule.reasons(op), rulesVersion };
+      return { status: "allowed", tier, admin: false, commands: [], reasons, rulesVersion };
     }
   }
 }
@@ -393,8 +423,9 @@ export interface RunResult {
 }
 
 /** A run's touches as rows for the changes log: what, before, after. */
-export const runRows = (r: RunResult): DiffRow[] =>
-  r.touches.map((t) => [t.touch.kind === "registry" ? `${t.touch.key}${t.touch.value ? `\\${t.touch.value}` : ""}` : t.touch.kind === "file" ? t.touch.path : t.touch.name, t.before ?? "Not there", t.after ?? "Not there"]);
+/** The changes log's rows for a step the helper ran: a native op's own, when it has them, else each touch before and after. */
+export const runRows = (r: RunResult, step?: HelperStep): DiffRow[] =>
+  (step?.kind === "native" ? nativeRows(step.op, r.before, r.after) : null) ?? r.touches.map((t) => [t.touch.kind === "registry" ? `${t.touch.key}${t.touch.value ? `\\${t.touch.value}` : ""}` : t.touch.kind === "file" ? t.touch.path : t.touch.name, t.before ?? "Not there", t.after ?? "Not there"]);
 
 export type PreviewReply =
   | { outcome: "refused"; verdict: Refused }

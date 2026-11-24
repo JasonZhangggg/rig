@@ -202,29 +202,79 @@ describe("general command steps", () => {
     expect(lastToolResults(site.seen[1])).toContain("can't be offered from the website");
   });
 
-  it("builds firewall, policy, device and driver steps from their shorthands, with the tier the checker gives", async () => {
-    const proposal = async (step: Record<string, unknown>) => {
-      const { live, seen } = await chatSetup([{ tool: { name: "propose_change", input: { title: "Change it", why: "y", steps: [step] } } }, { text: "Review the card." }]);
-      return { p: of(await live(ask("Change it")), "proposal")[0]?.proposal, sent: lastToolResults(seen[1]) };
-    };
+  const proposal = async (step: Record<string, unknown>) => {
+    const { live, seen } = await chatSetup([{ tool: { name: "propose_change", input: { title: "Change it", why: "y", steps: [step] } } }, { text: "Review the card." }]);
+    return { p: of(await live(ask("Change it")), "proposal")[0]?.proposal, sent: lastToolResults(seen[1]) };
+  };
+
+  it("builds firewall steps from their shorthand, with the tier the checker gives", async () => {
     const port = await proposal({ firewall: { add: { name: "Minecraft server", direction: "inbound", action: "allow", protocol: "tcp", ports: [25565] } } });
     expect(port.p).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { does: expect.stringContaining("connect to TCP port 25565"), undo: expect.stringMatching(/^Remove-NetFirewallRule -Name 'Rig-/) } }] });
     expect((await proposal({ firewall: { add: { name: "Game", direction: "inbound", action: "allow", protocol: "udp", ports: [27015], profile: "public" } } })).p?.tier).toBe(3);
     const rdp = await proposal({ firewall: { add: { name: "Remote", direction: "inbound", action: "allow", protocol: "tcp", ports: [3389] } } });
     expect(rdp.p).toBeUndefined();
     expect(rdp.sent).toContain("firewall: Rig never opens the ports Windows uses for remote access");
+  });
 
+  it("builds a policy step from its shorthand", async () => {
     const policy = await proposal({ policy: { scope: "user", key: "Microsoft\\Windows\\Explorer", name: "DisableSearchBoxSuggestions", type: "dword", value: 1 } });
     expect(policy.p).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { touches: [{ kind: "registry", key: "HKCU\\Software\\Policies\\Microsoft\\Windows\\Explorer", value: "DisableSearchBoxSuggestions" }] } }] });
+  });
 
+  it("builds device steps from their shorthand and refuses parts Windows needs", async () => {
     expect((await proposal({ device: { instanceId: "USB\\VID_046D&PID_C52B\\5&1A2B3C&0&2", enabled: false } })).p?.tier).toBe(2);
     const cpu = await proposal({ device: { instanceId: "ACPI\\GenuineIntel_-_Intel64\\_0", enabled: false } });
     expect(cpu.p).toBeUndefined();
     expect(cpu.sent).toContain("a part Windows needs to run");
+  });
 
+  it("builds a driver step from its shorthand at tier 3", async () => {
     const driver = await proposal({ driver: { inf: "C:\\Drivers\\Realtek\\rt640x64.inf", catalog: "C:\\Drivers\\Realtek\\rt640x64.cat" } });
     expect(driver.p).toMatchObject({ tier: 3, steps: [{ kind: "command", cmd: { does: expect.stringContaining("always gets Rig's strongest check") } }] });
     expect((await proposal({ driver: { inf: "C:\\Drivers\\*.inf", catalog: "C:\\Drivers\\x.cat" } })).sent).toContain("driver: inf must be");
+  }, 60_000); // Eight chats in one test: near the default 30 seconds on a busy CI runner.
+
+  it("reads NVIDIA's settings without tainting the chat, and proposes a gpu step from Rig's table", async () => {
+    const vsyncOff = { vendor: "nvidia", app: "Game.exe", setting: "vsync", value: "off", does: "Turns vertical sync off for this game." };
+    const { live, seen } = await chatSetup([
+      { tool: { name: "read_pc", input: { kind: "gpu", vendor: "nvidia", app: "Game.exe", settings: ["vsync"] } } },
+      { tool: { name: "propose_change", input: { title: "Vsync off", why: "y", steps: [{ gpu: { ...vsyncOff, setting: "0x00A879CF" } }] } } },
+      { tool: { name: "propose_change", input: { title: "Vsync off", why: "y", steps: [{ gpu: { ...vsyncOff, vendor: "amd" } }] } } },
+      { tool: { name: "propose_change", input: { title: "Vsync off", why: "Less input lag.", steps: [{ gpu: vsyncOff }, { command: deleteFolder }] } } },
+      { text: "Review the card." },
+    ]);
+    const stop = of(await live(ask("Turn vsync off for my game")), "reads")[0];
+    expect(stop.reads).toEqual([{ id: "tu_1", kind: "gpu", vendor: "nvidia", app: "game.exe", settings: ["vsync"] }]);
+    const text = JSON.stringify({ vendor: "nvidia", settings: { vsync: { name: "Vertical sync", value: "app", says: "Use the game's own setting", from: "from the global settings" } } });
+    const rest = await live(ask("Turn vsync off for my game"), { resume: stop.resume, results: [{ id: "tu_1", ok: true, text }] });
+    expect(lastToolResults(seen[2])).toContain("Rig doesn't change that graphics setting");
+    expect(lastToolResults(seen[3])).toContain("Rig can only change NVIDIA's graphics settings for now.");
+    // A gpu read is Rig's own table, so a change that can't be undone may still be offered after it.
+    const p = of(rest, "proposal")[0].proposal;
+    expect(p.tier).toBe(3);
+    expect(p.steps![0]).toEqual({ kind: "native", op: { name: "gpu", ...vsyncOff, app: "game.exe" } });
+    expect(p.rows![0]).toEqual(["Set Vertical sync to Off for game.exe", "As it is now", "Changed by Rig"]);
+  });
+
+  it("builds a file edit as Rig's own step, with a row for each value, and refuses a never-list file", async () => {
+    const path = "C:\\Users\\Lee\\AppData\\Local\\Game\\GameUserSettings.ini";
+    const { live } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Turn off vsync", why: "y", steps: [{ fileEdit: { name: "other", does: "Turns off vertical sync.", path, format: "ini", edits: [{ at: ["/Script/Engine.GameUserSettings", "bUseVSync"], value: "False" }, { at: ["/Script/Engine.GameUserSettings", "FrameRateLimit"], value: 144.5, add: true }] } }] } } },
+      { text: "Review the card." },
+    ]);
+    const p = of(await live(ask("Turn off vsync in my game")), "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 2, steps: [{ kind: "native", op: { name: "fileEdit", path, edits: [{ value: "False" }, { value: { number: "144.5" }, add: true }] } }] });
+    expect(p.rows).toEqual([
+      ["GameUserSettings.ini › /Script/Engine.GameUserSettings › bUseVSync", "As it is now", "False"],
+      ["GameUserSettings.ini › /Script/Engine.GameUserSettings › FrameRateLimit", "As it is now", "144.5"],
+    ]);
+
+    const never = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ fileEdit: { does: "Edits saved sign-ins.", path: "C:\\Users\\Lee\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\a\\logins.json", format: "json", edits: [{ at: ["x"], value: 1 }] } }] } } },
+      { text: "." },
+    ]);
+    expect(of(await never.live(ask("Change it")), "proposal")).toHaveLength(0);
+    expect(lastToolResults(never.seen[1])).toContain("Rig never reads saved passwords");
   });
 
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {

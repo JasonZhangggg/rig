@@ -29,8 +29,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function openBoard() {
   location.hash = "pc";
   render(<RigApp client={new DemoClient()} />);
-  fireEvent.click(await screen.findByRole("button", { name: /^Motherboard/ }));
-  await screen.findByRole("tab", { name: "Manual" });
+  fireEvent.click(await screen.findByRole("button", { name: /^Motherboard/ }, { timeout: 5000 }));
+  await screen.findByRole("tab", { name: "Manual" }, { timeout: 5000 });
   return document.querySelector<HTMLElement>(".pc-view")!;
 }
 

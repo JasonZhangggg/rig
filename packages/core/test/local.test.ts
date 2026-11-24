@@ -485,6 +485,31 @@ describe("LocalClient", () => {
       client.stop();
     });
 
+    it("logs a file edit with each value's file, place, before and after, as the helper read them", async () => {
+      const path = "C:\\Users\\Sam\\AppData\\Roaming\\Game\\settings.json";
+      const before = 'graphics › vsync: true\nFile fingerprint 0123456789ab, 80 bytes\n\nLine 3:\n-     "vsync": true\n+     "vsync": false';
+      const after = "graphics › vsync: false\nFile fingerprint ba9876543210, 81 bytes";
+      const touch = { kind: "file" as const, path };
+      const seen: unknown[] = [];
+      const step: StepRpc["step.preview"]["params"]["step"] = { kind: "native", op: { name: "fileEdit", does: "Turns off vertical sync.", path, format: "json", edits: [{ at: ["graphics", "vsync"], value: false }] } };
+      const helper = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
+        seen.push({ method, params });
+        const replies: Partial<{ [M in keyof StepRpc]: StepRpc[M]["reply"] }> = {
+          "step.preview": { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step) as Allowed, read: before, touches: [{ touch, value: "80 bytes, fingerprint 0123456789ab" }] },
+          "step.apply": { outcome: "applied", result: { before, after, output: "", alsoChanged: [], touches: [{ touch, before: "80 bytes, fingerprint 0123456789ab", after: "81 bytes, fingerprint ba9876543210" }] }, undo: { kind: "native", id: "u1", outside: [], fingerprint: "f1" } },
+        };
+        return replies[method] as StepRpc[K]["reply"];
+      };
+      const { client } = setup({ step: helper });
+      await client.start();
+      expect(await client.previewStep(client.id, step, false)).toMatchObject({ outcome: "ready", verdict: { tier: 1 }, read: before });
+      expect((await client.applyStep(client.id, "n1", { by: "rig" })).outcome).toBe("applied");
+      const [change] = await client.changes(client.id);
+      expect(change).toMatchObject({ title: "Changed a value in settings.json", tier: 1, diff: [["settings.json › graphics › vsync", "true", "false"]], applied: [{ undo: { kind: "native", id: "u1" } }] });
+      expect(seen).toHaveLength(2);
+      client.stop();
+    });
+
     it("refuses a native step Rig doesn't know before the helper sees it", async () => {
       const { client, helper } = withCommands();
       await client.start();

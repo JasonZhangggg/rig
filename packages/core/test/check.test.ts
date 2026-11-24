@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, stepHash, stepsTitle, type Command, type ScriptUse, type Step, type Verdict } from "../src";
+import { canonicalNative, cardTier, catalog, checkScript, checkStep, commandHash, nativeRows, rulesVersion, stepHash, stepsTitle, type Command, type ScriptUse, type Step, type Verdict } from "../src";
 import { canonicalCommand } from "../src/change";
 import vectors from "../src/rules/vectors.json";
 
@@ -232,6 +232,55 @@ describe("checking a native step", () => {
   it("has a title for the changes log", () => {
     expect(stepsTitle([native({ name: "selftest", value: "rig" })])).toBe("Ran Rig's self-test change");
     expect(stepsTitle([gameMode, native({ name: "selftest", value: "rig" })])).toBe("2 changes");
+  });
+});
+
+describe("checking a file edit", () => {
+  const game = "C:\\Users\\Sam\\AppData\\Roaming\\Game\\settings.json";
+  const edit = (patch: Record<string, unknown> = {}) => ({ kind: "native", op: { name: "fileEdit", does: "Turns off vertical sync.", path: game, format: "json", edits: [{ at: ["graphics", "vsync"], value: false }], ...patch } }) as unknown as Step;
+
+  it("is tier 1 for values already in a file of your own, and tier 2 when it adds a key or the file is shared", () => {
+    expect(checkStep(edit())).toMatchObject({ status: "allowed", tier: 1, admin: false });
+    expect(checkStep(edit({ edits: [{ at: ["graphics", "fps"], value: 144, add: true }] }))).toMatchObject({ tier: 2, reasons: expect.arrayContaining([expect.stringContaining("adds a key")]) });
+    expect(checkStep(edit({ path: "C:\\Program Files\\Game\\settings.json" }))).toMatchObject({ tier: 2, admin: false });
+    expect(checkStep(edit({ path: "C:\\Users\\Public\\Game\\settings.json" }))).toMatchObject({ tier: 2 });
+  });
+
+  it("refuses files on the never list, programs, and paths that aren't a local file", () => {
+    expect(refusal(edit({ path: "C:\\Users\\Sam\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\x\\logins.json" }))).toMatchObject({ why: "never" });
+    expect(refusal(edit({ path: "C:\\Users\\Sam\\Game\\start.ps1" }))?.refused).toContain("doesn't edit programs");
+    for (const path of ["settings.json", "\\\\server\\share\\settings.json", `${game}:stream`, "C:\\Users\\Sam\\..\\Bo\\settings.json", "C:\\PROGRA~1\\Game\\settings.json"]) {
+      expect(refusal(edit({ path }))?.refused).toContain("full path");
+    }
+  });
+
+  it("refuses values the file format can't hold, and the same value twice", () => {
+    const ini = (edits: unknown[]) => edit({ format: "ini", path: game.replace(".json", ".ini"), edits });
+    expect(refusal(ini([{ at: ["Graphics", "VSync"], value: true }]))?.refused).toContain("text or a number");
+    expect(refusal(ini([{ at: ["Graphics", "VSync"], value: "0\r\n[Other]" }]))?.refused).toContain("one line");
+    expect(refusal(ini([{ at: ["VSync"], value: "0" }]))?.refused).toContain("[section, key]");
+    expect(refusal(ini([{ at: ["Graphics", "VSync"], value: "0" }, { at: ["GRAPHICS", "vsync"], value: "1" }]))?.refused).toContain("twice");
+    expect(checkStep(ini([{ at: ["", "VSync"], value: 0 }]))).toMatchObject({ status: "allowed", tier: 1 });
+    expect(refusal(edit({ edits: [] }))?.refused).toContain("1 to 20");
+    expect(refusal(edit({ format: "yaml" }))).not.toBeNull();
+  });
+
+  it("keeps a number with a fraction as text, so the app and the helper fingerprint it alike", async () => {
+    const op = { name: "fileEdit", does: "Turns off vertical sync.", path: game, format: "json", extra: "dropped", edits: [{ at: ["graphics", "vsync"], value: false, note: "dropped" }, { at: ["graphics", "scale"], value: 0.85 }, { at: ["name"], value: "Ana", add: true }, { at: ["list", "0"], value: null }, { at: ["n"], value: -7, add: false }] };
+    const kept = canonicalNative(op);
+    expect(kept).toEqual({ ...op, extra: undefined, edits: [{ at: ["graphics", "vsync"], value: false }, { at: ["graphics", "scale"], value: { number: "0.85" } }, { at: ["name"], value: "Ana", add: true }, { at: ["list", "0"], value: null }, { at: ["n"], value: -7 }] });
+    // The helper's self-test holds the same fingerprint for the same op.
+    expect(await stepHash({ kind: "native", op: kept } as Step)).toBe("397349fd42a5896a1fe1975894470362f39843f4679d48128543a6844580e466");
+  });
+
+  it("titles the change and shows each value's file, place, before and after", () => {
+    const step = edit({ edits: [{ at: ["graphics", "vsync"], value: false }, { at: ["name"], value: "Bea" }] }) as Extract<Step, { kind: "native" }>;
+    expect(stepsTitle([edit()])).toBe("Changed a value in settings.json");
+    expect(stepsTitle([step])).toBe("Changed 2 values in settings.json");
+    expect(nativeRows(step.op)).toEqual([["settings.json › graphics › vsync", "As it is now", "false"], ["settings.json › name", "As it is now", '"Bea"']]);
+    const before = 'graphics › vsync: true\nname: "Ana"\nFile fingerprint 0123456789ab, 80 bytes\n\nLine 3:\n-   "vsync": true\n+   "vsync": false';
+    const after = 'graphics › vsync: false\nname: "Bea"\nFile fingerprint ba9876543210, 81 bytes';
+    expect(nativeRows(step.op, before, after)).toEqual([["settings.json › graphics › vsync", "true", "false"], ["settings.json › name", '"Ana"', '"Bea"']]);
   });
 });
 

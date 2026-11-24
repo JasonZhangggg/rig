@@ -146,7 +146,7 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [new ScreenStep()];
+    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp()];
 
     /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
     static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
