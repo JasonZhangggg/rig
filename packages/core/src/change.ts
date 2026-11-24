@@ -9,7 +9,7 @@
 // approval in the helper: preview, a nonce, apply, undo.
 
 import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
-import { checkScript, covers, inspectScript, localFile, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
+import { checkScript, covers, inspectScript, localFile, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, unpaired, type ScriptUse, type Write } from "./check";
 import type { Change } from "./client";
 import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
@@ -233,8 +233,9 @@ function checkCommand(raw: Command, ctx: CheckContext): Verdict {
     if (never) return refuse(`${never}.`, "never");
   }
   const run = inspectScript(cmd.run, "run");
+  const undo = typeof cmd.undo === "string" ? inspectScript(cmd.undo, "undo") : null;
   const parts: [string, Verdict][] = [["The read script", checkScript(cmd.read, "read")], ["The change script", run.verdict]];
-  if (typeof cmd.undo === "string") parts.push(["The undo script", checkScript(cmd.undo, "undo")]);
+  if (undo) parts.push(["The undo script", undo.verdict]);
   const commands = parts.flatMap(([, v]) => v.commands);
   const stopped = parts.find(([, v]) => v.status === "refused" && v.why === "never") ?? parts.find(([, v]) => v.status === "refused");
   if (stopped && stopped[1].status === "refused") return refuse(`${stopped[0]} was refused. ${stopped[1].refused}`, stopped[1].why, commands);
@@ -246,6 +247,10 @@ function checkCommand(raw: Command, ctx: CheckContext): Verdict {
   if (lowers) {
     tier = 3;
     reasons.push(`${lowers}.`);
+  }
+  if (undo && unpaired(undo.undoes, run.uses).length) {
+    tier = 3;
+    reasons.push(`${ruleWords("unpaired-undo")}.`);
   }
   // A write is covered when a snapshotted touch holds every place it writes; a touch is used when some write reaches it.
   const held = cmd.touches.filter(snapshotted);

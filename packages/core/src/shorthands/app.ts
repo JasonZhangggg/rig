@@ -3,9 +3,9 @@
 // helper runs winget as the person, never with admin rights, and gives it up
 // to 30 minutes. Each run stops first when the app isn't as asked (already
 // there, not there, or not the version the card names), so its undo puts back
-// exactly what was there. An uninstall has nothing that puts it back as it
-// was, so it is tier 3; an update is tier 3 unless winget can install the
-// version it replaces again.
+// exactly what was there. An uninstall or an update has nothing that puts
+// the person's copy back as it was, so both are tier 3. An update that names
+// the version it replaces also tries to install that version again on undo.
 
 import type { Command } from "../change";
 import { quote } from "./text";
@@ -75,7 +75,8 @@ export function appCommand(raw: unknown): Command | string {
   const to = a.version ? `version ${a.version}` : "its newest version";
   const run = [...installed];
   if (a.from) {
-    const pattern = `(^|\\s)${a.from.replace(/[.+]/g, "\\$&")}(\\s|$)`;
+    const escape = (text: string) => text.replace(/[.+]/g, "\\$&");
+    const pattern = `(^|\\s)${escape(id!)}\\s+${escape(a.from)}(\\s|$)`;
     run.push(
       `$now = ${there} | Out-String`,
       `if ($now -notmatch ${quote(pattern)}) { throw ${quote(`${id} isn't at version ${a.from} now, so Rig won't update it from there.`)} }`,
@@ -86,7 +87,7 @@ export function appCommand(raw: unknown): Command | string {
   run.push(`${head("upgrade", s, id!)}${version} ${agree}`, fails("update it"));
   return {
     does: a.from
-      ? `Updates ${name} from version ${a.from} to ${to}, with winget. ${licence} Undo uninstalls it and installs version ${a.from} again.`
+      ? `Updates ${name} from version ${a.from} to ${to}, with winget. ${licence} Rig can't promise to put the old version back as it was, so this always gets Rig's strongest check. Undo tries: it uninstalls the app and installs version ${a.from} again.`
       : `Updates ${name} to ${to}, with winget. ${licence} Rig can't put the old version back, so this always gets Rig's strongest check.`,
     read: list,
     run: run.join("\n"),
