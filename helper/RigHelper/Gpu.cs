@@ -420,8 +420,9 @@ public static class Gpu
         if (!File.Exists(dotnet)) { yield return $"{Skip}no signed dotnet.exe on this PC"; yield break; }
         using var d = new FileStream(dotnet, FileMode.Open, FileAccess.Read, FileShare.Read);
         string? other = DriverDll.Problem(d.SafeFileHandle, dotnet, DriverDll.Nvidia);
-        if (other != "The NVIDIA driver file on this PC (nvapi64.dll) is signed by Microsoft Corporation, not NVIDIA, so Rig won't use it.") yield return $"Microsoft's dotnet.exe as NVIDIA's: {other ?? "it passed"}";
-        string? own = DriverDll.Problem(d.SafeFileHandle, dotnet, new DriverDll.Maker("dotnet.exe", ["Microsoft Corporation"], "Microsoft"));
+        if (other?.StartsWith("The NVIDIA driver file on this PC (nvapi64.dll) is signed by ") != true || !other.EndsWith(", not NVIDIA, so Rig won't use it.")) yield return $"Microsoft's dotnet.exe as NVIDIA's: {other ?? "it passed"}";
+        // Microsoft signs it as .NET these days, and as Microsoft Corporation before.
+        string? own = DriverDll.Problem(d.SafeFileHandle, dotnet, new DriverDll.Maker("dotnet.exe", [".NET", "Microsoft Corporation"], "Microsoft"));
         if (own != null) yield return $"Microsoft's own signature on dotnet.exe wasn't taken: {own}";
     }
 
