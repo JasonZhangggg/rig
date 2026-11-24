@@ -32,6 +32,10 @@
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.2" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\..\packages\core\src\rules\commands.json" LogicalName="Rig.Rules.commands.json" />
+    <EmbeddedResource Include="..\..\packages\core\src\rules\vectors.json" LogicalName="Rig.Rules.vectors.json" />
+  </ItemGroup>
+  <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
   </ItemGroup>
 </Project>
