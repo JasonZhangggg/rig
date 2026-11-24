@@ -47,7 +47,11 @@ public static class CommandSelfTest
             List<string> found;
             try { found = run().ToList(); }
             catch (Exception e) { found = [$"stopped: {e.GetType().Name}: {e.Message}"]; }
+            // A check the runner can't make says so in a line of its own, which is reported and isn't a failure.
+            string? skipped = found.FirstOrDefault(f => f.StartsWith(Skip, StringComparison.Ordinal));
+            if (skipped != null) found.Remove(skipped);
             var row = new JsonObject { ["name"] = name, ["ok"] = found.Count == 0, ["seconds"] = Math.Round(watch.Elapsed.TotalSeconds, 1) };
+            if (skipped != null) row["skipped"] = skipped[Skip.Length..];
             if (found.Count > 0) row["problems"] = new JsonArray(found.Select(f => (JsonNode)f).ToArray());
             checks.Add(row);
             problems.AddRange(found.Select(f => $"commands, {name}: {f}"));
@@ -132,6 +136,8 @@ public static class CommandSelfTest
         using (var run = hive.OpenSubKey($@"{person.Sid}\{RunKey}", writable: true)) run?.DeleteValue("RigSelftest", throwOnMissingValue: false);
         if (Native.IsAdmin()) Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\RigSelftest", throwOnMissingSubKey: false);
     }
+
+    const string Skip = "skipped: ";
 
     static bool Is(JsonNode? n, string outcome) => n?["outcome"]?.ToString() == outcome;
 
@@ -675,12 +681,12 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
 
     static IEnumerable<string> LimitedToken(Context ctx)
     {
-        IntPtr app = IntPtr.Zero;
+        IntPtr app = IntPtr.Zero, token = IntPtr.Zero;
         int pid = 0;
         string? cant = null;
-        try { app = Limited.Start(Path.Combine(Environment.SystemDirectory, "PING.EXE") + " -n 600 127.0.0.1", out pid); }
+        try { app = Limited.Start(Path.Combine(Environment.SystemDirectory, "PING.EXE") + " -n 600 127.0.0.1", out pid, out token); }
         catch (InvalidOperationException e) { cant = e.Message; }
-        if (cant != null) { yield return $"the runner couldn't make a limited token: {cant}"; yield break; }
+        if (cant != null) { yield return $"{Skip}the runner couldn't make a limited token: {cant}"; yield break; }
         try
         {
             using var person = Person.Find(pid);
@@ -690,7 +696,24 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
             PowerShellHost.Write(file, "Write-Output ('rig-' + 'limited'); ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')", stopOnError: true);
             var ran = person.Run(file, Commands.ReadTimeoutMs, ctx.Store.Empty());
             File.Delete(file);
-            if (!ran.Ok || !ran.Out.Contains("rig-limited")) { yield return $"PowerShell didn't start with the limited token ({(ran.TimedOut ? "timed out" : $"exit {ran.Exit}")}): {ran.Printed}"; yield break; }
+            if (!ran.Ok || !ran.Out.Contains("rig-limited"))
+            {
+                // Whether any console program starts with that token on this runner, through Windows' logon service and directly.
+                string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe"), folder = ctx.Store.Empty();
+                string Try(bool service)
+                {
+                    try
+                    {
+                        var r = UserProcess.RunAs(token, cmd, "/c echo rig-cmd", 10_000, desktop: null, PowerShellHost.Clean(folder), folder, logonService: service, keep: PowerShellHost.Theirs);
+                        return r.TimedOut ? "timed out" : r.Out.Contains("rig-cmd") ? "ran" : $"exit {r.Exit}";
+                    }
+                    catch (RigException e) { return e.Message; }
+                }
+                string viaService = Try(true), direct = Try(false);
+                string why = $"PowerShell with the limited token {(ran.TimedOut ? "timed out" : $"exit {ran.Exit}: {ran.Printed}")}; cmd.exe through the logon service {viaService}, started directly {direct}";
+                yield return viaService != "ran" && direct != "ran" ? $"{Skip}this runner starts no console program with a medium-integrity token ({why})" : why;
+                yield break;
+            }
             if (!ran.Out.Contains("False")) yield return $"the script ran as an administrator: {ran.Out.Trim()}";
             Clean(ctx.Person);
             var p = rig.Handle("command.preview", new JsonObject { ["cmd"] = Harmless() });
@@ -705,7 +728,7 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
         }
         finally
         {
-            Limited.Stop(app);
+            Limited.Stop(app, token);
             Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\RigSelftest", throwOnMissingSubKey: false);
             Clean(ctx.Person);
         }
@@ -715,7 +738,7 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
     /// its privileges taken away, at medium integrity, as Windows' everyday token for an administrator is.
     static class Limited
     {
-        public static IntPtr Start(string cmd, out int pid)
+        public static IntPtr Start(string cmd, out int pid, out IntPtr limited)
         {
             IntPtr own = IntPtr.Zero, token = IntPtr.Zero, sid = IntPtr.Zero;
             try
@@ -729,6 +752,8 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
                 if (!CreateProcessAsUserW(token, null, new System.Text.StringBuilder(cmd), IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW, IntPtr.Zero, null, ref si, out PROCESS_INFORMATION pi)) throw Win("CreateProcessAsUser");
                 CloseHandle(pi.hThread);
                 pid = pi.dwProcessId;
+                limited = token;
+                token = IntPtr.Zero;
                 return pi.hProcess;
             }
             finally
@@ -739,8 +764,10 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
             }
         }
 
-        public static void Stop(IntPtr process)
+        public static void Stop(IntPtr process, IntPtr limited)
         {
+            if (limited != IntPtr.Zero) CloseHandle(limited);
+            if (process == IntPtr.Zero) return;
             TerminateProcess(process, 0);
             CloseHandle(process);
         }
