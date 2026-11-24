@@ -5,6 +5,7 @@ export * from "./actions";
 export * from "./change";
 export * from "./shorthand";
 export * from "./reads";
+export * from "./gpu";
 export { checkScript, rulesVersion, secondLook, type ScriptUse } from "./check";
 export * from "./client";
 export * from "./health";

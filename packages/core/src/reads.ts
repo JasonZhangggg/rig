@@ -5,6 +5,7 @@
 // fixed parts, never free WQL.
 
 import { checkScript, textOnNeverList } from "./check";
+import { gpuApp, gpuSetting, GPU_VENDORS, type GpuVendor } from "./gpu";
 import rulesJson from "./rules/reads.json";
 
 export interface CimFilter { property: string; value: string | number | boolean }
@@ -17,7 +18,9 @@ export type PcReadSpec =
   /** One PowerShell command line, like `Get-Service -Name wuauserv`. Must check as a read. */
   | { kind: "cmdlet"; command: string }
   /** A short PowerShell script that only looks. Must check as a read. */
-  | { kind: "script"; script: string };
+  | { kind: "script"; script: string }
+  /** Graphics driver settings from Rig's table (rules/gpu.json): one game's (by its exe name) or the whole PC's. */
+  | { kind: "gpu"; vendor: GpuVendor; app?: string; settings?: string[] };
 
 /** A read the server asks the PC for. `id` ties the answer to the model's tool call. */
 export type PcRead = PcReadSpec & { id: string };
@@ -101,6 +104,9 @@ export function readTaints(r: PcReadSpec): boolean {
       if (!e.text?.length) return false;
       return !r.properties?.length || r.properties.some((p) => has(e.text, p));
     }
+    // Values come from Rig's own table, and the helper names only NVIDIA's own profiles.
+    case "gpu":
+      return false;
     default:
       return true;
   }
@@ -117,7 +123,7 @@ function hiveKey(key: string): string | null {
 
 /** Checks a read the model asked for. Returns the read with only its own fields, or why it can't be done, in plain words. */
 export function checkRead(raw: unknown): PcReadSpec | string {
-  if (!raw || typeof raw !== "object") return "A read needs a kind: registry, cim, cmdlet or script.";
+  if (!raw || typeof raw !== "object") return "A read needs a kind: registry, cim, cmdlet, script or gpu.";
   const r = raw as Record<string, unknown>;
   switch (r.kind) {
     case "registry": {
@@ -170,8 +176,18 @@ export function checkRead(raw: unknown): PcReadSpec | string {
       if (v.tier !== 0) return "Rig only runs reads that look and change nothing.";
       return r.kind === "cmdlet" ? { kind: "cmdlet", command: text.trim() } : { kind: "script", script: text };
     }
+    case "gpu": {
+      if (!GPU_VENDORS.includes(r.vendor as GpuVendor)) return "A gpu read needs vendor: nvidia, amd or intel.";
+      const app = r.app === undefined || r.app === "" ? undefined : gpuApp(r.app);
+      if (app === null) return "app must be the game's program file name, like game.exe, with no folder.";
+      const settings = r.settings === undefined ? undefined : r.settings;
+      if (settings !== undefined && (!Array.isArray(settings) || settings.length > READ_LIMITS.properties || !settings.every((k) => gpuSetting(k)))) {
+        return "settings must be keys from Rig's list of graphics settings, like vsync or lowLatency. Leave it out for all of them.";
+      }
+      return { kind: "gpu", vendor: r.vendor as GpuVendor, ...(app ? { app } : {}), ...(settings?.length ? { settings: settings as string[] } : {}) };
+    }
     default:
-      return "A read needs a kind: registry, cim, cmdlet or script.";
+      return "A read needs a kind: registry, cim, cmdlet, script or gpu.";
   }
 }
 
@@ -182,5 +198,6 @@ export function readWhat(r: PcReadSpec): string {
     case "cim": return `CIM ${r.class}${r.filter?.length ? ` where ${r.filter.map((f) => `${f.property} = ${JSON.stringify(f.value)}`).join(" and ")}` : ""}`;
     case "cmdlet": return `command ${r.command.slice(0, 120)}`;
     case "script": return "a read-only script";
+    case "gpu": return `${r.vendor} graphics settings${r.app ? ` for ${r.app}` : ""}`;
   }
 }

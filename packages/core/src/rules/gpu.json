@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "about": "The graphics driver settings Rig reads and changes, shared by the server, the app (packages/core/src/gpu.ts) and the helper (helper/RigHelper/Gpu.cs, embedded). Only NVIDIA's for now, through its driver settings database (DRS). Ids and values are NVIDIA's own, from NvApiDriverSettings.h in github.com/NVIDIA/nvapi (MIT). A setting's `values` say what each choice sets: one or more DRS ids, each to one value. A choice is read back when every id it sets holds its value. `range` takes a whole number for one id instead of a named choice. `defaults` are the driver's own values, used when an id is set nowhere. `scope: global` means the setting is for the whole PC, never one game. `tier` is the card's risk: every one here is put back exactly by Rig's undo.",
+  "nvidia": {
+    "defaults": {
+      "0x007BA09E": 0, "0x10835002": 0, "0x00A879CF": "0x60925292", "0x005A375C": "0x96861077", "0x1057EB71": 5,
+      "0x00CE2691": 0, "0x10D2BB16": 0, "0x101E61A9": 1, "0x107EFC5B": 0, "0x10D773D2": 0, "0x1074C972": 0,
+      "0x00198FFF": 1, "0x00AC8497": "0x4000", "0x20FDD1F9": 0, "0x20C1221E": 0, "0x10A879CF": 0, "0x1194F158": 1,
+      "0x0064B541": 0, "0x10111133": 1
+    },
+    "settings": {
+      "lowLatency": {
+        "name": "Low latency mode", "tier": 1,
+        "says": "How many frames the CPU may line up ahead of the graphics card. On cuts input lag in games the graphics card holds back.",
+        "values": {
+          "off": { "says": "Off: the game decides", "set": { "0x007BA09E": 0 } },
+          "on": { "says": "On: at most one frame waits", "set": { "0x007BA09E": 1 } }
+        }
+      },
+      "maxFrameRate": {
+        "name": "Max frame rate", "tier": 1,
+        "says": "A cap on frames a second, set in the driver.",
+        "values": { "off": { "says": "Off: no cap", "set": { "0x10835002": 0 } } },
+        "range": { "id": "0x10835002", "min": 20, "max": 1000, "says": "{n} frames a second" }
+      },
+      "vsync": {
+        "name": "Vertical sync", "tier": 1,
+        "says": "Whether frames wait for the screen's refresh. Off tears but has the least lag; Fast is for frame rates well above the refresh rate.",
+        "values": {
+          "app": { "says": "Use the game's own setting", "set": { "0x00A879CF": "0x60925292" } },
+          "off": { "says": "Off", "set": { "0x00A879CF": "0x08416747" } },
+          "on": { "says": "On", "set": { "0x00A879CF": "0x47814940", "0x005A375C": "0x96861077" } },
+          "adaptive": { "says": "Adaptive: on only while the game keeps up", "set": { "0x00A879CF": "0x47814940", "0x005A375C": "0x99941284" } },
+          "fast": { "says": "Fast", "set": { "0x00A879CF": "0x18888888" } }
+        }
+      },
+      "powerMode": {
+        "name": "Power management mode", "tier": 1,
+        "says": "How the graphics card trades power for speed. Maximum performance keeps its clocks up, using more power at idle.",
+        "values": {
+          "normal": { "says": "Normal", "set": { "0x1057EB71": 5 } },
+          "adaptive": { "says": "Adaptive", "set": { "0x1057EB71": 0 } },
+          "max": { "says": "Prefer maximum performance", "set": { "0x1057EB71": 1 } }
+        }
+      },
+      "textureQuality": {
+        "name": "Texture filtering quality", "tier": 1,
+        "says": "How carefully textures are filtered. Performance is a little faster and a little blurrier.",
+        "values": {
+          "highQuality": { "says": "High quality", "set": { "0x00CE2691": "0xFFFFFFF6" } },
+          "quality": { "says": "Quality", "set": { "0x00CE2691": 0 } },
+          "performance": { "says": "Performance", "set": { "0x00CE2691": 10 } },
+          "highPerformance": { "says": "High performance", "set": { "0x00CE2691": 20 } }
+        }
+      },
+      "anisotropic": {
+        "name": "Anisotropic filtering", "tier": 1,
+        "says": "Sharper textures on surfaces seen at an angle, like floors and roads.",
+        "values": {
+          "app": { "says": "Use the game's own setting", "set": { "0x10D2BB16": 0 } },
+          "off": { "says": "Off", "set": { "0x10D2BB16": 1, "0x101E61A9": 1 } },
+          "x2": { "says": "2x", "set": { "0x10D2BB16": 1, "0x101E61A9": 2 } },
+          "x4": { "says": "4x", "set": { "0x10D2BB16": 1, "0x101E61A9": 4 } },
+          "x8": { "says": "8x", "set": { "0x10D2BB16": 1, "0x101E61A9": 8 } },
+          "x16": { "says": "16x", "set": { "0x10D2BB16": 1, "0x101E61A9": 16 } }
+        }
+      },
+      "antialiasingMode": {
+        "name": "Antialiasing mode", "tier": 1,
+        "says": "Whether the driver leaves smoothing of jagged edges to the game or turns it off.",
+        "values": {
+          "app": { "says": "Use the game's own setting", "set": { "0x107EFC5B": 0 } },
+          "off": { "says": "Off", "set": { "0x107EFC5B": 1, "0x10D773D2": 0 } }
+        }
+      },
+      "fxaa": {
+        "name": "Antialiasing - FXAA", "tier": 1,
+        "says": "The driver's own quick edge smoothing, on top of the game's. It softens text a little.",
+        "values": {
+          "off": { "says": "Off", "set": { "0x1074C972": 0 } },
+          "on": { "says": "On", "set": { "0x1074C972": 1 } }
+        }
+      },
+      "shaderCache": {
+        "name": "Shader cache size", "tier": 1, "scope": "global",
+        "says": "Room on disk for compiled shaders, so games stutter less the second time. A bigger cache helps games that compile many.",
+        "values": {
+          "off": { "says": "Off", "set": { "0x00198FFF": 0 } },
+          "1gb": { "says": "1 GB", "set": { "0x00198FFF": 1, "0x00AC8497": 1024 } },
+          "5gb": { "says": "5 GB", "set": { "0x00198FFF": 1, "0x00AC8497": 5120 } },
+          "10gb": { "says": "10 GB", "set": { "0x00198FFF": 1, "0x00AC8497": 10240 } },
+          "100gb": { "says": "100 GB", "set": { "0x00198FFF": 1, "0x00AC8497": 102400 } },
+          "unlimited": { "says": "Unlimited", "set": { "0x00198FFF": 1, "0x00AC8497": "0xFFFFFFFF" } }
+        }
+      },
+      "tripleBuffering": {
+        "name": "Triple buffering", "tier": 1,
+        "says": "A third frame buffer for smoother frame rates with vertical sync on. Only OpenGL games use it.",
+        "values": {
+          "off": { "says": "Off", "set": { "0x20FDD1F9": 0 } },
+          "on": { "says": "On", "set": { "0x20FDD1F9": 1 } }
+        }
+      },
+      "threadedOptimization": {
+        "name": "Threaded optimization", "tier": 1,
+        "says": "Whether the driver spreads its own work over several CPU cores.",
+        "values": {
+          "auto": { "says": "Auto", "set": { "0x20C1221E": 0 } },
+          "on": { "says": "On", "set": { "0x20C1221E": 1 } },
+          "off": { "says": "Off", "set": { "0x20C1221E": 2 } }
+        }
+      },
+      "gsync": {
+        "name": "G-SYNC (monitor technology)", "tier": 1,
+        "says": "Whether the screen's refresh follows the game's frame rate. Fixed refresh turns that off for a game that flickers or stutters with it.",
+        "values": {
+          "on": { "says": "G-SYNC allowed", "set": { "0x10A879CF": 0 } },
+          "off": { "says": "G-SYNC off", "set": { "0x10A879CF": 1 } },
+          "fixedRefresh": { "says": "Fixed refresh", "set": { "0x10A879CF": 4 } }
+        }
+      },
+      "gsyncMode": {
+        "name": "G-SYNC for the whole PC", "tier": 1, "scope": "global",
+        "says": "Whether G-SYNC works in full-screen games only, in windowed games too, or not at all.",
+        "values": {
+          "off": { "says": "Off", "set": { "0x1194F158": 0 } },
+          "fullscreen": { "says": "Full screen only", "set": { "0x1194F158": 1 } },
+          "fullscreenAndWindowed": { "says": "Full screen and windowed", "set": { "0x1194F158": 2 } }
+        }
+      },
+      "refreshRate": {
+        "name": "Preferred refresh rate", "tier": 1,
+        "says": "Whether full-screen games run at the screen's highest refresh rate or the one they ask for.",
+        "values": {
+          "app": { "says": "The game's own choice", "set": { "0x0064B541": 0 } },
+          "highest": { "says": "Highest available", "set": { "0x0064B541": 1 } }
+        }
+      },
+      "vrPrerender": {
+        "name": "Virtual reality pre-rendered frames", "tier": 1,
+        "says": "How many frames a VR game may line up ahead. Fewer cuts lag; more can smooth a struggling game.",
+        "values": {
+          "app": { "says": "The game's own choice", "set": { "0x10111133": 0 } },
+          "1": { "says": "1 frame", "set": { "0x10111133": 1 } },
+          "2": { "says": "2 frames", "set": { "0x10111133": 2 } },
+          "3": { "says": "3 frames", "set": { "0x10111133": 3 } },
+          "4": { "says": "4 frames", "set": { "0x10111133": 4 } }
+        }
+      }
+    }
+  }
+}
