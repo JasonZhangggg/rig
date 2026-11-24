@@ -44,7 +44,7 @@ A change is a list of steps. A step is either a **fix** from the fix catalog (`p
 6. **Undo puts back what was saved, then runs `undo`.** If something else changed those places since, undo stops and asks before overwriting. What Rig couldn't save is named on the card and in the change log, with the restore point as the last resort.
 7. Fix steps keep their own undo calls. If one step of a multi-step change fails, the steps before it are put back, and the person is told nothing changed. Undo replays the stored undo calls in reverse order. Redo replays the originals.
 
-Rig never installs drivers, overclocks or touches games.
+Rig changes nothing on its own: drivers and other settings outside the catalog only change through a command step the person approved.
 
 ## The helper
 
