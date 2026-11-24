@@ -21,7 +21,13 @@ export interface Inventory {
   disks: Disk[];
   volumes: Volume[];
   battery?: { designWh?: number; fullWh?: number; cycles?: number };
-  displays: { name: string; width: number; height: number; refreshHz: number; maxRefreshHz: number; primary: boolean }[];
+  displays: {
+    name: string; width: number; height: number; refreshHz: number; maxRefreshHz: number; primary: boolean;
+    /** The kind of plug on the computer's side, from Windows' display paths. Missing from older helpers. */
+    connection?: DisplayConnection;
+    /** Windows' name for the graphics that drive this screen ("NVIDIA GeForce RTX 4070 SUPER", "AMD Radeon(TM) Graphics"). Missing from older helpers. */
+    gpu?: string;
+  }[];
 }
 
 export interface Disk {
@@ -67,6 +73,12 @@ export interface StorageScan {
     fills: { kind: FillKind; gb: number; /** The biggest things in it (games by name, your folders), largest first, at most five. */ top?: { name: string; gb: number }[] }[];
   }[];
 }
+
+/**
+ * How a screen connects, as Windows reports it. Windows says the kind of plug (HDMI, DisplayPort), not which
+ * of a card's several plugs of that kind. usb-c is DisplayPort carried over a USB-C or Thunderbolt port.
+ */
+export type DisplayConnection = "hdmi" | "displayport" | "usb-c" | "dvi" | "vga" | "internal" | "wireless" | "other";
 
 export type HardwareKind = "cpu" | "gpu" | "board" | "memory" | "storage" | "battery" | "psu" | "cooler" | "network" | "other";
 /** throughput is in bytes a second (a drive's read and write rates); current is in amps. Helpers before 0.1.4 send neither. */

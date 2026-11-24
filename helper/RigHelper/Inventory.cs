@@ -249,14 +249,50 @@ public static class Inventory
     }
 
     /// Screens with their names made unique, so a change can name one exactly.
-    public static List<(string name, string gdi)> NamedScreens()
+    public static List<(string name, string gdi)> NamedScreens() => Named().Select(s => (s.name, s.gdi)).ToList();
+
+    static List<Native.Screen> Named()
     {
         var seen = new Dictionary<string, int>();
         return Native.Screens().Select(s =>
         {
             seen[s.name] = seen.GetValueOrDefault(s.name) + 1;
-            return (seen[s.name] > 1 ? $"{s.name} ({seen[s.name]})" : s.name, s.gdi);
+            return seen[s.name] > 1 ? s with { name = $"{s.name} ({seen[s.name]})" } : s;
         }).ToList();
+    }
+
+    /// The kind of plug on the computer's side (DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY). Windows says the kind, not which
+    /// of a card's several plugs of that kind.
+    static string Connection(uint tech) => tech switch
+    {
+        5 => "hdmi",
+        10 => "displayport",
+        18 => "usb-c", // DisplayPort over USB-C or Thunderbolt
+        4 => "dvi",
+        0 => "vga",
+        6 or 11 or 13 or 0x80000000 => "internal", // a laptop's own screen
+        15 => "wireless", // Miracast
+        _ => "other",
+    };
+
+    /// Windows' name for each graphics adapter by its device path, to say which one drives each screen.
+    static Dictionary<string, string> AdapterNames()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var v in Query("SELECT Name, PNPDeviceID FROM Win32_VideoController"))
+        {
+            string pnp = Str(v, "PNPDeviceID"), name = Str(v, "Name");
+            if (pnp.Length > 0 && name.Length > 0) map[pnp] = name;
+        }
+        return map;
+    }
+
+    /// \\?\PCI#VEN_10DE&DEV_2783&...#4&1a2b&0&0008#{guid} -> PCI\VEN_10DE&DEV_2783&...\4&1a2b&0&0008, the PNPDeviceID form.
+    static string PnpOf(string devicePath)
+    {
+        string p = devicePath.StartsWith(@"\\?\") ? devicePath[4..] : devicePath;
+        int guid = p.IndexOf("#{", StringComparison.Ordinal);
+        return (guid >= 0 ? p[..guid] : p).Replace('#', '\\');
     }
 
     public static int MaxRefresh(string gdi, int width, int height)
@@ -271,15 +307,18 @@ public static class Inventory
     static object Displays()
     {
         var list = new List<object>();
-        foreach (var (name, gdi) in NamedScreens())
+        var adapters = AdapterNames();
+        foreach (var sc in Named())
         {
             var dm = Native.NewDevMode();
-            if (!Native.EnumDisplaySettings(gdi, Native.ENUM_CURRENT_SETTINGS, ref dm)) continue;
+            if (!Native.EnumDisplaySettings(sc.gdi, Native.ENUM_CURRENT_SETTINGS, ref dm)) continue;
             list.Add(new
             {
-                name, width = dm.dmPelsWidth, height = dm.dmPelsHeight, refreshHz = dm.dmDisplayFrequency,
-                maxRefreshHz = Math.Max(dm.dmDisplayFrequency, MaxRefresh(gdi, dm.dmPelsWidth, dm.dmPelsHeight)),
+                sc.name, width = dm.dmPelsWidth, height = dm.dmPelsHeight, refreshHz = dm.dmDisplayFrequency,
+                maxRefreshHz = Math.Max(dm.dmDisplayFrequency, MaxRefresh(sc.gdi, dm.dmPelsWidth, dm.dmPelsHeight)),
                 primary = dm.dmPositionX == 0 && dm.dmPositionY == 0,
+                connection = Connection(sc.tech),
+                gpu = adapters.GetValueOrDefault(PnpOf(sc.adapter)),
             });
         }
         return list;

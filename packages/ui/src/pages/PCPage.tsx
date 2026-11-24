@@ -15,6 +15,9 @@ import { BoardUsage } from "./board/BoardUsage";
 import { BoardCables } from "./board/BoardCables";
 import { boardStage } from "./board/boardStage";
 import { StorageMap } from "./drives/StorageMap";
+import { GpuView } from "./gpu/GpuView";
+import { GpuPorts } from "./gpu/GpuPorts";
+import { gpuStage } from "./gpu/gpuStage";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
 const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals"]];
@@ -48,6 +51,8 @@ export function PCPage() {
   useFitStage(viewRef, `${view}:${ui.selected ?? ""}`);
   // A picked part takes over the page: its name is the title and its readings get the room the list had.
   const picked = view === "pc" && ui.selected && parts[ui.selected] ? ui.selected : null;
+  // A tower's graphics card opens close up, like the board; a laptop's is soldered in, so there's nothing to show.
+  const closeUp = pc.kind === "tower";
   const list = Object.entries(parts);
   const sub = view === "upgrades" ? `What would help ${pc.name} most, and parts that fit it.`
     : view === "manuals" ? `Manuals for ${pc.name}'s parts, and its drivers and BIOS.`
@@ -68,11 +73,11 @@ export function PCPage() {
       {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : (
       <div className="pc-view" ref={viewRef}>
         <section className="stage-card" aria-label="3D view">
-          {picked === "motherboard" ? <BoardView /> : <StageSlot id="pc-stage" />}
+          {picked === "motherboard" ? <BoardView /> : picked === "gpu" && closeUp ? <GpuView /> : <StageSlot id="pc-stage" />}
           {customize && !picked && <Customize onDone={closeCustomize} />}
           <div className="stage-tools" role="toolbar" aria-label="View">
             {!picked && <button className="btn ghost sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>}
-            <button className="btn ghost sm" type="button" onClick={() => (picked === "motherboard" ? boardStage.reset() : getStage().scene.resetView())}>Reset view</button>
+            <button className="btn ghost sm" type="button" onClick={() => (picked === "motherboard" ? boardStage.reset() : picked === "gpu" && closeUp ? gpuStage.reset() : getStage().scene.resetView())}>Reset view</button>
           </div>
         </section>
         <div className="pc-side">{picked ? <PartDetail id={picked} ups={ups} /> : <PartsList />}</div>
@@ -208,8 +213,10 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   const { ui, pc, set } = useApp();
   const part = pc.parts![id];
   const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
-  // The motherboard opens on what's plugged into it, storage on what fills each drive.
-  const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"], ["cables", "Cables"]] : id === "ssd" && pc.drives?.length ? [["drives", "Drives"]] : [];
+  // The motherboard opens on what's plugged into it, a tower's graphics card on its outputs and power, storage on what fills each drive.
+  const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"], ["cables", "Cables"]]
+    : id === "gpu" && pc.kind === "tower" ? [["ports", "Ports"]]
+    : id === "ssd" && pc.drives?.length ? [["drives", "Drives"]] : [];
   const tabs: [string, string][] = [...first, ["specs", "Specs"], ["manual", "Manual"]];
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
@@ -279,6 +286,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   if (tab === "slots") return <BoardUsage />;
   if (tab === "drives") return <StorageMap />;
   if (tab === "cables") return <BoardCables />;
+  if (tab === "ports") return <GpuPorts />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));

@@ -2,7 +2,7 @@
 // desktop, received from the server on the web, or taken from demo data.
 
 import type { ActionCall } from "./actions";
-import type { FillKind, SensorType } from "./telemetry";
+import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
 import type { BuildShape } from "./build";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
@@ -134,6 +134,18 @@ export interface PC {
   build?: BuildShape;
   /** What Windows says is plugged into the motherboard, for the board's slot usage (boardUsage.ts). Desktops only. */
   board?: BoardFacts;
+  /** The screens Windows shows, with how each one connects, for the graphics card's outputs (gpuPorts.ts). */
+  displays?: DisplayLink[];
+}
+
+/** One screen and where it's plugged in, as far as Windows can say. */
+export interface DisplayLink {
+  name: string;
+  width: number; height: number; refreshHz: number;
+  /** The kind of plug on the computer's side. Missing: Windows (or an older Rig) didn't say. */
+  connection?: DisplayConnection;
+  /** True on the graphics card, false on the processor's own graphics (the motherboard's ports). Missing: not known. */
+  onCard?: boolean;
 }
 
 /** What Windows tells Rig about the things on a motherboard. Anything it can't see (front panel, USB and RGB headers) isn't here. */

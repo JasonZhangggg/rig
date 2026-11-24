@@ -7,5 +7,5 @@
   "disks": [ { "model": "WD PC SN560 1TB", "sizeGb": 1000, "media": "nvme", "healthPercent": 100, "writtenTb": 3.1, "status": "healthy", "number": 0, "powerOnHours": 1460 } ],
   "volumes": [ { "letter": "C:", "sizeGb": 951, "freeGb": 548, "disk": 0 } ],
   "battery": { "designWh": 75, "fullWh": 66.8, "cycles": 212 },
-  "displays": [ { "name": "Built-in display", "width": 2880, "height": 1800, "refreshHz": 120, "maxRefreshHz": 120, "primary": true } ]
+  "displays": [ { "name": "Built-in display", "width": 2880, "height": 1800, "refreshHz": 120, "maxRefreshHz": 120, "primary": true, "connection": "internal", "gpu": "Intel Arc Graphics" } ]
 }

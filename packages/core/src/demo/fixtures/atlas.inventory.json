@@ -9,5 +9,5 @@
     { "model": "ST4000DM004-2U9104", "sizeGb": 4000, "media": "hdd", "status": "healthy", "number": 1, "powerOnHours": 18450 }
   ],
   "volumes": [ { "letter": "C:", "label": "Windows", "sizeGb": 1862, "freeGb": 726, "disk": 0 }, { "letter": "D:", "label": "Games", "sizeGb": 3726, "freeGb": 1914, "disk": 1 } ],
-  "displays": [ { "name": "LG 27GP850", "width": 2560, "height": 1440, "refreshHz": 60, "maxRefreshHz": 165, "primary": true } ]
+  "displays": [ { "name": "LG 27GP850", "width": 2560, "height": 1440, "refreshHz": 60, "maxRefreshHz": 165, "primary": true, "connection": "displayport", "gpu": "NVIDIA GeForce RTX 4070 SUPER" }, { "name": "Dell P2422H", "width": 1920, "height": 1080, "refreshHz": 60, "maxRefreshHz": 60, "primary": false, "connection": "hdmi", "gpu": "NVIDIA GeForce RTX 4070 SUPER" } ]
 }

@@ -12,6 +12,7 @@
 // returns the shapes. The catalog is small data, one record per model.
 
 import { msiMagB650TomahawkWifi } from "./boards/msi-mag-b650-tomahawk-wifi";
+import { ports, type GpuPorts } from "./gpuPorts";
 
 export type ShapeSource = "detected" | "picked" | "catalog" | "estimated" | "generic";
 
@@ -39,6 +40,8 @@ export interface GpuShape {
   shroud: string; backplate: boolean;
   /** The maker's cooler design the 3D view draws ("tuf", "strix", "ventus", "fe"); missing: a plain card. */
   look?: string;
+  /** Its display outputs and power plugs, for the card close-up (gpuPorts.ts). */
+  ports?: GpuPorts;
 }
 
 export interface CoolerShape {
@@ -115,19 +118,32 @@ export const cases: Record<string, Omit<CaseShape, "source">> = {
   "nzxt-h5-flow": { model: "NZXT H5 Flow", w: 227, h: 464, d: 446, front: "mesh", layout: "standard", color: "#ececec", fans: { front: 2, top: 0, rear: 1, side: 0, bottom: 1, size: 120 }, look: "h5-flow" },
 };
 
+// Outputs and power plugs are the makers' spec pages (checked 2026-11-23), except the TUF's, which ASUS's page
+// didn't show: it's the same as the Strix's on ASUS's RTX 4070 SUPER cards.
+const fromSpec = (maker: string) => `From ${maker}'s spec page`;
 export const gpus: Record<string, Omit<GpuShape, "source"> & { chip: string; maker: string }> = {
-  "asus-tuf-4070s-oc": { model: "ASUS TUF RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 301, height: 139, thick: 63, fans: 3, fanMm: 92, shroud: "#3a3c40", backplate: true, look: "tuf" },
-  "asus-strix-4070s-oc": { model: "ASUS ROG Strix RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 339, height: 149, thick: 62, fans: 3, fanMm: 98, shroud: "#2a2b30", backplate: true, look: "strix" },
-  "msi-ventus2x-4070s-oc": { model: "MSI RTX 4070 SUPER Ventus 2X OC", chip: "RTX 4070 SUPER", maker: "1462", length: 242, height: 125, thick: 43, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true, look: "ventus" },
-  "nvidia-fe-4070s": { model: "NVIDIA RTX 4070 SUPER Founders Edition", chip: "RTX 4070 SUPER", maker: "10de", length: 244, height: 112, thick: 40, fans: 2, fanMm: 90, shroud: "#2b2c2e", backplate: true, look: "fe" },
+  "asus-tuf-4070s-oc": { model: "ASUS TUF RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 301, height: 139, thick: 63, fans: 3, fanMm: 92, shroud: "#3a3c40", backplate: true, look: "tuf",
+    ports: ports([["hdmi", 2, "2.1a"], ["dp", 3, "1.4a"]], ["16-pin"], "ASUS's list for its RTX 4070 SUPER cards", true) },
+  "asus-strix-4070s-oc": { model: "ASUS ROG Strix RTX 4070 SUPER OC", chip: "RTX 4070 SUPER", maker: "1043", length: 339, height: 149, thick: 62, fans: 3, fanMm: 98, shroud: "#2a2b30", backplate: true, look: "strix",
+    ports: ports([["hdmi", 2, "2.1a"], ["dp", 3, "1.4a"]], ["16-pin"], fromSpec("ASUS"), true) },
+  "msi-ventus2x-4070s-oc": { model: "MSI RTX 4070 SUPER Ventus 2X OC", chip: "RTX 4070 SUPER", maker: "1462", length: 242, height: 125, thick: 43, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true, look: "ventus",
+    ports: ports([["dp", 3, "1.4a"], ["hdmi", 1, "2.1a"]], ["16-pin"], fromSpec("MSI"), true) },
+  "nvidia-fe-4070s": { model: "NVIDIA RTX 4070 SUPER Founders Edition", chip: "RTX 4070 SUPER", maker: "10de", length: 244, height: 112, thick: 40, fans: 2, fanMm: 90, shroud: "#2b2c2e", backplate: true, look: "fe",
+    ports: ports([["hdmi", 1, "2.1a"], ["dp", 3, "1.4a"]], ["16-pin"], fromSpec("NVIDIA"), true) },
 };
 
 /** A typical card of each chip, for when the exact card isn't known. */
-const chipTypical: Record<string, Pick<GpuShape, "length" | "height" | "thick" | "fans" | "fanMm">> = {
-  "RTX 4070 SUPER": { length: 270, height: 125, thick: 50, fans: 2, fanMm: 95 },
-  "RTX 4090": { length: 340, height: 145, thick: 72, fans: 3, fanMm: 100 },
-  "RTX 4060": { length: 200, height: 115, thick: 40, fans: 2, fanMm: 85 },
+const chipTypical: Record<string, Pick<GpuShape, "length" | "height" | "thick" | "fans" | "fanMm" | "ports">> = {
+  // Outputs and power from NVIDIA's own card for each chip, which most makers' cards follow.
+  "RTX 4070 SUPER": { length: 270, height: 125, thick: 50, fans: 2, fanMm: 95, ports: typicalPorts("RTX 4070 SUPER", "16-pin") },
+  "RTX 4090": { length: 340, height: 145, thick: 72, fans: 3, fanMm: 100, ports: typicalPorts("RTX 4090", "16-pin") },
+  "RTX 4060": { length: 200, height: 115, thick: 40, fans: 2, fanMm: 85, ports: typicalPorts("RTX 4060", "8-pin") },
 };
+function typicalPorts(chip: string, power: "16-pin" | "8-pin") {
+  return ports([["hdmi", 1, "2.1a"], ["dp", 3, "1.4a"]], [power], `What most ${chip} cards have. Some makers' cards add a second HDMI`, false);
+}
+/** A card Rig knows nothing about: the outputs most cards have. */
+const typicalCardPorts = ports([["hdmi", 1], ["dp", 3]], ["8-pin"], "What most graphics cards have. Rig doesn't know this card's own list", false);
 
 export const coolers: Record<string, Omit<CoolerShape, "source">> = {
   "noctua-nh-d15": { model: "Noctua NH-D15", kind: "dual-tower", height: 165, fanMm: 140, color: "#c8ccd1", fanColor: "#d9c4a3", look: "nh-d15" },
@@ -223,14 +239,14 @@ export function resolveBuild(input: BuildInput): BuildShape {
 
   // Graphics card: the person's pick, the one card Rig knows for this chip and maker, or a typical card of the chip.
   let gpu: GpuShape | undefined;
-  if (input.gpu === undefined) gpu = { model: "Graphics card", source: "generic", length: 267, height: 134, thick: 42, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true };
+  if (input.gpu === undefined) gpu = { model: "Graphics card", source: "generic", length: 267, height: 134, thick: 42, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true, ports: typicalCardPorts };
   else if (input.gpu) {
     const picked = picks.gpu && gpus[picks.gpu];
     const found = gpuCandidates(input.gpu);
     const chip = gpuChip(input.gpu.name);
     if (picked) gpu = { ...picked, source: "picked" };
     else if (found.length === 1 && input.gpu.subsysVendor) gpu = { ...found[0][1], source: "catalog" };
-    else gpu = { model: input.gpu.name, source: chip && chipTypical[chip] ? "estimated" : "generic", ...(chip && chipTypical[chip] ? chipTypical[chip] : { length: 267, height: 134, thick: 42, fans: 2, fanMm: 95 }), shroud: "#2f3033", backplate: true };
+    else gpu = { model: input.gpu.name, source: chip && chipTypical[chip] ? "estimated" : "generic", ...(chip && chipTypical[chip] ? chipTypical[chip] : { length: 267, height: 134, thick: 42, fans: 2, fanMm: 95, ports: typicalCardPorts }), shroud: "#2f3033", backplate: true };
   }
 
   const cooler = picks.cooler && coolers[picks.cooler] ? { ...coolers[picks.cooler], source: "picked" as const } : genericCooler;

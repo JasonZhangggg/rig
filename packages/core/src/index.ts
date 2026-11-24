@@ -34,4 +34,5 @@ export * from "./changes";
 export * from "./build";
 export * from "./boardLayout";
 export * from "./boardUsage";
+export * from "./gpuPorts";
 export * from "./cables";

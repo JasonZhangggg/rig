@@ -488,7 +488,7 @@ describe("My PC", () => {
     fireEvent.click(within(list).getByRole("button", { name: /NVIDIA GeForce RTX 4070 SUPER/ }));
     expect(await screen.findByRole("heading", { name: "NVIDIA GeForce RTX 4070 SUPER" })).toBeTruthy();
     expect(screen.getByText("Temperature")).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Specs" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Ports" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByRole("region", { name: "Upgrades" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "All parts" }));
     expect(await screen.findByRole("list", { name: "Parts" })).toBeTruthy();
