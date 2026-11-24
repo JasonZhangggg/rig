@@ -152,6 +152,7 @@ public static class Program
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 7) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
         foreach (var p in ProbeChecks()) yield return p;
+        foreach (var p in Steps.SelfChecks()) yield return p;
         if (all["storage"] is JsonObject scan && (scan["running"] is not JsonValue || scan["volumes"] is not JsonArray)) yield return "storage answered without running and volumes";
         // Each volume names the drive it's on, so the storage map can draw it there.
         if (all["inventory"]?["volumes"] is JsonArray vols && all["inventory"]?["disks"] is JsonArray disks)
@@ -329,7 +330,8 @@ public class Handler(Sensors hw)
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
-        "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
+        "fix.read" => Steps.Read(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
+        "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };

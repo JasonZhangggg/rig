@@ -5,7 +5,7 @@
 // model never sets them. The server, the app and the helper all run the same
 // check from the same rules file, and the helper's answer is the one shown.
 
-import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
+import { callTier, titleFor, validateCall, type ActionCall, type UndoCall } from "./actions";
 import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
 import type { Change } from "./client";
 import type { DiffRow } from "./model";
@@ -123,7 +123,9 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
   if (step.kind === "fix") {
     const bad = validateCall(step.call);
     if (bad) return refuse(`This isn't one of Rig's fixes: ${bad}.`);
-    return { status: "allowed", tier: actionInfo(step.call.kind).tier, admin: false, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
+    // Tier 2 fixes (a whole-PC registry value, a service) need the helper's admin rights.
+    const tier = callTier(step.call);
+    return { status: "allowed", tier, admin: tier === 2, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
   }
   const cmd = canonicalCommand(step.cmd);
   if (typeof cmd === "string") return refuse(cmd);
@@ -191,7 +193,7 @@ export interface VerifyResult {
 
 export interface RestorePoint { seq: number; name: string; /** ISO time. */ at: string }
 
-export interface FixUndo { kind: "fix"; call: ActionCall }
+export interface FixUndo { kind: "fix"; call: UndoCall }
 export interface CommandUndo {
   kind: "command";
   /** The helper's id for the snapshot and undo script, kept in its admin-only folder. */
@@ -207,7 +209,8 @@ export interface CommandUndo {
 export type UndoRecord = FixUndo | CommandUndo;
 
 export type AppliedStep =
-  | { step: FixStep; undo: FixUndo; rows: DiffRow[] }
+  /** `unverified`: what the helper saw when it read the fix back and the change wasn't there, in plain words. */
+  | { step: FixStep; undo: FixUndo; rows: DiffRow[]; unverified?: string }
   | { step: CommandStep; undo: CommandUndo; rows: DiffRow[]; verify?: VerifyResult };
 
 /** How a change's steps were stored before general commands. */

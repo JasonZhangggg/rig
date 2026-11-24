@@ -38,4 +38,8 @@
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The typed fixes' own rules (registry places, power settings), shared with packages/core/src/actions.ts. -->
+    <EmbeddedResource Include="..\..\packages\core\src\rules\fixes.json" LogicalName="Rig.Rules.fixes.json" />
+  </ItemGroup>
 </Project>

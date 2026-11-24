@@ -1,0 +1,21 @@
+{
+  "about": [
+    "Rules for the typed fixes in actions.ts (registry.set, service.startType, power.setting), read by actions.ts and by the helper, which embeds this file. The never list and the protection rows in commands.json hold these fixes too: a registry key and value, or a service's key under HKLM\\SYSTEM\\CurrentControlSet\\Services, is refused when `neverText` (any `applies`) or `protectText` fits it, and a service is refused when Set-Service's or Stop-Service's tier 3 `has` list names it.",
+    "`registryNever`: places a typed registry write never goes, on top of the never list, because each picks which program opens files, links or parts of Windows, or where Windows finds programs and folders. The general command path can still reach them, with its own checks. Tested like `neverText`: fold; hkey_local_machine to hklm and hkey_current_user to hkcu; / to \\; remove ` ' \" + : and spaces; runs of \\ become one; then contains.",
+    "`power`: the settings power.setting may change, on the active plan, by GUID or powercfg alias. `range` is what Rig proposes; `windows` is what the helper accepts, Windows' own range, so undo can always put back the value that was there. `atLeast`: a value that isn't 0 must be at least this. `choices`: a name for each index. `unit`: seconds (0 is never) or percent."
+  ],
+  "registryNever": {
+    "says": "Rig's registry fix never changes which program opens files, links or parts of Windows, or where Windows finds programs and folders",
+    "contains": ["\\Software\\Classes", "\\Wow6432Node\\Classes", "\\CLSID\\", "\\Environment", "Shell Folders"]
+  },
+  "power": [
+    { "id": "usbSelectiveSuspend", "title": "USB selective suspend", "subgroup": "2a737441-1930-4402-8d77-b2bebba308a3", "setting": "48e6b7a6-50f5-4782-a5d4-53bb8f07e226", "choices": ["Off", "On"], "range": [0, 1], "windows": [0, 1] },
+    { "id": "pcieLinkState", "title": "PCI Express link state power management", "subgroup": "501a4d13-42af-4429-9fd1-a8218c268e20", "subgroupAlias": "SUB_PCIEXPRESS", "setting": "ee12f906-d277-404b-b6da-e5fa1a576df5", "settingAlias": "ASPM", "choices": ["Off", "Moderate power savings", "Maximum power savings"], "range": [0, 2], "windows": [0, 2] },
+    { "id": "sleepAfter", "title": "Sleep after", "subgroup": "238c9fa8-0aad-41ed-83f4-97be242c8f20", "subgroupAlias": "SUB_SLEEP", "setting": "29f6c1db-86da-48c5-9fdb-f2b67b1f44da", "settingAlias": "STANDBYIDLE", "unit": "seconds", "range": [0, 86400], "atLeast": 60, "windows": [0, 4294967295] },
+    { "id": "displayOffAfter", "title": "Turn off the screen after", "subgroup": "7516b95f-f776-4464-8c53-06167f40cc99", "subgroupAlias": "SUB_VIDEO", "setting": "3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e", "settingAlias": "VIDEOIDLE", "unit": "seconds", "range": [0, 86400], "atLeast": 60, "windows": [0, 4294967295] },
+    { "id": "hibernateAfter", "title": "Hibernate after", "subgroup": "238c9fa8-0aad-41ed-83f4-97be242c8f20", "subgroupAlias": "SUB_SLEEP", "setting": "9d7815a6-7ee4-497e-8888-515a05f02364", "settingAlias": "HIBERNATEIDLE", "unit": "seconds", "range": [0, 86400], "atLeast": 60, "windows": [0, 4294967295] },
+    { "id": "processorMin", "title": "Minimum processor state", "subgroup": "54533251-82be-4824-96c1-47b60b740d00", "subgroupAlias": "SUB_PROCESSOR", "setting": "893dee8e-2bef-41e0-89c6-b55d0929964c", "settingAlias": "PROCTHROTTLEMIN", "unit": "percent", "range": [0, 100], "windows": [0, 100] },
+    { "id": "processorMax", "title": "Maximum processor state", "subgroup": "54533251-82be-4824-96c1-47b60b740d00", "subgroupAlias": "SUB_PROCESSOR", "setting": "bc5038f7-23e0-4960-96da-33abaf5935ec", "settingAlias": "PROCTHROTTLEMAX", "unit": "percent", "range": [50, 100], "windows": [0, 100] },
+    { "id": "coolingPolicy", "title": "System cooling policy", "subgroup": "54533251-82be-4824-96c1-47b60b740d00", "subgroupAlias": "SUB_PROCESSOR", "setting": "94d3a615-a899-4ac5-ae2b-e4d8f634367f", "settingAlias": "SYSCOOLPOL", "choices": ["Passive (slow the processor before speeding up fans)", "Active (speed up fans before slowing the processor)"], "range": [0, 1], "windows": [0, 1] }
+  ]
+}

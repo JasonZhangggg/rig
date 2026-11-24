@@ -89,9 +89,9 @@ describe("what a refusal says", () => {
 });
 
 describe("checking a step", () => {
-  it("gives a fix its tier from the catalog, and the six fixes are tier 1", () => {
-    expect(catalog).toHaveLength(6);
-    expect(catalog.map((a) => a.tier)).toEqual([1, 1, 1, 1, 1, 1]);
+  it("gives a fix its tier from the catalog, and the six first fixes are tier 1", () => {
+    expect(catalog.map((a) => a.kind)).toEqual(["power.plan", "startup.app", "windows.gameMode", "windows.visualEffects", "power.maxProcessorState", "display.refreshRate", "registry.set", "service.startType", "power.setting"]);
+    expect(catalog.slice(0, 6).map((a) => a.tier)).toEqual([1, 1, 1, 1, 1, 1]);
     expect(checkStep(gameMode)).toMatchObject({ status: "allowed", tier: 1, commands: [] });
     expect(refusal({ kind: "fix", call: { kind: "power.plan", guid: "nope" } })?.refused).toContain("power plan GUID");
   });

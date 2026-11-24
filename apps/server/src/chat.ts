@@ -98,6 +98,7 @@ const callSchema = {
     guid: { type: "string" }, name: { type: "string" }, enabled: { type: "boolean" },
     mode: { type: "string", enum: ["auto", "appearance", "performance"] },
     ac: { type: "integer" }, dc: { type: "integer" }, display: { type: "string" }, hz: { type: "integer" },
+    key: { type: "string" }, type: { type: "string" }, value: { anyOf: [{ type: "integer" }, { type: "string" }, { type: "array", items: { type: "string" } }] }, start: { type: "string" }, subgroup: { type: "string" }, setting: { type: "string" },
   },
   required: ["kind"],
 };

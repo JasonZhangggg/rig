@@ -5,7 +5,7 @@
 
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
-import { describeCall, validateCall, type ActionCall } from "./actions";
+import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow, type UndoCall } from "./actions";
 import { cardTier, changeOf, stepsTitle, type AppliedStep, type FixStep, type FixUndo, type Step, type StoredChange } from "./change";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
@@ -29,8 +29,10 @@ export interface HelperLink {
   inventory(): Promise<Inventory>;
   facts(): Promise<SystemFacts>;
   snapshot(): Promise<Snapshot>;
-  /** Makes one catalog change and returns the call that puts it back. */
-  apply(call: ActionCall): Promise<ActionCall>;
+  /** Makes one catalog change (or an undo's restore) and returns the call that puts it back, and what reading it back showed. */
+  apply(call: UndoCall): Promise<FixApplied>;
+  /** What a newer fix's target holds now (a registry value, how a service starts, a power setting), for the preview. Missing on older helpers. */
+  readFix?(call: ActionCall): Promise<FixNow>;
   /** Windows crash and error events since a time. Read-only; missing on helpers from before recordings. */
   events?(sinceMs: number): Promise<RawEvent[]>;
   /** The busiest apps right now, by processor and memory use. Read-only. */
@@ -670,14 +672,24 @@ export class LocalClient implements RigClient {
     await this.start();
     for (const c of calls) { const bad = validateCall(c); if (bad) throw new Error(bad); }
     const facts = await this.freshFacts();
-    return calls.map((c) => describeCall(c, facts, this.inv!.displays));
+    const rows: DiffRow[] = [];
+    // The facts don't hold a registry value, a service or most power settings, so the helper reads those now.
+    for (const c of calls) rows.push(describeCall(c, facts, this.inv!.displays, needsRead(c) && this.link.readFix ? await this.link.readFix(c) : undefined));
+    return rows;
   }
 
-  /** Runs fix steps in order. If one fails, the ones before it are put back and nothing is left half done. */
-  private async run(todo: { step: FixStep; rows: DiffRow[] }[]): Promise<AppliedFix[]> {
+  /**
+   * Runs fix calls in order: a step's own call, or the call that puts it back. If one fails, the ones before it are put
+   * back and nothing is left half done. Each comes back with what the helper saw when it read the change back.
+   */
+  private async run(todo: { step: FixStep; call: UndoCall; rows: DiffRow[] }[]): Promise<AppliedFix[]> {
     const done: AppliedFix[] = [];
     try {
-      for (const { step, rows } of todo) done.push({ step, undo: { kind: "fix", call: await this.link.apply(step.call) }, rows });
+      for (const { step, call, rows } of todo) {
+        const r = await this.link.apply(call);
+        const problem = r.verify && !r.verify.ok ? r.verify.problem : undefined;
+        done.push({ step, undo: { kind: "fix", call: r.undo }, rows, ...(problem ? { unverified: problem } : {}) });
+      }
       return done;
     } catch (e) {
       for (const a of [...done].reverse()) await this.link.apply(a.undo.call).catch(() => {});
@@ -693,10 +705,11 @@ export class LocalClient implements RigClient {
     const rows = await this.preview(id, steps);
     const tier = cardTier(steps);
     if (tier === "refused") throw new Error("Rig won't make this change.");
-    const applied = await this.run(fixes(steps).map((step, i) => ({ step, rows: [rows[i]] })));
+    const fixed = fixes(steps);
+    const applied = (await this.run(fixed.map((step, i) => ({ step, call: step.call, rows: [rows[i]] })))).map((a) => withBefore(a, this.facts, this.inv?.displays ?? []));
     const change: Change = {
       id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle(steps),
-      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier, applied, from: meta.from,
+      by: meta.by, status: "applied", why: meta.why ?? "", result: unverified(applied), diff: applied.flatMap((a) => a.rows), tier, applied, from: meta.from,
     };
     await this.store.putChange(change);
     void this.sync();
@@ -713,8 +726,8 @@ export class LocalClient implements RigClient {
   async undo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status !== "applied") return c;
-    await this.run(appliedFixes(c.applied).reverse().map((a) => ({ step: { kind: "fix", call: a.undo.call }, rows: a.rows })));
-    const next: Change = { ...c, status: "undone" };
+    const back = await this.run(appliedFixes(c.applied).reverse().map((a) => ({ step: a.step, call: a.undo.call, rows: a.rows })));
+    const next: Change = { ...c, status: "undone", result: unverified(back) };
     await this.store.putChange(next);
     void this.sync();
     return next;
@@ -723,8 +736,8 @@ export class LocalClient implements RigClient {
   async redo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status === "applied") return c;
-    const applied = await this.run(appliedFixes(c.applied).map((a) => ({ step: a.step, rows: a.rows })));
-    const next: Change = { ...c, status: "applied", applied };
+    const applied = await this.run(appliedFixes(c.applied).map((a) => ({ step: a.step, call: a.step.call, rows: a.rows })));
+    const next: Change = { ...c, status: "applied", applied, result: unverified(applied) };
     await this.store.putChange(next);
     void this.sync();
     return next;
@@ -841,6 +854,18 @@ export class LocalClient implements RigClient {
 }
 
 type AppliedFix = Extract<AppliedStep, { undo: FixUndo }>;
+
+/** A newer fix's row, when the preview couldn't read the value before: the helper read it just before the change, and the undo holds it. */
+function withBefore(a: AppliedFix, facts: SystemFacts | null, displays: { name: string; refreshHz: number }[]): AppliedFix {
+  const now = a.rows[0]?.[1] === NOT_READ ? nowFromUndo(a.undo.call) : undefined;
+  return now ? { ...a, rows: [describeCall(a.step.call, facts, displays, now)] } : a;
+}
+
+/** What to tell the person when a fix didn't hold when Rig read it back. */
+function unverified(applied: AppliedFix[]): string {
+  const seen = applied.flatMap((a) => (a.unverified ? [a.unverified] : []));
+  return seen.length ? `Rig read it back afterwards and it didn't hold: ${seen.join(" ")} Windows or another app may have changed it back.` : "";
+}
 
 const noCommands = () => new Error("This PC's Rig helper can't run commands yet.");
 

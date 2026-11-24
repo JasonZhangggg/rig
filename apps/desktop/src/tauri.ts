@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import { scriptHash, type ActionCall, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
+import { scriptHash, type ActionCall, type FixApplied, type FixNow, type UndoCall, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -14,7 +14,8 @@ export const tauriLink: HelperLink = {
   inventory: () => call<Inventory>("inventory"),
   facts: () => call<SystemFacts>("facts"),
   snapshot: () => call<Snapshot>("snapshot"),
-  apply: (c: ActionCall) => call<{ undo: ActionCall }>("apply", { call: c }).then((r) => r.undo),
+  apply: (c: UndoCall) => call<FixApplied>("apply", { call: c }),
+  readFix: (c: ActionCall) => call<FixNow>("fix.read", { call: c }),
   events: (sinceMs: number) => call<RawEvent[]>("events", { sinceMs }),
   processes: () => call<ProcessUse[]>("processes", { top: 8 }),
   storage: (fresh?: boolean) => call<StorageScan>("storage", { fresh: !!fresh }),

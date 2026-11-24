@@ -11,7 +11,7 @@ import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
-import { applyToFacts } from "./apply";
+import { applyToFacts, demoNow } from "./apply";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
@@ -257,7 +257,7 @@ export class DemoClient implements RigClient {
 
   async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
     const p = this.pcs[id];
-    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays));
+    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays, demoNow(p.facts, s.call)));
   }
 
   async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
