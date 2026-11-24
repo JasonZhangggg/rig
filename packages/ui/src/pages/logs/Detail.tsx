@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { isActive, limitsOf, summarise, type HistoryPoint, type Recording, type RecordingInfo } from "@rig/core";
+import { isActive, limitsOf, logTitle, recorded, summarise, type HistoryPoint, type Recording, type RecordingInfo } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { useActions, useData, useStillPC, useTemp, useTempText } from "../../state";
@@ -7,7 +7,8 @@ import { CustomLogDetail } from "./CustomLog";
 import { Rows } from "../../components/Rows";
 import { EventRow } from "./Events";
 import { Progress, StateChip } from "./RecordingCard";
-import { clock, clockSec, gb, whenRan } from "./words";
+import { AllSensors } from "./Lanes";
+import { clock, clockSec, dayName, gb, isPhone } from "./words";
 
 /** A recording or a log from Logs. Custom logs have a page of their own, since what they write can be anything. */
 export function Detail({ info, onBack }: { info: RecordingInfo; onBack: () => void }) {
@@ -46,19 +47,37 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const [more, setMore] = useState(false);
   const [stopping, setStopping] = useState(false);
   const stop = () => { setStopping(true); void stopRecording(info.id).finally(() => setStopping(false)); };
+  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec) : null), [rec]);
+  const start = info.startedAt, end = info.finishedAt ?? info.endsAt ?? info.startedAt;
+  const kind = info.id.startsWith("bg-a-") ? "Closer look" : info.background ? "Background log" : info.by === "rig" ? "Recording Rig started" : "Recording you started";
+  const title = info.state === "done" || info.state === "cancelled" ? logTitle(info) : info.reason;
+  const meta = [start != null ? `${dayName(start)}, ${clock(start)} to ${clock(end!)}` : null, sum?.games[0] ?? null, kind].filter(Boolean).join(" · ");
+  const figs: { label: string; v: string; note?: string; look?: boolean; text?: boolean }[] = [];
+  if (sum) {
+    for (const k of ["gpu", "cpu"] as const) {
+      const st = stat(k);
+      if (!st) continue;
+      const limit = limits[k];
+      figs.push({ label: k === "gpu" ? "Graphics card" : "Processor", v: temp(st.max), note: limit != null ? `limit ${temp(limit)}` : `at ${clock(st.maxAt)}`, look: limit != null && st.max >= limit - 6 });
+    }
+    if (top) figs.push({ label: "Busiest app", v: top.name.replace(/\.exe$/i, ""), text: true, note: `${top.cpuAvg}% CPU · ${gb(top.memMaxMb)}` });
+    figs.push({ label: "Windows events", v: String(rec?.events.length ?? 0) });
+  }
 
   return (
-    <div className="page">
+    <div className="page rc-log">
       <div className="page-head">
         <div>
-          <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />All logs</button>
-          <h1>{info.background ? "Background log" : `${info.minutes}-minute recording`}</h1>
-          <p className="sub">{info.reason}</p>
-          <p className="rec-meta-line">{whenRan(info)}. {info.background ? "Recorded by Rig in the background and kept only on this PC" : <>Started by {info.by === "rig" ? "Rig" : "you"}{info.question ? ` after you asked "${info.question}"` : ""}</>}</p>
+          <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />Logs</button>
+          <h1>{inUnit(title)}</h1>
+          <p className="rc-when">{meta}</p>
+          {info.question && <p className="faint rc-asked">You asked: "{info.question}"</p>}
         </div>
         <div className="gm-actions">
           <StateChip state={info.state} />
           {active && <button type="button" className="btn" disabled={stopping} onClick={stop}>{stopping ? "Stopping…" : "Stop recording"}</button>}
+          {/* Rig's chat reads recordings on its server, and background logs stay on this PC. */}
+          {!info.background && !active && <button type="button" className="btn primary sm" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>}
         </div>
       </div>
 
@@ -68,21 +87,21 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
 
       {rec === undefined ? <p className="muted">Loading the recording…</p> : !rec || !sum ? <p className="muted">Rig couldn't load this recording. Go back to Logs and open it again.</p> : (
         <>
-          <section className="lg-lede" aria-label="What it found">
-            <p className="lg-lede-text">{active && sum.moments.length === 0 ? "Nothing unusual so far." : inUnit(sum.headline)}</p>
-            {/* Rig's chat reads recordings on its server, and background logs stay on this PC. */}
-            {!info.background && <button type="button" className="btn primary sm" disabled={data.answering || info.state === "pending"} onClick={() => ask(question)}>Ask about this</button>}
-          </section>
+          {sum.samples > 0 && (
+            <dl className="rc-figs" aria-label="Key readings">
+              {figs.map((f) => <div key={f.label}><dt>{f.label}</dt><dd className={`num rc-fig${f.look ? " look" : ""}${f.text ? " text" : ""}`}>{f.v}</dd>{f.note && <dd className="faint">{f.note}</dd>}</div>)}
+            </dl>
+          )}
 
-          <section className="card card-pad rec-found-card">
-            <h2>What Rig found</h2>
-            {sum.moments.length === 0 ? <p className="muted">{active ? "Rig adds anything unusual here as it happens." : "Every reading stayed in its usual range."}</p> : (
+          <section className="rc-found" aria-labelledby="rc-found-h">
+            <h2 id="rc-found-h" className="lg-h">What Rig found</h2>
+            {sum.moments.length === 0 ? <p className="muted">{active ? "Anything unusual shows here as it happens." : "Every reading stayed in its usual range."}</p> : (
               <ol className="rec-moments">
                 {sum.moments.map((m, i) => (
                   <li key={`${m.t}${m.title}`} className={m.severity}>
                     <span className="rec-n num">{i + 1}</span>
                     <span className="num faint">{clockSec(m.t)}</span>
-                    <span className="ev-text"><b>{inUnit(m.title)}</b><span className="muted">{inUnit(m.detail)}</span></span>
+                    <span className="ev-text"><b>{inUnit(m.title)}</b></span>
                   </li>
                 ))}
               </ol>
@@ -97,11 +116,10 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
                   {hasGpu && <span><i className="lg-cpu" />Processor</span>}
                   <span><i className="lg-gpu" />{hasGpu ? "Graphics card" : "Processor"}</span>
                   {mainLimit != null && <span><i className="lg-limit" />Safe limit</span>}
-                  {marks.length > 0 && <span><i className="lg-mark" />Numbers match the list above</span>}
                 </div>
               </div>
               <LineChart points={temps} series={series} limit={mainLimit != null ? { v: mainLimit, label: `${temp(mainLimit)} limit` } : undefined} h={240} marks={marks} label="Temperatures during the recording" />
-              {loads.some((p) => p.cpu != null || p.gpu != null) && (
+              {!all && loads.some((p) => p.cpu != null || p.gpu != null) && (
                 <>
                   <h2>How hard each part worked</h2>
                   <LineChart points={loads} series={series} h={180} unit="percent" marks={marks} label="Usage during the recording" />
@@ -110,35 +128,26 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
             </section>
           )}
 
+          {all && start != null && (
+            <section className="rc-readings" aria-labelledby="rc-all-h">
+              <div className="rc-sech">
+                <h2 id="rc-all-h" className="lg-h">All sensors</h2>
+                <span className="faint">{all.sensors.length} sensors · every {Math.round(rec.intervalMs / 1000)} s</span>
+              </div>
+              <AllSensors r={all} from={all.points[0]?.t ?? start} to={all.points.at(-1)?.t ?? end!} limits={limits}
+                marks={sum.moments.map((m, i) => ({ t: m.t, look: m.severity === "bad", n: i + 1 }))} compact={isPhone()} />
+            </section>
+          )}
+
           <section className="lg-all" aria-labelledby="rec-more-h">
             <h2 id="rec-more-h" className="lg-h">
               <button type="button" className="lg-all-toggle" aria-expanded={more} aria-controls="rec-more-body" onClick={() => setMore(!more)}>
-                <Icon d="M8 4l6 6-6 6" />Readings, apps and Windows events
+                <Icon d="M8 4l6 6-6 6" />Apps and Windows events
               </button>
             </h2>
             <div id="rec-more-body">
               {more ? (
                 <div className="card card-pad rec-more">
-                  {sum.samples > 0 && (
-                    <div className="rec-figs">
-                      {(["gpu", "cpu"] as const).filter((k) => stat(k)).map((k) => {
-                        const s = stat(k)!, limit = limits[k], near = limit != null && s.max >= limit - 6;
-                        return (
-                          <div key={k}>
-                            <div className="label">{k === "gpu" ? "Graphics card" : "Processor"} at its hottest</div>
-                            <p className="num rec-fig" style={near ? { color: "var(--warn)" } : undefined}>{temp(s.max)}</p>
-                            <p className="muted">At {clock(s.maxAt)}, {temp(s.avg)} on average.{limit != null ? ` Its safe limit is ${temp(limit)}.` : ""}</p>
-                          </div>
-                        );
-                      })}
-                      <div>
-                        <div className="label">Busiest app</div>
-                        <p className="rec-fig rec-app">{top ? top.name : "None"}</p>
-                        <p className="muted">{top ? `About ${top.cpuAvg}% of the processor, up to ${gb(top.memMaxMb)} of memory.` : "Rig didn't record apps this time."}{sum.games.length ? ` In front: ${sum.games.join(", ")}.` : ""}</p>
-                      </div>
-                    </div>
-                  )}
-
                   {sum.offenders.length > 0 && (
                     <section className="rec-apps">
                       <h2>Busiest apps</h2>
@@ -159,7 +168,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
                       : <Rows timeline>{rec.events.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} seconds />)}</Rows>}
                   </section>
                 </div>
-              ) : <p className="faint">The hottest readings, the busiest apps and what Windows logged while Rig recorded.</p>}
+              ) : <p className="faint">The busiest apps, and what Windows logged.</p>}
             </div>
           </section>
         </>

@@ -1,6 +1,28 @@
-import { probeWhat, probeWhen, type CustomInfo, type RecordingInfo } from "@rig/core";
+import { useMemo, useState } from "react";
+import { probeWhen, type CustomInfo, type RecordedPoint, type RecordingInfo } from "@rig/core";
 import { Icon } from "../../components/common";
-import { clockSec, shortDay } from "./words";
+import { useTemp } from "../../state";
+import { Lanes, value, type Lane, type LaneType } from "./Lanes";
+import { clockSec, isPhone, shortDay } from "./words";
+
+/** How a column a custom log wrote is charted: memory in MB, a share, or a plain number. */
+function columnLane(name: string, i: number, who?: string): Lane {
+  const line = who ?? name;
+  if (/mem|mb$/i.test(name)) return { title: "Memory", type: "mb", series: [{ i, cls: "c-look", name: line }] };
+  if (/^cpu|load|percent|pct/i.test(name)) return { title: name === "cpu" ? "Processor" : name, type: "load", series: [{ i, cls: "c-ink", name: line }] };
+  if (/temp/i.test(name)) return { title: "Temperature", type: "temperature", series: [{ i, cls: "c-ink", name: line }] };
+  return { title: name === "count" ? "Processes" : name, type: "plain" as LaneType, series: [{ i, cls: "c-ink", name: line }] };
+}
+
+/** The numbers a custom log wrote, as lines: one per column that holds numbers. */
+function useChart(c: CustomInfo, who?: string) {
+  return useMemo(() => {
+    const cols = c.columns.map((name, i) => ({ name, i })).filter(({ i }) => c.rows.some((r) => typeof r.cells[i] === "number"));
+    const points: RecordedPoint[] = c.rows.map((r) => ({ t: r.t, v: cols.map(({ i }) => (typeof r.cells[i] === "number" ? r.cells[i] as number : null)) }));
+    const lanes = cols.map((col, k) => columnLane(col.name, k, who)).sort((a, b) => (a.type === "mb" ? -1 : b.type === "mb" ? 1 : 0));
+    return { points, lanes };
+  }, [c.columns, c.rows, who]);
+}
 
 const at = (t: number) => `${shortDay(t)}, ${clockSec(t)}`;
 const stateText: Record<CustomInfo["state"], [string, string]> = {
@@ -13,22 +35,42 @@ export function CustomLogDetail({ info, onBack }: { info: RecordingInfo; onBack:
   const p = c.spec;
   const [word, tone] = stateText[c.state];
   const s = p.source;
+  const temp = useTemp();
+  const { points, lanes } = useChart(c, s.kind === "process" ? s.name : undefined);
+  const [cursor, setCursor] = useState<number | null>(null);
+  const t0 = points[0]?.t ?? p.createdAt, t1 = points.at(-1)?.t ?? t0;
+  const figs = lanes.map((l) => {
+    const i = l.series[0].i;
+    const vals = points.map((x) => x.v[i]).filter((v): v is number => v != null);
+    return { label: l.title, max: vals.length ? Math.max(...vals) : null, last: vals.length ? vals[vals.length - 1] : null, type: l.type };
+  });
   return (
-    <div className="page">
+    <div className="page rc-log">
       <div className="page-head">
         <div>
-          <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />All logs</button>
-          <h1>Custom log</h1>
-          <p className="rec-reason">{p.label}</p>
-          <p className="sub">
-            {p.by === "chat" ? "Asked for by Rig's chat" : "Set up by you"} on {at(p.createdAt)}. Reads {probeWhat(s)} {probeWhen(p)}, {c.active ? "until" : "ran until"} {at(info.finishedAt ?? p.expiresAt)}. Kept only on this PC.
-          </p>
+          <button type="button" className="btn ghost sm gm-back" onClick={onBack}><Icon d="M12 4 6 10l6 6" />Logs</button>
+          <h1>{p.label}</h1>
+          <p className="rc-when">Custom log · {p.by === "chat" ? "set up in chat" : "set up by you"} {at(p.createdAt)} · {s.kind === "process" ? `${s.name} ` : ""}{probeWhen(p)} · {c.active ? "until" : "ran until"} {shortDay(info.finishedAt ?? p.expiresAt)}</p>
         </div>
         <div className="gm-actions">
           <span className={`chip ${tone}`}>{word}</span>
           <a className="btn ghost" href="#settings">{c.active ? "Pause or turn off" : "Settings"}</a>
         </div>
       </div>
+
+      {figs.length > 0 && (
+        <dl className="rc-figs" aria-label="Key readings">
+          {figs.map((f, k) => (
+            <div key={f.label}><dt>{f.label}, highest</dt><dd className={`num rc-fig${k === 0 ? " look" : ""}`}>{value(temp, f.type, f.max)}</dd><dd className="faint">now {value(temp, f.type, f.last)}</dd></div>
+          ))}
+          <div><dt>Entries</dt><dd className="num rc-fig">{c.total.toLocaleString("en-US")}</dd></div>
+        </dl>
+      )}
+      {points.length > 1 && (
+        <section className="rc-lead" aria-label="What it logged, charted">
+          <Lanes points={points} lanes={lanes.map((l, k) => (k === 0 ? { ...l, h: isPhone() ? 130 : 170 } : l))} t0={t0} t1={t1} cursor={cursor} onCursor={setCursor} gapMs={Math.max(90_000, p.every * 3000)} compact={isPhone()} />
+        </section>
+      )}
 
       {info.error && <div className="callout warn">{info.error}</div>}
       {s.kind === "script" && (
@@ -45,7 +87,7 @@ export function CustomLogDetail({ info, onBack }: { info: RecordingInfo; onBack:
         </section>
       )}
       <section className="card card-pad custom-rows">
-        <h3>What it logged</h3>
+        <h3>Every entry</h3>
         {!c.rows.length ? <p className="muted">Nothing yet.</p> : (
           <>
             {c.total > c.rows.length && <p className="faint">The last {c.rows.length} of {c.total} entries.</p>}

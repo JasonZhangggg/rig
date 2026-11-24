@@ -3,6 +3,7 @@ import {
   LocalClient, MAX_SAMPLES, MemoryStore, Recorder, checkRequest, classifyEvent, cleanEvents, cleanRecording, describeRecording, intervalFor, newRecording, summarise,
   type PCEvent, type RawEvent, type Recording, type RecordingRequest, type RecordingSample,
 } from "../src";
+import { logTitle, recorded, type RecordingInfo } from "../src";
 import { DemoClient, SimulatedLink, demoRecording, fixtures, simulate } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -260,8 +261,8 @@ describe("demo logs", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 24, 9, 0));
     const demo = new DemoClient();
-    const list = await new Promise<{ id: string; reason: string }[]>((res) => { const stop = demo.watchRecordings("demo-atlas", (l) => { stop(); res(l); }); });
-    expect(list.filter((x) => x.id.startsWith("bg-d-"))).toHaveLength(7);
+    const list = await new Promise<RecordingInfo[]>((res) => { const stop = demo.watchRecordings("demo-atlas", (l) => { stop(); res(l); }); });
+    expect(list.filter((x) => x.id.startsWith("bg-d-"))).toHaveLength(8);
     const look = list.find((x) => x.reason === "Windows logged Display event 4101")!;
     const crash = list.find((x) => x.reason === "Windows logged Application Error event 1000");
     expect(crash).toBeTruthy();
@@ -273,6 +274,12 @@ describe("demo logs", () => {
     expect(r.samples.every((s) => s.all?.length === r.sensors!.length)).toBe(true);
     expect(r.events.map((e) => e.kind)).toContain("driver");
     expect(list.some((x) => x.reason.startsWith("Custom log: Discord"))).toBe(true);
+    // Filed under its parts as the live view files them, each led by its main reading.
+    const parts = recorded(r);
+    expect(parts.parts.map((p) => [p.name, parts.sensors[p.lead].name])).toEqual([
+      ["Processor", "Core (Tctl/Tdie)"], ["Graphics card", "GPU Core"], ["Memory", "Memory"], ["Motherboard", "System"], ["Fans", "Fan #1"],
+    ]);
+    expect(logTitle(look as RecordingInfo)).toBe("The graphics driver stopped and recovered");
     const pebble = await new Promise<{ id: string }[]>((res) => { const stop = demo.watchRecordings("demo-pebble", (l) => { stop(); res(l); }); });
     expect(pebble).toEqual([]);
     vi.useRealTimers();

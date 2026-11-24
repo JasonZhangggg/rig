@@ -22,7 +22,7 @@ export const DEMO_PROBE_ID = "discord-mem";
 /** A week of the recorder's lines for a demo PC, oldest first. Only Atlas has the recorder on. */
 export function demoRecorderLines(inv: Inventory, now: number, dust: number): unknown[] {
   if (inv.machine.kind !== "tower") return [];
-  const from = new Date(now - 6 * DAY); from.setHours(0, 0, 0, 0);
+  const from = new Date(now - 7 * DAY); from.setHours(0, 0, 0, 0);
   const hot = hotEvening(now);
   // That Wednesday's Cyberpunk evening: the card creeps up as the dust takes hold, the way the finished recording shows it.
   const session = { from: hot - 100 * MIN, to: hot + 140 * MIN };

@@ -34,6 +34,8 @@ describe("Logs", () => {
     await screen.findByText(/Things to look at/i);
     expect(screen.getByRole("link", { name: /Logs/ }).getAttribute("href")).toBe("#logs");
     await open("logs");
+    fireEvent.click(within(await screen.findByRole("navigation", { name: "Logs" })).getByRole("link", { name: "Windows events" }));
+    await open("events");
     const counts = await screen.findByRole("group", { name: "Show only" });
     const count = (name: RegExp) => within(counts).getByRole("button", { name });
     expect(count(/Driver resets/).textContent).toBe("2Driver resetsLast yesterday");
@@ -66,7 +68,7 @@ describe("Logs", () => {
   it("filters the events to a day from the strip, with what happened on hover", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("events");
     const strip = await screen.findByRole("group", { name: "Last 30 days" });
     const days = within(strip).getAllByRole("button");
     expect(days).toHaveLength(30);
@@ -97,7 +99,7 @@ describe("Logs", () => {
   it("shows each event as a row with its time and kind, opens what Windows wrote under Details, and asks about it", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("events");
     const details = await screen.findByRole("button", { name: "Details: Discord.exe crashed", expanded: false });
     const row = details.closest("li")!;
     within(row).getByText("Crash, logged by Application Error.");
@@ -117,7 +119,7 @@ describe("Logs", () => {
   it("groups events by day, with how many on each", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("events");
     const list = await screen.findByRole("region", { name: /^Events/ });
     const days = within(list).getAllByRole("region");
     expect(days.length).toBeGreaterThan(1);
@@ -150,7 +152,7 @@ describe("Logs", () => {
     screen.getByRole("img", { name: "Temperatures during the recording" });
     screen.getByRole("img", { name: "Usage during the recording" });
     expect(screen.queryByText("Cyberpunk2077.exe", { selector: "td" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Readings, apps and Windows events" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apps and Windows events" }));
     screen.getByText("Cyberpunk2077.exe", { selector: "td" });
     screen.getByText("Windows events during the recording");
 
@@ -182,11 +184,13 @@ describe("Logs", () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     await open("logs");
-    await screen.findByText(/Windows logged no problems on Pebble in the last 30 days/);
+    await screen.findByText(/No background log on Pebble/);
     screen.getByText(/No recordings yet/);
+    screen.getByRole("button", { name: "Start recording" });
+    await open("events");
+    await screen.findByText(/Windows logged no problems on Pebble in the last 30 days/);
     expect(screen.queryByRole("group", { name: "Show only" })).toBeNull();
     expect(screen.queryByRole("region", { name: /Events/ })).toBeNull();
-    screen.getByRole("button", { name: "Start recording" });
   });
 
   it("shows a recording in °F when that's the unit picked", async () => {
@@ -208,12 +212,62 @@ describe("Logs", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const search = await screen.findByRole("textbox", { name: "Search" });
     fireEvent.change(search, { target: { value: "crashes" } });
-    screen.getByRole("button", { name: /^Logs Windows errors/ });
+    screen.getByRole("button", { name: /^Windows events In Logs: what went wrong/ });
+    fireEvent.change(search, { target: { value: "sensors" } });
+    screen.getByRole("button", { name: /^Logs Everything Rig recorded/ });
     fireEvent.change(search, { target: { value: "while you play" } });
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     await waitFor(() => expect(location.hash).toBe("#logs"));
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
     await screen.findByText("What Rig found");
+  });
+
+  it("shows a day of the background log: what happened first, then every sensor", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
+    try {
+      render(<RigApp client={new DemoClient()} />);
+      await screen.findByText(/Things to look at/i);
+      await open("logs");
+      await screen.findByRole("heading", { name: "Today" });
+      fireEvent.click(screen.getByRole("button", { name: "Day before" }));
+      await screen.findByRole("heading", { name: "Yesterday" });
+      const happened = screen.getByRole("region", { name: "What happened" });
+      // The recording Rig's chat started, and the closer look the background recorder took on its own around the same reset.
+      const rows = within(happened).getAllByRole("button", { name: /The graphics driver stopped and recovered/ });
+      expect(rows.map((r) => r.textContent).join("|")).toMatch(/Recording · 45 min/);
+      const look = rows.find((r) => /Closer look/.test(r.textContent ?? ""))!;
+      expect(look.textContent).toMatch(/\d+°CGPU/);
+      const readings = screen.getByRole("region", { name: "Readings" });
+      expect(happened.compareDocumentPosition(readings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      await within(readings).findByRole("img", { name: "Temperatures" });
+      within(readings).getByRole("img", { name: "Fans" });
+      fireEvent.click(within(readings).getByRole("button", { name: /^Graphics card/ }));
+      within(readings).getByText("GPU Hot Spot");
+      within(readings).getByRole("img", { name: "Power" });
+
+      fireEvent.click(look);
+      await screen.findByRole("heading", { level: 1, name: "The graphics driver stopped and recovered" });
+      const key = screen.getByLabelText("Key readings");
+      within(key).getByText("Graphics card");
+      within(key).getByText("limit 88°C");
+      const all = screen.getByRole("region", { name: "All sensors" });
+      expect(key.compareDocumentPosition(all) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Ask about this" })).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("opens a custom log with its highest readings and a chart of them", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const custom = await screen.findByRole("region", { name: "Custom logs" });
+    fireEvent.click(within(custom).getByRole("button", { name: /Discord's memory/ }));
+    await screen.findByRole("heading", { level: 1, name: /Discord's memory and processor use/ });
+    const key = screen.getByLabelText("Key readings");
+    within(key).getByText("Memory, highest");
+    screen.getByRole("img", { name: "Memory" });
+    screen.getByText("Every entry");
   });
 
   it("labels the start and end of a chart with only a few readings", () => {
