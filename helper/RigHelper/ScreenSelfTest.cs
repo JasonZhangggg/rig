@@ -20,7 +20,7 @@ static class ScreenSelfTest
 {
     const string WindowClass = "RigSelftestWindow", App = ScreenRules.SelfTestApp, Skip = CommandSelfTest.Skip;
     const int ApplyId = 1, SharpenId = 10, QualityId = 11;
-    const uint BM_GETCHECK = 0xf0, BM_SETCHECK = 0xf1, CB_ADDSTRING = 0x143, CB_GETCURSEL = 0x147, CB_SETCURSEL = 0x14e, TCM_GETCURSEL = 0x130b, TCM_SETCURSEL = 0x130c, TCM_INSERTITEMW = 0x133e;
+    const uint BM_GETCHECK = 0xf0, BM_SETCHECK = 0xf1, CB_ADDSTRING = 0x143, CB_GETCURSEL = 0x147, CB_SETCURSEL = 0x14e, CB_SHOWDROPDOWN = 0x14f, TCM_GETCURSEL = 0x130b, TCM_SETCURSEL = 0x130c, TCM_INSERTITEMW = 0x133e;
 
     static IntPtr window, tab, nothing, sharpen, label, quality;
     static int shown = -1;
@@ -218,7 +218,13 @@ static class ScreenSelfTest
         var combo = LookAt(rig, App, "display", "quality");
         if (combo["value"]?.ToString() != "Low" || Options(combo) != "Low,Medium,High") yield return $"the look at the drop-down answered {combo.ToJsonString()}";
         if (Quality != 0 || applied != 0) yield return "a look changed the drop-down or pressed Apply";
-        var entry = LookAt(rig, App, "Display", "High");
+        // A closed classic drop-down shows UI Automation no rows, so the list is opened first, as a person might leave it.
+        Win.SendMessageW(tab, TCM_SETCURSEL, 1, 0);
+        Thread.Sleep(300);
+        Win.SendMessageW(quality, CB_SHOWDROPDOWN, 1, 0);
+        JsonNode entry;
+        try { entry = LookAt(rig, App, "Display", "High"); }
+        finally { Win.SendMessageW(quality, CB_SHOWDROPDOWN, 0, 0); }
         if (entry["refused"]?.ToString() != ScreenRules.Words("combo-row")) yield return $"a look that named one of the drop-down's entries answered {entry.ToJsonString()}";
         if (Quality != 0 || applied != 0) yield return $"a look that named one of the drop-down's entries left it at {Quality}, and Apply was pressed {applied} times";
 
