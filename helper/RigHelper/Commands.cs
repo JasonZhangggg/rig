@@ -293,7 +293,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         string script = Path.Combine(store.Work, "parse.ps1"), input = Path.Combine(store.Work, name + ".in"), output = Path.Combine(store.Work, name + ".out");
         try
         {
-            File.WriteAllText(script, CommandCheck.Resource("Rig.Commands.CommandAst.ps1"), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            PowerShellHost.Write(script, CommandCheck.Resource("Rig.Commands.CommandAst.ps1"), stopOnError: false);
             File.WriteAllLines(input, scripts.Select(s => Convert.ToBase64String(Encoding.UTF8.GetBytes(s))));
             var ran = PowerShellHost.RunHere(PowerShellHost.Args(script, input, output), ParseTimeoutMs, store.Empty(), store.Work);
             if (!File.Exists(output)) throw new RigException($"PowerShell's parser didn't answer ({(ran.TimedOut ? "it took too long" : ran.Printed.Split('\n')[0].Trim())})");

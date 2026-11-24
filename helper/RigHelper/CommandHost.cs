@@ -57,7 +57,7 @@ public static class PowerShellHost
             ["ComSpec"] = Path.Combine(Sys, "cmd.exe"),
             ["Path"] = $@"{Sys};{Sys}\WindowsPowerShell\v1.0",
             ["PATHEXT"] = ".COM;.EXE;.BAT;.CMD",
-            ["PSModulePath"] = Modules,
+            ["PSModulePath"] = Modules, ["PSModuleAnalysisCachePath"] = Path.Combine(temp, "ModuleAnalysisCache"),
             ["TEMP"] = temp, ["TMP"] = temp,
             ["ProgramData"] = data, ["ALLUSERSPROFILE"] = data,
             ["ProgramFiles"] = files, ["ProgramW6432"] = files, ["ProgramFiles(x86)"] = Folder(Environment.SpecialFolder.ProgramFilesX86),
@@ -68,8 +68,6 @@ public static class PowerShellHost
     }
 
     /// The clean environment for a script with the helper's own rights: who the helper is, read from Windows, not from its own environment.
-    internal static Dictionary<string, string> DiagMine(string temp) => Mine(temp);
-
     static Dictionary<string, string> Mine(string temp)
     {
         var env = Clean(temp);
@@ -84,13 +82,16 @@ public static class PowerShellHost
     public static string Args(string file, params string[] more) =>
         $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{file}\"" + string.Concat(more.Select(m => $" \"{m}\""));
 
-    /// Writes a script as UTF-8 with a byte order mark, behind one line of Rig's own: PowerShell adds the person's module
-    /// folder back when it starts, so the line pins the module path again and makes the output UTF-8. A change stops at its first error.
-    public static void Write(string file, string script, bool stopOnError)
-    {
-        string first = $"try {{ [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false }} catch {{ }}; $env:PSModulePath = '{Modules}'" + (stopOnError ? "; $ErrorActionPreference = 'Stop'" : "");
-        File.WriteAllText(file, first + "\r\n" + script, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-    }
+    /// A script behind one line of Rig's own: PowerShell adds the person's module folder back when it starts, so the line pins
+    /// the module path again, loads Windows' own core modules by their full paths before any command is looked up, which also
+    /// spares PowerShell searching every module for them, and makes the output UTF-8. A change stops at its first error.
+    public static string Pinned(string script, bool stopOnError) =>
+        $"$env:PSModulePath = '{Modules}'; Import-Module -Name '{Modules}\\Microsoft.PowerShell.Utility', '{Modules}\\Microsoft.PowerShell.Management'; "
+        + "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }" + (stopOnError ? "; $ErrorActionPreference = 'Stop'" : "") + "\r\n" + script;
+
+    /// Writes a script as UTF-8 with a byte order mark, behind Rig's own first line.
+    public static void Write(string file, string script, bool stopOnError) =>
+        File.WriteAllText(file, Pinned(script, stopOnError), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
     /// Runs with the helper's own rights, starting in `folder`, with temporary files in `temp`.
     public static Ran RunHere(string args, int timeoutMs, string folder, string temp)

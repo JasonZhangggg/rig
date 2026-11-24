@@ -63,7 +63,6 @@ public static class CommandSelfTest
             // The self-test with admin rights is an app started as administrator; it stands in for one started normally.
             var ctx = new Context(new Commands(store, app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null }, store, person, elevated, root);
             Clean(ctx.Person);
-            Check("DIAG powershell start", () => Diag(ctx));
             Check("every shared vector through PowerShell's parser", () => Vectors(ctx));
             Check("a command's fingerprint", Fingerprint);
             Check("running as the person", () => AsPerson(ctx));
@@ -104,47 +103,6 @@ public static class CommandSelfTest
         }
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
         return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["appElevation"] = elevation, ["checks"] = checks }, problems);
-    }
-
-    static IEnumerable<string> Diag(Context ctx)
-    {
-        var mine = PowerShellHost.DiagMine(ctx.Store.Work);
-        var inherited = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().ToDictionary(e => (string)e.Key, e => (string)e.Value!, StringComparer.OrdinalIgnoreCase);
-        var missing = inherited.Keys.Where(k => !mine.ContainsKey(k)).OrderBy(k => k).ToList();
-        var lines = new List<string> { "missing: " + string.Join(",", missing) };
-        double Time(Dictionary<string, string> env, string cwd)
-        {
-            var psi = new ProcessStartInfo(PowerShellHost.Exe, "-NoProfile -NonInteractive -Command \"Get-Date | Out-Null; Get-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay | Out-Null\"") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = cwd, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            psi.Environment.Clear();
-            foreach (var (k, v) in env) psi.Environment[k] = v;
-            var w = Stopwatch.StartNew();
-            using var p = Process.Start(psi)!;
-            p.StandardInput.Close();
-            var o = p.StandardOutput.ReadToEndAsync(); var e = p.StandardError.ReadToEndAsync();
-            if (!p.WaitForExit(60_000)) { try { p.Kill(true); } catch { } return -1; }
-            return Math.Round(w.Elapsed.TotalSeconds, 1);
-        }
-        Dictionary<string, string> With(IEnumerable<string> add) { var d = new Dictionary<string, string>(mine, StringComparer.OrdinalIgnoreCase); foreach (string k in add) d[k] = inherited[k]; return d; }
-        string empty = ctx.Store.Empty();
-        double clean = Time(mine, empty);
-        lines.Add($"clean+empty {clean}");
-        lines.Add($"clean+sys {Time(mine, Environment.SystemDirectory)}");
-        double all = Time(With(missing), empty);
-        lines.Add($"clean+allmissing+empty {all}");
-        lines.Add($"inherited+sys {Time(inherited, Environment.SystemDirectory)}");
-        if (clean > 5 && all >= 0 && all < 5)
-        {
-            var cand = missing;
-            while (cand.Count > 1)
-            {
-                var half = cand.Take(cand.Count / 2).ToList();
-                double t = Time(With(half), empty);
-                lines.Add($"[{string.Join(",", half)}] {t}");
-                cand = t >= 0 && t < 5 ? half : cand.Skip(cand.Count / 2).ToList();
-            }
-            lines.Add($"culprit {cand.FirstOrDefault()}={(cand.Count > 0 ? inherited[cand[0]] : "")} -> {Time(With(cand), empty)}");
-        }
-        return lines;
     }
 
     static RegistryKey Hive(Person person, string sub, out string path)
