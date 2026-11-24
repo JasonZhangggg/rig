@@ -1,13 +1,16 @@
 // The self-test's checks of screen steps (Screen.cs, ScreenWalk.cs).
 //
 // The self-test opens a small window of its own with plain Windows controls:
-// two tabs, and on the second a checkbox, a drop-down and nothing else; below
-// them two checkboxes with the same name and an Apply button. The controls
-// only take effect when Apply is pressed, so a check can tell a walk that set
-// a control from one that also pressed Apply. The worker drives that window
-// from its own process through UI Automation, exactly as it drives an app's.
-// On a runner without a desktop the checks that need the window say so and
-// are skipped.
+// three tabs, on the second a checkbox and a drop-down, on the third a list
+// and a rich text box holding tabs of its own (UI Automation calls such
+// a box a Document, as it does a web page); below them two checkboxes with the
+// same name and an Apply button. The controls only take effect when Apply is
+// pressed, and Apply is on only while a control differs from what it last
+// took, as in a Windows settings dialog, so a check can tell a walk that set a
+// control from one that also pressed Apply. The worker drives that window from
+// its own process through UI Automation, exactly as it drives an app's. On a
+// runner without a desktop the checks that need the window say so and are
+// skipped.
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -21,11 +24,16 @@ static class ScreenSelfTest
     const string WindowClass = "RigSelftestWindow", App = ScreenRules.SelfTestApp, Skip = CommandSelfTest.Skip;
     const int ApplyId = 1, SharpenId = 10, QualityId = 11;
     const uint BM_GETCHECK = 0xf0, BM_SETCHECK = 0xf1, CB_ADDSTRING = 0x143, CB_GETCURSEL = 0x147, CB_SETCURSEL = 0x14e, CB_SHOWDROPDOWN = 0x14f, TCM_GETCURSEL = 0x130b, TCM_SETCURSEL = 0x130c, TCM_INSERTITEMW = 0x133e;
+    const uint LB_ADDSTRING = 0x180, LB_SETCURSEL = 0x186, LB_GETCURSEL = 0x188;
 
-    static IntPtr window, tab, nothing, sharpen, label, quality;
+    static IntPtr window, tab, nothing, sharpen, label, quality, modes, page, pageTabs, twin, apply;
     static int shown = -1;
+    static bool hidden;
     /// What the window's Apply last took from its controls, and how often it was pressed.
     static volatile int applied, appliedSharpen, appliedQuality;
+    /// `hide` takes the second tab's controls away, as a page an app is still loading; `linked` makes the first Twin
+    /// follow the checkbox, as a setting that changes another.
+    static volatile bool hide, linked, linkedSeen;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct TCITEM { public uint mask, dwState, dwStateMask; public string pszText; public int cchTextMax, iImage; public IntPtr lParam; }
@@ -34,10 +42,18 @@ static class ScreenSelfTest
     [DllImport("comctl32.dll")] static extern bool InitCommonControlsEx(ref INITCOMMONCONTROLSEX which);
     [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserObjectInformationW(IntPtr handle, int index, StringBuilder info, int size, out int needed);
+    [DllImport("user32.dll")] static extern bool EnableWindow(IntPtr hwnd, bool enable);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadLibraryW(string name);
+    [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetWindowTextW(IntPtr hwnd, string text);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int size);
 
     static int Tab => (int)Win.SendMessageW(tab, TCM_GETCURSEL, 0, 0);
     static bool Sharpen => Win.SendMessageW(sharpen, BM_GETCHECK, 0, 0) == 1;
     static int Quality => (int)Win.SendMessageW(quality, CB_GETCURSEL, 0, 0);
+    static int Mode => (int)Win.SendMessageW(modes, LB_GETCURSEL, 0, 0);
+    static int Page => (int)Win.SendMessageW(pageTabs, TCM_GETCURSEL, 0, 0);
+    static bool Dirty => Sharpen != (appliedSharpen == 1) || Quality != appliedQuality;
 
     static IntPtr Proc(IntPtr hwnd, uint msg, IntPtr w, IntPtr l)
     {
@@ -48,11 +64,21 @@ static class ScreenSelfTest
                 appliedQuality = Quality;
                 applied++;
                 return 0;
-            case Win.WM_TIMER when Tab != shown:
-                // The second tab's controls exist for UI Automation only while that tab is open, like a page an app loads late.
-                shown = Tab;
-                Win.ShowWindow(nothing, shown == 0 ? 8 : 0);
-                foreach (IntPtr control in new[] { sharpen, label, quality }) Win.ShowWindow(control, shown == 1 ? 8 : 0);
+            case Win.WM_TIMER:
+                if (Tab != shown || hide != hidden)
+                {
+                    // A tab's controls exist for UI Automation only while that tab is open, like a page an app loads late.
+                    (shown, hidden) = (Tab, hide);
+                    Win.ShowWindow(nothing, shown == 0 ? 8 : 0);
+                    foreach (IntPtr control in new[] { sharpen, label, quality }) Win.ShowWindow(control, shown == 1 && !hidden ? 8 : 0);
+                    foreach (IntPtr control in new[] { modes, page }) Win.ShowWindow(control, shown == 2 ? 8 : 0);
+                }
+                if (linked && Sharpen != linkedSeen)
+                {
+                    linkedSeen = Sharpen;
+                    Win.SendMessageW(twin, BM_SETCHECK, Sharpen ? 1 : 0, 0);
+                }
+                if (IsWindowEnabled(apply) != Dirty) EnableWindow(apply, Dirty);
                 return 0;
             case Win.WM_DESTROY:
                 Win.PostQuitMessage(0);
@@ -74,20 +100,23 @@ static class ScreenSelfTest
             if (made != IntPtr.Zero)
             {
                 tab = Win.Make(0, "SysTabControl32", "", seen, 10, 10, 430, 180, made, 2);
-                foreach (var (name, at) in new[] { ("General", 0), ("Display", 1) })
-                {
-                    var item = new TCITEM { mask = 1, pszText = name };
-                    SendMessageW(tab, TCM_INSERTITEMW, at, ref item);
-                }
+                Tabs(tab, "General", "Display", "More");
                 nothing = Win.Make(0, "STATIC", "Nothing to set here.", seen, 30, 50, 300, 20, made);
                 sharpen = Win.Make(0, "BUTTON", "Sharpen images", child | checkbox, 30, 50, 300, 24, made, SharpenId);
                 label = Win.Make(0, "STATIC", "Quality", child, 30, 92, 80, 20, made);
                 quality = Win.Make(0, "COMBOBOX", "", child | Win.WS_VSCROLL | dropList, 120, 88, 160, 200, made, QualityId);
                 foreach (string choice in new[] { "Low", "Medium", "High" }) Win.SendMessageW(quality, CB_ADDSTRING, 0, choice);
                 Win.SendMessageW(quality, CB_SETCURSEL, 0, 0);
-                Win.Make(0, "BUTTON", "Twin", seen | checkbox, 30, 205, 90, 24, made, 20);
+                modes = Win.Make(0, "LISTBOX", "", child | Win.WS_BORDER, 30, 50, 120, 60, made, 30);
+                foreach (string mode in new[] { "Fast", "Quiet" }) Win.SendMessageW(modes, LB_ADDSTRING, 0, mode);
+                Win.SendMessageW(modes, LB_SETCURSEL, 0, 0);
+                LoadLibraryW("msftedit.dll");
+                page = Win.Make(0, "RICHEDIT50W", "", child | Win.WS_BORDER | 0x4, 170, 50, 250, 120, made, 31);
+                pageTabs = Win.Make(0, "SysTabControl32", "", seen, 10, 10, 220, 60, page, 32);
+                Tabs(pageTabs, "Page one", "Page two");
+                twin = Win.Make(0, "BUTTON", "Twin", seen | checkbox, 30, 205, 90, 24, made, 20);
                 Win.Make(0, "BUTTON", "Twin", seen | checkbox, 130, 205, 90, 24, made, 21);
-                Win.Make(0, "BUTTON", "Apply", seen, 340, 203, 96, 28, made, ApplyId);
+                apply = Win.Make(0, "BUTTON", "Apply", seen | 0x08000000, 340, 203, 96, 28, made, ApplyId);
                 Win.SetTimer(made, 1, 50, IntPtr.Zero);
                 Win.SetWindowPos(made, 0, 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x40);
             }
@@ -96,6 +125,15 @@ static class ScreenSelfTest
             if (made != IntPtr.Zero) Win.Loop();
         }) { IsBackground = true }.Start();
         ready.Wait(10_000);
+    }
+
+    static void Tabs(IntPtr control, params string[] names)
+    {
+        for (int at = 0; at < names.Length; at++)
+        {
+            var item = new TCITEM { mask = 1, pszText = names[at] };
+            SendMessageW(control, TCM_INSERTITEMW, at, ref item);
+        }
     }
 
     /// Why this runner can't show a window to drive, or null when it can.
@@ -111,11 +149,17 @@ static class ScreenSelfTest
 
     static void Reset()
     {
+        hide = linked = linkedSeen = false;
+        SetWindowTextW(apply, "Apply");
         Win.SendMessageW(tab, TCM_SETCURSEL, 0, 0);
+        Win.SendMessageW(pageTabs, TCM_SETCURSEL, 0, 0);
+        Win.SendMessageW(modes, LB_SETCURSEL, 0, 0);
         Win.SendMessageW(sharpen, BM_SETCHECK, 0, 0);
+        Win.SendMessageW(twin, BM_SETCHECK, 0, 0);
         Win.SendMessageW(quality, CB_SETCURSEL, 0, 0);
+        appliedSharpen = appliedQuality = 0;
         Thread.Sleep(200);
-        applied = appliedSharpen = appliedQuality = 0;
+        applied = 0;
     }
 
     static bool Is(JsonNode? n, string outcome) => n?["outcome"]?.ToString() == outcome;
@@ -139,6 +183,10 @@ static class ScreenSelfTest
         ("screen: apply sets it, presses Apply and reads it back, and undo puts it back", () => OnDesktop(rig, store, AppliedAndUndone)),
         ("screen: a value that moved since the look is refused at apply", () => OnDesktop(rig, store, Moved)),
         ("screen: Stop ends a walk", () => OnDesktop(rig, store, Stopped)),
+        ("screen: after Stop during an apply nothing walks the window again", () => OnDesktop(rig, store, StoppedApply)),
+        ("screen: an app that wants a button Rig doesn't know pressed isn't reported as changed", () => OnDesktop(rig, store, UnknownCommit)),
+        ("screen: Apply isn't pressed over changes the card didn't show", () => OnDesktop(rig, store, NotShown)),
+        ("screen: a look picks no list row and presses nothing in web content", () => OnDesktop(rig, store, LookActs)),
         ("screen: a look at a program that ships with Windows", () => OnDesktop(rig, store, RealProgram, last: true)),
     ];
 
@@ -176,6 +224,14 @@ static class ScreenSelfTest
         if (hash != "11c8f16a31f39d8059a97c5e1fb5422f5f24bc917f7f4a05bf969ef4e0e04e3d") yield return $"a screen step's fingerprint is {hash}, not the app's";
         string plain = ScreenRules.Plain(" A\tB\r\n\u2019c\u2019 \u4e2d\u00ae ");
         if (plain != "A B 'c' ?" || ScreenRules.Plain(new string('x', 200)).Length != 80) yield return $"an app's text came out as \"{plain}\"";
+        foreach (var e in ScreenRules.ImageExamples)
+        {
+            var app = ScreenRules.Resolve(e.App, selfTest: false);
+            bool isIt = ScreenRules.Is(app, e.Image, e.Family), trusted = ScreenRules.Trusted(app, e.Image, e.Signer, e.Family);
+            if (isIt != e.Is || trusted != e.Trusted) yield return $"{e.Image} (package \"{e.Family}\", signer \"{e.Signer}\") read as {(isIt ? "" : "not ")}{e.App}, {(trusted ? "" : "not ")}trusted";
+        }
+        foreach (var (name, never) in new[] { ("Reset", true), ("Restore defaults", true), ("Your account", true), ("Preset", false), ("Swipe", false), ("Low latency", false) })
+            if (ScreenRules.NeverName(name) != never) yield return $"\"{name}\" {(never ? "wasn't" : "was")} taken for a name Rig never presses";
         if (!ScreenWalk.TooHigh(Native.HighIntegrity, Native.MediumIntegrity) || !ScreenWalk.TooHigh(0, Native.HighIntegrity) || ScreenWalk.TooHigh(Native.MediumIntegrity, Native.MediumIntegrity))
             yield return "a window with more rights than the worker wasn't told apart from one without";
 
@@ -278,7 +334,9 @@ static class ScreenSelfTest
         var q = LookAt(rig, App, "Display", "Quality");
         var b = Apply(rig, Preview(rig, Step(q, "High")));
         if (!Is(b, "applied") || Quality != 2 || appliedQuality != 2) { yield return $"the drop-down wasn't set to High (it shows {Quality}, Apply took {appliedQuality}): {b.ToJsonString()} after the look {q.ToJsonString()}"; yield break; }
+        // Someone else picks Medium in the app and applies it.
         Win.SendMessageW(quality, CB_SETCURSEL, 1, 0);
+        Win.SendMessageW(window, Win.WM_COMMAND, ApplyId, 0);
         var drifted = Undo(rig, b);
         if (!Is(drifted, "drifted") || Quality != 1) yield return $"undo didn't stop at a value someone else set: {drifted.ToJsonString()}";
         var forced = Undo(rig, b, force: true);
@@ -315,6 +373,111 @@ static class ScreenSelfTest
         if (r["refused"]?.ToString() != StopBar.Stopped) yield return $"the stopped look answered {r.ToJsonString()}";
         if (clock.Elapsed.TotalSeconds > 9) yield return $"Stop took {clock.Elapsed.TotalSeconds:0.0} seconds";
         if (Sharpen || applied != 0) yield return "a stopped look changed something";
+    }
+
+    static string Title(IntPtr hwnd)
+    {
+        var text = new StringBuilder(256);
+        return GetWindowTextW(hwnd, text, text.Capacity) > 0 ? text.ToString() : "";
+    }
+
+    static string Error(JsonNode? reply) => reply?["error"]?.ToString() ?? "";
+    static string Left(JsonNode? reply) => string.Join("; ", (reply?["left"] as JsonArray ?? []).Select(l => l?.ToString()));
+
+    /// Stop is pressed on the apply's own bar before the checkbox is set (its tab is emptied so the walk waits there).
+    /// Every Stop bar that shows is noted: one after Stop is a walk that shouldn't have started.
+    static IEnumerable<string> StoppedApply(Commands rig)
+    {
+        var look = LookAt(rig, App, "Display", "Sharpen images");
+        var p = Preview(rig, Step(look, "On"));
+        if (!Is(p, "ready")) { yield return $"the preview answered {p.ToJsonString()}"; yield break; }
+        var bars = new List<string>();
+        using var over = new ManualResetEventSlim();
+        var watch = Task.Run(() =>
+        {
+            IntPtr last = IntPtr.Zero;
+            bool pressed = false;
+            while (!over.IsSet)
+            {
+                IntPtr bar = Win.FindWindowW(StopBar.Class, null);
+                if (bar != IntPtr.Zero && bar != last)
+                {
+                    last = bar;
+                    string text = Title(bar);
+                    lock (bars) bars.Add((pressed ? "after Stop: " : "") + text);
+                    if (!pressed && text.StartsWith("Rig is changing", StringComparison.Ordinal))
+                    {
+                        hide = true;
+                        pressed = Win.PostMessageW(bar, Win.WM_COMMAND, StopBar.StopId, 0);
+                    }
+                }
+                Thread.Sleep(10);
+            }
+            return pressed;
+        });
+        JsonNode a;
+        try { a = Apply(rig, p); }
+        finally
+        {
+            over.Set();
+            hide = false;
+        }
+        if (!watch.Result) yield return $"the apply showed no Stop bar to press (bars: {string.Join(" | ", bars)})";
+        if (bars.Any(b => b.StartsWith("after Stop", StringComparison.Ordinal))) yield return $"after Stop Rig walked the window again: {string.Join(" | ", bars)}";
+        if (!Is(a, "rolledBack") || !Error(a).Contains(StopBar.Stopped) || !Error(a).Contains("hadn't changed")) yield return $"the stopped apply answered {a.ToJsonString()}";
+        if (Left(a).Length > 0) yield return $"a change stopped before it began was reported as maybe made: {Left(a)}";
+        if (Sharpen || applied != 0) yield return "a stopped apply changed the checkbox or pressed Apply";
+    }
+
+    /// The window's Apply reads "Use these", a name not on Rig's list.
+    static IEnumerable<string> UnknownCommit(Commands rig)
+    {
+        SetWindowTextW(apply, "Use these");
+        var look = LookAt(rig, App, "Display", "Sharpen images");
+        var a = Apply(rig, Preview(rig, Step(look, "On")));
+        if (!Is(a, "rolledBack") || !Error(a).Contains("Use these") || !Error(a).Contains("put Sharpen images back to Off")) yield return $"apply with a commit button Rig doesn't know answered {a.ToJsonString()}";
+        if (Sharpen || applied != 0) yield return $"the checkbox is {(Sharpen ? "ticked" : "clear")} and the unknown button was pressed {applied} times";
+    }
+
+    /// Apply is pressed neither over the person's own unapplied edit nor over a control the change moved by itself.
+    static IEnumerable<string> NotShown(Commands rig)
+    {
+        Win.SendMessageW(quality, CB_SETCURSEL, 1, 0);
+        Thread.Sleep(200);
+        var look = LookAt(rig, App, "Display", "Sharpen images");
+        var a = Apply(rig, Preview(rig, Step(look, "On")));
+        if (!Is(a, "rolledBack") || !Error(a).Contains(ScreenRules.Words("waiting").TrimEnd('.'))) yield return $"apply over an edit waiting in the app answered {a.ToJsonString()}";
+        if (Sharpen || applied != 0 || Quality != 1) yield return $"apply over a waiting edit left the checkbox {(Sharpen ? "ticked" : "clear")}, the drop-down at {Quality}, and pressed Apply {applied} times";
+
+        Reset();
+        linkedSeen = Sharpen;
+        linked = true;
+        look = LookAt(rig, App, "Display", "Sharpen images");
+        var b = Apply(rig, Preview(rig, Step(look, "On")));
+        if (!Is(b, "rolledBack") || !Error(b).Contains("also changed Twin") || !Error(b).Contains("put Sharpen images back to Off")) yield return $"apply that also moved another control answered {b.ToJsonString()}";
+        if (Sharpen || applied != 0) yield return $"apply that also moved another control left the checkbox {(Sharpen ? "ticked" : "clear")} and pressed Apply {applied} times";
+    }
+
+    /// A list row can be the setting, so a look doesn't pick one; tabs inside a Document stand in for a web page's.
+    static IEnumerable<string> LookActs(Commands rig)
+    {
+        var row = LookAt(rig, App, "More", "Quiet");
+        if (row["refused"]?.ToString() != ScreenRules.Words("list-row")) yield return $"a look that named a list's row answered {row.ToJsonString()}";
+        if (Mode != 0) yield return "a look picked a row in a list";
+
+        var web = LookAt(rig, App, "More", "Page two", "Anything");
+        if (web["refused"]?.ToString() == ScreenRules.Words("web-content") && Page == 0) yield break;
+        if (StandIn() is string why) { yield return Skip + why; yield break; }
+        yield return $"a look through tabs inside a Document answered {web.ToJsonString()}, and the tabs show page {Page + 1}";
+    }
+
+    /// Why the rich text box with tabs in it doesn't stand in for web content on this Windows, or null when it does.
+    static string? StandIn()
+    {
+        var uia = (IUIAutomation)new CUIAutomation();
+        if (uia.get_ControlViewCondition(out IntPtr controls) < 0 || uia.ElementFromHandle(page, out var box) < 0 || box == null) return "UI Automation wouldn't describe the text box";
+        if (Uia.Int(box, Uia.ControlType) != Uia.Document) return "this Windows doesn't call a rich text box a Document";
+        return Uia.ChildrenOf(box, controls).Any(c => Uia.Int(c, Uia.ControlType) == 50018) ? null : "this Windows doesn't show the tabs inside the text box as part of it";
     }
 
     /// A program named by its .exe is never started by a look, only used once it is open: here the self-test opens it.

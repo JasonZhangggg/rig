@@ -122,8 +122,9 @@ describe("an app window card", () => {
     if (ran.outcome !== "applied") throw new Error("the demo card should apply");
     const stopped = { ...ran, result: { ...ran.result, stopped: true as const, after: "You pressed Stop, so Rig stopped. It had started setting Output dynamic range to Full and didn't read it back." } };
     const on = show(demoProposal(screenCard()), { outcomes: [{ apply: stopped }] });
-    expect(screen.getByRole("status").textContent).toBe("You pressed Stop, so Rig stopped part way.");
-    expect(screen.getByText(/Rig didn't read Output dynamic range back, so check it in NVIDIA Control Panel/).textContent).toContain("sets it back to Limited");
+    expect(screen.getByRole("status").textContent).toBe("Rig stopped part way.");
+    expect(screen.getByText(/You pressed Stop, so Rig stopped\. It had started setting Output dynamic range/)).toBeTruthy();
+    expect(screen.getByText("Undo walks the same path and sets Output dynamic range back to Limited.")).toBeTruthy();
     expect(screen.queryByRole("list", { name: "What changed" })).toBeNull();
     fireEvent.click(button("Undo")!);
     expect(on.onCommandStep).toHaveBeenCalledWith(0, "undo");

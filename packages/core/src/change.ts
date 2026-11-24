@@ -445,7 +445,7 @@ export interface RunResult {
   output: string;
   /** What else changed, when the helper could tell. */
   alsoChanged: string[];
-  /** A screen step the person stopped with the Stop bar part way: the control may be half set, wasn't read back, and undo is offered. */
+  /** A screen step that stopped part way, by the Stop bar or the app: the control may be half set, wasn't read back, `after` says why, and undo is offered. */
   stopped?: true;
 }
 

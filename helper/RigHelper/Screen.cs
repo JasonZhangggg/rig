@@ -4,11 +4,12 @@
 //   look     screen.look names an app and the controls to walk to. The worker
 //            opens the app as the person (starting only an app from Rig's
 //            list or a Settings page), walks there, reads the control and
-//            presses nothing but tabs, and list and tree rows outside a
-//            drop-down. The helper holds the program the worker names to the
-//            rules again, finds its signer itself, keeps what was found (the
-//            program and signer, each hop, the value, the choices) in memory
-//            under an id that runs out, and answers with the id and plain words.
+//            selects nothing but tabs and tree rows, never in web content. The
+//            helper reads the window's program and package from its process,
+//            holds them to the rules again, finds its signer itself, keeps
+//            what was found (the program and signer, each hop, the value, the
+//            choices) in memory under an id that runs out, and answers with
+//            the id and plain words.
 //   step     { lookId, to, does }: the step names the look and the new value,
 //            never where to press. It goes through the one approval path in
 //            Commands.cs like every native op; this file is its INativeStep.
@@ -33,22 +34,42 @@ namespace Rig.Helper;
 
 /// The app a look names, as Rig starts and recognises it. `Start` is what Windows' shell is asked to open: an app from
 /// Rig's list or a Settings page, else empty and the app is only used when already open. `Image` is the full path of its
-/// program when the look gave one, else the program's file name; both folded.
-public sealed record ScreenApp(string Name, string Start, string Image, bool Settings = false, bool SelfTest = false);
+/// program when the look gave one, else the program's file name; both folded. A listed app also has the folders its
+/// program may run from, its packages and its makers' signers (rules/commands.json `screen.apps`).
+public sealed record ScreenApp(string Name, string Start, string Image, bool Settings = false, bool SelfTest = false)
+{
+    public string[] Folders { get; init; } = [];
+    public string[] Families { get; init; } = [];
+    public string[] Signers { get; init; } = [];
+    public bool AppliesOnChange { get; init; }
+    public bool Listed => Folders.Length > 0;
+}
 
 /// rules/commands.json `screen`, and what it says of an app's name and of a window's program.
 public static class ScreenRules
 {
-    sealed class App { public string Name { get; set; } = ""; public string Aumid { get; set; } = ""; public string Image { get; set; } = ""; }
-    sealed class SettingsApp { public string Name { get; set; } = ""; public string Image { get; set; } = ""; public string[] Pages { get; set; } = []; }
+    class Known
+    {
+        public string Name { get; set; } = ""; public string Image { get; set; } = "";
+        public string[] Folders { get; set; } = []; public string[] Families { get; set; } = []; public string[] Signers { get; set; } = [];
+    }
+    sealed class App : Known { public string Aumid { get; set; } = ""; }
+    sealed class SettingsApp : Known { public string[] Pages { get; set; } = []; public bool AppliesOnChange { get; set; } }
     sealed class Refuse { public string Says { get; set; } = ""; public string[] Images { get; set; } = []; }
     sealed class StartRule { public string Says { get; set; } = ""; public string[] Starts { get; set; } = []; }
     public sealed class CommitNames { public string[] Apply { get; set; } = []; public string[] Ok { get; set; } = []; public string[] Cancel { get; set; } = []; }
     public sealed class Example { public string App { get; set; } = ""; public bool Refused { get; set; } }
+    public sealed class ImageExample
+    {
+        public string App { get; set; } = ""; public string Image { get; set; } = ""; public string Family { get; set; } = ""; public string? Signer { get; set; }
+        public bool Is { get; set; } public bool Trusted { get; set; }
+    }
     sealed class Set
     {
         public int LookMinutes { get; set; }
         public string[] Roots { get; set; } = [];
+        public string[] NotRoots { get; set; } = [];
+        public string[] WindowsSigners { get; set; } = [];
         public App[] Apps { get; set; } = [];
         public SettingsApp Settings { get; set; } = new();
         public Refuse[] Refuse { get; set; } = [];
@@ -58,6 +79,7 @@ public static class ScreenRules
         public string[] NeverNames { get; set; } = [];
         public Dictionary<string, string> Words { get; set; } = [];
         public Example[] Examples { get; set; } = [];
+        public ImageExample[] ImageExamples { get; set; } = [];
     }
 
     static readonly Set S = JsonNode.Parse(CommandCheck.Resource("Rig.Rules.commands.json"))!["screen"].Deserialize<Set>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
@@ -66,14 +88,20 @@ public static class ScreenRules
     public static int LookMinutes => S.LookMinutes;
     public static CommitNames Commit => S.Commit;
     public static IReadOnlyList<Example> Examples => S.Examples;
+    public static IReadOnlyList<ImageExample> ImageExamples => S.ImageExamples;
     public static string Words(string which) => S.Words[which] + ".";
 
-    /// Whether a control's name or a value is one Rig never walks through, sets or presses.
-    public static bool NeverName(string text) => S.NeverNames.Any(n => text.Contains(n, StringComparison.OrdinalIgnoreCase));
+    /// Whether a control's name or a value is one Rig never walks through, sets or presses: a name in the list that starts
+    /// a word, so "Reset" counts and "Preset" doesn't.
+    public static bool NeverName(string text) => Never.IsMatch(text);
+    static readonly Regex Never = new($"(?<![a-z0-9])({string.Join("|", S.NeverNames.Select(Regex.Escape))})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     static readonly Regex Line = new(@"^[\x20-\x7e]{1,260}\z"), Dots = new(@"(^|\\)\.\.(\\|$)"), ShortName = new(@"[a-z0-9]~\d"), Odd = new("[/*?\"<>|]");
 
-    static bool UnderRoots(string folded) => S.Roots.Any(r => folded.StartsWith(r, StringComparison.Ordinal));
+    const string Packaged = @"c:\program files\windowsapps\", Windows = @"c:\windows\";
+
+    /// Under Program Files or Windows, and not in a folder there that any user can write to and run from.
+    static bool UnderRoots(string folded) => S.Roots.Any(r => folded.StartsWith(r, StringComparison.Ordinal)) && !S.NotRoots.Any(r => folded.StartsWith(r, StringComparison.Ordinal));
 
     /// Why Rig won't drive a program with this file name, or null.
     static string? RefusedImage(string file) =>
@@ -87,30 +115,44 @@ public static class ScreenRules
         if (app == null || !Line.IsMatch(app)) throw new RigException(Words("app"));
         if (selfTest && app == SelfTestApp) return new ScreenApp("Rig's self-test window", "", Environment.ProcessPath!.ToLowerInvariant(), SelfTest: true);
         string name = app.ToLowerInvariant();
-        if (S.Apps.FirstOrDefault(a => a.Name.ToLowerInvariant() == name) is App known) return new ScreenApp(known.Name, @"shell:AppsFolder\" + known.Aumid, known.Image);
+        if (S.Apps.FirstOrDefault(a => a.Name.ToLowerInvariant() == name) is App known) return Of(known, new ScreenApp(known.Name, @"shell:AppsFolder\" + known.Aumid, known.Image));
         if (name.StartsWith("ms-settings:", StringComparison.Ordinal))
         {
             if (!S.Settings.Pages.Contains(name["ms-settings:".Length..])) throw new RigException(RefusedImage(S.Settings.Image)!);
-            return new ScreenApp(S.Settings.Name, name, S.Settings.Image, Settings: true);
+            return Of(S.Settings, new ScreenApp(S.Settings.Name, name, S.Settings.Image, Settings: true) { AppliesOnChange = S.Settings.AppliesOnChange });
         }
         if (!UnderRoots(name) || !name.EndsWith(".exe", StringComparison.Ordinal) || Dots.IsMatch(name) || ShortName.IsMatch(name) || Odd.IsMatch(name) || name.Contains(@"\\")) throw new RigException(Words("app"));
         if (RefusedImage(Path.GetFileName(name)) is string refused) throw new RigException(refused);
         return new ScreenApp(Path.GetFileNameWithoutExtension(app), "", name);
     }
 
-    /// Whether a window's own program is the app Rig was asked for. A program on the refused list never is.
-    public static bool Is(ScreenApp app, string image)
+    static ScreenApp Of(Known known, ScreenApp app) => app with
+    {
+        Folders = known.Folders, Families = known.Families.Select(f => f.ToLowerInvariant()).ToArray(), Signers = known.Signers,
+    };
+
+    /// Whether a window's own program is the app Rig was asked for, by its full path and, for a listed app, the package it
+    /// runs as (`family`, empty when it runs as none). A program on the refused list never is.
+    public static bool Is(ScreenApp app, string image, string? family)
     {
         string path = image.ToLowerInvariant(), file = Path.GetFileName(path);
         if (app.SelfTest) return path == app.Image;
-        if (app.Settings) return file == app.Image && UnderRoots(path);
-        return RefusedImage(file) == null && (app.Image.Contains('\\') ? path == app.Image : file == app.Image && UnderRoots(path));
+        if (!app.Listed) return RefusedImage(file) == null && path == app.Image && UnderRoots(path);
+        if (file != app.Image || Dots.IsMatch(path) || !app.Folders.Any(f => path.StartsWith(f, StringComparison.Ordinal))) return false;
+        return string.IsNullOrEmpty(family) ? !path.StartsWith(Packaged, StringComparison.Ordinal) : app.Families.Contains(family.ToLowerInvariant());
     }
 
-    /// Whether what this program's window says counts as Rig's own text: it is installed where only admins can write,
-    /// validly signed, and not a program that shows documents. The self-test's window stands in for one.
-    public static bool Trusted(ScreenApp app, string image, string? signer) =>
-        app.SelfTest || (UnderRoots(image.ToLowerInvariant()) && signer != null && !S.ContentHosts.Contains(Path.GetFileName(image).ToLowerInvariant()));
+    /// Whether what this program's window says counts as Rig's own text: it is the app, installed where only admins can
+    /// write, signed by its maker (a listed app's package or signers, Microsoft under Windows, any valid signer under Program
+    /// Files), and not a program that shows documents. The self-test's window stands in for one.
+    public static bool Trusted(ScreenApp app, string image, string? signer, string? family)
+    {
+        if (app.SelfTest) return true;
+        string path = image.ToLowerInvariant();
+        if (!Is(app, image, family) || S.ContentHosts.Contains(Path.GetFileName(path))) return false;
+        if (app.Listed) return !string.IsNullOrEmpty(family) || (signer != null && app.Signers.Contains(signer));
+        return UnderRoots(path) && signer != null && (!path.StartsWith(Windows, StringComparison.Ordinal) || S.WindowsSigners.Contains(signer));
+    }
 
     /// Text from an app, as Rig passes it on: one line, plain ASCII, at most 80 characters.
     public static string Plain(string? text, int most = 80)
@@ -231,14 +273,14 @@ public sealed record Hop(string Name, string Says, int Type, string Id, string C
 }
 
 /// What a look found, as the helper keeps it and hands it to the worker for a replay. `Kind` is toggle, choice or range.
-/// `Options` pairs each choice's own name with its plain words.
-public sealed record ScreenLook(string App, string Name, string Image, string Signer, List<Hop> Hops, Hop Target, string Kind, string Value, List<(string Name, string Says)> Options, double Min, double Max, bool Clean)
+/// `Options` pairs each choice's own name with its plain words. `Pid` is the window's process when the worker looked.
+public sealed record ScreenLook(string App, string Name, string Image, string Signer, List<Hop> Hops, Hop Target, string Kind, string Value, List<(string Name, string Says)> Options, double Min, double Max, bool Clean, int Pid = 0)
 {
     public JsonObject ToJson() => new()
     {
         ["app"] = App, ["name"] = Name, ["image"] = Image, ["signer"] = Signer, ["hops"] = new JsonArray(Hops.Select(h => (JsonNode)h.ToJson()).ToArray()), ["target"] = Target.ToJson(),
         ["kind"] = Kind, ["value"] = Value, ["options"] = new JsonArray(Options.Select(o => (JsonNode)new JsonObject { ["name"] = o.Name, ["says"] = o.Says }).ToArray()),
-        ["min"] = Min.ToString("R", CultureInfo.InvariantCulture), ["max"] = Max.ToString("R", CultureInfo.InvariantCulture), ["clean"] = Clean,
+        ["min"] = Min.ToString("R", CultureInfo.InvariantCulture), ["max"] = Max.ToString("R", CultureInfo.InvariantCulture), ["clean"] = Clean, ["pid"] = Pid,
     };
 
     /// Reads a look the worker answered or a record kept. Every word in it is held to Rig's plain line again, because the
@@ -252,7 +294,8 @@ public sealed record ScreenLook(string App, string Name, string Image, string Si
         double.TryParse(o["min"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double min);
         double.TryParse(o["max"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double max);
         var look = new ScreenLook(o["app"]?.ToString() ?? "", ScreenRules.Plain(o["name"]?.ToString()), o["image"]?.ToString() ?? "", ScreenRules.Plain(o["signer"]?.ToString()), hops.Select(Held).ToList(), Held(target), kind,
-            ScreenRules.Plain(o["value"]?.ToString()), options.Select(x => (x?["name"]?.ToString() ?? "", ScreenRules.Plain(x?["says"]?.ToString()))).ToList(), min, max, o["clean"]?.GetValueKind() == JsonValueKind.True);
+            ScreenRules.Plain(o["value"]?.ToString()), options.Select(x => (x?["name"]?.ToString() ?? "", ScreenRules.Plain(x?["says"]?.ToString()))).ToList(), min, max, o["clean"]?.GetValueKind() == JsonValueKind.True,
+            (int)Json.Num(o["pid"], 0));
         return look.Target.Says.Length == 0 || look.Options.Count > ScreenStep.MaxOptions || look.Options.Any(x => x.Says.Length == 0) ? null : look;
     }
 
@@ -323,10 +366,14 @@ public sealed class ScreenStep : INativeStep
             return No(ScreenRules.Plain(refused.ToString(), 300), clean,
                 new JsonArray((said.Result["shows"] as JsonArray ?? []).Take(40).Select(s => (JsonNode)ScreenRules.Plain(s?.ToString())).ToArray()));
         if (ScreenLook.From(said.Result["look"]) is not ScreenLook seen || seen.App != app) return No("Rig's worker answered with something that isn't a look.");
-        // The worker's word on the program is data from outside: the rules, the signer and what counts as clean are the helper's.
-        if (!ScreenRules.Is(resolved, seen.Image)) return No(ScreenRules.Words("app"));
-        string? signer = Signature.Signer(seen.Image);
-        var look = seen with { Signer = signer ?? "", Clean = seen.Clean && ScreenRules.Trusted(resolved, seen.Image, signer) };
+        // The worker's word on the program is data from outside: the program, its package, its signer and what counts as
+        // clean are read by the helper from the window's process.
+        string? image = Native.ProcessImage(seen.Pid), family = Native.PackageFamily(seen.Pid);
+        if (image == null || !string.Equals(image, seen.Image, StringComparison.OrdinalIgnoreCase) || !ScreenRules.Is(resolved, image, family)) return No(ScreenRules.Words("app"));
+        string? signer = Signature.Signer(image);
+        bool trusted = ScreenRules.Trusted(resolved, image, signer, family);
+        if (resolved.Listed && !trusted) return No(ScreenRules.Words("not-maker"));
+        var look = seen with { Image = image, Signer = signer ?? "", Clean = seen.Clean && trusted };
 
         var (id, until) = Keep(look);
         var reply = new JsonObject
@@ -396,13 +443,9 @@ public sealed class ScreenStep : INativeStep
         var look = Held(op);
         string to = op["to"]!.ToString();
         using var walk = new ScreenWalk(App(look), changing: true, look.Target.Says);
-        var back = new JsonObject { ["was"] = look.Value };
-        // Stopped part way, the change is left as it stands and its undo is offered: nothing reads the window again.
-        if (walk.Set(look, from: look.Value, to) is string stopped)
-        {
-            back["stopped"] = stopped;
-            back["after"] = look.Line(to);
-        }
+        var back = new JsonObject { ["was"] = look.Value, ["after"] = look.Line(to) };
+        // Stopped part way, or left by the app half done, the change stands as it is with its undo offered, unread.
+        if (walk.Set(look, from: look.Value, to, back) is string unfinished) back["unfinished"] = unfinished;
         return back;
     }
 

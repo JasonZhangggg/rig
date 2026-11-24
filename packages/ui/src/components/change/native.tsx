@@ -90,8 +90,9 @@ const screen: NativePart<ScreenOp> = {
     if (result.stopped) {
       return (
         <>
-          <div className="cc-first" role="status"><b>You pressed Stop, so Rig stopped part way.</b></div>
-          <p className="cc-note">Rig didn't read {control} back, so check it in {inApp(look)}. Undo walks the same path and sets {look?.value ? `it back to ${look.value}` : "it back"}.</p>
+          <div className="cc-first" role="status"><b>Rig stopped part way.</b></div>
+          <p className="cc-note">{clip(result.after, 240)}</p>
+          <p className="cc-note">Undo walks the same path and sets {look?.value ? `${control} back to ${look.value}` : `${control} back`}.</p>
         </>
       );
     }

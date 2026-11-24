@@ -67,6 +67,26 @@ static partial class Native
         finally { CloseHandle(p); }
     }
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern int GetPackageFamilyName(IntPtr process, ref uint length, System.Text.StringBuilder? name);
+
+    /// The package a process runs as (its family name, which names the publisher), "" when it runs as none, or null when
+    /// Windows won't say.
+    public static string? PackageFamily(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return null;
+        try
+        {
+            uint length = 0;
+            int got = GetPackageFamilyName(p, ref length, null);
+            if (got == 15700) return "";
+            if (got != 122 || length is 0 or > 1024) return null;
+            var name = new System.Text.StringBuilder((int)length);
+            return GetPackageFamilyName(p, ref length, name) == 0 ? name.ToString() : null;
+        }
+        finally { CloseHandle(p); }
+    }
+
     // ----- How much a token may do -----
     const int TokenIntegrityLevelClass = 25;
     public const int STD_OUTPUT_HANDLE = -11, MediumIntegrity = 0x2000, HighIntegrity = 0x3000;

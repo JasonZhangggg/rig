@@ -165,8 +165,9 @@ public static class NativeWorker
     public const string Flag = "--native-worker", SelfTestFlag = "--selftest-ops";
     public const string NoDesktop = "Rig's helper isn't running on your desktop, so it can't make this kind of change. Open Rig and ask again.";
 
-    /// `Integrity` and `Session` are the worker's own word on how Windows started it.
-    public sealed record Answer(bool Ok, bool TimedOut, JsonObject Result, string Error, int Integrity, int Session);
+    /// `Integrity` and `Session` are the worker's own word on how Windows started it. `Stopped` says the person pressed
+    /// Stop, after which nothing is to walk or read the app's window again for this step.
+    public sealed record Answer(bool Ok, bool TimedOut, JsonObject Result, string Error, int Integrity, int Session, bool Stopped = false);
 
     static Answer Failed(string error, bool timedOut = false) => new(false, timedOut, [], error, 0, -1);
     static string Short(string text) => text.Length <= 300 ? text : text[..300] + "…";
@@ -197,7 +198,7 @@ public static class NativeWorker
             if (said == null) return Failed($"Rig's worker stopped without an answer (exit code {ran.Exit}).");
             bool ok = said["ok"]?.GetValueKind() == JsonValueKind.True && said["result"] is JsonObject;
             return new Answer(ok, false, ok ? said["result"]!.DeepClone().AsObject() : [], ok ? "" : Short(said["error"]?.ToString() ?? "Rig's worker stopped without saying why."),
-                (int)Json.Num(said["integrity"], 0), (int)Json.Num(said["session"], -1));
+                (int)Json.Num(said["integrity"], 0), (int)Json.Num(said["session"], -1), said["stopped"]?.GetValueKind() == JsonValueKind.True);
         }
         catch (RigException e) { return Failed(e.Message); }
         finally { try { File.Delete(file); } catch { } }
@@ -237,6 +238,7 @@ public static class NativeWorker
             answer["error"] = e is RigException ? e.Message : $"Rig's worker hit a problem: {e.Message}";
         }
         bool ok = answer["ok"]!.GetValue<bool>();
+        if (StopBar.AnyPressed) answer["stopped"] = true;
         Say(answer);
         return ok ? 0 : 1;
     }
