@@ -85,13 +85,15 @@ public static class PowerShellHost
     /// A script behind one line of Rig's own: PowerShell adds the person's module folder back when it starts, so the line pins
     /// the module path again, loads Windows' own core modules by their full paths before any command is looked up, which also
     /// spares PowerShell searching every module for them, and makes the output UTF-8. A change stops at its first error.
-    public static string Pinned(string script, bool stopOnError) =>
+    /// With `winget`, the path the helper found for it, the names winget and winget.exe run that program and nothing else.
+    public static string Pinned(string script, bool stopOnError, string? winget = null) =>
         $"$env:PSModulePath = '{Modules}'; Import-Module -Name '{Modules}\\Microsoft.PowerShell.Utility', '{Modules}\\Microsoft.PowerShell.Management'; "
+        + (winget == null ? "" : string.Concat(new[] { "winget", "winget.exe" }.Select(n => $"Set-Alias -Name {n} -Value '{winget.Replace("'", "''")}' -Option Constant; ")))
         + "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }" + (stopOnError ? "; $ErrorActionPreference = 'Stop'" : "") + "\r\n" + script;
 
     /// Writes a script as UTF-8 with a byte order mark, behind Rig's own first line.
-    public static void Write(string file, string script, bool stopOnError) =>
-        File.WriteAllText(file, Pinned(script, stopOnError), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+    public static void Write(string file, string script, bool stopOnError, string? winget = null) =>
+        File.WriteAllText(file, Pinned(script, stopOnError, winget), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
     /// Runs PowerShell with the helper's own rights, starting in `folder`, with temporary files in `temp`.
     public static Ran RunHere(string args, int timeoutMs, string folder, string temp) => Start(Exe, args, timeoutMs, folder, temp);
@@ -188,6 +190,16 @@ public sealed class Person : IDisposable
     /// Whether scripts run with the helper's own rights because the helper has none beyond the person's.
     public bool Here => primary == IntPtr.Zero;
 
+    /// The person's own %LOCALAPPDATA%, as Windows keeps it for their account.
+    public string LocalAppData()
+    {
+        if (primary == IntPtr.Zero) return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var id = new Guid("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
+        int hr = SHGetKnownFolderPath(ref id, 0, primary, out IntPtr path);
+        try { return hr == 0 ? Marshal.PtrToStringUni(path)! : throw new RigException($"Rig couldn't find your app data folder (Windows error {hr:X8})."); }
+        finally { Marshal.FreeCoTaskMem(path); }
+    }
+
     /// Does something to the person's own files or registry with the person's rights, not the helper's.
     public T Do<T>(Func<T> act) => borrowed == null ? act() : WindowsIdentity.RunImpersonated(borrowed, act);
 
@@ -214,6 +226,7 @@ public sealed class Person : IDisposable
     const uint MAXIMUM_ALLOWED = 0x02000000, TOKEN_DUPLICATE = 0x2, TOKEN_QUERY = 0x8;
     const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SecurityImpersonation = 2, TokenPrimary = 1, TokenImpersonation = 2, TokenElevationTypeClass = 18, TokenElevationClass = 20;
 
+    [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path);
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);

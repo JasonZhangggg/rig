@@ -68,8 +68,8 @@ export const demoCards: DemoCard[] = [
     title: "Uninstall NVIDIA Broadcast",
     cmd: {
       does: "Uninstalls NVIDIA Broadcast with winget.",
-      read: "winget list --id Nvidia.Broadcast",
-      run: "winget uninstall --id Nvidia.Broadcast --silent",
+      read: "winget list --id 'Nvidia.Broadcast' --exact --source winget",
+      run: "winget uninstall --exact --source winget --id 'Nvidia.Broadcast' --silent --accept-source-agreements",
       touches: [{ kind: "other", name: "NVIDIA Broadcast (the app and its settings)" }],
     },
     read: "Name             Id               Version\n-----------------------------------------\nNVIDIA Broadcast Nvidia.Broadcast 2.0.1.25", values: [["Installed, version 2.0.1.25", null]],

@@ -11,6 +11,7 @@ export * from "./shorthands/firewall";
 export * from "./shorthands/policy";
 export * from "./shorthands/device";
 export * from "./shorthands/driver";
+export * from "./shorthands/app";
 
 export type RegistryType = "dword" | "qword" | "string" | "expandString" | "multiString";
 /** How a service starts. `automaticDelayed` is automatic, a little after Windows has started. */

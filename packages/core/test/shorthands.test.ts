@@ -3,7 +3,7 @@
 // input can't be used. The shared vectors hold one of each as the helper sees it.
 
 import { describe, expect, it } from "vitest";
-import { checkStep, deviceCommand, driverCommand, firewallCommand, policyCommand, type Command, type Verdict } from "../src";
+import { appCommand, checkStep, deviceCommand, driverCommand, firewallCommand, policyCommand, type Command, type Verdict } from "../src";
 import vectors from "../src/rules/vectors.json";
 
 const built = (c: Command | string): Command => {
@@ -185,7 +185,7 @@ describe("driverCommand", () => {
 });
 
 describe("the shorthand vectors", () => {
-  const builders: Record<string, (raw: unknown) => Command | string> = { firewall: firewallCommand, policy: policyCommand, device: deviceCommand, driver: driverCommand };
+  const builders: Record<string, (raw: unknown) => Command | string> = { firewall: firewallCommand, policy: policyCommand, device: deviceCommand, driver: driverCommand, app: appCommand };
   const ones = (vectors as { shorthand?: Record<string, unknown>; step?: { cmd: Command } }[]).filter((v) => v.shorthand);
 
   it("are what each shorthand writes now, so the helper's selftest checks the real scripts", () => {
