@@ -3,7 +3,7 @@
 
 import type { ActionCall } from "./actions";
 import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
-import type { BuildShape } from "./build";
+import type { BuildShape, Picks } from "./build";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
 export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "manuals" | "web" | "signin" | "settings";
@@ -126,6 +126,8 @@ export interface PC {
   settings?: PCSettings;
   /** ISO date the person last cleaned the dust out, if they told Rig. */
   cleanedAt?: string;
+  /** The models the person picked for parts Windows can't name, like which graphics card it is (build.ts). */
+  picks?: Picks;
   /** Problems that started while Rig was watching and are still going on, from alerts.ts. */
   alerts?: Alert[];
   /** Every sensor the parts report, as they read at seenAt. */

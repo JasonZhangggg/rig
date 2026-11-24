@@ -108,7 +108,7 @@ export function GpuView() {
       )}
       <div className="board-top">
         {no3d ? <p className="board-hint faint">This screen can't draw the card in 3D.</p> : <>
-          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom{shape?.ports ? " · Click an output or the power plug for a closer look" : ""}</p>
+          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom{shape?.ports?.outputs.length ? " · Click an output or the power plug for a closer look" : shape?.ports?.power.length ? " · Click the power plug for a closer look" : ""}</p>
           {Object.keys(marks).length > 0 && <p className="board-key" aria-hidden="true"><i className="is-used" />In use<i className="is-free" />Free{some && <><i className="is-some" />One of these</>}</p>}
         </>}
       </div>

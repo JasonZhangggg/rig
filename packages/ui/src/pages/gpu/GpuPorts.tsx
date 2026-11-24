@@ -1,5 +1,6 @@
-import { outputKindName, type CardUse, type GpuPorts as Ports, type OutputState, type PlugKind, type gpuPowerOptions } from "@rig/core";
+import { outputKindName, type CardUse, type GpuPorts as Ports, type OutputState, type gpuPowerOptions } from "@rig/core";
 import { gpuStage, useCard, useGpuPointed } from "./gpuStage";
+import { CardModel, layoutName } from "./CardPick";
 
 const stateName: Record<OutputState, string> = { used: "in use", free: "free", some: "maybe in use, Windows doesn't say which", unknown: "Rig can't see it" };
 const cellState: Record<OutputState, string> = { used: "used", free: "free", some: "some", unknown: "unknown" };
@@ -19,27 +20,38 @@ export function GpuPorts() {
       {c.use.elsewhere.map((e) => <li key={e.name}><b>{e.name}</b><span>{e.note}</span></li>)}
     </ul>
   );
+  const model = <CardModel model={c.shape.model} source={c.shape.source} />;
   // A card Rig doesn't know: only what Windows says about the screens, no guess at the card's outputs or plugs.
   if (!p) {
-    const screens = c.use.screens ?? [];
     return (
       <div className="bu">
+        {model}
         {elsewhere}
         <ul className="bu-groups" aria-label="Screens on the card">
-          <li className="bu-group">
-            <div className="bu-head"><h3>Screens</h3><span className="num bu-count">{screens.length}</span></div>
-            {screens.length > 0
-              ? <ul className="gp-elsewhere">{screens.map((x) => <li key={x.name}><b>{x.name}</b><span>{x.plug ? `On ${x.plug} output, ${x.detail}` : x.detail}</span></li>)}</ul>
-              : <p className="bu-note">No screen is on this card.</p>}
-          </li>
+          <Screens screens={c.use.screens ?? []} />
           {c.options && c.options.layouts.length > 0 && <PowerOptions o={c.options} />}
         </ul>
-        <p className="faint bu-from">Rig can't tell which {c.options?.chip ? `${c.options.maker ? `${c.options.maker} ` : ""}${c.options.chip}` : "card"} this is yet, so it doesn't show the card's own outputs and plugs.</p>
+        <p className="faint bu-from">Rig shows the card's own outputs and plugs once it knows the model.</p>
+      </div>
+    );
+  }
+  // A card Rig knows by name and plugs only: the screens as Windows reports them, and the card's own power plugs.
+  if (!p.outputs.length) {
+    return (
+      <div className="bu">
+        {model}
+        {elsewhere}
+        <ul className="bu-groups" aria-label="Screens and power">
+          <Screens screens={c.use.screens ?? []} />
+          {p.power.length > 0 && <Power p={p} pointed={pointed} />}
+        </ul>
+        <p className="faint bu-from">{p.power.length ? `Power plugs: ${p.from}. Rig doesn't have this card's outputs yet.` : "Rig doesn't have this card's outputs or power plugs yet."}</p>
       </div>
     );
   }
   return (
     <div className="bu">
+      {model}
       {elsewhere}
       <ul className="bu-groups" aria-label="Outputs and power">
         {c.use.groups.map((g) => <Outputs key={g.kind} g={g} pointed={pointed} />)}
@@ -49,6 +61,18 @@ export function GpuPorts() {
       <p className="bu-legend faint" aria-hidden="true"><i className="is-used" />In use<i className="is-free" />Free{some && <><i className="is-some" />One of these</>}</p>
       <p className="faint bu-from">Outputs and plugs: {p.from}</p>
     </div>
+  );
+}
+
+/** Each screen on the card with the kind of output Windows names, when Rig can't place it on the card's own outputs. */
+function Screens({ screens }: { screens: NonNullable<CardUse["screens"]> }) {
+  return (
+    <li className="bu-group">
+      <div className="bu-head"><h3>Screens</h3><span className="num bu-count">{screens.length}</span></div>
+      {screens.length > 0
+        ? <ul className="gp-elsewhere">{screens.map((x) => <li key={x.name}><b>{x.name}</b><span>{x.plug ? `On ${x.plug} output, ${x.detail}` : x.detail}</span></li>)}</ul>
+        : <p className="bu-note">No screen is on this card.</p>}
+    </li>
   );
 }
 
@@ -107,8 +131,6 @@ function Power({ p, pointed }: { p: Ports; pointed: string | null }) {
     </li>
   );
 }
-
-const layoutName = (power: PlugKind[]) => power.map((k) => k.replace("-pin", "")).join(" + ") + (power.some((k) => k === "16-pin") ? "-pin" : "-pin PCIe");
 
 /** The power plug layouts the card could have, each with the cards Rig knows that use it, when it can't name the card. */
 function PowerOptions({ o }: { o: ReturnType<typeof gpuPowerOptions> }) {

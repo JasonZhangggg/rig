@@ -6,8 +6,10 @@ import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageS
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageScan, type SystemFacts } from "./telemetry";
 import { driveMaps } from "./drives";
+import type { Picks } from "./build";
 
-export interface Identity { name?: string; accent?: string; cleanedAt?: string }
+/** What the person set for a PC in Rig: its name and color, the last dust clean, and the models they picked for parts Windows can't name. */
+export interface Identity { name?: string; accent?: string; cleanedAt?: string; picks?: Picks }
 
 /** Highest value seen per sensor id since midnight. Kept by whoever owns the live feed. */
 export type DayMax = Record<string, number>;
@@ -233,6 +235,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     parts,
     settings: facts ? { gameMode: facts.gameMode, visualEffects: facts.visualEffects, powerPlans: facts.powerPlans, startupOn: facts.startupApps.filter((a) => a.enabled).length } : undefined,
     cleanedAt: id.cleanedAt,
+    picks: id.picks,
     readings,
     board: laptop ? undefined : {
       memory: m.modules.map((x) => ({ slot: x.slot, gb: gb(x.capacityMb), mts: x.speedMhz, maker: x.manufacturer, partNumber: x.partNumber })),

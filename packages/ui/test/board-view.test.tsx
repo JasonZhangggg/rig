@@ -121,14 +121,15 @@ describe("The motherboard on My PC", () => {
       "1. Processor power (CPU_PWR1): 8-pin CPU cable from the supply's CPU port. Show on the board",
       "2. Second processor power (CPU_PWR2): 4-pin CPU cable from the supply's CPU port. Show on the board",
       "3. Board power (ATX_PWR1): 24-pin cable from the supply's MB or ATX port. Show on the board",
-      "4. Graphics card power: 16-pin or 8-pin cable from the supply's PCIe or VGA port. Show on the board",
+      "4. Graphics card power: 16-pin cable from the supply's PCIe or VGA port. Show on the board",
     ]);
     expect(within(rows[1]).getByText("Optional")).toBeTruthy();
     expect(within(rows[3]).getByText("Usual spot")).toBeTruthy();
     expect(screen.getByText(/wired differently/)).toBeTruthy();
     const drawn = board.calls.filter(([n]) => n === "setCables").at(-1)?.[1] as { id: string; to: string | null; card?: unknown }[];
     expect(drawn.map((c) => [c.id, c.to])).toEqual([["eps", "eps"], ["eps2", "eps2"], ["atx24", "atx24"], ["gpu", null]]);
-    expect(drawn[3].card).toMatchObject({ length: 270, height: 125, thick: 50 });
+    // The card the demo's owner picked, MSI's Ventus 2X, at its own size.
+    expect(drawn[3].card).toMatchObject({ length: 242, height: 125, thick: 43 });
   });
 
   it("lights a cable on the board while its row is pointed at, zooms to its plug on a click, and takes the cables off on leaving the tab", async () => {

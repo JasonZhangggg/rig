@@ -35,9 +35,10 @@ export function useCard(): { shape: GpuShape; use: ReturnType<typeof cardUse>; o
     // Windows' subsystem ids name the exact card where Rig knows it; then its outputs and power plugs come with it.
     const sub = pc.gpuSubsys;
     const input = { name, subsysVendor: sub?.vendor, subsysId: sub?.id };
-    const shape = pc.build?.gpu ?? resolveBuild({ gpu: input }).gpu;
+    // The person's pick, where they told Rig which card it is, comes first.
+    const shape = pc.build?.gpu ?? resolveBuild({ gpu: input, picks: pc.picks }).gpu;
     if (!shape) return null;
     // Without the exact card, the plug layouts its chip's cards (from its maker, where Windows names it) come with.
     return { shape, use: cardUse(shape.ports, pc.displays), options: shape.ports ? undefined : gpuPowerOptions(input) };
-  }, [name, pc.build, pc.gpuSubsys, pc.displays]);
+  }, [name, pc.build, pc.gpuSubsys, pc.picks, pc.displays]);
 }

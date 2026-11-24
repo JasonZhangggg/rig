@@ -148,6 +148,19 @@ describe("PCs", () => {
     expect(r2.identity.name).toBe("Studio");
   });
 
+  it("keeps which graphics card the person picked, and refuses anything but Rig's own part ids", async () => {
+    const { call, signUp } = await setup();
+    const cookie = await signUp("kai@example.com");
+    const s = await syncPayload();
+    const id = s.inventory.machine.id;
+    await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie });
+    expect((await call(`/api/machines/${id}`, { method: "PATCH", json: { picks: { gpu: "<b>x</b>" } }, cookie })).status).toBe(400);
+    expect((await call(`/api/machines/${id}`, { method: "PATCH", json: { picks: { psu: "x" } }, cookie })).status).toBe(400);
+    expect((await call(`/api/machines/${id}`, { method: "PATCH", json: { picks: { gpu: "rx6700xt-xfx-qick319" } }, cookie })).status).toBe(204);
+    expect((await (await call(`/api/machines/${id}`, { cookie })).json() as { picks: unknown }).picks).toEqual({ gpu: "rx6700xt-xfx-qick319" });
+    expect((await call(`/api/machines/${id}`, { method: "PATCH", json: { picks: { gpu: "unsure:RX 6700 XT" } }, cookie })).status).toBe(204);
+  });
+
   it("marks a PC offline when it hasn't synced for a while", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const { call, signUp } = await setup();

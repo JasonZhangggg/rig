@@ -79,6 +79,24 @@
 .gp-elsewhere li { display: grid; gap: 2px; }
 .gp-elsewhere b { font-weight: 600; }
 .gp-elsewhere span { color: var(--text-2); }
+/* The card's model above its Ports list, with a way to pick or change it. */
+.gp-model { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.gp-model-text { display: grid; gap: 2px; min-width: 0; font-size: 13px; line-height: 1.4; }
+.gp-model-text b { font-size: 14px; font-weight: 600; }
+.gp-model .btn { flex: none; }
+/* "Which card is it?": one row per model with its power plugs. The list scrolls between a fixed title and buttons. */
+.sheet.gp-pick { display: flex; flex-direction: column; overflow: hidden; }
+.gp-pick-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; align-content: start; gap: 6px; margin: 8px 0 10px; padding: 2px 22px; list-style: none; }
+.gp-pick-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; width: 100%; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; line-height: 1.4; text-align: left; cursor: pointer;
+  transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.gp-pick-row b { font-size: 14px; font-weight: 600; }
+.gp-pick-row span { color: var(--text-2); white-space: nowrap; }
+@media (hover: hover) { .gp-pick-row:hover { background: var(--sel); } }
+.gp-pick-row.is-on { border-color: var(--text); background: var(--sel); }
+.gp-pick .sheet-foot { padding-top: 8px; }
 .po-pin.is-small { width: calc(var(--po-pin) * .62); height: calc(var(--po-pin) * .62); justify-self: center; align-self: end; }
 /* Six pins a row (the 16-pin plug) fit the card's width. */
 .po-grid.is-labeled.is-wide { --po-pin: 26px; column-gap: 8px; padding: 12px; }

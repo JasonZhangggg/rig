@@ -106,8 +106,11 @@ export interface BuildInput {
   /** The board's layout read from its manual (boardLayout.ts), used when Rig has no record of its own for it. */
   boardLayout?: Omit<BoardShape, "source">;
   memory?: { slotsTotal?: number; modules: { partNumber?: string; manufacturer?: string; slot?: string }[] };
-  picks?: { case?: string; cooler?: string; gpu?: string };
+  /** The models the person chose in Rig. gpu is a card id from gpus or cardModels, or "unsure:<chip>" when they said they don't know. */
+  picks?: Picks;
 }
+
+export interface Picks { case?: string; cooler?: string; gpu?: string }
 
 // ---------- catalog ----------
 // Sizes are the makers' own figures where their pages give them (checked 2026-11-22).
@@ -144,6 +147,7 @@ const chipTypical: Record<string, Pick<GpuShape, "length" | "height" | "thick" |
   "RTX 4070 SUPER": { length: 270, height: 125, thick: 50, fans: 2, fanMm: 95 },
   "RTX 4090": { length: 340, height: 145, thick: 72, fans: 3, fanMm: 100 },
   "RTX 4060": { length: 200, height: 115, thick: 40, fans: 2, fanMm: 85 },
+  "RX 6700 XT": { length: 267, height: 120, thick: 50, fans: 2, fanMm: 95 },
 };
 
 export const coolers: Record<string, Omit<CoolerShape, "source">> = {
@@ -213,28 +217,68 @@ export function gpuChip(name: string): string | undefined {
 /** The cards Rig knows for this chip and maker, for the "Which card is it?" picker. */
 export function gpuCandidates(input: NonNullable<BuildInput["gpu"]>) {
   const chip = gpuChip(input.name);
-  return Object.entries(gpus).filter(([, g]) => g.chip === chip && (!input.subsysVendor || g.maker === input.subsysVendor.toLowerCase()));
+  return Object.entries(gpus).filter(([, g]) => g.chip === chip && sameMaker(g.maker, input.subsysVendor));
 }
+
+/** Whether a card's maker id is the one Windows names. Some makers have two ids (XFX), so they're compared by name. */
+const sameMaker = (maker: string, vendor?: string) => !vendor || maker === vendor.toLowerCase() || (!!cardMakers[maker] && cardMakers[maker] === cardMakers[vendor.toLowerCase()]);
 
 /** PCI subsystem vendor ids of graphics card makers, so Rig can name the maker when it can't name the model. */
 export const cardMakers: Record<string, string> = {
   "1002": "AMD", "10de": "NVIDIA", "1043": "ASUS", "1462": "MSI", "1458": "Gigabyte", "1da2": "Sapphire", "148c": "PowerColor",
-  "1682": "XFX", "1849": "ASRock", "19da": "Zotac", "3842": "EVGA", "1569": "Palit", "10b0": "Gainward", "196e": "PNY", "8086": "Intel",
+  "1682": "XFX", "1eae": "XFX", "1849": "ASRock", "19da": "Zotac", "3842": "EVGA", "1569": "Palit", "10b0": "Gainward", "196e": "PNY", "8086": "Intel",
 };
 
 /**
- * More cards' power plugs, from the makers' spec pages (checked 2026-11-24; the AMD card from amd.com, the Sapphire
- * Nitro+ from TechPowerUp's review). Only plugs: Rig doesn't draw these cards, and it can't name one from Windows' ids
- * yet, so they only say which layouts a chip's cards come with.
+ * Cards Rig knows by name and power plugs but doesn't draw. Plugs are from the makers' spec pages (checked
+ * 2026-11-24; the AMD card from amd.com, the Sapphire Nitro+ from TechPowerUp's review). subsys lists the PCI
+ * subsystem ids Windows reports for the card, from the PCI ID Repository (pci-ids.ucw.cz, 2026-11-22), which name
+ * the exact model. A card with no power listed is one Rig can name but hasn't checked the plugs of.
  */
-const cardPower: { model: string; chip: string; maker: string; power: PlugKind[] }[] = [
-  ...([
-    ["AMD's own card", "1002", 6], ["Sapphire Nitro+", "1da2", 6], ["PowerColor Fighter", "148c", 6], ["PowerColor Hellhound", "148c", 8],
-    ["PowerColor Red Devil", "148c", 8], ["XFX Speedster SWFT 309", "1682", 8], ["XFX Speedster QICK 319", "1682", 8], ["ASUS Dual", "1043", 6],
-    ["ASUS TUF Gaming", "1043", 8], ["ASUS ROG Strix", "1043", 8], ["MSI Gaming X", "1462", 8], ["MSI Mech 2X", "1462", 8],
-    ["Gigabyte Gaming OC", "1458", 6], ["Gigabyte Eagle OC", "1458", 6], ["ASRock Challenger D", "1849", 8],
-  ] as const).map(([model, maker, second]) => ({ model, chip: "RX 6700 XT", maker, power: ["8-pin", second === 6 ? "6-pin" : "8-pin"] as PlugKind[] })),
-];
+export interface CardModel { name: string; chip: string; maker: string; subsys?: string[]; power?: PlugKind[]; from?: string }
+export const cardModels: Record<string, CardModel> = Object.fromEntries(([
+  ["rx6700xt-amd", "AMD's own RX 6700 XT", "1002", 6, ["0e36"], "AMD"],
+  ["rx6700xt-sapphire-nitro", "Sapphire Nitro+ RX 6700 XT", "1da2", 6, [], "From TechPowerUp's review"],
+  ["rx6700xt-sapphire-pulse", "Sapphire Pulse RX 6700 XT", "1da2", 0, ["445e"], ""],
+  ["rx6700xt-powercolor-fighter", "PowerColor Fighter RX 6700 XT", "148c", 6, [], "PowerColor"],
+  ["rx6700xt-powercolor-hellhound", "PowerColor Hellhound RX 6700 XT", "148c", 8, [], "PowerColor"],
+  ["rx6700xt-powercolor-red-devil", "PowerColor Red Devil RX 6700 XT", "148c", 8, ["2409"], "PowerColor"],
+  ["rx6700xt-xfx-swft309", "XFX Speedster SWFT 309 RX 6700 XT", "1eae", 8, [], "XFX"],
+  ["rx6700xt-xfx-qick319", "XFX Speedster QICK 319 RX 6700 XT", "1eae", 8, ["6601"], "XFX"],
+  ["rx6700xt-asus-dual", "ASUS Dual RX 6700 XT", "1043", 6, [], "ASUS"],
+  ["rx6700xt-asus-tuf", "ASUS TUF Gaming RX 6700 XT", "1043", 8, [], "ASUS"],
+  ["rx6700xt-asus-strix", "ASUS ROG Strix RX 6700 XT", "1043", 8, [], "ASUS"],
+  ["rx6700xt-msi-gaming-x", "MSI Gaming X RX 6700 XT", "1462", 8, [], "MSI"],
+  ["rx6700xt-msi-mech2x", "MSI Mech 2X RX 6700 XT", "1462", 8, ["3980"], "MSI"],
+  ["rx6700xt-gigabyte-gaming-oc", "Gigabyte Gaming OC RX 6700 XT", "1458", 6, [], "Gigabyte"],
+  ["rx6700xt-gigabyte-eagle-oc", "Gigabyte Eagle OC RX 6700 XT", "1458", 6, [], "Gigabyte"],
+  ["rx6700xt-asrock-challenger-d", "ASRock Challenger D RX 6700 XT", "1849", 8, ["5210", "5219", "5222"], "ASRock"],
+] as const).map(([id, name, maker, second, subsys, from]) => [id, {
+  name, chip: "RX 6700 XT", maker, ...(subsys.length ? { subsys: [...subsys] } : {}),
+  ...(second ? { power: ["8-pin", second === 6 ? "6-pin" : "8-pin"] as PlugKind[], from: from.startsWith("From ") ? from : fromSpec(from) } : {}),
+}]));
+
+/** One model the card could be, for the "Which card is it?" list. power is missing where Rig hasn't checked its plugs. */
+export interface CardChoice { id: string; name: string; maker?: string; power?: PlugKind[] }
+
+/** The models Rig knows for this card's chip, and its maker where Windows names it: the ones it draws, then the rest. */
+export function gpuModels(input: NonNullable<BuildInput["gpu"]>): CardChoice[] {
+  const chip = gpuChip(input.name);
+  if (!chip) return [];
+  return [
+    ...gpuCandidates(input).map(([id, g]) => ({ id, name: g.model, maker: cardMakers[g.maker], power: g.ports?.power.map((x) => x.kind) })),
+    ...Object.entries(cardModels).filter(([, m]) => m.chip === chip && sameMaker(m.maker, input.subsysVendor))
+      .map(([id, m]) => ({ id, name: m.name, maker: cardMakers[m.maker], power: m.power })),
+  ];
+}
+
+/** What a pick means for this card: "unsure" when the person said they don't know, the card's id, or nothing (not asked yet, or a pick for another card). */
+export function gpuPick(input: NonNullable<BuildInput["gpu"]>, pick?: string): "unsure" | string | undefined {
+  const chip = gpuChip(input.name);
+  if (!pick || !chip) return undefined;
+  if (pick === `unsure:${chip}`) return "unsure";
+  return (gpus[pick]?.chip ?? cardModels[pick]?.chip) === chip ? pick : undefined;
+}
 
 /**
  * When Rig can't name the exact card: the power plug layouts the cards it knows of this chip (and maker, where
@@ -245,14 +289,12 @@ export function gpuPowerOptions(input: NonNullable<BuildInput["gpu"]>): { chip?:
   const chip = gpuChip(input.name);
   const maker = input.subsysVendor ? cardMakers[input.subsysVendor.toLowerCase()] : undefined;
   const layouts: { power: PlugKind[]; models: string[] }[] = [];
-  const known = [
-    ...gpuCandidates(input).map(([, g]) => ({ model: g.model, power: (g.ports?.power ?? []).map((x) => x.kind) })),
-    ...cardPower.filter((c) => c.chip === chip && (!input.subsysVendor || c.maker === input.subsysVendor.toLowerCase())),
-  ];
-  for (const { model, power } of known) {
-    if (!power.length) continue;
+  for (const { name: full, power } of gpuModels(input)) {
+    if (!power?.length) continue;
+    // "Sapphire Nitro+", not "Sapphire Nitro+ RX 6700 XT": the chip is said once, above the list.
+    const name = chip && full.endsWith(` ${chip}`) ? full.slice(0, -chip.length - 1) : full;
     const same = layouts.find((l) => l.power.join() === power.join());
-    if (same) same.models.push(model); else layouts.push({ power, models: [model] });
+    if (same) same.models.push(name); else layouts.push({ power, models: [name] });
   }
   return { chip, maker, layouts };
 }
@@ -284,16 +326,23 @@ export function resolveBuild(input: BuildInput): BuildShape {
   let gpu: GpuShape | undefined;
   if (input.gpu === undefined) gpu = { model: "Graphics card", source: "generic", length: 267, height: 134, thick: 42, fans: 2, fanMm: 95, shroud: "#2f3033", backplate: true };
   else if (input.gpu) {
-    const picked = picks.gpu && gpus[picks.gpu];
+    const pick = gpuPick(input.gpu, picks.gpu);
     const found = gpuCandidates(input.gpu);
     const id = input.gpu.subsysId?.toLowerCase();
-    const named = id ? found.find(([, g]) => g.subsys?.includes(id)) : undefined;
     const chip = gpuChip(input.gpu.name);
+    const named = id ? found.find(([, g]) => g.subsys?.includes(id)) : undefined;
+    const namedModel = id ? Object.values(cardModels).find((m) => m.chip === chip && sameMaker(m.maker, input.gpu!.subsysVendor) && m.subsys?.includes(id)) : undefined;
+    const size = chip && chipTypical[chip] ? chipTypical[chip] : { length: 267, height: 134, thick: 42, fans: 2, fanMm: 95 };
     const card = (g: (typeof gpus)[string]) => { const { chip: _c, maker: _m, subsys: _s, ...shape } = g; return shape; };
-    if (picked) gpu = { ...card(picked), source: "picked" };
+    // A card Rig only knows by name: a typical card of its chip to draw, with just its power plugs, and no outputs.
+    const byName = (m: CardModel, source: ShapeSource): GpuShape => ({ model: m.name, source, ...size, shroud: "#2f3033", backplate: true,
+      ports: { ...ports([], m.power ?? [], m.from ?? "", true), outputs: [] } });
+    if (pick && pick !== "unsure" && gpus[pick]) gpu = { ...card(gpus[pick]), source: "picked" };
+    else if (pick && pick !== "unsure" && cardModels[pick]) gpu = byName(cardModels[pick], "picked");
     else if (named) gpu = { ...card(named[1]), source: "detected" };
+    else if (namedModel) gpu = byName(namedModel, "detected");
     else if (found.length === 1 && input.gpu.subsysVendor) gpu = { ...card(found[0][1]), ports: undefined, source: "catalog" };
-    else gpu = { model: input.gpu.name, source: chip && chipTypical[chip] ? "estimated" : "generic", ...(chip && chipTypical[chip] ? chipTypical[chip] : { length: 267, height: 134, thick: 42, fans: 2, fanMm: 95 }), shroud: "#2f3033", backplate: true };
+    else gpu = { model: input.gpu.name, source: chip && chipTypical[chip] ? "estimated" : "generic", ...size, shroud: "#2f3033", backplate: true };
   }
 
   const cooler = picks.cooler && coolers[picks.cooler] ? { ...coolers[picks.cooler], source: "picked" as const } : genericCooler;
