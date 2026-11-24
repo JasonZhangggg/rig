@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, type Command, type ScriptUse, type Step, type Verdict } from "../src";
+import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, stepHash, stepsTitle, type Command, type ScriptUse, type Step, type Verdict } from "../src";
 import { canonicalCommand } from "../src/change";
 import vectors from "../src/rules/vectors.json";
 
@@ -36,6 +36,29 @@ describe("a command's fingerprint", () => {
     expect(await commandHash({ ...menuDelay, undo: undefined })).not.toBe(a);
     expect(await commandHash({ ...menuDelay, run: `${menuDelay.run} ` })).not.toBe(a);
     expect(await commandHash({ ...menuDelay, touches: [{ kind: "registry", key: "HKCU\\Control Panel\\Desktop" }] })).not.toBe(a);
+  });
+});
+
+describe("a step's fingerprint", () => {
+  const native: Step = { kind: "native", op: { name: "selftest", value: "rig", run: true } };
+
+  it("is a command's own for a command, so an older Rig app and this helper agree", async () => {
+    expect(await stepHash({ kind: "command", cmd: menuDelay })).toBe(await commandHash(menuDelay));
+  });
+
+  it("is the one the helper works out for a native step, and changes with any part", async () => {
+    // The helper's self-test holds NativeOpStep.Hash to the same value for the same step.
+    const a = await stepHash(native);
+    expect(a).toBe("50bcf6ce4cdf697f2b1132c10add612042fab4e88029143c42eed35ed06afbf6");
+    expect(await stepHash({ kind: "native", op: { run: true, value: "rig", name: "selftest" } })).toBe(a);
+    expect(await stepHash({ kind: "native", op: { name: "selftest", value: "rig" } })).not.toBe(a);
+    expect(await stepHash({ kind: "native", op: { name: "selftest", value: "rig " , run: true } })).not.toBe(a);
+  });
+
+  it("can't be made the same by moving text between parts", async () => {
+    const one = { kind: "native", op: { name: "selftest", value: "a\"b" } } as Step;
+    const two = { kind: "native", op: { name: "selftest", value: "a", b: "" } } as unknown as Step;
+    expect(await stepHash(one)).not.toBe(await stepHash(two));
   });
 });
 
@@ -189,6 +212,26 @@ describe("checking a step", () => {
   it("refuses a request with a part missing", () => {
     expect(refusal({ kind: "command", cmd: { ...menuDelay, read: "" } })).not.toBeNull();
     expect(refusal({ kind: "command", cmd: { ...menuDelay, does: " " } })).not.toBeNull();
+  });
+});
+
+describe("checking a native step", () => {
+  const native = (op: Record<string, unknown>) => ({ kind: "native", op }) as unknown as Step;
+
+  it("takes its tier from Rig's own table and never needs admin rights", () => {
+    expect(checkStep(native({ name: "selftest", value: "rig", tier: 0, admin: true }))).toMatchObject({ status: "allowed", tier: 2, admin: false, commands: [] });
+    expect(cardTier([gameMode, native({ name: "selftest", value: "rig" })])).toBe(2);
+  });
+
+  it("refuses an op Rig doesn't know and one with a part missing", () => {
+    expect(refusal(native({ name: "toString" }))?.refused).toBe("This isn't a kind of change Rig makes.");
+    expect(refusal(native({ name: "selftest" }))?.refused).toBe("The self-test op needs a short value.");
+    expect(cardTier([gameMode, native({ name: "nope" })])).toBe("refused");
+  });
+
+  it("has a title for the changes log", () => {
+    expect(stepsTitle([native({ name: "selftest", value: "rig" })])).toBe("Ran Rig's self-test change");
+    expect(stepsTitle([gameMode, native({ name: "selftest", value: "rig" })])).toBe("2 changes");
   });
 });
 

@@ -1,6 +1,6 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
-import { cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type Command, type FixStep, type PreviewReply, type Step, type UndoReply } from "../change";
+import { appliedHelperStep, cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type HelperStep, type PreviewReply, type Step, type UndoReply } from "../change";
 import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
@@ -277,15 +277,15 @@ export class DemoClient implements RigClient {
   }
 
   /** Reads the way the helper would for one of the demo's command cards. */
-  async previewCommand(id: string, cmd: Command, tainted = false): Promise<PreviewReply> {
-    const card = demoCards.find((c) => c.cmd.run === cmd.run);
+  async previewStep(id: string, step: HelperStep, tainted = false): Promise<PreviewReply> {
+    const card = step.kind === "command" ? demoCards.find((c) => c.cmd.run === step.cmd.run) : undefined;
     if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
     await sleep(300);
     return demoPreview(card, tainted);
   }
 
   /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
-  async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
+  async applyStep(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
     const p = this.pcs[id];
     const card = demoCardByNonce(nonce);
     if (!p || !card || this.used.has(nonce)) return { outcome: "expired" };
@@ -298,15 +298,15 @@ export class DemoClient implements RigClient {
     const tier = cardTier([step]);
     p.changes.unshift({
       id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? card.title, by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows,
-      tier: tier === "refused" ? 3 : tier, applied: [{ step, undo: reply.undo, rows, verify: { before: reply.result.before, after: reply.result.after } }], from: meta.from,
+      tier: tier === "refused" ? 3 : tier, applied: [appliedHelperStep(step, reply.undo, rows, { before: reply.result.before, after: reply.result.after })], from: meta.from,
     });
     this.emit(id);
     return reply;
   }
 
-  async undoCommand(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
+  async undoStep(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
     const card = demoCardByUndo(undoId);
-    const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
+    const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind !== "fix" && a.undo.id === undoId));
     if (!card || !c || c.status === "undone") return { outcome: "unknown" };
     await sleep(300);
     if (card.drifts && !force) return { outcome: "drifted", changed: card.drifts };

@@ -92,13 +92,13 @@ describe("the demo's approval cards", () => {
     }
     const meta = { by: "rig" as const };
     const registry = demoCards.find((c) => c.key === "registry")!;
-    const read = await demo.previewCommand("demo-atlas", registry.cmd);
+    const read = await demo.previewStep("demo-atlas", { kind: "command", cmd: registry.cmd });
     expect(read).toEqual({ ...demoPreview(registry), nonce: expect.stringMatching(/^demo-registry-/), expiresAt: expect.any(String) });
     const nonce = read.outcome === "ready" ? read.nonce : "";
-    expect((await demo.applyCommand("demo-atlas", nonce, meta)).outcome).toBe("applied");
-    expect((await demo.applyCommand("demo-atlas", nonce, meta)).outcome).toBe("expired");
+    expect((await demo.applyStep("demo-atlas", nonce, meta)).outcome).toBe("applied");
+    expect((await demo.applyStep("demo-atlas", nonce, meta)).outcome).toBe("expired");
     expect((await demo.changes("demo-atlas"))[0].title).toBe("Show seconds on the taskbar clock");
-    expect((await demo.undoCommand("demo-atlas", "undo-registry")).outcome).toBe("undone");
+    expect((await demo.undoStep("demo-atlas", "undo-registry")).outcome).toBe("undone");
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
   });
 
@@ -106,21 +106,21 @@ describe("the demo's approval cards", () => {
     const { demoCards } = await import("../src/demo");
     const demo = new DemoClient();
     const rollback = demoCards.find((c) => c.key === "rollback")!;
-    const read = await demo.previewCommand("demo-atlas", rollback.cmd);
+    const read = await demo.previewStep("demo-atlas", { kind: "command", cmd: rollback.cmd });
     const nonce = read.outcome === "ready" ? read.nonce : "";
-    expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("rolledBack");
-    expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("expired");
+    expect((await demo.applyStep("demo-atlas", nonce, { by: "rig" })).outcome).toBe("rolledBack");
+    expect((await demo.applyStep("demo-atlas", nonce, { by: "rig" })).outcome).toBe("expired");
   });
 
   it("shows a firewall undo that something else got to first, and puts it back anyway when asked", async () => {
     const { demoCards } = await import("../src/demo");
     const demo = new DemoClient();
     const firewall = demoCards.find((c) => c.key === "firewall")!;
-    const read = await demo.previewCommand("demo-atlas", firewall.cmd);
-    await demo.applyCommand("demo-atlas", read.outcome === "ready" ? read.nonce : "", { by: "rig" });
-    expect(await demo.undoCommand("demo-atlas", "undo-firewall")).toEqual({ outcome: "drifted", changed: ["The firewall rule Minecraft server"] });
+    const read = await demo.previewStep("demo-atlas", { kind: "command", cmd: firewall.cmd });
+    await demo.applyStep("demo-atlas", read.outcome === "ready" ? read.nonce : "", { by: "rig" });
+    expect(await demo.undoStep("demo-atlas", "undo-firewall")).toEqual({ outcome: "drifted", changed: ["The firewall rule Minecraft server"] });
     expect((await demo.changes("demo-atlas"))[0].status).toBe("applied");
-    expect((await demo.undoCommand("demo-atlas", "undo-firewall", true)).outcome).toBe("undone");
+    expect((await demo.undoStep("demo-atlas", "undo-firewall", true)).outcome).toBe("undone");
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
   });
 
@@ -128,8 +128,8 @@ describe("the demo's approval cards", () => {
     const { demoCards } = await import("../src/demo");
     const demo = new DemoClient();
     const uninstall = demoCards.find((c) => c.key === "uninstall")!;
-    const read = await demo.previewCommand("demo-atlas", uninstall.cmd, true);
+    const read = await demo.previewStep("demo-atlas", { kind: "command", cmd: uninstall.cmd }, true);
     expect(read.outcome === "refused" && read.verdict.why).toBe("tainted");
-    expect((await demo.previewCommand("demo-atlas", uninstall.cmd, false)).outcome).toBe("ready");
+    expect((await demo.previewStep("demo-atlas", { kind: "command", cmd: uninstall.cmd }, false)).outcome).toBe("ready");
   });
 });

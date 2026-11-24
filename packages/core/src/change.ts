@@ -1,9 +1,12 @@
-// A change Rig can make is a list of steps. A step is a fix from the catalog
-// or a command: a PowerShell change request with a script that reads the
-// current state, one that makes the change and, when there is one, one that
-// puts it back. Rig works out the tier and whether it needs admin rights; the
-// model never sets them. The server, the app and the helper all run the same
-// check from the same rules file, and the helper's answer is the one shown.
+// A change Rig can make is a list of steps. A step is a fix from the catalog,
+// a command, or a native op. A command is a PowerShell change request with a
+// script that reads the current state, one that makes the change and, when
+// there is one, one that puts it back. A native op is a change PowerShell
+// can't make, which the helper's own code makes as the person. Rig works out
+// the tier and whether it needs admin rights; the model never sets them. The
+// server, the app and the helper all run the same check, and the helper's
+// answer is the one shown. Commands and native ops go through the same
+// approval in the helper: preview, a nonce, apply, undo.
 
 import { actionInfo, titleFor, validateCall, type ActionCall } from "./actions";
 import { checkScript, covers, inspectScript, placeOf, rulesVersion, ruleWords, textLowersProtection, textNeedsAdmin, textOnNeverList, type ScriptUse, type Write } from "./check";
@@ -15,9 +18,57 @@ export type Tier = 0 | 1 | 2 | 3;
 
 export type Step =
   | { kind: "fix"; call: ActionCall }
-  | { kind: "command"; cmd: Command };
+  | { kind: "command"; cmd: Command }
+  | { kind: "native"; op: NativeOp };
 export type FixStep = Extract<Step, { kind: "fix" }>;
 export type CommandStep = Extract<Step, { kind: "command" }>;
+export type NativeStep = Extract<Step, { kind: "native" }>;
+/** The steps the helper previews, approves and undoes by nonce. Fixes go through the catalog's own call. */
+export type HelperStep = CommandStep | NativeStep;
+
+/**
+ * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
+ * `nativeOps`, and one class in the helper (NativeSteps.cs).
+ */
+export type NativeOp = SelftestOp;
+
+/** The helper's self-test op: sets a value under HKCU\Software\RigSelftest. The helper knows it only inside --selftest. */
+export interface SelftestOp {
+  name: "selftest";
+  value: string;
+  /** Also writes a Run value, which the helper must catch and put back. */
+  run?: true;
+}
+
+/** What Rig's own code says about one kind of native op. Nothing here comes from the model. */
+export interface NativeRule<O extends NativeOp> {
+  /** The op as the helper stores and fingerprints it, with anything Rig doesn't know dropped, or what is wrong with it in plain words. */
+  canonical(raw: Record<string, unknown>): O | string;
+  tier(op: O): Tier;
+  /** Why this tier. */
+  reasons(op: O): string[];
+  /** A short past-tense title for the changes log. */
+  title(op: O): string;
+}
+
+export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, { name: N }>> } = {
+  selftest: {
+    canonical: (raw) =>
+      typeof raw.value !== "string" || raw.value.length === 0 || raw.value.length > 64 ? "The self-test op needs a short value." : { name: "selftest", value: raw.value, ...(raw.run === true ? { run: true as const } : {}) },
+    tier: () => 2,
+    reasons: () => ["Rig's own self-test change."],
+    title: () => "Ran Rig's self-test change",
+  },
+};
+
+const nativeRule = (name: unknown): NativeRule<NativeOp> | undefined =>
+  typeof name === "string" && Object.hasOwn(nativeOps, name) ? (nativeOps[name as NativeOp["name"]] as NativeRule<NativeOp>) : undefined;
+
+/** The native op as the helper stores and checks it, or what is wrong with it. */
+export function canonicalNative(raw: unknown): NativeOp | string {
+  const rule = raw && typeof raw === "object" ? nativeRule((raw as { name?: unknown }).name) : undefined;
+  return rule ? rule.canonical(raw as Record<string, unknown>) : "This isn't a kind of change Rig makes.";
+}
 
 export const fixSteps = (calls: ActionCall[]): FixStep[] => calls.map((call) => ({ kind: "fix", call }));
 
@@ -120,12 +171,27 @@ const touchKind = (t: Touch): Write["kind"] => (t.kind === "service" ? "service"
 
 /** The verdict on one step. Refusals say in plain words what was refused. */
 export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): Verdict {
-  if (step.kind === "fix") {
-    const bad = validateCall(step.call);
-    if (bad) return refuse(`This isn't one of Rig's fixes: ${bad}.`);
-    return { status: "allowed", tier: actionInfo(step.call.kind).tier, admin: false, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
+  switch (step.kind) {
+    case "fix": {
+      const bad = validateCall(step.call);
+      if (bad) return refuse(`This isn't one of Rig's fixes: ${bad}.`);
+      return { status: "allowed", tier: actionInfo(step.call.kind).tier, admin: false, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
+    }
+    case "command": return checkCommand(step.cmd, ctx);
+    case "native": {
+      const op = canonicalNative(step.op);
+      if (typeof op === "string") return refuse(op);
+      const rule = nativeRule(op.name)!;
+      const tier = rule.tier(op);
+      if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
+      // The helper's worker makes it with the person's own rights, so it never needs admin rights.
+      return { status: "allowed", tier, admin: false, commands: [], reasons: rule.reasons(op), rulesVersion };
+    }
   }
-  const cmd = canonicalCommand(step.cmd);
+}
+
+function checkCommand(raw: Command, ctx: CheckContext): Verdict {
+  const cmd = canonicalCommand(raw);
   if (typeof cmd === "string") return refuse(cmd);
   // What it says it touches is held to the never list first, so a script that hides the place can't get past it.
   for (const t of cmd.touches) {
@@ -177,7 +243,30 @@ export function cardTier(steps: Step[], ctx: CheckContext = { tainted: false }):
 export function stepsTitle(steps: Step[]): string {
   const calls = steps.flatMap((s) => (s.kind === "fix" ? [s.call] : []));
   if (calls.length === steps.length) return titleFor(calls);
-  return steps.length === 1 && steps[0].kind === "command" ? steps[0].cmd.does.trim().replace(/\.$/, "") : `${steps.length} changes`;
+  if (steps.length !== 1) return `${steps.length} changes`;
+  const [step] = steps;
+  switch (step.kind) {
+    case "fix": return titleFor([step.call]);
+    case "command": return step.cmd.does.trim().replace(/\.$/, "");
+    case "native": {
+      const op = canonicalNative(step.op);
+      return typeof op === "string" ? "1 change" : nativeRule(op.name)!.title(op);
+    }
+  }
+}
+
+/** The step as the helper stores and checks it, or what is wrong with it. */
+export function canonicalStep(step: HelperStep): HelperStep | string {
+  switch (step.kind) {
+    case "command": {
+      const cmd = canonicalCommand(step.cmd);
+      return typeof cmd === "string" ? cmd : { kind: "command", cmd };
+    }
+    case "native": {
+      const op = canonicalNative(step.op);
+      return typeof op === "string" ? op : { kind: "native", op };
+    }
+  }
 }
 
 // The change log.
@@ -191,24 +280,39 @@ export interface VerifyResult {
 export interface RestorePoint { seq: number; name: string; /** ISO time. */ at: string }
 
 export interface FixUndo { kind: "fix"; call: ActionCall }
-export interface CommandUndo {
-  kind: "command";
-  /** The helper's id for the snapshot and undo script, kept in its admin-only folder. */
+/** What the helper keeps for a step it applied, in its admin-only folder. */
+interface KeptUndo {
+  /** The helper's id for the step, its snapshot and what puts it back. */
   id: string;
-  /** The undo script's text, to show. The helper runs its own stored copy after it restores the snapshot. */
-  script?: string;
   restorePoint?: RestorePoint;
   /** Things that changed outside `touches`. They have no snapshot. */
   outside: string[];
   /** Hash of the state right after the change, so undo can tell whether something else changed it since. */
   fingerprint: string;
 }
-export type UndoRecord = FixUndo | CommandUndo;
+export interface CommandUndo extends KeptUndo {
+  kind: "command";
+  /** The undo script's text, to show. The helper runs its own stored copy after it restores the snapshot. */
+  script?: string;
+}
+/** The op's own way back was approved with the step; the helper keeps what it needs for it. */
+export interface NativeUndo extends KeptUndo { kind: "native" }
+export type HelperUndo = CommandUndo | NativeUndo;
+export type UndoRecord = FixUndo | HelperUndo;
 
 export type AppliedStep =
   /** `unverified`: what the helper saw when it read the fix back and the change wasn't there, in plain words. */
   | { step: FixStep; undo: FixUndo; rows: DiffRow[]; unverified?: string }
-  | { step: CommandStep; undo: CommandUndo; rows: DiffRow[]; verify?: VerifyResult };
+  | { step: CommandStep; undo: CommandUndo; rows: DiffRow[]; verify?: VerifyResult }
+  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult };
+
+/** A helper step as the changes log keeps it once applied: the undo record is filed under the step's own kind. */
+export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult): AppliedStep {
+  switch (step.kind) {
+    case "command": return { step, undo: { ...undo, kind: "command" }, rows, verify };
+    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify };
+  }
+}
 
 /** How a change's steps were stored before general commands. */
 export interface AppliedCall { call: ActionCall; undo: ActionCall; row: DiffRow }
@@ -224,7 +328,7 @@ export function changeOf(c: StoredChange): Change {
 }
 
 // The helper's side: four calls over the pipe. The helper owns approval:
-// preview stores the command and its verdict under a nonce that works once
+// preview stores the step and its verdict under a nonce that works once
 // and expires, and apply takes only the nonce and checks again.
 
 /** The current value of one touch as the helper read it. Null means it isn't there. */
@@ -238,7 +342,7 @@ export type Sentinel =
 export interface SentinelHit { sentinel: Sentinel; before: string; after: string }
 
 export interface RunResult {
-  /** What `read` printed before and after. */
+  /** What `read` printed before and after; for a native op, the state it changes as the helper's worker read it. */
   before: string;
   after: string;
   touches: TouchChange[];
@@ -260,7 +364,7 @@ export type PreviewReply =
       /** ISO time. */
       expiresAt: string;
       verdict: Allowed;
-      /** What `read` printed now. */
+      /** What `read` printed now; for a native op, the state it changes as the helper's worker read it. */
       read: string;
       touches: TouchValue[];
     };
@@ -274,7 +378,7 @@ export type ApplyReply =
   | { outcome: "limit"; /** ISO time when the next one is allowed. */ until: string }
   /** The person said no at Windows' permission prompt. Nothing ran. */
   | { outcome: "declined" }
-  | { outcome: "applied"; result: RunResult; undo: CommandUndo }
+  | { outcome: "applied"; result: RunResult; undo: HelperUndo }
   /** It ran, then the helper put everything back: a never-list write (`sentinels`) or a failure (`error`). Nothing to undo. */
   | { outcome: "rolledBack"; result: RunResult; sentinels: SentinelHit[]; error?: string; left?: string[] };
 
@@ -291,25 +395,62 @@ export async function commandHash(cmd: Command): Promise<string> {
   for (const t of cmd.touches) {
     parts.push(t.kind, t.kind === "registry" ? t.key : t.kind === "file" ? t.path : t.name, t.kind === "registry" && t.value !== undefined ? `+${t.value}` : "-");
   }
-  const bytes = new TextEncoder().encode(parts.map((p) => `${p.length}:${p}`).join("\n"));
-  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return sha256(parts.map((p) => `${p.length}:${p}`).join("\n"));
+}
+
+async function sha256(text: string): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
   return Array.from(d, (x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 /**
- * The helper checks everything again itself except taint: it can't see the chat, so a tainted chat's tier 3 card is
- * refused by the server before it is shown.
+ * A value written so that no two values share a text: every string and list with its length in front, object keys in
+ * order. Only whole numbers, because the app and the helper don't write fractions the same way; an op that needs one
+ * carries it as text.
  */
-export interface CommandRpc {
-  "command.check": { params: { cmd: Command }; reply: { verdict: Verdict } };
-  "command.preview": { params: { cmd: Command }; reply: PreviewReply };
-  "command.apply": { params: { nonce: string }; reply: ApplyReply };
-  "command.undo": { params: { id: string; /** Put it back even when something else changed it since. */ force?: boolean }; reply: UndoReply };
+function encoded(v: unknown): string {
+  if (v === null) return "z";
+  if (typeof v === "string") return `s${v.length}:${v}`;
+  if (typeof v === "boolean") return v ? "t" : "f";
+  if (typeof v === "number") {
+    if (!Number.isSafeInteger(v)) throw new Error("A step can only hold whole numbers.");
+    return `n${v};`;
+  }
+  if (Array.isArray(v)) return `a${v.length}[${v.map(encoded).join("")}]`;
+  if (typeof v === "object") {
+    const keys = Object.keys(v).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return `o${keys.length}{${keys.map((k) => encoded(k) + encoded((v as Record<string, unknown>)[k])).join("")}}`;
+  }
+  throw new Error("A step can only hold text, whole numbers, true or false, lists and objects.");
+}
+
+/**
+ * What an approval is of: the whole step. The helper works out the same fingerprint from the step it stored and runs or
+ * approves it only when the two match. A command keeps the fingerprint it had before native ops ("rig-command-1"), so a
+ * Rig app from before them and this helper still agree on it; every other step is "rig-step-1".
+ */
+export async function stepHash(step: Step): Promise<string> {
+  switch (step.kind) {
+    case "command": return commandHash(step.cmd);
+    case "fix": case "native": return sha256(`rig-step-1\n${encoded(step)}`);
+  }
+}
+
+/**
+ * The helper checks everything again itself except taint: it can't see the chat, so a tainted chat's tier 3 card is
+ * refused by the server before it is shown. A helper from before native ops answers the same four calls under
+ * "command." with `{ cmd }` in place of `{ step }`; this helper still answers those too.
+ */
+export interface StepRpc {
+  "step.check": { params: { step: HelperStep }; reply: { verdict: Verdict } };
+  "step.preview": { params: { step: HelperStep }; reply: PreviewReply };
+  "step.apply": { params: { nonce: string }; reply: ApplyReply };
+  "step.undo": { params: { id: string; /** Put it back even when something else changed it since. */ force?: boolean }; reply: UndoReply };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
 }
 
-/** The part of the helper link that carries commands. */
-export interface CommandLink {
-  command<K extends keyof CommandRpc>(method: K, params: CommandRpc[K]["params"]): Promise<CommandRpc[K]["reply"]>;
+/** The part of the helper link that carries steps. */
+export interface StepLink {
+  step<K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]>;
 }

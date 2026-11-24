@@ -37,6 +37,26 @@ static partial class Native
         finally { CloseHandle(p); }
     }
 
+    // ----- How much a token may do -----
+    const int TokenIntegrityLevelClass = 25;
+    public const int STD_OUTPUT_HANDLE = -11, MediumIntegrity = 0x2000, HighIntegrity = 0x3000;
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr GetStdHandle(int which);
+
+    /// A token's integrity level: 0x2000 for an everyday program, 0x3000 with admin rights in force, 0x4000 for the system.
+    /// 0 when Windows won't say.
+    public static int Integrity(IntPtr token)
+    {
+        GetTokenInformation(token, TokenIntegrityLevelClass, IntPtr.Zero, 0, out int size);
+        if (size <= 0) return 0;
+        IntPtr buf = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!GetTokenInformation(token, TokenIntegrityLevelClass, buf, size, out _)) return 0;
+            return int.TryParse(new SecurityIdentifier(Marshal.ReadIntPtr(buf)).Value.Split('-')[^1], out int level) ? level : 0;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
     // ----- Who owns what this process makes -----
     const uint TOKEN_ADJUST_DEFAULT = 0x0080;
     const int TokenOwnerClass = 4;

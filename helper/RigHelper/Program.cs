@@ -2,7 +2,7 @@
 // Yes), it connects back to the app's private pipe and answers one JSON
 // request per line. It reads sensors, the PC's parts, a few settings, the
 // Windows event log and the busiest apps, and makes only the changes in Rig's
-// fix catalog and the commands the person approved (Commands.cs). It quits when
+// fix catalog and the steps the person approved (Commands.cs). It quits when
 // the app does. Run with --service it is Rig's background recorder instead
 // (RecorderService.cs).
 
@@ -77,8 +77,11 @@ public static class Program
         }
         // RigHelper.exe --approve-script <file>: started behind Windows' permission prompt when the person approves a script in Rig.
         if (Arg(args, "--approve-script") is string approveFile) return ProbeStore.ApproveFromFile(approveFile, Arg(args, "--hash"));
-        // RigHelper.exe --approve-command <file>: started the same way when the person approves a command that needs admin rights.
-        if (Arg(args, "--approve-command") is string commandFile) return Commands.ApproveFromFile(commandFile, Arg(args, "--hash"));
+        // RigHelper.exe --approve-step <file>: started the same way when the person approves a step that needs admin rights.
+        // A Rig app from before native ops calls it --approve-command.
+        if ((Arg(args, "--approve-step") ?? Arg(args, "--approve-command")) is string stepFile) return Commands.ApproveFromFile(stepFile, Arg(args, "--hash"));
+        // RigHelper.exe --native-worker <file>: started by the helper with the person's own sign-in to make a native op (NativeSteps.cs).
+        if (Arg(args, NativeWorker.Flag) is string workFile) return NativeWorker.Run(workFile, args.Contains(NativeWorker.SelfTestFlag));
         // RigHelper.exe --record-for 60 --data-dir <folder>: records in this process for a while, for the CI smoke test.
         if (Arg(args, "--record-for") is string secs && int.TryParse(secs, out int recordSecs) && Arg(args, "--data-dir") is string recordDir)
             return RecorderCore.RunFor(recordDir, Math.Clamp(recordSecs, 1, 3600));
@@ -347,7 +350,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
         "read" => Reads.Read(p?["read"] as JsonObject, owner),
-        "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" => commands.Value.Handle(method, p),
+        "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

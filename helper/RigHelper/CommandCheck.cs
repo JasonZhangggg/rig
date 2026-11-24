@@ -53,7 +53,8 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
     static string? Str(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
     static bool Wild(string text) => text.IndexOfAny(['*', '?', '[']) >= 0;
 
-    static Touch? TouchOf(JsonNode? n)
+    /// A touch as Rig stores it, or null when Rig can't use it.
+    public static Touch? TouchOf(JsonNode? n)
     {
         if (n is not JsonObject o || Str(o["kind"]) is not string kind) return null;
         string? text = Str(o[kind == "registry" ? "key" : kind == "file" ? "path" : "name"]);

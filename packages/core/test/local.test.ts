@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { APPROVE_DECLINED, checkStep, commandHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type CommandRpc, type HelperLink, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
+import { APPROVE_DECLINED, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -414,20 +414,22 @@ describe("LocalClient", () => {
       const calls: string[] = [];
       const seen: { method: string; params: unknown }[] = [];
       let drifted = !!o.drifts;
-      const command = async <K extends keyof CommandRpc>(method: K, params: CommandRpc[K]["params"]): Promise<CommandRpc[K]["reply"]> => {
+      let previewed: HelperStep | null = null;
+      const command = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
         calls.push(method);
         seen.push({ method, params });
         let reply: unknown;
-        if (method === "command.preview") {
-          const v = checkStep({ kind: "command", cmd: (params as { cmd: Command }).cmd }) as Allowed;
+        if (method === "step.preview") {
+          previewed = (params as { step: HelperStep }).step;
+          const v = checkStep(previewed) as Allowed;
           reply = { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: { ...v, admin: !!o.admin }, read: run.before, touches: [{ touch: run.touches[0].touch, value: "400" }] } satisfies PreviewReply;
-        } else if (method === "command.apply") reply = { outcome: "applied", result: run, undo: undoRecord } satisfies ApplyReply;
-        else if (method === "command.undo") {
+        } else if (method === "step.apply") reply = { outcome: "applied", result: run, undo: previewed?.kind === "native" ? { kind: "native", id: "u1", outside: [], fingerprint: "f1" } : undoRecord } satisfies ApplyReply;
+        else if (method === "step.undo") {
           const force = (params as { force?: boolean }).force;
           reply = (drifted && !force ? { outcome: "drifted", changed: o.drifts! } : { outcome: "undone", printed: run.before, left: [] }) satisfies UndoReply;
           if (force) drifted = false;
         } else if (method === "command.read") reply = { printed: "MenuShowDelay : 400" };
-        return reply as CommandRpc[K]["reply"];
+        return reply as StepRpc[K]["reply"];
       };
       return { command, calls, seen };
     }
@@ -435,9 +437,9 @@ describe("LocalClient", () => {
     function withCommands(o: { admin?: boolean; drifts?: string[]; approve?: (nonce: string, hash: string) => Promise<void> } = {}) {
       const helper = commandHelper(o);
       const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => 0 });
-      const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => sim.facts(), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c), command: helper.command };
+      const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => sim.facts(), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c), step: helper.command };
       const approve = vi.fn(o.approve ?? (async (_nonce: string, _hash: string) => { helper.calls.push("approve"); }));
-      const client = new LocalClient(link, new MemoryStore(), null, { tickMs: 1e9, syncEveryMs: 1e9, now: () => new Date("2026-11-17T20:00:00").getTime(), approveCommand: approve });
+      const client = new LocalClient(link, new MemoryStore(), null, { tickMs: 1e9, syncEveryMs: 1e9, now: () => new Date("2026-11-17T20:00:00").getTime(), approveStep: approve });
       return { client, helper, approve };
     }
     const meta = { title: "Turns off the menu delay", by: "rig" as const, from: { proposalId: "p1", messageId: "m1" } };
@@ -445,11 +447,11 @@ describe("LocalClient", () => {
     it("previews, applies and undoes a command that needs no admin rights, and logs it once", async () => {
       const { client, helper, approve } = withCommands();
       await client.start();
-      const preview = await client.previewCommand(client.id, menuDelay, false);
+      const preview = await client.previewStep(client.id, { kind: "command", cmd: menuDelay }, false);
       expect(preview).toMatchObject({ outcome: "ready", nonce: "n1", read: "MenuShowDelay : 400" });
       // The helper gets the command as Rig stores it: registry keys written HKCU\.
-      expect((helper.seen[0].params as { cmd: Command }).cmd.touches[0]).toEqual({ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" });
-      const applied = await client.applyCommand(client.id, "n1", meta);
+      expect((helper.seen[0].params as { step: { cmd: Command } }).step.cmd.touches[0]).toEqual({ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "MenuShowDelay" });
+      const applied = await client.applyStep(client.id, "n1", meta);
       expect(applied.outcome).toBe("applied");
       expect(approve).not.toHaveBeenCalled();
       const [change, ...rest] = await client.changes(client.id);
@@ -460,22 +462,47 @@ describe("LocalClient", () => {
         applied: [{ step: { kind: "command" }, undo: { kind: "command", id: "u1" }, verify: { before: "MenuShowDelay : 400", after: "MenuShowDelay : 0" } }],
       });
       // A nonce works once.
-      expect((await client.applyCommand(client.id, "n1", meta)).outcome).toBe("expired");
-      expect((await client.undoCommand(client.id, "u1")).outcome).toBe("undone");
+      expect((await client.applyStep(client.id, "n1", meta)).outcome).toBe("expired");
+      expect((await client.undoStep(client.id, "u1")).outcome).toBe("undone");
       expect((await client.changes(client.id)).map((c) => c.status)).toEqual(["undone"]);
-      expect(helper.calls).toEqual(["command.preview", "command.apply", "command.undo"]);
+      expect(helper.calls).toEqual(["step.preview", "step.apply", "step.undo"]);
+      client.stop();
+    });
+
+    it("takes a native step through the same preview, apply and undo, as the helper stores it", async () => {
+      const { client, helper, approve } = withCommands();
+      await client.start();
+      const sent = { kind: "native", op: { name: "selftest", value: "rig", extra: "dropped" } } as unknown as HelperStep;
+      expect((await client.previewStep(client.id, sent, false)).outcome).toBe("ready");
+      expect(helper.seen[0].params).toEqual({ step: { kind: "native", op: { name: "selftest", value: "rig" } } });
+      expect((await client.applyStep(client.id, "n1", { by: "rig" })).outcome).toBe("applied");
+      expect(approve).not.toHaveBeenCalled();
+      const [change] = await client.changes(client.id);
+      expect(change).toMatchObject({ title: "Ran Rig's self-test change", status: "applied", tier: 2, applied: [{ step: { kind: "native", op: { name: "selftest" } }, undo: { kind: "native", id: "u1" } }] });
+      expect((await client.undoStep(client.id, "u1")).outcome).toBe("undone");
+      expect(helper.calls).toEqual(["step.preview", "step.apply", "step.undo"]);
+      await expect(client.redo(client.id, change.id)).rejects.toThrow("only from a new card");
+      client.stop();
+    });
+
+    it("refuses a native step Rig doesn't know before the helper sees it", async () => {
+      const { client, helper } = withCommands();
+      await client.start();
+      const unknown = { kind: "native", op: { name: "format-disk" } } as unknown as HelperStep;
+      expect(await client.previewStep(client.id, unknown, false)).toMatchObject({ outcome: "refused", verdict: { refused: "This isn't a kind of change Rig makes." } });
+      expect(helper.calls).toEqual([]);
       client.stop();
     });
 
     it("has Windows approve an admin command by its nonce and hash before it runs", async () => {
       const { client, helper, approve } = withCommands({ admin: true });
       await client.start();
-      await client.previewCommand(client.id, menuDelay, false);
-      expect((await client.applyCommand(client.id, "n1", meta)).outcome).toBe("applied");
-      const stored = (helper.seen[0].params as { cmd: Command }).cmd;
-      expect(approve).toHaveBeenCalledWith("n1", await commandHash(stored));
-      expect(await commandHash(stored)).not.toBe(await commandHash(menuDelay));
-      expect(helper.calls).toEqual(["command.preview", "approve", "command.apply"]);
+      await client.previewStep(client.id, { kind: "command", cmd: menuDelay }, false);
+      expect((await client.applyStep(client.id, "n1", meta)).outcome).toBe("applied");
+      const stored = (helper.seen[0].params as { step: Step }).step;
+      expect(approve).toHaveBeenCalledWith("n1", await stepHash(stored));
+      expect(await stepHash(stored)).not.toBe(await stepHash({ kind: "command", cmd: menuDelay }));
+      expect(helper.calls).toEqual(["step.preview", "approve", "step.apply"]);
       expect(await client.changes(client.id)).toHaveLength(1);
       client.stop();
     });
@@ -484,12 +511,12 @@ describe("LocalClient", () => {
       let answer: "no" | "yes" = "no";
       const { client, helper } = withCommands({ admin: true, approve: async () => { if (answer === "no") throw APPROVE_DECLINED; } });
       await client.start();
-      await client.previewCommand(client.id, menuDelay, false);
-      expect(await client.applyCommand(client.id, "n1", meta)).toEqual({ outcome: "declined" });
-      expect(helper.calls).not.toContain("command.apply");
+      await client.previewStep(client.id, { kind: "command", cmd: menuDelay }, false);
+      expect(await client.applyStep(client.id, "n1", meta)).toEqual({ outcome: "declined" });
+      expect(helper.calls).not.toContain("step.apply");
       expect(await client.changes(client.id)).toHaveLength(0);
       answer = "yes";
-      expect((await client.applyCommand(client.id, "n1", meta)).outcome).toBe("applied");
+      expect((await client.applyStep(client.id, "n1", meta)).outcome).toBe("applied");
       expect(await client.changes(client.id)).toHaveLength(1);
       client.stop();
     });
@@ -497,22 +524,22 @@ describe("LocalClient", () => {
     it("says a plain error when Windows' approval fails for another reason", async () => {
       const { client, helper } = withCommands({ admin: true, approve: async () => { throw "Rig's helper didn't start."; } });
       await client.start();
-      await client.previewCommand(client.id, menuDelay, false);
-      await expect(client.applyCommand(client.id, "n1", meta)).rejects.toThrow("Rig's helper didn't start.");
-      expect(helper.calls).not.toContain("command.apply");
+      await client.previewStep(client.id, { kind: "command", cmd: menuDelay }, false);
+      await expect(client.applyStep(client.id, "n1", meta)).rejects.toThrow("Rig's helper didn't start.");
+      expect(helper.calls).not.toContain("step.apply");
       client.stop();
     });
 
     it("won't put a change back over something that changed it since, until asked to anyway", async () => {
       const { client, helper } = withCommands({ drifts: ["HKCU\\Control Panel\\Desktop\\MenuShowDelay"] });
       await client.start();
-      await client.previewCommand(client.id, menuDelay, false);
-      await client.applyCommand(client.id, "n1", meta);
-      expect(await client.undoCommand(client.id, "u1")).toEqual({ outcome: "drifted", changed: ["HKCU\\Control Panel\\Desktop\\MenuShowDelay"] });
+      await client.previewStep(client.id, { kind: "command", cmd: menuDelay }, false);
+      await client.applyStep(client.id, "n1", meta);
+      expect(await client.undoStep(client.id, "u1")).toEqual({ outcome: "drifted", changed: ["HKCU\\Control Panel\\Desktop\\MenuShowDelay"] });
       expect((await client.changes(client.id))[0].status).toBe("applied");
-      expect((await client.undoCommand(client.id, "u1", true)).outcome).toBe("undone");
+      expect((await client.undoStep(client.id, "u1", true)).outcome).toBe("undone");
       expect((await client.changes(client.id))[0].status).toBe("undone");
-      expect(helper.seen.filter((c) => c.method === "command.undo").map((c) => c.params)).toEqual([{ id: "u1" }, { id: "u1", force: true }]);
+      expect(helper.seen.filter((c) => c.method === "step.undo").map((c) => c.params)).toEqual([{ id: "u1" }, { id: "u1", force: true }]);
       client.stop();
     });
 
@@ -520,7 +547,7 @@ describe("LocalClient", () => {
       const { client, helper } = withCommands();
       await client.start();
       const noUndo: Command = { ...menuDelay, undo: null, touches: [{ kind: "other", name: "The menu delay" }] };
-      expect(await client.previewCommand(client.id, noUndo, true)).toMatchObject({ outcome: "refused", verdict: { why: "tainted" } });
+      expect(await client.previewStep(client.id, { kind: "command", cmd: noUndo }, true)).toMatchObject({ outcome: "refused", verdict: { why: "tainted" } });
       expect(helper.calls).toHaveLength(0);
       client.stop();
     });
@@ -536,7 +563,7 @@ describe("LocalClient", () => {
       } as unknown as CloudClient;
       const helper = commandHelper();
       const read = vi.fn(async () => "never");
-      const { client } = setup({ read, command: helper.command }, cloud);
+      const { client } = setup({ read, step: helper.command }, cloud);
       await client.start();
       await client.chat(client.id, [{ id: "1", from: "you", text: "What's my menu delay?" }], () => {});
       client.stop();

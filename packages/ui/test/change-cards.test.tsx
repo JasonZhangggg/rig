@@ -527,7 +527,7 @@ describe("steps run in order", () => {
 
   it("won't apply a later step before the one before it, or any step once the card was turned down", async () => {
     const client = new Two();
-    const apply = vi.spyOn(client, "applyCommand");
+    const apply = vi.spyOn(client, "applyStep");
     render(<AppProvider client={client} fallback={(t) => <p>{t}</p>}><Probe /></AppProvider>);
     await waitFor(() => expect(chat?.length).toBe(1));
     await act(() => actions.commandStep("two", 1, "apply"));
@@ -543,7 +543,7 @@ describe("steps run in order", () => {
 
   it("logs a command change under the checker's heading, and undoes it from Changes with the helper's undo", async () => {
     const client = new Two();
-    const undo = vi.spyOn(client, "undoCommand");
+    const undo = vi.spyOn(client, "undoStep");
     render(<AppProvider client={client} fallback={(t) => <p>{t}</p>}><Probe /></AppProvider>);
     await waitFor(() => expect(chat?.length).toBe(1));
     await act(() => actions.commandStep("two", 0, "apply"));
@@ -629,7 +629,7 @@ describe("a command with undo set to null", () => {
     expect(screen.getByText(/^Rig can't undo this: it had no copy to save and no undo script\./)).toBeTruthy();
     expect(button("Undo")).toBeNull();
     cleanup();
-    render(<StepRecord applied={{ step: { kind: "command", cmd }, undo: apply.undo, rows: [] }} />);
+    render(<StepRecord applied={{ step: { kind: "command", cmd }, undo: { kind: "command", id: "u", outside: [], fingerprint: "f" }, rows: [] }} />);
     expect(screen.queryByLabelText("Undo script")).toBeNull();
     expect(screen.getByText(/^Rig can't undo this/)).toBeTruthy();
   });
@@ -640,9 +640,9 @@ describe("applying and undoing through the app", () => {
   class OneCard extends DemoClient {
     no = 1;
     override conversation(id: string): ChatMessage[] { return id === "demo-atlas" ? [{ id: "m", from: "rig", text: "One step.", proposal: firewallOnly() }] : []; }
-    override async applyCommand(...args: Parameters<DemoClient["applyCommand"]>): Promise<ApplyReply> {
+    override async applyStep(...args: Parameters<DemoClient["applyStep"]>): Promise<ApplyReply> {
       if (this.no-- > 0) return { outcome: "declined" };
-      return super.applyCommand(...args);
+      return super.applyStep(...args);
     }
   }
   let actions!: ReturnType<typeof useActions>;
@@ -651,8 +651,8 @@ describe("applying and undoing through the app", () => {
 
   it("applies again after a No at Windows' prompt, then puts a drifted undo back anyway", async () => {
     const client = new OneCard();
-    const apply = vi.spyOn(client, "applyCommand");
-    const undo = vi.spyOn(client, "undoCommand");
+    const apply = vi.spyOn(client, "applyStep");
+    const undo = vi.spyOn(client, "undoStep");
     render(<AppProvider client={client} fallback={(t) => <p>{t}</p>}><Probe /></AppProvider>);
     await waitFor(() => expect(chat?.length).toBe(1));
     const logged = (await client.changes("demo-atlas")).length;
