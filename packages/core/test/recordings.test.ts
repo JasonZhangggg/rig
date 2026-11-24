@@ -261,7 +261,8 @@ describe("demo logs", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 24, 9, 0));
     const demo = new DemoClient();
-    const list = await new Promise<RecordingInfo[]>((res) => { const stop = demo.watchRecordings("demo-atlas", (l) => { stop(); res(l); }); });
+    // The week is made in the background, and the list comes again once it's there.
+    const list = await new Promise<RecordingInfo[]>((res) => { const stop = demo.watchRecordings("demo-atlas", (l) => { if (l.some((x) => x.id.startsWith("bg-d-"))) { stop(); res(l); } }); });
     expect(list.filter((x) => x.id.startsWith("bg-d-"))).toHaveLength(8);
     const look = list.find((x) => x.reason === "Windows logged Display event 4101")!;
     const crash = list.find((x) => x.reason === "Windows logged Application Error event 1000");

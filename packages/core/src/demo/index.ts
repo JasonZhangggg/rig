@@ -37,7 +37,7 @@ export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } fr
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] } }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -135,7 +135,7 @@ export class DemoClient implements RigClient {
     const machines = await Promise.all(Object.entries(this.pcs).map(async ([id, p]) => ({
       id, view: this.view(id), inventory: p.inv, facts: p.facts, identity: { ...p.id },
       changes: await this.changes(id), games: await this.games(id), history: await this.history(id, "30d"),
-      events: await this.events(id), recordings: [...await p.recorder.all(), ...this.background(p)],
+      events: await this.events(id), recordings: [...await p.recorder.all(), ...await this.background(p)],
     })));
     return makeExport({ account: await this.account(), machines, notes: ["Made-up data from Rig's demo."] });
   }
@@ -205,17 +205,27 @@ export class DemoClient implements RigClient {
     return () => { p.recListeners.delete(cb); };
   }
 
-  /** Atlas's background log, made again every few minutes so today's day log keeps up. */
-  private background(p: DemoPC): Recording[] {
+  /** Atlas's background log, made again every few minutes so today's day log keeps up. It's made in the background, and
+   * whoever watches the recordings hears again once it's there. */
+  private background(p: DemoPC): Promise<Recording[]> {
     const now = Date.now();
-    if (!p.bg || now - p.bg.at > 5 * 60_000) p.bg = { at: now, recs: demoBackground(p.inv, now, p.dust, limitsOf(this.view(p.inv.machine.id))) };
-    return p.bg.recs;
+    if (p.bg && Math.abs(now - p.bg.at) <= 5 * 60_000) return Promise.resolve(p.bg.recs);
+    if (!p.making) {
+      p.making = demoBackground(p.inv, now, p.dust, limitsOf(this.view(p.inv.machine.id))).then((recs) => {
+        p.bg = { at: now, recs };
+        p.making = undefined;
+        p.recListeners.forEach((cb) => cb(this.recordingList(p)));
+        return recs;
+      }, (e) => { p.making = undefined; throw e; });
+    }
+    return p.making;
   }
 
   /** Recordings started by the person or the chat, then the background recorder's, newest first; one that's running stays on top. */
   private recordingList(p: DemoPC): RecordingInfo[] {
     const mine = p.recorder.list();
-    const bg = this.background(p).map(toInfo);
+    if (!p.bg || Math.abs(Date.now() - p.bg.at) > 5 * 60_000) void this.background(p).catch(() => {});
+    const bg = (p.bg?.recs ?? []).map(toInfo);
     const at = (r: RecordingInfo) => r.startedAt ?? Date.parse(r.createdAt);
     const live = (r: RecordingInfo) => r.state === "pending" || r.state === "recording";
     return [...mine.filter(live), ...[...mine.filter((r) => !live(r)), ...bg].sort((a, b) => at(b) - at(a))];
@@ -224,7 +234,7 @@ export class DemoClient implements RigClient {
   async recording(id: string, rid: string) {
     const p = this.pcs[id];
     if (!p) return null;
-    if (isBackground(rid)) { const r = this.background(p).find((x) => x.id === rid); return r ? structuredClone(r) : null; }
+    if (isBackground(rid)) { const r = (await this.background(p)).find((x) => x.id === rid); return r ? structuredClone(r) : null; }
     await p.recorder.load();
     return p.recorder.get(rid) ?? null;
   }
