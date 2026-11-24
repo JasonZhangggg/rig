@@ -21,8 +21,20 @@ export interface Inventory {
   disks: { model: string; sizeGb: number; media: "nvme" | "ssd" | "hdd" | "unknown"; healthPercent?: number; writtenTb?: number; /** Windows' own verdict from the drive's self-test (SMART). Missing from helpers before 0.1.5. */ status?: "healthy" | "warning" | "unhealthy" }[];
   volumes: { letter: string; label?: string; sizeGb: number; freeGb: number }[];
   battery?: { designWh?: number; fullWh?: number; cycles?: number };
-  displays: { name: string; width: number; height: number; refreshHz: number; maxRefreshHz: number; primary: boolean }[];
+  displays: {
+    name: string; width: number; height: number; refreshHz: number; maxRefreshHz: number; primary: boolean;
+    /** The kind of plug on the computer's side, from Windows' display paths. Missing from older helpers. */
+    connection?: DisplayConnection;
+    /** Windows' name for the graphics that drive this screen ("NVIDIA GeForce RTX 4070 SUPER", "AMD Radeon(TM) Graphics"). Missing from older helpers. */
+    gpu?: string;
+  }[];
 }
+
+/**
+ * How a screen connects, as Windows reports it. Windows says the kind of plug (HDMI, DisplayPort), not which
+ * of a card's several plugs of that kind. usb-c is DisplayPort carried over a USB-C or Thunderbolt port.
+ */
+export type DisplayConnection = "hdmi" | "displayport" | "usb-c" | "dvi" | "vga" | "internal" | "wireless" | "other";
 
 export type HardwareKind = "cpu" | "gpu" | "board" | "memory" | "storage" | "battery" | "psu" | "cooler" | "network" | "other";
 /** throughput is in bytes a second (a drive's read and write rates); current is in amps. Helpers before 0.1.4 send neither. */

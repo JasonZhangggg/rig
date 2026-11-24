@@ -63,7 +63,7 @@ export interface PinGroup {
  * Pin colors: a different hue for each kind of wire, kept soft so they sit with the app's warm greys.
  * Power is clay or ochre, signals sage or slate, ground graphite, spare pins grey.
  */
-const soft = { slate: "#7E95B0", sage: "#8FA88A", ochre: "#C9A45C", clay: "#C27B5C", plum: "#9C849F", grey: "#A7A39B" };
+export const soft = { slate: "#7E95B0", sage: "#8FA88A", ochre: "#C9A45C", clay: "#C27B5C", plum: "#9C849F", grey: "#A7A39B" };
 /** Slots in use on the board, its key and the Slots tab. */
 export const IN_USE = soft.sage;
 const wireColor: Record<string, string> = {

@@ -492,11 +492,14 @@ function backplateTex(d: GpuDesign, look: string, L: number, Hc: number, ventFro
   });
 }
 
+/** Where along the card its power plugs sit: the middle on a Founders Edition, past it on most others. */
+export const gpuPlugAt = (s: GpuShape) => mm(s.length) * (s.look === "fe" ? 0.5 : 0.6);
+
 /**
  * A graphics card in the board frame: X from the bracket (0) to the far end (length), Y down from the
  * backplate (0) to the fans (-thickness), Z from the slot edge (0) to the top edge (height).
  */
-export function makeGpu(kit: Kit, s: GpuShape) {
+export function makeGpu(kit: Kit, s: GpuShape, o: { power?: boolean } = {}) {
   const look = s.look && gpuDesigns[s.look] ? s.look : "generic";
   const d = gpuDesigns[look];
   const L = mm(s.length), T = mm(s.thick), Hc = mm(s.height);
@@ -644,9 +647,9 @@ export function makeGpu(kit: Kit, s: GpuShape) {
     card.add(light);
   }
 
-  // Power connector (12V-2x6) on the top edge
-  const pc = fe ? L * 0.5 : L * 0.6;
-  card.add(span(pc - 0.1, pc + 0.1, -bp - 0.1, -bp - 0.01, Hc - 0.07, Hc - 0.01, kit.M("#121314", { rough: 0.6 }), 0.004));
+  // Power connector (12V-2x6) on the top edge. The card close-up draws its own plugs, with their pins.
+  const pc = gpuPlugAt(s);
+  if (o.power !== false) card.add(span(pc - 0.1, pc + 0.1, -bp - 0.1, -bp - 0.01, Hc - 0.07, Hc - 0.01, kit.M("#121314", { rough: 0.6 }), 0.004));
   // Slot bracket at the back of the case
   const slotsH = Math.max(2, Math.ceil(T / 0.2032)) * 0.2032;
   card.add(span(-0.015, 0, -slotsH + 0.04, 0.04, -0.05, 1.2, kit.M("#b9bcc0", { metal: 0.9, rough: 0.35 }), 0.003));
