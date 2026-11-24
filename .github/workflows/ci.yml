@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # A branch with a pull request runs once, for the pull request, not again for the push.
   push:
-    branches: [main, "claude/**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -20,13 +21,13 @@ jobs:
       - uses: ./.github/actions/check
 
   # The real thing: helper self-test on Windows and the installer.
-  # Windows minutes count double on private repos, so this runs on main and
-  # when started by hand (Actions tab > CI > Run workflow).
-  # Release (release.yml) builds the installer with the same steps.
+  # Windows minutes count double on private repos, so this runs only when
+  # started by hand (Actions tab > CI > Run workflow). Every release builds and
+  # tests the installer with the same steps (release.yml).
   windows:
     runs-on: windows-latest
     needs: check
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/windows-installer

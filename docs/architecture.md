@@ -124,7 +124,7 @@ Rig keeps the maker's own manual for each part (motherboard, laptop, graphics ca
 - **Desktop sign-in through the browser** with a short code (OAuth device flow), so the app never handles a password.
 - **Installer:** NSIS, installed for the current user (no admin prompt to install).
 - **Helper ships self-contained** (no .NET install needed), about 70 MB.
-- **Windows CI job runs on main and by hand** because Windows minutes count double on private repos.
+- **Windows CI job runs only by hand** (and in every release) because Windows minutes count double on private repos. Branches with a pull request run CI once, for the pull request.
 
 ## What's tested
 

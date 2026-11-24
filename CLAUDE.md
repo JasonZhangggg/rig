@@ -45,4 +45,4 @@ Before saying a change works, run the tests for the packages it touches and `pnp
 - Change the version only with `pnpm version:set X`, so every file agrees.
 - Words on screen are plain and short, say what happened and what to do next, and never blame the person.
 - Tests check what someone using Rig would see, not internals. A bug fix comes with a test that fails without it.
-- CI runs `check` on every pull request. The Windows job runs on `main`, or by hand: `gh workflow run ci.yml --ref <branch>`.
+- CI runs `check` on every pull request and every push to `main`. The Windows job runs in every release, or by hand: `gh workflow run ci.yml --ref <branch>`.
