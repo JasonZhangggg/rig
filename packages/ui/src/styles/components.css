@@ -274,6 +274,9 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 .cc-touch { grid-template-columns: auto minmax(0, 1fr); }
 .cc-values { grid-column: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; overflow-wrap: anywhere; }
 .cc-values b { font-weight: 600; }
+.cc-edit { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+.cc-where-line { margin: 0 0 6px; overflow-wrap: anywhere; }
+.cc-reasons { margin-top: 6px; font-size: 13px; color: var(--text-2); }
 .cc-before { color: var(--text-2); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
 .cc-arrow { color: var(--text-3); }
 .cc-plain { gap: 4px; }
@@ -317,7 +320,7 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
   .cc-glance { grid-template-columns: minmax(0, 1fr); }
   .cc-glance > div + div { border-left: 0; border-top: 1px solid var(--line); }
   .cc-compare { grid-template-columns: 1fr; }
-  .cc-touch { grid-template-columns: minmax(0, 1fr); }
+  .cc-touch, .cc-edit { grid-template-columns: minmax(0, 1fr); }
   .cc-values { grid-column: 1; }
   .cc-confirm .input { max-width: none; }
 }

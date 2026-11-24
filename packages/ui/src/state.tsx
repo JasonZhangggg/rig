@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
-import { appliedCount, headline, stale, undoneLine, waitingOn } from "./components/change";
+import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
 import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
@@ -502,27 +502,27 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         const preview = p?.previews?.[index];
         const was = p?.outcomes?.[index];
         if (!p) return;
-        if (!client.caps.applyChanges || !client.previewCommand || !client.applyCommand || !client.undoCommand) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
+        if (!client.caps.applyChanges || !client.previewStep || !client.applyStep || !client.undoStep) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
         const at = <T,>(list: (T | null | undefined)[] | undefined, v: T | null) => p.steps.map((_, i) => (i === index ? v : list?.[i] ?? null));
         const patch = (f: (q: NonNullable<ChatMessage["proposal"]>) => Partial<NonNullable<ChatMessage["proposal"]>>) =>
           setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...f(m.proposal) } } : m)) }));
         const keep = (o: StepOutcome) => patch((q) => ({ outcomes: at(q.outcomes, o) }));
         const step = p.steps[index];
-        if (step?.kind !== "command") return;
+        if (!step || step.kind === "fix") return;
         try {
           if (act === "read" && p.status !== "declined" && (!was || was.apply.outcome === "expired" || was.apply.outcome === "refused" || was.apply.outcome === "declined")) {
-            const fresh = await client.previewCommand(pcId, step.cmd, !!p.tainted);
+            const fresh = await client.previewStep(pcId, step, !!p.tainted);
             patch((q) => ({ previews: at(q.previews, fresh), outcomes: at(q.outcomes, null) }));
             return;
           }
           if (act === "apply" && preview?.outcome === "ready" && (!was || was.apply.outcome === "declined") && p.status !== "declined" && !waitingOn(p, index)) {
             if (stale(preview.expiresAt)) { patch((q) => ({ previews: at(q.previews, null) })); return; }
-            const apply = await client.applyCommand(pcId, preview.nonce, { title: headline(step.cmd, preview.verdict.commands), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
+            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(step, preview.verdict.commands, p.looks), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
             keep({ apply });
           } else if (act === "undo" && was?.apply.outcome === "applied" && was.undo?.outcome !== "undone") {
-            keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id) });
+            keep({ ...was, undo: await client.undoStep(pcId, was.apply.undo.id) });
           } else if (act === "forceUndo" && was?.apply.outcome === "applied" && was.undo?.outcome === "drifted") {
-            keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id, true) });
+            keep({ ...was, undo: await client.undoStep(pcId, was.apply.undo.id, true) });
           } else return;
           const changes = await client.changes(pcId);
           setData((d) => ({ ...d, changes }));
@@ -562,12 +562,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         const c = dataNow.current.changes.find((x) => x.id === id);
         if (!c) return;
         if (!client.caps.applyChanges) { toast(`Undo works from the Rig app on ${pcOf().name}.`); return; }
-        const commands = c.applied.filter((a) => a.undo.kind === "command");
+        const commands = c.applied.filter((a) => a.undo.kind !== "fix");
         if (commands.length) {
-          if (c.status !== "applied" || !client.undoCommand) return;
+          if (c.status !== "applied" || !client.undoStep) return;
           try {
             const replies: [string, UndoReply][] = [];
-            for (const a of [...commands].reverse()) if (a.undo.kind === "command") replies.push([a.undo.id, await client.undoCommand(pcId, a.undo.id)]);
+            for (const a of [...commands].reverse()) if (a.undo.kind !== "fix") replies.push([a.undo.id, await client.undoStep(pcId, a.undo.id)]);
             const changes = await client.changes(pcId);
             const by = new Map(replies);
             setData((d) => ({

@@ -1,7 +1,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
-import { cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type Command, type FixStep, type PreviewReply, type Step, type UndoReply } from "../change";
-import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoUndo } from "./cards";
+import { appliedHelperStep, cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type HelperStep, type PreviewReply, type Step, type UndoReply } from "../change";
+import { demoApply, demoCards, demoCardByNonce, demoCardByStep, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoStep, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
@@ -34,7 +34,7 @@ export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export { DemoManuals } from "./manualShelf";
 export { demoScan } from "./storage";
-export { demoApply, demoCards, demoPreview, demoProposal, demoUndo, demoUndoRecord, type DemoCard } from "./cards";
+export { demoApply, demoCards, demoNativeCards, demoPreview, demoProposal, demoStep, demoUndo, demoUndoRecord, type AnyDemoCard, type DemoCard, type DemoNativeCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
@@ -61,6 +61,8 @@ function fixesOnly(steps: Step[]): FixStep[] {
 }
 
 export class DemoClient implements RigClient {
+  /** How long approval steps pretend to take, as a share of the website's pace. Tests set 0. */
+  static pace = 1;
   readonly kind = "demo" as const;
   readonly caps = { local: true, applyChanges: true };
   private pcs: Record<string, DemoPC>;
@@ -267,7 +269,7 @@ export class DemoClient implements RigClient {
   async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {
     const p = this.pcs[id];
     const rows = await this.preview(id, steps);
-    await sleep(400);
+    await sleep(400 * DemoClient.pace);
     const applied: AppliedStep[] = fixesOnly(steps).map((step, i) => ({ step, undo: { kind: "fix", call: applyToFacts(p.inv, p.facts, step.call) }, rows: [rows[i]] }));
     const tier = cardTier(steps);
     const change: Change = { id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? stepsTitle(steps), by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: tier === "refused" ? 3 : tier, applied, from: meta.from };
@@ -276,39 +278,39 @@ export class DemoClient implements RigClient {
     return change;
   }
 
-  /** Reads the way the helper would for one of the demo's command cards. */
-  async previewCommand(id: string, cmd: Command, tainted = false): Promise<PreviewReply> {
-    const card = demoCards.find((c) => c.cmd.run === cmd.run);
+  /** Reads the way the helper would for one of the demo's example changes. */
+  async previewStep(id: string, step: HelperStep, tainted = false): Promise<PreviewReply> {
+    const card = demoCardByStep(step);
     if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
-    await sleep(300);
+    await sleep(300 * DemoClient.pace);
     return demoPreview(card, tainted);
   }
 
-  /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
-  async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
+  /** Answers the way the helper would for one of the demo's example changes. Nothing on the demo PC changes. */
+  async applyStep(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
     const p = this.pcs[id];
     const card = demoCardByNonce(nonce);
     if (!p || !card || this.used.has(nonce)) return { outcome: "expired" };
     this.used.add(nonce);
-    await sleep(400);
+    await sleep(400 * DemoClient.pace);
     const reply = demoApply(card);
     if (reply.outcome !== "applied") return reply;
-    const step = { kind: "command" as const, cmd: card.cmd };
-    const rows = runRows(reply.result);
+    const step = demoStep(card);
+    const rows = runRows(reply.result, step);
     const tier = cardTier([step]);
     p.changes.unshift({
       id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? card.title, by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows,
-      tier: tier === "refused" ? 3 : tier, applied: [{ step, undo: reply.undo, rows, verify: { before: reply.result.before, after: reply.result.after } }], from: meta.from,
+      tier: tier === "refused" ? 3 : tier, applied: [appliedHelperStep(step, reply.undo, rows, { before: reply.result.before, after: reply.result.after })], from: meta.from,
     });
     this.emit(id);
     return reply;
   }
 
-  async undoCommand(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
+  async undoStep(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
     const card = demoCardByUndo(undoId);
-    const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
+    const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind !== "fix" && a.undo.id === undoId));
     if (!card || !c || c.status === "undone") return { outcome: "unknown" };
-    await sleep(300);
+    await sleep(300 * DemoClient.pace);
     if (card.drifts && !force) return { outcome: "drifted", changed: card.drifts };
     c.status = "undone";
     this.emit(id);

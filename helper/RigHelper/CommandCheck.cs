@@ -53,7 +53,8 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
     static string? Str(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
     static bool Wild(string text) => text.IndexOfAny(['*', '?', '[']) >= 0;
 
-    static Touch? TouchOf(JsonNode? n)
+    /// A touch as Rig stores it, or null when Rig can't use it.
+    public static Touch? TouchOf(JsonNode? n)
     {
         if (n is not JsonObject o || Str(o["kind"]) is not string kind) return null;
         string? text = Str(o[kind == "registry" ? "key" : kind == "file" ? "path" : "name"]);
@@ -68,12 +69,24 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
                 if (rest.Length == 0) return null;
                 return new Touch("registry", $@"{(m.Groups[1].Value.ToLowerInvariant() is "hkey_current_user" or "hkcu" ? "HKCU" : "HKLM")}\{rest}", value);
             case "file":
-                return Regex.IsMatch(text, @"^[a-zA-Z]:\\") && !Regex.IsMatch(text, @"(^|\\)\.\.(\\|\z)") && !Regex.IsMatch(text, @"[a-zA-Z0-9]~[0-9]") ? new Touch("file", text, null) : null;
-            case "service" or "task" or "firewall" or "other":
+                return LocalFile(text) ? new Touch("file", text, null) : null;
+            case "service" or "task" or "firewall" or "other" or "device":
                 return new Touch(kind, text, null);
             default:
                 return null;
         }
+    }
+
+    /// A file by its full local path, written the way Windows writes it: localFile in check.ts, and Windows' own full form of
+    /// the path must be the path itself.
+    public static bool LocalFile(string text)
+    {
+        if (!Regex.IsMatch(text, @"^[a-zA-Z]:\\") || text.Contains(@"\\") || text.Contains('/') || Wild(text) || Regex.IsMatch(text, @"[a-zA-Z0-9]~[0-9]")) return false;
+        var parts = text[3..].Split('\\');
+        for (int i = 0; i < parts.Length; i++)
+            if (parts[i].Length == 0 ? i != parts.Length - 1 : parts[i] is "." or ".." || parts[i].EndsWith('.') || parts[i].EndsWith(' ')) return false;
+        try { return Path.GetFullPath(text) == text; }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return false; }
     }
 
     public JsonObject ToJson()
@@ -95,8 +108,15 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
     }
 }
 
-/// One command found in a script, and which of the step's scripts it is in.
-public sealed record FoundCommand(string Name, string Says, int Tier, string Script);
+/// One command found in a script, and which of the step's scripts it is in. `Expects`: the never-list places the rule it
+/// matched lets it change (the rules' `expects`), null when that rule has none.
+public sealed record FoundCommand(string Name, string Says, int Tier, string Script, IReadOnlyList<string>? Expects = null);
+
+/// An undo command that only takes back the run's own command of one of `Verbs` with the same `Key` (the arguments after the verb, up to the app's id).
+public sealed record Undoes(string Name, IReadOnlyList<string> Verbs, IReadOnlyList<string> Key);
+
+/// A command a script runs, by its rules name, with its written-out arguments folded.
+public sealed record Used(string Name, IReadOnlyList<string> Args);
 
 public sealed record Verdict(bool Allowed, int Tier, bool Admin, string Why, string Refused, IReadOnlyList<FoundCommand> Commands, IReadOnlyList<string> Reasons)
 {
@@ -129,12 +149,21 @@ public sealed record Write(string Kind, IReadOnlyList<string> Places)
 public static class CommandCheck
 {
     class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
-    sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } }
-    sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } }
+    sealed class When : Outcome { public string[]? Use { get; set; } public string[]? Undoes { get; set; } public string[]? Expects { get; set; } public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } public bool Single { get; set; } public Dictionary<string, string>? Fit { get; set; } }
+    sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } public bool Bare { get; set; } }
     sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public string[]? Renames { get; set; } public bool Leaves { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
     sealed class ReadRoot { public string Root { get; set; } = ""; public string[]? Ends { get; set; } }
+    sealed class FileEditRules
+    {
+        public Dictionary<string, string[]> Formats { get; set; } = [];
+        public TextRule[] Never { get; set; } = [];
+        public TextRule[] Tier3 { get; set; } = [];
+        public string[] At { get; set; } = [];
+        public string[] IniValue { get; set; } = [];
+        public string[] Hidden { get; set; } = [];
+    }
     sealed class RemoteRule { public string[] Params { get; set; } = []; public string Refused { get; set; } = ""; }
     sealed class RootList { public string[] Known { get; set; } = []; public string[] Unknown { get; set; } = []; }
     sealed class PathRules
@@ -173,6 +202,7 @@ public static class CommandCheck
         public Dictionary<string, string> Aliases { get; set; } = [];
         public TextRule[] NeverText { get; set; } = [];
         public TextRule[] ProtectText { get; set; } = [];
+        public FileEditRules FileEdit { get; set; } = new();
         public Entry[] Commands { get; set; } = [];
     }
 
@@ -182,7 +212,7 @@ public static class CommandCheck
     sealed record Find(string What, string Detail, bool Hidden = false);
     sealed record Target(string Text, string Place, string Kind, bool Hidden, bool Literal);
     /// `Joined`: the places a command's plain names make, held to the text rules like the script itself.
-    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null);
+    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null, Undoes? Undoes = null);
     /// A plain name a command gives what it makes or renames, which Rig joins to the place it is in.
     sealed record Named(string Text, bool Rename);
 
@@ -196,7 +226,26 @@ public static class CommandCheck
         return new StreamReader(s, Encoding.UTF8).ReadToEnd();
     }
 
-    static readonly Regex Disguised = new("[" + string.Concat(R.Disguised.Select(r => string.Join("-", r.Split('-').Select(h => $@"\u{h.PadLeft(4, '0')}")))) + "]");
+    /// Characters from hex ranges as the rules write them.
+    static Regex CharsOf(string[] ranges) => new("[" + string.Concat(ranges.Select(r => string.Join("-", r.Split('-').Select(h => $@"\u{h.PadLeft(4, '0')}")))) + "]");
+    static readonly Regex Disguised = CharsOf(R.Disguised);
+    static readonly Dictionary<string, Regex> FileEditChars = new() { ["at"] = CharsOf(R.FileEdit.At), ["iniValue"] = CharsOf(R.FileEdit.IniValue), ["hidden"] = CharsOf(R.FileEdit.Hidden) };
+
+    /// Whether text holds a character a file edit refuses: fileEditRefuses in check.ts.
+    public static bool FileEditRefuses(string text, string where) => FileEditChars[where].IsMatch(text);
+
+    /// The formats a file edit may use on this file by its name's ending, and every ending Rig edits: fileEditFormats in check.ts.
+    public static (List<string> Formats, List<string> Ends) FileEditFormats(string path)
+    {
+        string name = PlaceOf(path).Split('\\')[^1];
+        string end = name.Contains('.') ? name[name.LastIndexOf('.')..] : "";
+        return (R.FileEdit.Formats.Where(kv => kv.Value.Contains(end)).Select(kv => kv.Key).ToList(), R.FileEdit.Formats.Values.SelectMany(e => e).Distinct().ToList());
+    }
+
+    /// The words of the file edit rule this path falls under: fileEditPathRule in check.ts.
+    public static string? FileEditPathRule(string path, string list) =>
+        (list == "never" ? R.FileEdit.Never : R.FileEdit.Tier3).FirstOrDefault(r => r.Contains.Any(c => PlaceOf(path).Contains(Fold(c), StringComparison.Ordinal)))?.Says;
+
     // PowerShell's parser loads modules, assemblies and DSC resources for these while it parses, so they never reach it.
     static readonly Regex LoadsWhileParsing = new(@"\busing[\s`]+(module|assembly|namespace)\b|(^|[;{}(|&>])[\s`]*configuration[\s`]|\bImport-DscResource\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
     static readonly Regex SwitchLike = new(@"^(-[a-z]|--[a-z]|/[a-z?])");
@@ -229,6 +278,8 @@ public static class CommandCheck
 
     public static string? LowersProtection(string text) { string flat = Squash(text); return R.ProtectText.FirstOrDefault(e => Fits(e, flat))?.Says; }
     public static bool NeedsAdmin(string text) { string flat = Squash(text); return R.AdminText.Any(a => flat.Contains(Squash(a), StringComparison.Ordinal)); }
+    /// A program, script or shortcut by its name's ending, which Rig never writes: programFile in check.ts.
+    public static bool ProgramFile(string text) => R.Paths.Programs.Any(p => PlaceOf(text).EndsWith(p, StringComparison.Ordinal));
     /// Whether the text names the current user's part of the registry, however it is written.
     public static bool NamesCurrentUser(string text) => Squash(text).Contains("hkcu", StringComparison.Ordinal);
 
@@ -289,23 +340,60 @@ public static class CommandCheck
         return o;
     }
 
-    static bool Matches(When m, Call call, bool strict, bool exe)
+    static bool Matches(When m, Call call, string use, bool strict, bool exe)
     {
+        if (m.Use != null && !m.Use.Contains(use)) return false;
         var shown = m.After != null ? ValuesAfter(Shown(call.Args), m.After) : Shown(call.Args);
         var t = shown.Select(a => Fold(a.Text)).ToList();
         bool unseen = strict && shown.Any(a => a.Kind == "hidden");
         string[]? starts = Folded(m.Starts), has = Folded(m.Has), prefix = Folded(m.Prefix), contains = Folded(m.Contains);
         if (m.Piped && !call.Piped) return false;
         if (m.After != null && shown.Count == 0) return false;
+        // A cmdlet's parameter is only ever a parameter: a quoted '-Program' is a value.
+        bool Named(string x, int k) => exe || !x.StartsWith('-') || IsParam(shown[k]);
         if (starts != null)
             for (int k = 0; k < starts.Length; k++)
-                if (!((k < t.Count && t[k] == starts[k]) || (strict && k < shown.Count && shown[k].Kind == "hidden"))) return false;
-        if (has != null && !unseen && !t.Any(has.Contains)) return false;
+                if (!((k < t.Count && t[k] == starts[k] && Named(starts[k], k)) || (strict && k < shown.Count && shown[k].Kind == "hidden"))) return false;
+        if (has != null && !unseen && !t.Where((x, k) => has.Contains(x) && Named(x, k)).Any()) return false;
         bool prefixUnseen = unseen && (exe || m.After != null);
         bool FitsPrefix(string x, Arg a) => prefix!.Any(p => x.StartsWith(p, StringComparison.Ordinal) || ((x.StartsWith('-') || x.StartsWith('/')) && Abbreviates(HeadOf(a), p)));
         if (prefix != null && !prefixUnseen && !shown.Where((a, k) => FitsPrefix(t[k], a)).Any()) return false;
         if (contains != null && !unseen && !t.Any(x => contains.Any(p => x.Contains(p, StringComparison.Ordinal)))) return false;
+        if (m.Params != null && !FitsParams(m.Params, call.Args, starts?.Length ?? 0)) return false;
+        if (m.Single && !Single(Shown(call.Args), starts?.Length ?? 0)) return false;
+        if (m.Fit != null && !FitsValues(m.Fit, Shown(call.Args))) return false;
         return true;
+    }
+
+    /// No list and nothing positional: every argument after `starts` that isn't a parameter is the one value right after a parameter with no value after its colon.
+    static bool Single(List<Arg> shown, int skip) =>
+        shown.Select((a, k) => k < skip || IsParam(a) || (k > 0 && IsParam(shown[k - 1]) && string.IsNullOrEmpty(InlineOf(shown[k - 1])))).All(x => x);
+
+    /// What the parameter at `k` is given: the text after its colon, then each argument that isn't a parameter right after it (a list).
+    static List<string> GivenTo(List<Arg> shown, int k)
+    {
+        string? inline = InlineOf(shown[k]);
+        var o = string.IsNullOrEmpty(inline) ? new List<string>() : [inline];
+        for (int j = k + 1; j < shown.Count && !IsParam(shown[j]); j++) o.Add(shown[j].Text);
+        return o;
+    }
+
+    /// Every value given to a listed parameter matches its pattern in full.
+    static bool FitsValues(Dictionary<string, string> fit, List<Arg> shown) =>
+        shown.Select((a, k) => (a, k)).All(x =>
+        {
+            if (!IsParam(x.a)) return true;
+            string? pattern = fit.FirstOrDefault(p => Abbreviates(HeadOf(x.a), Fold(p.Key))).Value;
+            return pattern == null || GivenTo(shown, x.k).All(v => Regex.IsMatch(Fold(v), $"^(?:{pattern})\\z", RegexOptions.CultureInvariant));
+        });
+
+    /// A positive grammar for a rule that allows: nothing hidden, and every switch after `starts` is listed, written in full.
+    static bool FitsParams(string[] ps, List<Arg> args, int skip)
+    {
+        var shown = Shown(args);
+        var listed = Folded(ps)!;
+        if (shown.Any(a => a.Kind == "hidden")) return false;
+        return shown.Skip(skip).Select(a => Fold(a.Text)).All(x => !((x.StartsWith('-') || x.StartsWith('/')) && x.Length > 1) || listed.Contains(x.Split(':')[0]));
     }
 
     /// Null when the arguments fit the read form, else the argument that doesn't.
@@ -316,6 +404,7 @@ public static class CommandCheck
         string[] starts = Folded(f.Starts) ?? [];
         for (int k = 0; k < starts.Length; k++)
             if (k >= shown.Count || shown[k].Kind == "hidden" || t[k] != starts[k]) return k < shown.Count && shown[k].Text.Length > 0 ? shown[k].Text : "its arguments";
+        if (f.Bare && shown.Count > starts.Length) return shown[starts.Length].Text.Length > 0 ? shown[starts.Length].Text : "an argument it can't see";
         if (f.Has != null && !f.Has.Any(t.Contains)) return $"no {f.Has[0]}";
         if (f.Free) return shown.Any(a => a.Kind == "hidden") ? "an argument it can't see" : null;
         string[] ps = f.Params ?? [], prefix = f.Prefix ?? [];
@@ -468,7 +557,7 @@ public static class CommandCheck
             return new Judged(Found($"{name}: {R.VerbSays[verbTier]}", verbTier), verbTier >= 2, verbTier > 0 ? Write.None : null);
         }
         if (entry.Blocks && call.Args.Any(a => a.Kind is "word" or "hidden")) return Construct("member-by-name", name);
-        var rule = entry.When?.FirstOrDefault(w => Matches(w, call, w.Never != null || w.Refused != null || w.Tier == 3, entry.Exe));
+        var rule = entry.When?.FirstOrDefault(w => Matches(w, call, use, w.Never != null || w.Refused != null || w.Tier == 3, entry.Exe));
         if (rule != null && (rule.Never != null || rule.Refused != null)) return Block(rule)!;
         if (remote != null) return remote;
 
@@ -488,7 +577,13 @@ public static class CommandCheck
             if (entry.Literal && call.Args.Any(a => a.Kind == "hidden")) return Construct("not-literal", name, "notRead");
             return Pass(new Outcome { Says = entry.Says }, 0);
         }
-        if (rule != null) return Done(Pass(rule, rule.Tier ?? 2, write));
+        if (rule != null)
+        {
+            var j = Done(Pass(rule, rule.Tier ?? 2, write));
+            j = j with { Found = j.Found with { Expects = rule.Expects } };
+            var key = Shown(call.Args).Skip(1).Take(rule.Starts?.Length ?? 0).Select(a => Fold(a.Text)).ToList();
+            return rule.Undoes != null ? j with { Undoes = new Undoes(name, Folded(rule.Undoes)!, key) } : j;
+        }
         if (reads) return Done(Pass(new Outcome { Says = entry.Says }, 0));
         return Block(entry) ?? Done(Pass(entry, entry.Tier ?? 2, write));
     }
@@ -586,9 +681,9 @@ public static class CommandCheck
     }
 
     /// The verdict on one script and what each change in it writes to, given what CommandAst.ps1 printed for it.
-    public static (Verdict Verdict, List<Write> Writes) InspectScript(string script, string use, JsonNode? parsed)
+    public static (Verdict Verdict, List<Write> Writes, List<Used> Uses, List<Undoes> Undoes) InspectScript(string script, string use, JsonNode? parsed)
     {
-        (Verdict, List<Write>) Refuse(string words, string why = "refused", IReadOnlyList<FoundCommand>? commands = null) => (Verdict.Refuse(words, why, commands), []);
+        (Verdict, List<Write>, List<Used>, List<Undoes>) Refuse(string words, string why = "refused", IReadOnlyList<FoundCommand>? commands = null) => (Verdict.Refuse(words, why, commands), [], [], []);
         if (Precheck(script) is string early) return Refuse(early);
         if (parsed?["errors"] is not JsonArray errors || parsed["calls"] is not JsonArray callNodes || parsed["finds"] is not JsonArray findNodes)
             return Refuse($"{R.Constructs["unreadable"]}: PowerShell's parser gave no answer.");
@@ -638,8 +733,13 @@ public static class CommandCheck
         if (use != "read" && reasons.Count == 0) reasons.Add(SecondLook);
         var writes = use == "read" ? [] : judged.Where(j => j.Write != null).Select(j => j.Write!)
             .Concat(finds.Where(f => f.What == "redirect").Select(f => new Write("path", [PlaceOf(f.Detail)]))).ToList();
-        return (new Verdict(true, tier, use != "read" && (judged.Any(j => j.Admin) || texts.Any(NeedsAdmin)), "", "", commands, reasons), writes);
+        var uses = calls.Select((c, k) => new Used(judged[k].Found.Name, Shown(c.Args).Select(a => Fold(a.Text)).ToList())).ToList();
+        return (new Verdict(true, tier, use != "read" && (judged.Any(j => j.Admin) || texts.Any(NeedsAdmin)), "", "", commands, reasons), writes, uses, judged.Select(j => j.Undoes).OfType<Undoes>().ToList());
     }
+
+    /// The undo commands that don't take back a command the run itself has.
+    public static List<Undoes> Unpaired(IEnumerable<Undoes> undoes, IReadOnlyList<Used> uses) =>
+        undoes.Where(u => !uses.Any(c => c.Name == u.Name && c.Args.Count > 0 && u.Verbs.Contains(c.Args[0]) && u.Key.Select((x, k) => k + 1 < c.Args.Count && c.Args[k + 1] == x).All(x => x))).ToList();
 
     public static Verdict CheckScript(string script, string use, JsonNode? parsed) => InspectScript(script, use, parsed).Verdict;
 
@@ -676,6 +776,11 @@ public static class CommandCheck
         {
             tier = 3;
             reasons.Add($"{lowers}.");
+        }
+        if (parts.Count > 2 && Unpaired(parts[2].Got.Undoes, run.Uses).Count > 0)
+        {
+            tier = 3;
+            reasons.Add($"{R.Constructs["unpaired-undo"]}.");
         }
         var held = cmd.Touches.Where(t => t.Snapshotted).ToList();
         bool Covered(Write w) => w.Kind != "none" && w.Places.Count > 0 && w.Places.All(p => held.Any(t => TouchKind(t) == w.Kind && Covers(TouchPlace(t), p)));

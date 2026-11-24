@@ -243,6 +243,24 @@ public sealed class TouchStates(Person person, bool admin)
         return new JsonObject { ["start"] = start, ["delayed"] = key.GetValue("DelayedAutostart") is int d && d == 1, ["running"] = running };
     }
 
+    // ----- Devices -----
+
+    const int CR_SUCCESS = 0, CR_NO_SUCH_DEVNODE = 0x0D, CR_INVALID_DEVICE_ID = 0x1E;
+    const uint DN_HAS_PROBLEM = 0x400;
+    /// Windows' problem code for a device that is turned off.
+    const uint CM_PROB_DISABLED = 22;
+
+    /// Whether a device that is there has a problem, and which: 22 is turned off. Absent when Windows doesn't have it now.
+    static JsonNode ReadDevice(Touch t)
+    {
+        int rc = CM_Locate_DevNodeW(out uint node, t.Text, 0);
+        if (rc is CR_NO_SUCH_DEVNODE or CR_INVALID_DEVICE_ID) return Absent;
+        uint status = 0, problem = 0;
+        if (rc == CR_SUCCESS) rc = CM_Get_DevNode_Status(out status, out problem, node, 0);
+        if (rc != CR_SUCCESS) throw new RigException($"Windows wouldn't say how the device is (error {rc})");
+        return new JsonObject { ["problem"] = (status & DN_HAS_PROBLEM) != 0 ? problem : 0 };
+    }
+
     void WriteService(Touch t, JsonNode state)
     {
         if (!(admin && Native.IsAdmin())) throw new RigException("it needs admin rights");
@@ -275,12 +293,13 @@ public sealed class TouchStates(Person person, bool admin)
 
     // ----- One touch -----
 
-    /// The state of one touch now, or null for a kind Rig can't snapshot. A file is also copied to `copyTo` when given.
+    /// The state of one touch now, or null for a kind Rig can't read. A file is also copied to `copyTo` when given. A device
+    /// is read but not snapshotted: nothing writes it back, and its undo script turns it back.
     public JsonNode? Read(Touch t, string? copyTo = null)
     {
         try
         {
-            return t.Kind switch { "registry" => ReadRegistry(t), "file" => ReadFile(t, copyTo), "service" => ReadService(t), _ => null };
+            return t.Kind switch { "registry" => ReadRegistry(t), "file" => ReadFile(t, copyTo), "service" => ReadService(t), "device" => ReadDevice(t), _ => null };
         }
         catch (Exception e) when (e is not RigException)
         {
@@ -322,6 +341,9 @@ public sealed class TouchStates(Person person, bool admin)
                 return $"{values} value{(values == 1 ? "" : "s")} and {keys} subkey{(keys == 1 ? "" : "s")}";
             case "file":
                 return IsAbsent(state) ? null : $"{Json.Num(state["size"], 0):0} bytes, fingerprint {state["sha256"]!.GetValue<string>()[..12]}";
+            case "device":
+                if (IsAbsent(state)) return null;
+                return (uint)Json.Num(state["problem"], 0) switch { 0 => "On", CM_PROB_DISABLED => "Off", var p => $"Not working (Windows' problem code {p})" };
             default:
                 if (IsAbsent(state)) return null;
                 string start = (int)Json.Num(state["start"], -1) switch { 0 => "Boot", 1 => "System", 2 => state["delayed"]?.GetValue<bool>() == true ? "Automatic (delayed)" : "Automatic", 3 => "Manual", 4 => "Disabled", _ => "Unknown" };
@@ -364,6 +386,8 @@ public sealed class TouchStates(Person person, bool admin)
     static extern bool ChangeServiceConfigW(IntPtr svc, uint type, uint start, uint error, string? path, string? group, IntPtr tag, string? deps, string? user, string? password, string? display);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool ChangeServiceConfig2W(IntPtr svc, uint level, ref int info);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool CloseServiceHandle(IntPtr h);
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)] static extern int CM_Locate_DevNodeW(out uint node, string id, uint flags);
+    [DllImport("cfgmgr32.dll")] static extern int CM_Get_DevNode_Status(out uint status, out uint problem, uint node, uint flags);
     const int ERROR_FILE_NOT_FOUND = 2, ERROR_MORE_DATA = 234;
     const uint SC_MANAGER_CONNECT = 0x1, SERVICE_CHANGE_CONFIG = 0x2, SERVICE_NO_CHANGE = 0xFFFFFFFF, SERVICE_CONFIG_DELAYED_AUTO_START_INFO = 3;
 }

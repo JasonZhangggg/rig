@@ -7,7 +7,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
 import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
-import { canonicalCommand, cardTier, changeOf, checkStep, commandHash, runRows, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type Command, type CommandLink, type CommandUndo, type FixStep, type FixUndo, type PreviewReply, type Step, type StoredChange, type UndoReply } from "./change";
+import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
@@ -20,6 +20,7 @@ import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
 import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
 import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec } from "./reads";
+import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
@@ -47,12 +48,14 @@ export interface HelperLink {
   storage?(fresh?: boolean): Promise<StorageScan>;
   /** One read the chat asked for: a registry key, CIM instances, or a command or script that checks as a read. Returns what it found as text. Missing on helpers before live reads. */
   read?(req: PcReadSpec): Promise<string>;
-  /** Command steps: check, preview, apply, undo and read (CommandRpc). Missing on helpers before general commands. */
-  command?: CommandLink["command"];
+  /** Command and native steps: check, preview, apply, undo and read (StepRpc). Missing on helpers before general commands. */
+  step?: StepLink["step"];
 }
 
 /** What the Rig app's approval says when the person chose No at Windows' permission prompt. */
 export const APPROVE_DECLINED = "Windows didn't give permission, so the change isn't approved.";
+/** The helper stored a step this app fingerprints differently, so the card would show one change and run another. */
+export const STEP_DIFFERS = "Rig's helper read this change differently than the Rig app did, so there is nothing to approve. Update Rig, then ask again.";
 
 /** How many times one answer can stop to read the PC and go on. The server's round cap stops it first. */
 const MAX_READ_HOPS = 8;
@@ -95,10 +98,10 @@ export interface LocalOptions {
   /** Debug log: each step of the first read with its timing, and sensor or sync trouble. */
   log?: Log;
   /**
-   * Has Windows ask for permission to run a command that needs admin rights, for the previewed command by its nonce and
-   * commandHash. Rejects with APPROVE_DECLINED when the person chose No. Missing where Rig can't ask.
+   * Has Windows ask for permission to run a step that needs admin rights, for the previewed step by its nonce and
+   * stepHash. Rejects with APPROVE_DECLINED when the person chose No. Missing where Rig can't ask.
    */
-  approveCommand?: ((nonce: string, hash: string) => Promise<void>) | null;
+  approveStep?: ((nonce: string, hash: string) => Promise<void>) | null;
 }
 
 const EVENTS_DAYS = 30;
@@ -161,11 +164,13 @@ export class LocalClient implements RigClient {
   private scan: StorageScan | null = null;
   private scanAskedAt = -Infinity;
   private scanReading: Promise<void> | null = null;
-  /** Command steps the helper previewed, by nonce: the command as it was checked and the helper's verdict. */
-  private previewed = new Map<string, { cmd: Command; verdict: Allowed; expiresAt: string }>();
+  /** Steps the helper previewed, by nonce: the step as it was checked and the helper's verdict. */
+  private previewed = new Map<string, { step: HelperStep; verdict: Allowed; expiresAt: string }>();
+  /** The looks the helper answered for the chat, by id, so a screen step is checked here against the look it names. */
+  private looks = new Map<string, ScreenLook>();
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
-    this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, approveCommand: null, ...opts };
+    this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, approveStep: null, ...opts };
     this.recorder = new Recorder({
       pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
       onChange: () => this.emitRecordings(),
@@ -746,8 +751,9 @@ export class LocalClient implements RigClient {
   async undo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status !== "applied") return c;
-    for (const a of [...c.applied].reverse().filter((x) => x.undo.kind === "command")) {
-      const u = await this.helperUndo((a.undo as CommandUndo).id);
+    for (const a of [...c.applied].reverse()) {
+      if (a.undo.kind === "fix") continue;
+      const u = await this.helperUndo(a.undo.id);
       if (u.outcome !== "undone") throw new Error(undoTrouble(u));
     }
     const back = await this.run(appliedFixes(c.applied.filter((a) => a.step.kind === "fix")).reverse().map((a) => ({ step: a.step, call: a.undo.call, rows: a.rows })));
@@ -760,7 +766,7 @@ export class LocalClient implements RigClient {
   async redo(id: string, changeId: string): Promise<Change> {
     const c = await this.change(id, changeId);
     if (c.status === "applied") return c;
-    if (c.applied.some((a) => a.step.kind === "command")) throw new Error("Rig makes a command change again only from a new card. Ask Rig in the chat.");
+    if (c.applied.some((a) => a.step.kind !== "fix")) throw new Error("Rig makes a command change again only from a new card. Ask Rig in the chat.");
     const applied = await this.run(appliedFixes(c.applied).map((a) => ({ step: a.step, call: a.step.call, rows: a.rows })));
     const next: Change = { ...c, status: "applied", applied, result: unverified(applied) };
     await this.store.putChange(next);
@@ -768,41 +774,44 @@ export class LocalClient implements RigClient {
     return next;
   }
 
-  private commandLink(): CommandLink["command"] {
-    if (!this.link.command) throw new Error("This PC's Rig helper is too old for this change. Update Rig, then ask again.");
-    return this.link.command.bind(this.link);
+  private stepLink(): StepLink["step"] {
+    if (!this.link.step) throw new Error("This PC's Rig helper is too old for this change. Update Rig, then ask again.");
+    return this.link.step.bind(this.link);
   }
 
   private helperUndo(undoId: string, force?: boolean): Promise<UndoReply> {
-    return this.commandLink()("command.undo", force ? { id: undoId, force: true } : { id: undoId });
+    return this.stepLink()("step.undo", force ? { id: undoId, force: true } : { id: undoId });
   }
 
-  async previewCommand(id: string, cmd: Command, tainted: boolean): Promise<PreviewReply> {
+  async previewStep(id: string, step: HelperStep, tainted: boolean): Promise<PreviewReply> {
     await this.local(id);
-    const command = this.commandLink();
-    const mine = checkStep({ kind: "command", cmd }, { tainted });
+    const helper = this.stepLink();
+    const now = this.o.now();
+    for (const [k, l] of this.looks) if (!(Date.parse(l.expiresAt) > now)) this.looks.delete(k);
+    const mine = checkStep(step, { tainted, looks: [...this.looks.values()] });
     if (mine.status === "refused") return { outcome: "refused", verdict: mine };
-    const canonical = canonicalCommand(cmd) as Command;
-    const reply = await command("command.preview", { cmd: canonical });
+    const canonical = canonicalStep(step) as HelperStep;
+    const reply = await helper("step.preview", { step: canonical });
     if (reply.outcome !== "ready") return reply;
+    // The helper runs what it stored, so a card is shown only for the step this app fingerprints the same way.
+    if (reply.hash !== (await stepHash(canonical))) return { outcome: "refused", verdict: { status: "refused", why: "refused", refused: STEP_DIFFERS, commands: [], rulesVersion } };
     if (reply.verdict.tier === 3 && tainted) {
       return { outcome: "refused", verdict: { status: "refused", why: "tainted", refused: `${ruleWords("tainted")}.`, commands: reply.verdict.commands, rulesVersion } };
     }
-    const now = this.o.now();
     for (const [n, p] of this.previewed) if (!(Date.parse(p.expiresAt) > now)) this.previewed.delete(n);
-    this.previewed.set(reply.nonce, { cmd: canonical, verdict: reply.verdict, expiresAt: reply.expiresAt });
+    this.previewed.set(reply.nonce, { step: canonical, verdict: reply.verdict, expiresAt: reply.expiresAt });
     return reply;
   }
 
-  async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
+  async applyStep(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
     await this.local(id);
-    const command = this.commandLink();
+    const helper = this.stepLink();
     const held = this.previewed.get(nonce);
     if (!held) return { outcome: "expired" };
     if (held.verdict.admin) {
-      if (!this.o.approveCommand) throw new Error("This copy of Rig can't ask Windows for permission. Update Rig, then ask again.");
+      if (!this.o.approveStep) throw new Error("This copy of Rig can't ask Windows for permission. Update Rig, then ask again.");
       try {
-        await this.o.approveCommand(nonce, await commandHash(held.cmd));
+        await this.o.approveStep(nonce, await stepHash(held.step));
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
         if (why.trim() === APPROVE_DECLINED) {
@@ -815,29 +824,27 @@ export class LocalClient implements RigClient {
     this.previewed.delete(nonce);
     let reply: ApplyReply;
     try {
-      reply = await command("command.apply", { nonce });
+      reply = await helper("step.apply", { nonce });
     } finally {
       await this.freshFacts().catch(() => {});
       this.emit();
     }
-    this.o.log("info", `change: command ${reply.outcome}`);
+    this.o.log("info", `change: ${held.step.kind} ${reply.outcome}`);
     if (reply.outcome !== "applied") return reply;
-    const step: Step = { kind: "command", cmd: held.cmd };
-    const rows = runRows(reply.result);
+    const rows = runRows(reply.result, held.step);
+    const applied = appliedHelperStep(held.step, reply.undo, rows, { before: reply.result.before, after: reply.result.after });
     const change: Change = {
-      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle([step]),
-      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: held.verdict.tier,
-      applied: [{ step: { kind: "command", cmd: held.cmd }, undo: reply.undo, rows, verify: { before: reply.result.before, after: reply.result.after } }],
-      from: meta.from,
+      id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle([held.step]),
+      by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: held.verdict.tier, applied: [applied], from: meta.from,
     };
     await this.store.putChange(change);
     void this.sync();
     return reply;
   }
 
-  async undoCommand(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
+  async undoStep(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
     await this.local(id);
-    const c = (await this.store.changes()).map(changeOf).find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
+    const c = (await this.store.changes()).map(changeOf).find((x) => x.applied.some((a) => a.undo.kind !== "fix" && a.undo.id === undoId));
     if (!c || c.status !== "applied") return { outcome: "unknown" };
     let reply: UndoReply;
     try {
@@ -985,7 +992,8 @@ export class LocalClient implements RigClient {
       const { id: _id, ...rest } = r ?? {};
       const spec = checkRead(rest);
       if (typeof spec === "string") { out.push({ id, ok: false, error: spec }); continue; }
-      const command = this.link.command?.bind(this.link);
+      const command = this.link.step?.bind(this.link);
+      if (spec.kind === "screen") { out.push(await this.lookForChat(id, spec)); continue; }
       const script = spec.kind === "cmdlet" ? spec.command : spec.kind === "script" ? spec.script : null;
       if (!(script !== null && command) && !this.link.read) { out.push({ id, ok: false, error: "This PC's Rig helper can't look at settings yet. Update Rig." }); continue; }
       try {
@@ -1001,6 +1009,22 @@ export class LocalClient implements RigClient {
       }
     }
     return out;
+  }
+
+  /** A look in an app's window for the chat, through the helper. Its answer is parsed here, and a look it found is kept for the card. */
+  private async lookForChat(id: string, spec: Extract<PcReadSpec, { kind: "screen" }>): Promise<PcReadResult> {
+    if (!this.link.step) return { id, ok: false, error: "This PC's Rig helper can't look in an app's window yet. Update Rig." };
+    try {
+      const look = screenLookReply(await this.link.step("screen.look", { app: spec.app, goal: spec.goal }));
+      if (!look) return { id, ok: false, error: "Rig's helper answered with something that isn't a look." };
+      if (isLook(look)) {
+        if (this.looks.size >= 32) this.looks.delete(this.looks.keys().next().value!);
+        this.looks.set(look.lookId, look);
+      }
+      return { id, ok: true, text: lookText(look), look };
+    } catch (e) {
+      return { id, ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 500) };
+    }
   }
 }
 

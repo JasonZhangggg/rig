@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { checkStep, type Allowed, type Command, type FoundCommand, type PreviewReply, type Refused, type StepOutcome, type Touch } from "@rig/core";
+import { checkStep, rulesVersion, type Allowed, type Command, type FoundCommand, type HelperStep, type PreviewReply, type Refused, type ScreenLook, type StepOutcome, type Tier, type Touch, type Verdict } from "@rig/core";
+import { knownNative, nativeDoes, nativeOf, NativeWhat } from "./native";
 import { stale } from "./order";
-import { ClaudeSays, CommandList, Fact, Glance, Printed, Scripts, Untied } from "./parts";
+import { ClaudeSays, CommandList, Fact, GlanceFrame, Printed, Scripts, TouchGlance, Untied } from "./parts";
 import { ResultView } from "./Result";
-import { headline, redBack, redKind, redReasons, redWords, riskLine, runCommands, touchName, undoPlan } from "./words";
+import { headline, redBack, redKind, redReasons, redWords, riskLine, runCommands, touchName, undoPlan, type RedKind } from "./words";
 
 export interface StepCardProps {
-  cmd: Command;
+  /** A command or a native op. */
+  step: HelperStep;
   /** What the helper read and checked. Missing until Rig has read the current settings. */
   preview?: PreviewReply | null;
   /** Set once the person has applied it. */
@@ -16,6 +18,8 @@ export interface StepCardProps {
   canApply: boolean;
   /** Rig read text from outside this PC earlier in the conversation. */
   tainted?: boolean;
+  /** The looks the proposal's screen steps came from. */
+  looks?: ScreenLook[];
   declined?: boolean;
   /** "1 of 2", when the answer has more than one step. */
   place?: string;
@@ -82,21 +86,99 @@ function WaitFoot({ waitsFor, onDecline }: { waitsFor: NonNullable<StepCardProps
   );
 }
 
-interface TierProps extends StepCardProps { verdict: Allowed; ready?: Ready; retry?: string; runs: FoundCommand[] }
+/** What differs between a command's card and a native op's: the heading, what changes, the risk and undo words, and the scripts. The rest of the card is the same. */
+interface Look {
+  title: string;
+  /** Claude's sentence. */
+  does: string;
+  whatLabel: string;
+  /** What changes, with Rig's read of it once it has one. */
+  what: (ready?: Ready) => ReactNode;
+  /** What Rig read and found, under Claude's sentence. */
+  facts: (ready?: Ready) => ReactNode;
+  folds: (open?: boolean) => ReactNode;
+  amber: { risk: ReactNode; undo: ReactNode; noUndo: boolean };
+  red: { kind: RedKind; reasons: string[]; risk: string; undo: ReactNode; noUndo: boolean };
+  /** What Review says runs. */
+  exact: string;
+  /** The change script's commands, as Rig found them. Native ops run none. */
+  runs: FoundCommand[];
+}
 
 const key = (t: Touch) => `${t.kind}|${touchName(t)}`.toLowerCase();
 
-/** What Rig read and checked about one command: the glance, Claude's sentence, what the read script printed and the commands Rig found. */
-function Body({ cmd, ready, tainted, retry, runs, pcName, risk, undo, noUndo }: TierProps & { risk: string; undo: ReactNode; noUndo: boolean }) {
-  const read = new Map(ready?.touches.map((t) => [key(t.touch), t.value]));
-  return (
-    <>
-      <Glance touches={cmd.touches.map((touch) => ({ touch, now: !ready ? undefined : read.has(key(touch)) ? read.get(key(touch))! : false }))} risk={risk} undo={undo} noUndo={noUndo} />
-      {tainted && <OutsideText />}
-      <div className="cc-facts">
-        <ClaudeSays text={cmd.does} />
+function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string): Look {
+  const commands = verdict?.commands ?? [];
+  const admin = verdict?.status === "allowed" && verdict.admin;
+  const runs = runCommands(cmd, commands);
+  const plan = undoPlan(cmd, runs);
+  const kind = verdict?.status === "allowed" ? redKind(cmd, verdict) : "none";
+  const words = redWords(kind);
+  return {
+    title: headline(cmd, commands), does: cmd.does, whatLabel: "Claude says it changes", runs,
+    what: (ready) => {
+      const read = new Map(ready?.touches.map((t) => [key(t.touch), t.value]));
+      return <TouchGlance touches={cmd.touches.map((touch) => ({ touch, now: !ready ? undefined : read.has(key(touch)) ? read.get(key(touch))! : false }))} />;
+    },
+    facts: (ready) => (
+      <>
         {ready && <Printed label={`The read script printed (on ${pcName})`} text={ready.read} />}
         {runs.length > 0 && <Fact label="What it runs" note="found by Rig"><CommandList commands={runs} /></Fact>}
+      </>
+    ),
+    folds: (open) => <Scripts cmd={cmd} open={open} />,
+    amber: { risk: riskLine(runs, admin), undo: <>{plan.line}<Untied names={plan.untied} /></>, noUndo: plan.kind === "none" },
+    red: {
+      kind, reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: `High. Read it slowly.${admin ? " Needs admin, so Windows asks first." : ""}`,
+      undo: <>{redBack(kind, plan)}{kind !== "none" && <Untied names={plan.untied} />}</>, noUndo: words.word === "permanent",
+    },
+    exact: `These scripts are exactly what runs on ${pcName}.`,
+  };
+}
+
+const nativeRisk: Record<Tier, string> = { 0: "Low.", 1: "Low.", 2: "Medium.", 3: "High. Read it slowly." };
+const nativeBack = "Yes. Rig keeps how it was, and Undo puts it back.";
+
+function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: Verdict | undefined, pcName: string): Look {
+  const { op, part, look } = native;
+  const reasons = verdict?.status === "allowed" ? [...new Set(verdict.reasons)] : [];
+  const tier = verdict?.status === "allowed" ? verdict.tier : 2;
+  return {
+    title: part.title(op, look), does: nativeDoes(op), whatLabel: "What changes", runs: [],
+    what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} look={look} />,
+    facts: (ready) => part.more?.(op, ready?.read, pcName, look),
+    folds: () => null,
+    amber: { risk: <>{nativeRisk[tier]}{reasons.length > 0 && <ul className="cc-plain cc-reasons">{reasons.map((r) => <li key={r}>{r}</li>)}</ul>}</>, undo: nativeBack, noUndo: false },
+    red: { kind: part.red?.kind ?? "lowers", reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: nativeRisk[3], undo: part.red?.undo ?? `${nativeBack} Until you undo it, the PC is less protected.`, noUndo: false },
+    exact: `This is exactly what changes on ${pcName}.`,
+  };
+}
+
+/** How the card shows this step, or null for a native op this app doesn't know. */
+function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string, looks?: ScreenLook[]): Look | null {
+  if (step.kind === "command") return commandLook(step.cmd, verdict, pcName);
+  const native = nativeOf(step.op, looks);
+  return native && nativeLook(native, verdict, pcName);
+}
+
+/** A step's heading, as its card shows it and the changes log keeps it. */
+export function stepHeadline(step: HelperStep, commands: FoundCommand[] = [], looks?: ScreenLook[]): string {
+  if (step.kind === "command") return headline(step.cmd, commands);
+  const native = nativeOf(step.op, looks);
+  return native ? native.part.title(native.op, native.look) : "A change";
+}
+
+interface TierProps extends StepCardProps { look: Look; verdict: Allowed; ready?: Ready; retry?: string }
+
+/** What Rig read and checked about one step: the glance, Claude's sentence and what Rig read. */
+function Body({ look, ready, tainted, retry, risk, undo, noUndo }: TierProps & { risk: ReactNode; undo: ReactNode; noUndo: boolean }) {
+  return (
+    <>
+      <GlanceFrame label={look.whatLabel} what={look.what(ready)} risk={risk} undo={undo} noUndo={noUndo} />
+      {tainted && <OutsideText />}
+      <div className="cc-facts">
+        <ClaudeSays text={look.does} />
+        {look.facts(ready)}
         {retry && <p className="cc-note" role="status">{retry}</p>}
       </div>
     </>
@@ -127,14 +209,13 @@ function AmberCard(p: TierProps) {
     const t = setTimeout(() => setArmed(true), 500);
     return () => clearTimeout(t);
   }, [reviewing]);
-  const plan = undoPlan(p.cmd, p.runs);
   return (
-    <Frame tone="t2" title={headline(p.cmd, p.verdict.commands)} place={p.place} chips={<span className="chip warn">Check first</span>}>
-      <Body {...p} risk={riskLine(p.runs, p.verdict.admin)} undo={<>{plan.line}<Untied names={plan.untied} /></>} noUndo={plan.kind === "none"} />
-      <Scripts cmd={p.cmd} open={reviewing} />
+    <Frame tone="t2" title={p.look.title} place={p.place} chips={<span className="chip warn">Check first</span>}>
+      <Body {...p} {...p.look.amber} />
+      {p.look.folds(reviewing)}
       {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : p.waitsFor ? <WaitFoot waitsFor={p.waitsFor} onDecline={p.onDecline} /> : reviewing && p.ready ? (
         <div className="proposal-foot" ref={foot} tabIndex={-1} role="group" aria-label="Apply this change?">
-          <span className="faint">These scripts are exactly what runs on {p.pcName}.</span>
+          <span className="faint">{p.look.exact}</span>
           <button className="btn ghost sm" type="button" disabled={busy} onClick={() => { back.current = true; setReviewing(false); }}>Back</button>
           <button className="btn primary sm" type="button" disabled={!armed || busy} onClick={() => run(p.onApply)}>{busy ? "Applying…" : "Apply"}</button>
         </div>
@@ -154,10 +235,8 @@ function RedCard(p: TierProps) {
   const [typed, setTyped] = useState("");
   const [busy, run] = useBusy();
   const id = useId();
-  const kind = redKind(p.cmd, p.verdict);
+  const { kind, reasons } = p.look.red;
   const words = redWords(kind);
-  const plan = undoPlan(p.cmd, p.runs);
-  const reasons = redReasons(p.verdict);
   const ok = typed.trim().toLowerCase() === words.word;
   const lead = (
     <div className="cc-first" role="note">
@@ -166,9 +245,9 @@ function RedCard(p: TierProps) {
     </div>
   );
   return (
-    <Frame tone="t3" title={headline(p.cmd, p.verdict.commands)} place={p.place} lead={lead} chips={<span className="chip tier-red">{words.chip}</span>}>
-      <Body {...p} risk={`High. Read it slowly.${p.verdict.admin ? " Needs admin, so Windows asks first." : ""}`} undo={<>{redBack(kind, plan)}{kind !== "none" && <Untied names={plan.untied} />}</>} noUndo={words.word === "permanent"} />
-      <Scripts cmd={p.cmd} />
+    <Frame tone="t3" title={p.look.title} place={p.place} lead={lead} chips={<span className="chip tier-red">{words.chip}</span>}>
+      <Body {...p} {...p.look.red} />
+      {p.look.folds()}
       {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : p.waitsFor ? <WaitFoot waitsFor={p.waitsFor} onDecline={p.onDecline} /> : p.ready ? (
         <>
           <div className="cc-confirm">
@@ -193,14 +272,14 @@ function RedCard(p: TierProps) {
 }
 
 /** Rig said no. There is nothing to apply; the person can ask for steps to do it themselves. */
-export function RefusedCard({ cmd, verdict, place, onSteps }: { cmd: Command; verdict: Refused; place?: string; onSteps: () => void }) {
+export function RefusedCard({ step, verdict, place, onSteps }: { step: HelperStep; verdict: Refused; place?: string; onSteps: () => void }) {
   return (
     <Frame tone="refused" title="Rig won't make this change" place={place} chips={<span className="chip">Nothing changed</span>}>
       <div className="cc-facts">
         <p className="cc-refused">{verdict.refused}{verdict.why === "never" && " Rig never makes this change, whoever asks."}</p>
-        <ClaudeSays text={cmd.does} />
+        <ClaudeSays text={step.kind === "command" ? step.cmd.does : nativeDoes(step.op)} />
       </div>
-      <Scripts cmd={cmd} />
+      {step.kind === "command" && <Scripts cmd={step.cmd} />}
       <div className="proposal-foot">
         <span className="faint">You can still do this yourself.</span>
         <button className="btn sm" type="button" onClick={onSteps}>Show me the steps</button>
@@ -209,23 +288,26 @@ export function RefusedCard({ cmd, verdict, place, onSteps }: { cmd: Command; ve
   );
 }
 
+const refusal = (refused: string): Refused => ({ status: "refused", why: "refused", commands: [], rulesVersion, refused });
+/** A native op of a kind this copy of Rig doesn't know, from a newer Rig. */
+const newerKind = refusal("This copy of Rig doesn't know this kind of change, so it won't make it. Update Rig, then ask again.");
+
 function resultChip(o: StepOutcome) {
   const a = o.apply.outcome;
   if (a === "applied") return o.undo?.outcome === "undone" ? <span className="chip">Undone</span> : <span className="chip ok">Applied</span>;
   return <span className="chip">{a === "rolledBack" ? "Put back" : "Nothing changed"}</span>;
 }
 
-function DoneCard(p: StepCardProps & { outcome: StepOutcome; focus: boolean }) {
+function DoneCard(p: StepCardProps & { look: Look; outcome: StepOutcome; focus: boolean }) {
   const [busy, run] = useBusy();
-  const commands = p.preview?.verdict.commands ?? [];
   const a = p.outcome.apply.outcome;
   return (
-    <Frame tone="plain" title={headline(p.cmd, commands)} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
+    <Frame tone="plain" title={p.look.title} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
       <div className="cc-facts">
-        <ClaudeSays text={p.cmd.does} />
-        <ResultView cmd={p.cmd} outcome={p.outcome} runs={runCommands(p.cmd, commands)} pcName={p.pcName} canApply={p.canApply} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
+        <ClaudeSays text={p.look.does} />
+        <ResultView step={p.step} outcome={p.outcome} runs={p.look.runs} pcName={p.pcName} canApply={p.canApply} looks={p.looks} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
       </div>
-      <Scripts cmd={p.cmd} />
+      {p.look.folds()}
       {p.canApply && (a === "limit" || a === "declined") && (
         <div className="proposal-foot">
           {a === "declined" && <span className="faint">Nothing changes until you apply.</span>}
@@ -239,7 +321,7 @@ function DoneCard(p: StepCardProps & { outcome: StepOutcome; focus: boolean }) {
 
 const tooOld = "This waited too long to run, so Rig needs to read the settings again. Nothing changed.";
 
-/** One command step: the card for its tier, a refusal, or what happened after Apply. An apply that came back expired or refused goes back to the card, to read again. */
+/** One command or native step: the card for its tier, a refusal, or what happened after Apply. An apply that came back expired or refused goes back to the card, to read again. */
 export function StepCard(p: StepCardProps) {
   const pressed = useRef(false);
   const a = p.outcome?.apply;
@@ -247,19 +329,21 @@ export function StepCard(p: StepCardProps) {
   const old = useStale(fresh?.expiresAt);
   const back = a?.outcome === "expired" || a?.outcome === "refused" || (a?.outcome === "declined" && (!fresh || old));
   const nothingRan = a?.outcome === "limit" || a?.outcome === "declined";
-  if (p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} outcome={p.outcome} focus={pressed.current} />;
-  const verdict = p.preview?.verdict ?? checkStep({ kind: "command", cmd: p.cmd }, { tainted: !!p.tainted });
-  if (verdict.status === "refused") return <RefusedCard cmd={p.cmd} verdict={verdict} place={p.place} onSteps={p.onSteps} />;
+  const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted, looks: p.looks });
+  if (p.step.kind === "native" && !knownNative(p.step.op)) return <RefusedCard step={p.step} verdict={newerKind} place={p.place} onSteps={p.onSteps} />;
+  const look = lookOf(p.step, verdict, p.pcName, p.looks);
+  if (look && p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} look={look} outcome={p.outcome} focus={pressed.current} />;
+  if (verdict.status === "refused" || !look) return <RefusedCard step={p.step} verdict={verdict.status === "refused" ? verdict : refusal("This isn't a kind of change Rig makes.")} place={p.place} onSteps={p.onSteps} />;
   if (p.declined) {
     return (
-      <Frame tone="plain" title={headline(p.cmd, verdict.commands)} place={p.place} chips={<span className="chip">Not now</span>}>
-        <div className="cc-facts"><ClaudeSays text={p.cmd.does} /><p className="cc-note">This step didn't run, so it changed nothing on {p.pcName}.</p></div>
-        <Scripts cmd={p.cmd} />
+      <Frame tone="plain" title={look.title} place={p.place} chips={<span className="chip">Not now</span>}>
+        <div className="cc-facts"><ClaudeSays text={look.does} /><p className="cc-note">This step didn't run, so it changed nothing on {p.pcName}.</p></div>
+        {look.folds()}
       </Frame>
     );
   }
   const ready = back || old ? undefined : fresh;
   const retry = a?.outcome === "refused" ? `Rig didn't run this, so nothing changed. ${a.verdict.refused} Read again to check it fresh.` : back || (fresh && old) ? tooOld : undefined;
   const Card = verdict.tier === 3 ? RedCard : AmberCard;
-  return <Card {...p} verdict={verdict} ready={ready} retry={retry} runs={runCommands(p.cmd, verdict.commands)} onApply={() => { pressed.current = true; return p.onApply(); }} />;
+  return <Card {...p} look={look} verdict={verdict} ready={ready} retry={retry} onApply={() => { pressed.current = true; return p.onApply(); }} />;
 }

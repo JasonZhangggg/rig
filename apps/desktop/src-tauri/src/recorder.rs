@@ -339,9 +339,9 @@ pub fn approve_script(_probe: &Value, _hash: &str) -> Result<Value, String> {
     Err("unsupported: scripts run in the background recorder, which is a Windows service.".into())
 }
 
-/// Approves a command that needs admin rights behind Windows' own permission prompt. The helper already holds the
-/// command under `nonce` from its preview; this only tells it which one, and `hash` is the command's fingerprint as
-/// the app showed it. The helper marks the nonce approved only if the two match, and answers with its exit code.
+/// Approves a step (a command or a native op) that needs admin rights behind Windows' own permission prompt. The helper
+/// already holds the step under `nonce` from its preview; this only tells it which one, and `hash` is the step's
+/// fingerprint as the app showed it. The helper marks the nonce approved only if the two match, and answers with its exit code.
 #[cfg(windows)]
 pub fn approve_command(nonce: &str, hash: &str) -> Result<(), String> {
     let hex = |s: &str, len: usize| s.len() == len && s.bytes().all(|c| c.is_ascii_hexdigit());
@@ -356,7 +356,7 @@ pub fn approve_command(nonce: &str, hash: &str) -> Result<(), String> {
     }
     let file = std::env::temp_dir().join(format!("rig-approve-{}-{}.json", std::process::id(), rand::random::<u32>()));
     std::fs::write(&file, json!({ "nonce": nonce, "owner": owner }).to_string()).map_err(|e| e.to_string())?;
-    let args = format!("--approve-command \"{}\" --hash {hash}", file.display());
+    let args = format!("--approve-step \"{}\" --hash {hash}", file.display());
     let code = crate::helper::run_elevated_wait(&helper.to_string_lossy(), &args, std::time::Duration::from_secs(120));
     let _ = std::fs::remove_file(&file);
     match code {

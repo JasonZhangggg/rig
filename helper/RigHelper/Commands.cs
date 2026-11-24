@@ -1,24 +1,29 @@
-// The general command runner: "command.check", "command.preview",
-// "command.apply", "command.undo" and "command.read" (packages/core/src/change.ts
-// has the shapes). The app, its web view and the server are all on the far side of
-// the pipe, so nothing they send is trusted:
+// The one approval path for every step the helper runs by nonce: "step.check",
+// "step.preview", "step.apply", "step.undo" and "command.read"
+// (packages/core/src/change.ts has the shapes). A step is a command
+// (PowerShell) or a native op (NativeSteps.cs). The same four calls under
+// "command." with `{ cmd }` still answer a Rig app from before native ops.
+// The app, its web view and the server are all on the far side of the pipe,
+// so nothing they send is trusted:
 //
-//   preview  checks the command with PowerShell's own parser, runs `read` as
-//            the person, and stores the command and its verdict under a
-//            nonce that works once and runs out after a few minutes.
-//   apply    takes only the nonce. It works out the stored command's
+//   preview  checks the step (a command with PowerShell's own parser, a
+//            native op with its own code), reads the current state as the
+//            person, and stores the step and its verdict under a nonce that
+//            works once and runs out after a few minutes.
+//   apply    takes only the nonce. It works out the stored step's
 //            fingerprint again and holds it to the one preview gave, checks
-//            again, takes a snapshot, runs `run` from a file only admins can
-//            change, compares the never-list places before and after, and puts
-//            everything back on a hit or a failure.
+//            again, takes a snapshot, makes the change (a command's `run`
+//            from a file only admins can change, a native op in a worker
+//            with the person's own sign-in), compares the never-list places
+//            before and after, and puts everything back on a hit or a failure.
 //   undo     takes only the id of an applied change, and runs only what that
 //            change's approval covered, with no more rights than it ran with,
 //            between readings of the never-list places too. It leaves alone
 //            what changed since unless told to put it back anyway, and checks
 //            afterwards that each place really is as it was.
 //
-// A command that needs admin rights runs only after RigHelper.exe
-// --approve-command marked its nonce, and that mode only works behind
+// A step that needs admin rights runs only after RigHelper.exe
+// --approve-step marked its nonce, and that mode only works behind
 // Windows' own permission prompt. Everything else runs with the person's own
 // rights, so the pipe can't be used to get more than the person already has.
 //
@@ -39,19 +44,21 @@ using Microsoft.Win32;
 
 namespace Rig.Helper;
 
-public sealed record Pending(string Nonce, string Hash, Command Cmd, Verdict Verdict, string Person, long ExpiresAt, long ApprovedAt)
+/// `Read` is a native op's state as preview read it, which apply holds the state to before it runs.
+/// `Seen`: each touch's state as the card showed it, for a file the person could read; null where Rig didn't hold it to that.
+public sealed record Pending(string Nonce, string Hash, HelperStep Step, Verdict Verdict, string Person, long ExpiresAt, long ApprovedAt, string? Read = null, JsonArray? Seen = null)
 {
     public JsonObject ToJson() => new()
     {
-        ["nonce"] = Nonce, ["hash"] = Hash, ["cmd"] = Cmd.ToJson(), ["verdict"] = Verdict.ToJson(),
-        ["person"] = Person, ["expiresAt"] = ExpiresAt, ["approvedAt"] = ApprovedAt,
+        ["nonce"] = Nonce, ["hash"] = Hash, ["step"] = Step.ToJson(), ["verdict"] = Verdict.ToJson(),
+        ["person"] = Person, ["expiresAt"] = ExpiresAt, ["approvedAt"] = ApprovedAt, ["read"] = Read, ["seen"] = Seen?.DeepClone(),
     };
 
     public static Pending? From(JsonNode? n)
     {
-        if (n is not JsonObject o || Command.From(o["cmd"], out _) is not Command cmd || Verdict.From(o["verdict"]) is not Verdict verdict) return null;
-        return new Pending(o["nonce"]?.ToString() ?? "", o["hash"]?.ToString() ?? "", cmd, verdict,
-            o["person"]?.ToString() ?? "", (long)Json.Num(o["expiresAt"], 0), (long)Json.Num(o["approvedAt"], 0));
+        if (n is not JsonObject o || HelperStep.Stored(o) is not HelperStep step || Verdict.From(o["verdict"]) is not Verdict verdict) return null;
+        return new Pending(o["nonce"]?.ToString() ?? "", o["hash"]?.ToString() ?? "", step, verdict,
+            o["person"]?.ToString() ?? "", (long)Json.Num(o["expiresAt"], 0), (long)Json.Num(o["approvedAt"], 0), o["read"]?.ToString(), o["seen"]?.DeepClone() as JsonArray);
     }
 }
 
@@ -181,13 +188,13 @@ public sealed class CommandStore
         WriteJson(PendingFile(p.Nonce), p.ToJson());
     }
 
-    /// A stored command that hasn't run out, left in place.
+    /// A stored step that hasn't run out, left in place.
     public Pending? Peek(string nonce) =>
         Id.IsMatch(nonce) && Pending.From(ReadJson(PendingFile(nonce))) is Pending p && p.Nonce == nonce && p.ExpiresAt > Now ? p : null;
 
     public void Approve(Pending p) => WriteJson(PendingFile(p.Nonce), (p with { ApprovedAt = Now }).ToJson());
 
-    /// Takes a stored command out of the store, so its nonce works once. Null when it is unknown, used or too old.
+    /// Takes a stored step out of the store, so its nonce works once. Null when it is unknown, used or too old.
     public Pending? Take(string nonce)
     {
         if (!Id.IsMatch(nonce)) return null;
@@ -276,7 +283,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     public const int Expired = 10, Changed = 11;
     public const int ParseTimeoutMs = 30_000, ReadTimeoutMs = 20_000, RunTimeoutMs = 120_000;
 
-    /// What preview gave out in this run of the helper: each nonce and the fingerprint of the command it stands for. A nonce
+    /// What preview gave out in this run of the helper: each nonce and the fingerprint of the step it stands for. A nonce
     /// apply hasn't seen given out here is unknown, whatever the store holds.
     static readonly ConcurrentDictionary<string, string> Issued = new();
 
@@ -284,28 +291,47 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// Only code in this process can set it; nothing that comes over the pipe reaches it.
     internal string? TestOnlyExtra { get; set; }
 
+    /// The self-test's way to treat a step as an install whose installer may change these never-list places, since it
+    /// installs nothing itself. Only code in this process can set it.
+    internal IReadOnlySet<string>? TestOnlyExpects { get; set; }
+
     /// The self-test's way to stand in for a Rig app started with "Run as administrator", or, set false, for one started
     /// normally: with admin rights the self-test is itself the app, and so is elevated.
     internal bool? TestOnlyElevatedApp { get; set; }
 
+    /// The self-test's way to reach the native op only it uses. Only code in this process can set it.
+    internal bool TestOnlyNativeOps { get; set; }
+
     public const string AppElevated = "Rig is running as administrator, so it can't keep changes to what you approved. Open Rig normally and ask again.";
     public const string StoreRebuilt = "Rig found something in its own store of changes that it didn't put there, so it cleared the store and nothing ran. Ask again.";
+    public const string UnknownOp = "Rig's helper doesn't make this kind of change. Update Rig, then ask again.";
+    /// What a native op that stopped without its way back is reported as: it may have changed what it changes.
+    public static string MayHaveChanged(string now)
+    {
+        string n = now.Trim(), reads = n.Length == 0 ? "nothing Rig could read" : $"\"{(n.Length <= 200 ? n : n[..200] + "…")}\"";
+        return $"This may still be changed: Rig's worker stopped before it said how to put it back. It reads {reads} now";
+    }
     public const string AppElevatedUndo = "Rig is running as administrator, so it can't keep the undo to what you approved. Open Rig normally and undo again.";
 
     static string? Str(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
     static JsonObject Refused(Verdict v) => new() { ["outcome"] = "refused", ["verdict"] = v.ToJson() };
     static JsonObject Refused(string words) => Refused(Verdict.Refuse(words));
-    static Command? CommandOf(JsonNode? p, out string? problem) => Command.From(p?["cmd"], out problem);
 
     public JsonNode Handle(string method, JsonNode? p)
     {
         switch (method)
         {
-            case "command.check": { var cmd = CommandOf(p, out string? problem); return new JsonObject { ["verdict"] = Check(cmd, problem).Verdict.ToJson() }; }
-            case "command.preview": { var cmd = CommandOf(p, out string? problem); return Preview(cmd, problem); }
-            case "command.apply": return Apply(Str(p?["nonce"]) ?? "");
-            case "command.undo": return Undo(Str(p?["id"]) ?? "", p?["force"]?.GetValueKind() == System.Text.Json.JsonValueKind.True);
+            case "step.check" or "command.check": { var step = HelperStep.Sent(method, p, out string? problem); return new JsonObject { ["verdict"] = Check(step, problem).Verdict.ToJson() }; }
+            case "step.preview" or "command.preview": { var step = HelperStep.Sent(method, p, out string? problem); return Preview(step, problem); }
+            case "step.apply" or "command.apply": return Apply(Str(p?["nonce"]) ?? "");
+            case "step.undo" or "command.undo": return Undo(Str(p?["id"]) ?? "", p?["force"]?.GetValueKind() == System.Text.Json.JsonValueKind.True);
             case "command.read": return ReadOnly(Str(p?["script"]) ?? "");
+            case "screen.look":
+                return ScreenStep.LookFor(p, TestOnlyNativeOps, op =>
+                {
+                    using var person = Person.Find(appPid);
+                    return NativeWorker.Ask(person, store, "look", new NativeOpStep(ScreenStep.OpName, op), null, TestOnlyNativeOps);
+                });
             default: throw new RigException($"Rig's helper doesn't know \"{method}\".");
         }
     }
@@ -338,6 +364,45 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         catch (Exception e) { return (Verdict.Refuse($"{CommandCheck.Words("unreadable")}: {e.Message.TrimEnd('.')}."), []); }
     }
 
+    /// A step's verdict, the step as Rig keeps it (null when refused), what its change writes to and the places it says it
+    /// changes. A native op's check may rewrite the op, so what is stored, fingerprinted and run is `Step`, not what was sent.
+    /// `Held` and `Expect` are a native op's own (NativeCheck).
+    public sealed record Checked(Verdict Verdict, HelperStep? Step, List<Write> Writes, IReadOnlyList<Touch> Touches, JsonObject? Held = null, string? Expect = null);
+
+    /// `held`: what an applied native op's check held when it ran, for the check before its undo.
+    public Checked Check(HelperStep? step, string? problem = null, JsonObject? held = null)
+    {
+        static Checked No(Verdict v) => new(v, null, [], []);
+        switch (step)
+        {
+            case CommandStep c:
+                var (verdict, writes) = Check(c.Cmd);
+                // A program that runs only as the person never shares a step with one that needs admin rights (checkCommand in change.ts).
+                if (verdict.Allowed && verdict.Admin && RunRules.AsPerson(verdict.Commands)) return No(Verdict.Refuse($"{CommandCheck.Words("as-person")}.", "refused", verdict.Commands));
+                return verdict.Allowed ? new Checked(verdict, c, writes, c.Cmd.Touches) : No(verdict);
+            case NativeOpStep n:
+                if (NativeSteps.Find(n.Name, TestOnlyNativeOps) is not INativeStep op) return No(Verdict.Refuse(UnknownOp));
+                NativeCheck found;
+                try { found = held == null ? op.Check(n.Op) : op.Recheck(n.Op, held); }
+                catch (RigException e) { return No(Verdict.Refuse(e.Message)); }
+                // The op's own never list goes first, so the card says why in that kind's own words (checkStep in change.ts).
+                if (found.Never != null) return No(Verdict.Refuse($"{found.Never}.", "never"));
+                foreach (var t in found.Touches)
+                    if (CommandCheck.OnNeverList(t.RuleText, "run") is string never) return No(Verdict.Refuse($"{never}.", "never"));
+                int tier = Math.Clamp(found.Tier, 1, 3);
+                var reasons = found.Reasons.ToList();
+                if (found.Touches.Select(t => CommandCheck.LowersProtection(t.RuleText)).FirstOrDefault(x => x != null) is string lowers)
+                {
+                    tier = 3;
+                    reasons.Add($"{lowers}.");
+                }
+                // A native op is made by the worker with the person's own rights, so it never needs admin rights.
+                return new Checked(new Verdict(true, tier, false, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
+            default:
+                return No(Verdict.Refuse(problem ?? "This change request is missing a part."));
+        }
+    }
+
     /// Why an admin command can't run for this person, or null. With admin rights it runs as the account that answered
     /// Windows' prompt, and that account's own settings aren't the person's when someone else typed an admin's password.
     public static string? OtherAccount(bool admin, string helperSid, string personSid, Command cmd, IEnumerable<Write> writes)
@@ -351,17 +416,41 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
 
     // ----- Reads -----
 
-    string Read(Person person, string script)
+    /// `winget`: the path the helper found for it, when the script uses it. winget may fetch its catalog first, so it gets longer.
+    string Read(Person person, string script, string? winget = null) => Read(person, script, winget, out _);
+
+    string Read(Person person, string script, string? winget, out bool timedOut)
     {
         string file = Path.Combine(store.PersonScripts(person.Sid), CommandStore.NewId() + ".ps1");
+        int limit = winget == null ? ReadTimeoutMs : RunTimeoutMs;
         try
         {
-            PowerShellHost.Write(file, script, stopOnError: false);
-            var ran = person.Run(file, ReadTimeoutMs, store.Empty());
-            return ran.TimedOut ? $"The read didn't finish in {ReadTimeoutMs / 1000} seconds, so Rig stopped it." : ran.Printed;
+            PowerShellHost.Write(file, script, stopOnError: false, winget);
+            var ran = person.Run(file, limit, store.Empty());
+            timedOut = ran.TimedOut;
+            return ran.TimedOut ? $"The read didn't finish in {limit / 1000} seconds, so Rig stopped it." : ran.Printed;
         }
         finally { try { File.Delete(file); } catch { } }
     }
+
+    /// What a read printed without the spinners and progress bars winget draws, so two reads of the same state are the same.
+    internal static string Settled(string printed) => string.Join("\n", printed.Replace("\r\n", "\n").Split('\n')
+        .Select(line => line.Split('\r', '\b').Select(x => x.Trim()).LastOrDefault(x => x.Length > 0) ?? "")
+        .Where(line => line.Trim('-', '\\', '|', '/', ' ').Length > 0 && line.IndexOfAny(['\u2588', '\u2592']) < 0));
+
+    /// winget's real path for a step whose scripts use it, found by the helper itself and never taken from the step; null when
+    /// they don't use it. `problem` says why it can't run: winget isn't there, or the app runs as administrator.
+    string? WingetFor(Person person, IEnumerable<FoundCommand> found, out string? problem)
+    {
+        problem = null;
+        if (!Winget.Uses(found)) return null;
+        if (TestOnlyElevatedApp ?? person.Elevated) { problem = Winget.Elevated; return null; }
+        string? path = Winget.Find(person);
+        if (path == null) problem = Winget.Missing;
+        return path;
+    }
+
+    static string Took(int ms) => ms > RunTimeoutMs && ms % 60_000 == 0 ? $"{ms / 60_000} minutes" : $"{ms / 1000} seconds";
 
     /// command.read: a read on its own, which must check as a read, run as the person.
     JsonObject ReadOnly(string script)
@@ -375,40 +464,73 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         catch (Exception e) { verdict = Verdict.Refuse($"{CommandCheck.Words("unreadable")}: {e.Message.TrimEnd('.')}."); }
         if (!verdict.Allowed || verdict.Tier != 0 || verdict.Admin) return new JsonObject { ["verdict"] = (verdict.Allowed ? Verdict.Refuse($"{CommandCheck.Words("not-read")}.", "notRead", verdict.Commands) : verdict).ToJson() };
         using var person = Person.Find(appPid);
-        return new JsonObject { ["printed"] = Read(person, script) };
+        string? winget = WingetFor(person, verdict.Commands, out string? noWinget);
+        if (noWinget != null) return new JsonObject { ["verdict"] = Verdict.Refuse(noWinget, "refused", verdict.Commands).ToJson() };
+        return new JsonObject { ["printed"] = Read(person, script, winget) };
+    }
+
+    /// A read the worker makes as the person, such as the gpu read: the JSON text it answers, read as outside data.
+    public string WorkerRead(JsonObject read)
+    {
+        using var person = Person.Find(appPid);
+        var said = NativeWorker.Read(person, store, read, TestOnlyNativeOps);
+        return said.Ok ? said.Result["text"]?.ToString() ?? "" : throw new RigException(said.Error);
+    }
+
+    NativeWorker.Answer Ask(Person person, string verb, NativeOpStep step, JsonObject? held, JsonObject? back = null) =>
+        NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
+
+    static string Moved(string now, string expect) =>
+        $"What this changes has moved since Rig looked: it reads \"{now}\" now, not \"{expect}\". Nothing ran. Look again.";
+
+    /// The state a step changes, read as the person: what a command's read script prints, or a native op's own line.
+    /// `Problem` says why a native op's state couldn't be read; a read script's trouble is in what it printed.
+    (string Text, string? Problem) Look(Person person, HelperStep step, JsonObject? held, string? winget = null)
+    {
+        if (step is CommandStep c) return (Read(person, c.Cmd.Read, winget), null);
+        var said = Ask(person, "preview", (NativeOpStep)step, held);
+        return said.Ok ? (said.Result["now"]?.ToString() ?? "", null) : ("", said.Error);
     }
 
     // ----- Preview -----
 
-    JsonObject Preview(Command? cmd, string? problem)
+    JsonObject Preview(HelperStep? sent, string? problem)
     {
-        var (verdict, _) = Check(cmd, problem);
-        if (!verdict.Allowed || cmd == null) return Refused(verdict);
+        var check = Check(sent, problem);
+        var verdict = check.Verdict;
+        if (check.Step is not HelperStep step) return Refused(verdict);
         using var person = Person.Find(appPid);
+        string? winget = WingetFor(person, verdict.Commands, out string? noWinget);
+        if (noWinget != null) return Refused(noWinget);
         // Nothing is approved yet, so everything here is read with the person's rights.
         var states = new TouchStates(person, admin: false);
         var touches = new JsonArray();
-        foreach (var t in cmd.Touches)
+        var seen = new JsonArray();
+        foreach (var t in check.Touches)
         {
             string? value;
-            try { value = TouchStates.Show(t, states.Read(t)); } catch (RigException e) { value = $"Rig couldn't read this as you: {e.Message}."; }
+            JsonNode? state = null;
+            try { state = states.Read(t); value = TouchStates.Show(t, state); } catch (RigException e) { value = $"Rig couldn't read this as you: {e.Message}."; }
             touches.Add(new JsonObject { ["touch"] = t.ToJson(), ["value"] = value });
+            seen.Add(t.Kind == "file" ? state?.DeepClone() : null);
         }
         if (verdict.Tier >= 2 && RestorePoints.ProtectionOff())
             verdict = verdict with { Reasons = [.. verdict.Reasons, "Windows' System Protection is off on this PC, so there will be no restore point to fall back on."] };
-        var pending = new Pending(CommandStore.NewId(), cmd.Hash(), cmd, verdict, person.Sid, DateTimeOffset.UtcNow.AddMinutes(NonceMinutes).ToUnixTimeMilliseconds(), 0);
-        string read = Read(person, cmd.Read);
+        var (read, unread) = Look(person, step, check.Held, winget);
+        var pending = new Pending(CommandStore.NewId(), step.Hash(), step, verdict, person.Sid, DateTimeOffset.UtcNow.AddMinutes(NonceMinutes).ToUnixTimeMilliseconds(), 0, step is NativeOpStep ? read : null, seen);
+        if (unread != null) return Refused($"Rig couldn't read what this would change, so there is nothing to approve. {unread}");
+        if (check.Expect != null && read != check.Expect) return Refused(Moved(read, check.Expect));
         store.Save(pending);
         Issued[pending.Nonce] = pending.Hash;
         return new JsonObject
         {
             ["outcome"] = "ready", ["nonce"] = pending.Nonce, ["expiresAt"] = DateTimeOffset.FromUnixTimeMilliseconds(pending.ExpiresAt).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            ["verdict"] = verdict.ToJson(), ["read"] = read, ["touches"] = touches,
+            ["verdict"] = verdict.ToJson(), ["read"] = read, ["touches"] = touches, ["hash"] = pending.Hash,
         };
     }
 
-    /// RigHelper.exe --approve-command <file> --hash <h>: started behind Windows' permission prompt when the person approves
-    /// a command that needs admin rights. The file holds {nonce, owner}; the command itself is the one preview stored, and
+    /// RigHelper.exe --approve-step <file> --hash <h>: started behind Windows' permission prompt when the person approves
+    /// a step that needs admin rights. The file holds {nonce, owner}; the step itself is the one preview stored, and
     /// --hash is its fingerprint as the app showed it. Answers with its exit code only, so it writes nothing where the caller says.
     public static int ApproveFromFile(string file, string? hash, CommandStore? store = null)
     {
@@ -418,7 +540,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             var req = JsonNode.Parse(File.ReadAllText(file)) as JsonObject;
             if ((store ?? CommandStore.Open()) is not CommandStore s || s.Peek(Str(req?["nonce"]) ?? "") is not Pending pending) return Expired;
             if (pending.Person != Str(req?["owner"]) || string.IsNullOrEmpty(hash) || !string.Equals(pending.Hash, hash, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(pending.Cmd.Hash(), hash, StringComparison.OrdinalIgnoreCase)) return Changed;
+                || !string.Equals(pending.Step.Hash(), hash, StringComparison.OrdinalIgnoreCase)) return Changed;
             s.Approve(pending);
             return RecorderSetup.Ok;
         }
@@ -428,6 +550,21 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     // ----- Apply -----
 
     static string NextMidnight() => new DateTimeOffset(DateTime.Today.AddDays(1)).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+    /// What making or unmaking a step came to. `Back` is what a native op's Undo needs. `Stopped`: the person pressed Stop.
+    sealed record Made(bool Ok, bool TimedOut, string Printed, string? Error, JsonObject? Back = null, bool Stopped = false);
+
+    Made Make(Person person, bool admin, string dir, string id, HelperStep step, JsonObject? held, int timeoutMs = RunTimeoutMs, string? winget = null)
+    {
+        if (step is CommandStep c)
+        {
+            var ran = RunScript(person, admin, dir, id + "-run.ps1", TestOnlyExtra == null ? c.Cmd.Run : $"{c.Cmd.Run}\r\n{TestOnlyExtra}", stopOnError: true, timeoutMs, winget);
+            string? error = ran.TimedOut ? $"The change didn't finish in {Took(timeoutMs)}, so Rig stopped it." : !ran.Ok ? $"The change stopped with an error (exit code {ran.Exit})." : null;
+            return new Made(ran.Ok, ran.TimedOut, ran.Printed, error);
+        }
+        var said = Ask(person, "apply", (NativeOpStep)step, held);
+        return new Made(said.Ok, said.TimedOut, "", said.Ok ? null : $"The change didn't go through. {said.Error}", said.Result["back"] as JsonObject, said.Stopped);
+    }
 
     JsonObject Apply(string nonce)
     {
@@ -446,22 +583,33 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         if (waiting.Verdict.Admin && Native.IsAdmin() && waiting.ApprovedAt == 0) return new JsonObject { ["outcome"] = "declined" };
         if (store.Take(nonce) is not Pending pending) return expired;
         Issued.TryRemove(nonce, out _);
-        var cmd = pending.Cmd;
-        if (cmd.Hash() != pending.Hash || pending.Hash != issued)
+        if (pending.Step.Hash() != pending.Hash || pending.Hash != issued)
             return Refused("The change Rig stored isn't the one you looked at, so nothing ran. Look at it again.");
-        var (verdict, writes) = Check(cmd);
-        if (!verdict.Allowed) return Refused(verdict);
-        if (verdict.Tier != pending.Verdict.Tier || verdict.Admin != pending.Verdict.Admin) return Refused("Rig's check of this change came out differently than when you looked at it, so nothing ran. Look at it again.");
+        var check = Check(pending.Step);
+        var verdict = check.Verdict;
+        if (check.Step is not HelperStep step) return Refused(verdict);
+        if (step.Hash() != pending.Hash || verdict.Tier != pending.Verdict.Tier || verdict.Admin != pending.Verdict.Admin)
+            return Refused("Rig's check of this change came out differently than when you looked at it, so nothing ran. Look at it again.");
+        string? winget = WingetFor(person, verdict.Commands, out string? noWinget);
+        if (noWinget != null) return Refused(noWinget);
         if (verdict.Admin)
         {
             if (!Native.IsAdmin()) return Refused("This needs admin rights, and Rig's helper is running without them. Restart Rig and choose Yes when Windows asks, then try again. Nothing ran.");
             if (pending.ApprovedAt == 0) return new JsonObject { ["outcome"] = "declined" };
-            if (OtherAccount(true, Person.Mine(), person.Sid, cmd, writes) is string other) return Refused(other);
+            if (step is CommandStep c && OtherAccount(true, Person.Mine(), person.Sid, c.Cmd, check.Writes) is string other) return Refused(other);
+        }
+
+        // The card showed a native op's state as preview read it: what was approved is that change to that state.
+        if (step is NativeOpStep && pending.Read != null && check.Expect == null)
+        {
+            var (seen, notSeen) = Look(person, step, check.Held);
+            if (notSeen != null) return Refused($"Rig couldn't read what this would change, so it didn't run it. {notSeen}");
+            if (seen != pending.Read) return Refused("What this would change is different now from when you looked, so nothing ran. Look at it again.");
         }
 
         string id = CommandStore.NewId(), dir = store.NewRecord(id);
         var states = new TouchStates(person, verdict.Admin);
-        var touches = cmd.Touches.ToList();
+        var touches = check.Touches.ToList();
         var before = new List<JsonNode?>();
         for (int i = 0; i < touches.Count; i++)
         {
@@ -470,6 +618,12 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             {
                 store.DropRecord(id);
                 return Refused($"Rig couldn't take a snapshot of {TouchStates.Name(touches[i])} ({e.Message}), so it didn't run this.");
+            }
+            // A file the card showed is the file that runs: a driver's .inf or catalog swapped after the person looked is refused.
+            if (pending.Seen?.ElementAtOrDefault(i) is JsonNode shown && !Same(shown, before[i]))
+            {
+                store.DropRecord(id);
+                return Refused($"{TouchStates.Name(touches[i])} changed since you looked at it, so nothing ran. Look at it again.");
             }
         }
         if (verdict.Tier >= 2 && !store.CountToday(DailyCap))
@@ -480,59 +634,139 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         var point = verdict.Tier >= 2 && restorePoints ? RestorePoints.Ensure(store) : null;
         var watch = new Sentinels(person, store.Work);
         var (guarded, moving) = watch.Baseline();
-        string readBefore = Read(person, cmd.Read);
+        bool beforeTimedOut = false;
+        var (readBefore, unread) = step is CommandStep looking ? (Read(person, looking.Cmd.Read, winget, out beforeTimedOut), null) : Look(person, step, check.Held, winget);
+        if (unread != null || (check.Expect != null && readBefore != check.Expect))
+        {
+            store.DropRecord(id);
+            return Refused(unread != null ? $"Rig couldn't read what this would change, so it didn't run it. {unread}" : Moved(readBefore, check.Expect!));
+        }
 
-        var ran = RunScript(person, verdict.Admin, dir, id + "-run.ps1", TestOnlyExtra == null ? cmd.Run : $"{cmd.Run}\r\n{TestOnlyExtra}", stopOnError: true);
+        var made = Make(person, verdict.Admin, dir, id, step, check.Held, RunRules.TimeoutMs(verdict.Commands, "run", RunTimeoutMs), winget);
 
         var guardedAfter = watch.Read();
         var hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
+        // What an installer is expected to add (the rules' `expects`) is listed on the result, not put back; any other hit rolls it back.
+        var expects = TestOnlyExpects ?? RunRules.Expects(verdict.Commands, "run");
+        bool installs = TestOnlyExpects != null || RunRules.Installs(verdict.Commands);
+        var expected = hits.Where(h => expects.Contains(h.Sentinel)).ToList();
+        hits = hits.Except(expected).ToList();
         var after = touches.Select(t => { try { return states.Read(t); } catch (RigException) { return null; } }).ToList();
+        string readAfter;
+        bool afterTimedOut = false;
+        string? error = made.Error, meant = null;
+        bool stopped = made.Stopped;
+        // A change the person stopped once it had begun, or the app left half done, stands as it is, unread, with its undo
+        // offered; `meant` is what it should read. After Stop nothing walks or reads the app's window again.
+        if (step is NativeOpStep && made.Ok && made.Back?["unfinished"] is JsonNode unfinished) (readAfter, meant) = (unfinished.ToString(), made.Back["after"]?.ToString());
+        else if (stopped) readAfter = "";
+        else if (step is NativeOpStep native && made.Ok)
+        {
+            // A native op reads its own change back; one that didn't hold is put back like one that failed.
+            var said = Ask(person, "verify", native, check.Held);
+            readAfter = said.Result["now"]?.ToString() ?? "";
+            if (said.Stopped)
+            {
+                stopped = true;
+                (readAfter, meant) = ($"{StopBar.Stopped} Rig didn't finish reading the change back, so check it in the app, or undo it.", made.Back?["after"]?.ToString());
+            }
+            else if (!said.Ok) error = $"Rig couldn't read the change back, so it put it back. {said.Error}";
+            else if (said.Result["problem"] is JsonNode problem) error = $"The change didn't hold when Rig read it back. {problem}";
+        }
+        else if (step is CommandStep looked) readAfter = Read(person, looked.Cmd.Read, winget, out afterTimedOut);
+        else readAfter = Look(person, step, check.Held, winget).Text;
         var result = new JsonObject
         {
-            ["before"] = readBefore, ["after"] = Read(person, cmd.Read),
+            ["before"] = readBefore, ["after"] = readAfter,
             ["touches"] = new JsonArray(touches.Select((t, i) => (JsonNode)new JsonObject { ["touch"] = t.ToJson(), ["before"] = TouchStates.Show(t, before[i]), ["after"] = TouchStates.Show(t, after[i]) }).ToArray()),
-            ["output"] = ran.Printed, ["alsoChanged"] = new JsonArray(),
+            ["output"] = made.Printed, ["alsoChanged"] = new JsonArray(),
         };
+        if (step is NativeOpStep && meant != null) result["stopped"] = true;
 
-        if (hits.Count > 0 || !ran.Ok)
+        if (hits.Count > 0 || error != null)
         {
             var left = new List<string>();
+            var hit = Sentinels.Hits(guarded, guardedAfter, hits);
+            if (step is NativeOpStep undoing)
+            {
+                // What a native op changed outside its touches only its own Undo knows, so that runs first, and the
+                // never-list places are read again after it.
+                // With no way back, what the state reads now is all Rig has to tell whether the worker changed it before it stopped,
+                // unless the person pressed Stop: a worker stopped before it began says so, and after Stop nothing is read again.
+                if (made.Back == null) { if (!stopped && (made.TimedOut || readAfter != readBefore)) left.Add(MayHaveChanged(readAfter)); }
+                else if (stopped) left.Add("what Rig set in the app: you pressed Stop, so Rig left its window alone. Check it there");
+                else if (Ask(person, "undo", undoing, check.Held, made.Back) is { Ok: false } stuck) left.Add($"Rig's own way back didn't finish ({stuck.Error.TrimEnd('.')})");
+                guardedAfter = watch.Read();
+                hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
+            }
+            else
+            {
+                // An install, update or uninstall that changed the app (its read prints something else) is taken back by the step's
+                // own undo first. When the read is the same, as when it stopped because the app was already there, the undo never runs.
+                bool unsure = beforeTimedOut || afterTimedOut, changed = !unsure && Settled(readAfter) != Settled(readBefore), undone = false;
+                if (installs && changed && step is CommandStep { Cmd.Undo: string back })
+                {
+                    var ran = RunScript(person, verdict.Admin, dir, id + "-undo.ps1", back, stopOnError: false, RunRules.TimeoutMs(verdict.Commands, "undo", RunTimeoutMs), winget);
+                    undone = ran.Ok;
+                    if (!ran.Ok) left.Add($"the app may still be installed: its undo {(ran.TimedOut ? "didn't finish" : $"stopped with an error: {ran.Printed.Split('\n')[0].Trim()}")}");
+                    guardedAfter = watch.Read();
+                }
+                hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
+                // With the app still changed, or with no way to tell (a read or the installer that didn't finish), what its installer
+                // was expected to change stays and is listed.
+                if (installs && (changed || unsure || made.TimedOut) && !undone)
+                {
+                    var waived = hits.Where(h => expects.Contains(h.Sentinel)).ToList();
+                    hits = hits.Except(waived).ToList();
+                    left.AddRange(Sentinels.Hits(guarded, guardedAfter, waived).Select(h => $"{Sentinels.Words(h.Sentinel)}: {h.After}"));
+                    left.Add("the app may be only partly installed or removed; check it in Settings, Apps");
+                }
+            }
             for (int i = 0; i < touches.Count; i++) PutBack(states, touches[i], before[i], Path.Combine(dir, $"{i}.bin"), left);
             if (hits.Count > 0) left.AddRange(GuardBack(watch, guarded, guardedAfter, hits, touches, moving, verdict.Admin));
             left.AddRange(NotBack(states, touches, before));
             store.DropRecord(id);
-            string? error = ran.TimedOut ? $"The change didn't finish in {RunTimeoutMs / 1000} seconds, so Rig stopped it." : !ran.Ok ? $"The change stopped with an error (exit code {ran.Exit})." : null;
             var rolled = new JsonObject
             {
-                ["outcome"] = "rolledBack", ["result"] = result, ["sentinels"] = new JsonArray(Sentinels.Hits(guarded, guardedAfter, hits).Select(h => (JsonNode)h.ToJson()).ToArray()),
+                ["outcome"] = "rolledBack", ["result"] = result, ["sentinels"] = new JsonArray(hit.Select(h => (JsonNode)h.ToJson()).ToArray()),
                 ["left"] = new JsonArray(left.Distinct().Select(l => (JsonNode)l).ToArray()),
             };
             if (error != null) rolled["error"] = error;
             return rolled;
         }
+        result["alsoChanged"] = new JsonArray(Sentinels.Hits(guarded, guardedAfter, expected).Select(h => (JsonNode)$"The installer also changed {Sentinels.Words(h.Sentinel)}: {h.After}").ToArray());
 
-        store.SaveRecord(id, new JsonObject
+        var record = new JsonObject
         {
-            ["id"] = id, ["person"] = person.Sid, ["admin"] = verdict.Admin, ["at"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ["cmd"] = cmd.ToJson(),
+            ["id"] = id, ["person"] = person.Sid, ["admin"] = verdict.Admin, ["at"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ["step"] = step.ToJson(),
+            ["touches"] = new JsonArray(touches.Select(t => (JsonNode)t.ToJson()).ToArray()),
             ["before"] = new JsonArray(before.Select(s => s?.DeepClone()).ToArray()), ["after"] = new JsonArray(after.Select(s => s?.DeepClone()).ToArray()),
             ["restorePoint"] = point?.DeepClone(),
-        });
-        var undo = new JsonObject { ["kind"] = "command", ["id"] = id };
-        if (cmd.Undo != null) undo["script"] = cmd.Undo;
+        };
+        if (step is NativeOpStep)
+        {
+            record["back"] = made.Back?.DeepClone();
+            record["held"] = check.Held?.DeepClone();
+            record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = meant ?? readAfter };
+        }
+        store.SaveRecord(id, record);
+        var undo = new JsonObject { ["kind"] = step.Kind, ["id"] = id };
+        if (step is CommandStep { Cmd.Undo: string script }) undo["script"] = script;
         if (point != null) undo["restorePoint"] = point;
         undo["outside"] = new JsonArray();
-        undo["fingerprint"] = Fingerprint(after);
+        undo["fingerprint"] = Fingerprint(after, step is NativeOpStep ? meant ?? readAfter : null);
         return new JsonObject { ["outcome"] = "applied", ["result"] = result, ["undo"] = undo };
     }
 
     /// Runs a script stored for the change: with the helper's rights only for a change approved as admin, otherwise as the person.
-    PowerShellHost.Ran RunScript(Person person, bool admin, string dir, string name, string script, bool stopOnError)
+    /// winget is never run with the helper's rights: its check refuses a step that needs them.
+    PowerShellHost.Ran RunScript(Person person, bool admin, string dir, string name, string script, bool stopOnError, int timeoutMs = RunTimeoutMs, string? winget = null)
     {
         string file = Path.Combine(admin ? dir : store.PersonScripts(person.Sid), name);
         try
         {
-            PowerShellHost.Write(file, script, stopOnError);
-            return admin ? PowerShellHost.RunHere(PowerShellHost.Args(file), RunTimeoutMs, store.Empty(), store.Work) : person.Run(file, RunTimeoutMs, store.Empty());
+            PowerShellHost.Write(file, script, stopOnError, admin ? null : winget);
+            return admin ? PowerShellHost.RunHere(PowerShellHost.Args(file), timeoutMs, store.Empty(), store.Work) : person.Run(file, timeoutMs, store.Empty());
         }
         finally { try { File.Delete(file); } catch { } }
     }
@@ -561,15 +795,17 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         return off;
     }
 
-    static string Fingerprint(IEnumerable<JsonNode?> states) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", states.Select(s => TouchStates.Core(s)?.ToJsonString() ?? "null"))))).ToLowerInvariant();
+    /// The state right after a change: each touch as snapshotted and, for a native op, its own line.
+    static string Fingerprint(IEnumerable<JsonNode?> states, string? look) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", states.Select(s => TouchStates.Core(s)?.ToJsonString() ?? "null").Concat(look == null ? [] : [look]))))).ToLowerInvariant();
 
     static bool Same(JsonNode? a, JsonNode? b) => (a?.ToJsonString() ?? "null") == (b?.ToJsonString() ?? "null");
 
     /// Puts one touch back as it was, unless it already is. What it couldn't do goes on `left`.
     static void PutBack(TouchStates states, Touch t, JsonNode? was, string copy, List<string> left)
     {
-        if (was == null) return;
+        // A device is read, never written: its undo script turns it back, and NotBack checks it is.
+        if (was == null || !t.Snapshotted) return;
         try
         {
             if (!Same(states.Read(t), was)) states.Write(t, was, copy);
@@ -582,7 +818,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     JsonObject Undo(string id, bool force)
     {
         var unknown = new JsonObject { ["outcome"] = "unknown" };
-        if (store.Record(id) is not JsonObject rec || Command.From(rec["cmd"], out _) is not Command cmd || rec["undone"] != null) return unknown;
+        if (store.Record(id) is not JsonObject rec || HelperStep.Stored(rec) is not HelperStep step || rec["undone"] != null) return unknown;
         using var person = Person.Find(appPid);
         if (person.Sid != rec["person"]?.ToString()) return unknown;
         bool admin = rec["admin"]?.GetValue<bool>() == true;
@@ -602,9 +838,11 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         }
 
         var states = new TouchStates(person, admin);
-        var touches = cmd.Touches.ToList();
+        // A command's touches are part of it. A native op's came from its check when it ran, and are kept with the record.
+        var touches = step is CommandStep { Cmd: var cmd } ? cmd.Touches.ToList() : (rec["touches"] as JsonArray ?? []).Select(Command.TouchOf).OfType<Touch>().ToList();
         var before = rec["before"]!.AsArray().ToList();
         var after = rec["after"]!.AsArray().ToList();
+        if (before.Count != touches.Count || after.Count != touches.Count) return unknown;
         var failed = new List<string>();
         var changed = new List<string>();
         for (int i = 0; i < touches.Count; i++)
@@ -615,8 +853,20 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             // Still as Rig left it, or already back, is Rig's to put back. Anything else was changed since.
             if (!TouchStates.SameCore(now, after[i]) && !TouchStates.SameCore(now, before[i])) changed.Add(TouchStates.Name(touches[i]));
         }
+        string? lookBefore = rec["look"]?["before"]?.ToString();
+        var held = rec["held"] as JsonObject;
+        if (step is NativeOpStep)
+        {
+            var (now, unread) = Look(person, step, held);
+            if (unread != null) failed.Add($"what this changed ({unread.TrimEnd('.')})");
+            else if (now != rec["look"]?["after"]?.ToString() && now != lookBefore) changed.Add("what this changed");
+        }
         if (changed.Count > 0 && !force) return new JsonObject { ["outcome"] = "drifted", ["changed"] = new JsonArray(changed.Select(c => (JsonNode)c).ToArray()) };
         if (failed.Count > 0) return Failed($"Rig couldn't read everything this changed, so it put nothing back: {string.Join("; ", failed)}.");
+
+        var recheck = Check(step, held: held);
+        string? winget = WingetFor(person, recheck.Verdict.Commands, out string? noWinget);
+        if (noWinget != null) return Failed($"{noWinget} Nothing was put back.");
 
         string dir = store.RecordDir(id);
         var stuck = new List<string>();
@@ -627,41 +877,70 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         }
         Restore();
 
+        // The way back was approved with the step: a command's undo script, a native op's own Undo. It runs with the
+        // rights the change ran with, never more, and between readings of the never-list places like the change itself.
         var left = new List<string>();
-        string? scriptProblem = null;
-        if (cmd.Undo != null)
+        string? backProblem = null;
+        Func<Made>? back = null;
+        bool stopped = false;
+        var check = step is CommandStep { Cmd.Undo: null } ? null : recheck;
+        switch (check?.Step)
         {
-            // The undo script was approved with the command. It runs with the rights the change ran with, never more,
-            // and between readings of the never-list places like the change itself.
-            var (verdict, writes) = Check(cmd);
-            if (!verdict.Allowed || (verdict.Admin && !admin)) scriptProblem = "Rig's rules no longer allow the undo script, so it wasn't run";
-            else if (OtherAccount(admin, Person.Mine(), person.Sid, cmd, writes) != null) scriptProblem = "the undo script would run as another account, so it wasn't run";
-            else
-            {
-                var watch = new Sentinels(person, store.Work);
-                var (guarded, moving) = watch.Baseline();
-                var ran = RunScript(person, admin, dir, id + "-undo.ps1", cmd.Undo, stopOnError: false);
-                var guardedAfter = watch.Read();
-                var hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
-                if (hits.Count > 0)
+            case null:
+                if (check != null) backProblem = "Rig's rules no longer allow this change's own way back, so it wasn't run";
+                break;
+            case CommandStep { Cmd.Undo: string script } c:
+                if (check.Verdict.Admin && !admin) backProblem = "Rig's rules no longer allow the undo script, so it wasn't run";
+                else if (OtherAccount(admin, Person.Mine(), person.Sid, c.Cmd, check.Writes) != null) backProblem = "the undo script would run as another account, so it wasn't run";
+                else back = () =>
                 {
-                    var notBack = GuardBack(watch, guarded, guardedAfter, hits, touches, moving, admin).ToList();
-                    foreach (var h in Sentinels.Hits(guarded, guardedAfter, hits)) left.Add($"the undo script changed a protected place ({Sentinels.Words(h.Sentinel)}), so Rig put it back");
-                    failed.AddRange(notBack);
-                }
-                if (!ran.Ok) scriptProblem = ran.TimedOut ? "the undo script didn't finish" : $"the undo script stopped with an error: {ran.Printed.Split('\n')[0].Trim()}";
-                // The snapshot has the last word on what it covers.
-                Restore();
+                    var ran = RunScript(person, admin, dir, id + "-undo.ps1", script, stopOnError: false, RunRules.TimeoutMs(check.Verdict.Commands, "undo", RunTimeoutMs), winget);
+                    return new Made(ran.Ok, ran.TimedOut, ran.Printed, ran.Ok ? null : ran.TimedOut ? "the undo script didn't finish" : $"the undo script stopped with an error: {ran.Printed.Split('\n')[0].Trim()}");
+                };
+                break;
+            case NativeOpStep native:
+                if (native.Hash() != step.Hash()) backProblem = "Rig's rules no longer allow this change's own way back, so it wasn't run";
+                else if (rec["back"] is not JsonObject kept) backProblem = "Rig has no note of how to put this back";
+                else back = () =>
+                {
+                    var said = Ask(person, "undo", native, held, kept);
+                    return new Made(said.Ok, said.TimedOut, "", said.Ok ? null : $"Rig's own way back didn't finish ({said.Error.TrimEnd('.')})", Stopped: said.Stopped);
+                };
+                break;
+        }
+        if (back != null)
+        {
+            var watch = new Sentinels(person, store.Work);
+            var (guarded, moving) = watch.Baseline();
+            var ran = back();
+            stopped = ran.Stopped;
+            var guardedAfter = watch.Read();
+            // What an uninstall is expected to take away with the app (the rules' `expects`) stays as it left it, and is listed.
+            var expects = RunRules.Expects(check?.Verdict.Commands ?? [], "undo");
+            var all = Sentinels.Differences(guarded, guardedAfter, touches, moving);
+            var hits = all.Where(h => !expects.Contains(h.Sentinel)).ToList();
+            left.AddRange(Sentinels.Hits(guarded, guardedAfter, all.Except(hits).ToList()).Select(h => $"the uninstall also changed {Sentinels.Words(h.Sentinel)}: {h.After}"));
+            if (hits.Count > 0)
+            {
+                var notBack = GuardBack(watch, guarded, guardedAfter, hits, touches, moving, admin).ToList();
+                foreach (var h in Sentinels.Hits(guarded, guardedAfter, hits)) left.Add($"the undo changed a protected place ({Sentinels.Words(h.Sentinel)}), so Rig put it back");
+                failed.AddRange(notBack);
             }
+            backProblem = ran.Error;
+            // The snapshot has the last word on what it covers.
+            Restore();
         }
 
         failed.AddRange(stuck);
         failed.AddRange(NotBack(states, touches, before));
-        // Without a snapshot of everything, the undo script was the only way back for the rest.
-        if (scriptProblem != null && touches.Any(t => !t.Snapshotted)) failed.Add(scriptProblem);
+        // Without a snapshot of everything, the step's own way back was the only one for the rest.
+        if (backProblem != null && (step is NativeOpStep || touches.Any(t => !t.Snapshotted))) failed.Add(backProblem);
+        // After Stop nothing reads the app's window again.
+        var (printed, unreadNow) = stopped ? ("", null) : Look(person, step, held, winget);
+        if (step is NativeOpStep && failed.Count == 0 && (unreadNow != null || printed != lookBefore)) failed.Add("what this changed isn't back to how it was");
         if (failed.Count > 0) return Failed($"Rig couldn't put everything back: {string.Join("; ", failed.Distinct())}.");
         rec["undone"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         store.SaveRecord(id, rec);
-        return new JsonObject { ["outcome"] = "undone", ["printed"] = Read(person, cmd.Read), ["left"] = new JsonArray(left.Select(d => (JsonNode)d).ToArray()) };
+        return new JsonObject { ["outcome"] = "undone", ["printed"] = printed, ["left"] = new JsonArray(left.Select(d => (JsonNode)d).ToArray()) };
     }
 }

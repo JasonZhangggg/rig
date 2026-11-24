@@ -37,6 +37,76 @@ static partial class Native
         finally { CloseHandle(p); }
     }
 
+    /// The integrity level a process runs at (see Integrity), or 0 when Windows won't say.
+    public static int ProcessIntegrity(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return 0;
+        try
+        {
+            if (!OpenProcessToken(p, TOKEN_QUERY, out var t)) return 0;
+            try { return Integrity(t); }
+            finally { CloseHandle(t); }
+        }
+        finally { CloseHandle(p); }
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, System.Text.StringBuilder name, ref int size);
+
+    /// The full path of the program a process runs, or null when Windows won't say.
+    public static string? ProcessImage(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return null;
+        try
+        {
+            var name = new System.Text.StringBuilder(1024);
+            int size = name.Capacity;
+            return QueryFullProcessImageNameW(p, 0, name, ref size) ? name.ToString(0, size) : null;
+        }
+        finally { CloseHandle(p); }
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern int GetPackageFamilyName(IntPtr process, ref uint length, System.Text.StringBuilder? name);
+
+    /// The package a process runs as (its family name, which names the publisher), "" when it runs as none, or null when
+    /// Windows won't say.
+    public static string? PackageFamily(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return null;
+        try
+        {
+            uint length = 0;
+            int got = GetPackageFamilyName(p, ref length, null);
+            if (got == 15700) return "";
+            if (got != 122 || length is 0 or > 1024) return null;
+            var name = new System.Text.StringBuilder((int)length);
+            return GetPackageFamilyName(p, ref length, name) == 0 ? name.ToString() : null;
+        }
+        finally { CloseHandle(p); }
+    }
+
+    // ----- How much a token may do -----
+    const int TokenIntegrityLevelClass = 25;
+    public const int STD_OUTPUT_HANDLE = -11, MediumIntegrity = 0x2000, HighIntegrity = 0x3000;
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr GetStdHandle(int which);
+
+    /// A token's integrity level: 0x2000 for an everyday program, 0x3000 with admin rights in force, 0x4000 for the system.
+    /// 0 when Windows won't say.
+    public static int Integrity(IntPtr token)
+    {
+        GetTokenInformation(token, TokenIntegrityLevelClass, IntPtr.Zero, 0, out int size);
+        if (size <= 0) return 0;
+        IntPtr buf = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!GetTokenInformation(token, TokenIntegrityLevelClass, buf, size, out _)) return 0;
+            return int.TryParse(new SecurityIdentifier(Marshal.ReadIntPtr(buf)).Value.Split('-')[^1], out int level) ? level : 0;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
     // ----- Who owns what this process makes -----
     const uint TOKEN_ADJUST_DEFAULT = 0x0080;
     const int TokenOwnerClass = 4;

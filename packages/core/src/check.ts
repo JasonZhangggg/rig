@@ -10,9 +10,9 @@ import type { Allowed, FoundCommand, Refusal, Refused, Tier, Verdict } from "./c
 
 export type ScriptUse = "read" | "run" | "undo";
 
-interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[] }
-interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string }
-interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean }
+interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[]; single?: boolean; fit?: Record<string, string>; use?: ScriptUse[] }
+interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string; undoes?: string[] }
+interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean; bare?: boolean }
 interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; renames?: string[]; leaves?: boolean; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
 interface Entry extends Outcome { name: string; exe?: boolean; literal?: boolean; blocks?: boolean; read?: Form[]; when?: (Match & Outcome)[]; targets?: Targets }
 interface TextRule { says: string; contains: string[] }
@@ -40,6 +40,7 @@ interface Rules {
   aliases: Record<string, string>;
   neverText: (TextRule & { applies: "any" | "change" })[];
   protectText: TextRule[];
+  fileEdit: { formats: Record<string, string[]>; never: TextRule[]; tier3: TextRule[]; at: string[]; iniValue: string[]; hidden: string[] };
   commands: Entry[];
 }
 
@@ -125,27 +126,65 @@ function valuesAfter(shown: Arg[], params: string[]): Arg[] {
   return out;
 }
 
-function matches(m: Match, call: Call, strict: boolean, exe: boolean): boolean {
+function matches(m: Match, call: Call, use: ScriptUse, strict: boolean, exe: boolean): boolean {
+  if (m.use && !m.use.includes(use)) return false;
   const shown = m.after ? valuesAfter(shownOf(call.args), m.after) : shownOf(call.args);
   const t = shown.map((a) => fold(a.text)), unseen = strict && shown.some((a) => a.kind === "hidden");
   const list = (xs?: string[]) => xs?.map(fold);
   const starts = list(m.starts), has = list(m.has), prefix = list(m.prefix), contains = list(m.contains);
   if (m.piped && !call.piped) return false;
   if (m.after && !shown.length) return false;
-  if (starts && !starts.every((want, k) => t[k] === want || (strict && shown[k]?.kind === "hidden"))) return false;
-  if (has && !unseen && !t.some((x) => has.includes(x))) return false;
+  // A cmdlet's parameter is only ever a parameter: a quoted '-Program' is a value.
+  const named = (x: string, k: number) => exe || !x.startsWith("-") || isParam(shown[k]);
+  if (starts && !starts.every((want, k) => (t[k] === want && named(want, k)) || (strict && shown[k]?.kind === "hidden"))) return false;
+  if (has && !unseen && !t.some((x, k) => has.includes(x) && named(x, k))) return false;
   // A program gets its arguments as text, so a hidden one may be anything; a cmdlet's hidden argument can only be a value.
   const prefixUnseen = unseen && (exe || !!m.after);
   const fitsPrefix = (x: string, a: Arg) => prefix!.some((p) => x.startsWith(p) || (/^[-/]/.test(x) && abbreviates(headOf(a), p)));
   if (prefix && !prefixUnseen && !shown.some((a, k) => fitsPrefix(t[k], a))) return false;
   if (contains && !unseen && !t.some((x) => contains.some((p) => x.includes(p)))) return false;
+  if (m.params && !fitsParams(m.params, call.args, starts?.length ?? 0)) return false;
+  if (m.single && !single(shownOf(call.args), starts?.length ?? 0)) return false;
+  if (m.fit && !fitsValues(m.fit, shownOf(call.args))) return false;
   return true;
+}
+
+/** No list and nothing positional: every argument after `starts` that isn't a parameter is the one value right after a parameter with no value after its colon. */
+function single(shown: Arg[], skip: number): boolean {
+  return shown.every((a, k) => k < skip || isParam(a) || (k > 0 && isParam(shown[k - 1]) && !inlineOf(shown[k - 1])));
+}
+
+/** What the parameter at `k` is given: the text after its colon, then each argument that isn't a parameter right after it (a list). */
+function givenTo(shown: Arg[], k: number): string[] {
+  const inline = inlineOf(shown[k]), out = inline ? [inline] : [];
+  for (let j = k + 1; j < shown.length && !isParam(shown[j]); j++) out.push(shown[j].text);
+  return out;
+}
+
+/** Every value given to a listed parameter matches its pattern in full. */
+function fitsValues(fit: Record<string, string>, shown: Arg[]): boolean {
+  return shown.every((a, k) => {
+    if (!isParam(a)) return true;
+    const pattern = Object.entries(fit).find(([p]) => abbreviates(headOf(a), fold(p)))?.[1];
+    return pattern === undefined || givenTo(shown, k).every((v) => new RegExp(`^(?:${pattern})$`).test(fold(v)));
+  });
+}
+
+/** A positive grammar for a rule that allows: nothing hidden, and every switch after `starts` is listed, written in full. */
+function fitsParams(params: string[], args: Arg[], skip: number): boolean {
+  const shown = shownOf(args), listed = params.map(fold);
+  if (shown.some((a) => a.kind === "hidden")) return false;
+  return shown.slice(skip).every((a) => {
+    const x = fold(a.text);
+    return !((x.startsWith("-") || x.startsWith("/")) && x.length > 1) || listed.includes(x.split(":")[0]);
+  });
 }
 
 /** Null when the arguments fit the read form, else the argument that doesn't. */
 function offForm(f: Form, args: Arg[]): string | null {
   const shown = shownOf(args), t = shown.map((a) => fold(a.text)), starts = (f.starts ?? []).map(fold);
   for (let k = 0; k < starts.length; k++) if (shown[k]?.kind === "hidden" || t[k] !== starts[k]) return shown[k]?.text || "its arguments";
+  if (f.bare && shown.length > starts.length) return shown[starts.length].text || "an argument it can't see";
   if (f.has && !f.has.some((h) => t.includes(h))) return `no ${f.has[0]}`;
   if (f.free) return shown.some((a) => a.kind === "hidden") ? "an argument it can't see" : null;
   const params = f.params ?? [], prefix = f.prefix ?? [];
@@ -203,8 +242,13 @@ function underRoot(place: string, r: ReadRoot): boolean {
 /** What one change in a script acts on. `none`: something Rig can't name, so no touch can cover it. */
 export interface Write { kind: "path" | "service" | "none"; places: string[] }
 
+/** An undo command that only takes back the run's own command of one of `verbs` with the same `key` (the arguments after the verb, up to the app's id). */
+export interface Undoes { name: string; verbs: string[]; key: string[] }
+/** A command a script runs, by its rules name, with its written-out arguments folded. */
+export interface Used { name: string; args: string[] }
+
 /** `joined`: the places a command's plain names make, held to the text rules like the script itself. */
-interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; stop?: { words: string; why: Refusal } }
+interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; undoes?: Undoes; stop?: { words: string; why: Refusal } }
 const NONE: Write = { kind: "none", places: [] };
 
 /** Refuses what the targets of a file, registry or service command can't be, and says what it writes to. */
@@ -290,7 +334,7 @@ function judge(call: Call, use: ScriptUse): Judged {
     return { found: found(`${name}: ${R.verbSays[tier]}`, tier), admin: tier >= 2, ...(tier > 0 ? { write: NONE } : {}) };
   }
   if (entry.blocks && call.args.some((a) => a.kind === "word" || a.kind === "hidden")) return construct("member-by-name", name);
-  const rule = entry.when?.find((w) => matches(w, call, !!(w.never || w.refused || w.tier === 3), !!entry.exe));
+  const rule = entry.when?.find((w) => matches(w, call, use, !!(w.never || w.refused || w.tier === 3), !!entry.exe));
   const block = (o: Outcome) => (o.never ? stop(`Rig won't run ${name}: it ${o.never}.`, "never") : o.refused ? stop(`Rig won't run ${name}: it ${o.refused}.`) : null);
   if (rule && (rule.never || rule.refused)) return block(rule)!;
   if (remote) return remote;
@@ -310,7 +354,11 @@ function judge(call: Call, use: ScriptUse): Judged {
     if (entry.literal && call.args.some((a) => a.kind === "hidden")) return construct("not-literal", name, "notRead");
     return pass({ says: entry.says }, 0);
   }
-  if (rule) return done(pass(rule, rule.tier ?? 2, write));
+  if (rule) {
+    const j = done(pass(rule, rule.tier ?? 2, write));
+    const key = shownOf(call.args).slice(1, (rule.starts?.length ?? 0) + 1).map((a) => fold(a.text));
+    return rule.undoes ? { ...j, undoes: { name, verbs: rule.undoes.map(fold), key } } : j;
+  }
   if (reads) return done(pass({ says: entry.says }, 0));
   return block(entry) ?? done(pass(entry, entry.tier ?? 2, write));
 }
@@ -366,9 +414,9 @@ function wroteProgram(calls: Call[], judged: Judged[], finds: Find[]): string | 
 }
 
 /** The verdict on one script, with what each change in it writes to. */
-export function inspectScript(script: string, use: ScriptUse): { verdict: Verdict; writes: Write[] } {
-  const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []): { verdict: Refused; writes: Write[] } =>
-    ({ verdict: { status: "refused", refused, why, commands, rulesVersion }, writes: [] });
+export function inspectScript(script: string, use: ScriptUse): { verdict: Verdict; writes: Write[]; uses: Used[]; undoes: Undoes[] } {
+  const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []) =>
+    ({ verdict: { status: "refused", refused, why, commands, rulesVersion } as Refused, writes: [], uses: [], undoes: [] });
   if (typeof script !== "string" || !script.trim()) return refuse(`${R.constructs.empty}.`);
   if (script.length > R.maxLength) return refuse(`${R.constructs["too-long"]}.`);
   if (DISGUISED.test(script)) return refuse(`${R.constructs.characters}.`);
@@ -410,10 +458,41 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
   const writes = use === "read" ? [] : [...judged.flatMap((j) => (j.write ? [j.write] : [])),
     ...parsed.finds.filter((f) => f.what === "redirect").map((f): Write => ({ kind: "path", places: [placeOf(f.detail)] }))];
   const allowed: Allowed = { status: "allowed", tier, admin: use !== "read" && (judged.some((j) => j.admin) || [script, ...joined].some(textNeedsAdmin)), commands, reasons, rulesVersion };
-  return { verdict: allowed, writes };
+  const uses = parsed.calls.map((c, k): Used => ({ name: judged[k].found.name, args: shownOf(c.args).map((a) => fold(a.text)) }));
+  return { verdict: allowed, writes, uses, undoes: judged.flatMap((j) => (j.undoes ? [j.undoes] : [])) };
 }
+
+/** The undo commands that don't take back a command the run itself has. */
+export const unpaired = (undoes: Undoes[], uses: Used[]) =>
+  undoes.filter((u) => !uses.some((c) => c.name === u.name && u.verbs.includes(c.args[0]) && u.key.every((x, k) => c.args[k + 1] === x)));
 
 /** The verdict on one script. A read is tier 0 or refused; a change is tier 2 or 3 or refused. */
 export function checkScript(script: string, use: ScriptUse): Verdict {
   return inspectScript(script, use).verdict;
 }
+
+/** A file named by its full local path, written the way Windows writes it: a drive letter, only \\ between parts, no . or .. part and
+ * no part ending in a dot or a space (Windows drops those), no short names such as PROGRA~1, no wildcards, nothing on another computer. */
+export const localFile = (text: string) =>
+  /^[a-z]:\\/i.test(text) && !text.includes("\\\\") && !text.includes("/") && !/[*?[]/.test(text) && !/[a-z0-9]~\d/i.test(text) &&
+  text.slice(3).split("\\").every((part, i, all) => (part === "" ? i === all.length - 1 : part !== "." && part !== ".." && !/[. ]$/.test(part)));
+
+/** A program, script or shortcut by its name's ending, which Rig never writes. */
+export const programFile = (text: string) => R.paths.programs.some((p) => placeOf(text).endsWith(p));
+
+/** Characters from hex ranges as the rules write them. */
+const charsOf = (ranges: string[]) => new RegExp(`[${ranges.map((r) => r.split("-").map((h) => `\\u${h.padStart(4, "0")}`).join("-")).join("")}]`);
+const fileEditChars = { at: charsOf(R.fileEdit.at), iniValue: charsOf(R.fileEdit.iniValue), hidden: charsOf(R.fileEdit.hidden) };
+/** Whether text holds a character a file edit refuses: in an `at` part, an INI value, or (`hidden`) any key or value. */
+export const fileEditRefuses = (text: string, where: keyof typeof fileEditChars) => fileEditChars[where].test(text);
+
+/** The formats a file edit may use on this file, by its name's ending, and every ending Rig edits. */
+export function fileEditFormats(path: string): { formats: string[]; ends: string[] } {
+  const name = placeOf(path).split("\\").pop() ?? "";
+  const end = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+  const formats = Object.entries(R.fileEdit.formats).filter(([, ends]) => ends.includes(end)).map(([f]) => f);
+  return { formats, ends: [...new Set(Object.values(R.fileEdit.formats).flat())] };
+}
+
+/** The words of the file edit rule this path falls under: `never` refuses it, `tier3` makes it tier 3. */
+export const fileEditPathRule = (path: string, list: "never" | "tier3") => R.fileEdit[list].find((r) => r.contains.some((c) => placeOf(path).includes(fold(c))))?.says ?? null;

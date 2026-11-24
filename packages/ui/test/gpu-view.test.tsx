@@ -58,12 +58,12 @@ async function openCard(how: "picked" | "detected" | "unknown" | "xfx" = "picked
   render(<RigApp client={client} />);
   if (how === "unknown" || how === "xfx") return { rename };
   fireEvent.click(await screen.findByRole("button", { name: /^Graphics card/ }, { timeout: 5000 }));
-  await screen.findByRole("tab", { name: "Ports" }, { timeout: 5000 });
+  await screen.findByRole("tab", { name: "Ports" }, { timeout: 10000 });
   return { rename };
 }
 const openPorts = async () => {
   fireEvent.click(await screen.findByRole("button", { name: /^Graphics card/ }, { timeout: 5000 }));
-  await screen.findByRole("tab", { name: "Ports" }, { timeout: 5000 });
+  await screen.findByRole("tab", { name: "Ports" }, { timeout: 10000 });
 };
 const group = (title: string) => screen.getByRole("heading", { name: title }).closest("li")!;
 

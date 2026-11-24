@@ -14,7 +14,7 @@ using Microsoft.Win32;
 
 namespace Rig.Helper;
 
-public static class CommandSelfTest
+public static partial class CommandSelfTest
 {
     const string Key = @"Software\RigSelftest", RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string UserKey = @"HKCU\Software\RigSelftest", UserPath = @"HKCU:\Software\RigSelftest";
@@ -72,6 +72,7 @@ public static class CommandSelfTest
             Check("running as the person", () => AsPerson(ctx));
             Check("scripts start in an empty folder with a clean environment", () => CleanStart(ctx));
             Check("registry snapshot round trip", () => RegistryRoundTrip(ctx));
+            Check("a device's state for the card", () => DeviceState(ctx));
             Check("registry restore removes the keys a change made", () => RegistryAnchors(ctx));
             Check("file snapshot round trip", () => FileRoundTrip(ctx));
             Check("admin file access refuses links", () => AdminFiles(ctx));
@@ -84,6 +85,16 @@ public static class CommandSelfTest
             Check("a hidden write to the Run key is caught", () => HiddenRunKey(ctx));
             Check("an app running as administrator is refused", () => ElevatedApp(ctx));
             Check("command.read", () => ReadOnly(ctx));
+            Check("a step's fingerprint", StepFingerprint);
+            Check("the native worker runs as the person", () => NativeWorkerRuns(ctx));
+            Check("a native step, applied and undone", () => NativeApplied(ctx));
+            Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
+            foreach (var (name, run) in ScreenSelfTest.Checks(ctx.Rig, ctx.Store)) Check(name, run);
+            FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null, TestOnlyNativeOps = true });
+            Check("a native step whose worker dies after its change may have changed it", () => NativeDied(ctx));
+            Check("a file that changed after its preview is refused", () => FileChanged(ctx));
+            var wingetStore = new CommandStore(root + "-winget", secured: elevated);
+            Winget(Check, new Context(new Commands(wingetStore, app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null }, wingetStore, person, elevated, root + "-winget"));
             Check("HKCU for another account", OtherAccount);
             if (elevated)
             {
@@ -94,6 +105,7 @@ public static class CommandSelfTest
                 Check("a change that needs admin rights", () => NeedsApproval(ctx));
                 Check("services, tasks and accounts a change made are put back", () => NeverPutBack(ctx));
                 Check("a limited app token", () => LimitedToken(ctx));
+                Check("a native step for an app without admin rights", () => NativeLimited(ctx));
             }
             Check("the daily limit", () => Cap(ctx));
         }
@@ -106,10 +118,12 @@ public static class CommandSelfTest
                 person.Dispose();
             }
             try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(root + "-files", recursive: true); } catch { }
+            try { Directory.Delete(root + "-winget", recursive: true); } catch { }
             try { string parent = Path.GetDirectoryName(root)!; if (elevated && !Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent); } catch { }
         }
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
-        return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["appElevation"] = elevation, ["checks"] = checks }, problems);
+        return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["appElevation"] = elevation, ["worker"] = workerSeen, ["checks"] = checks }, problems);
     }
 
     static RegistryKey Hive(Person person, string sub, out string path)
@@ -140,7 +154,7 @@ public static class CommandSelfTest
         if (Native.IsAdmin()) Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\RigSelftest", throwOnMissingSubKey: false);
     }
 
-    const string Skip = "skipped: ";
+    internal const string Skip = "skipped: ";
 
     static bool Is(JsonNode? n, string outcome) => n?["outcome"]?.ToString() == outcome;
 
@@ -157,7 +171,8 @@ public static class CommandSelfTest
             else if (v["step"]?["cmd"] is JsonObject cmd) scripts.AddRange(new[] { "read", "run", "undo" }.Select(k => cmd[k]?.ToString()).OfType<string>());
         }
         var texts = scripts.Where(s => CommandCheck.Precheck(s) == null).Distinct().ToList();
-        var parsed = ctx.Rig.Parse(texts);
+        // In parts, so a slow runner's parser answers each within its time limit.
+        var parsed = texts.Chunk(150).SelectMany(part => ctx.Rig.Parse(part)).ToList();
         var problems = new List<string>();
         if (parsed.Count != texts.Count) problems.Add($"the parser answered for {parsed.Count} of {texts.Count} scripts");
         JsonNode? Parsed(string s) => texts.IndexOf(s) is int i and >= 0 && i < parsed.Count ? parsed[i] : null;
@@ -167,7 +182,12 @@ public static class CommandSelfTest
         {
             string use = v!["as"]!.ToString(), label;
             Verdict got;
-            if (use == "step")
+            if (use == "step" && v["step"]?["kind"]?.ToString() == "native")
+            {
+                got = ctx.Rig.Check(HelperStep.From(v["step"], out string? problem), problem).Verdict;
+                label = $"step ({v["note"]})";
+            }
+            else if (use == "step")
             {
                 var cmd = Command.From(v["step"]?["cmd"], out string? problem);
                 got = CommandCheck.CheckStep(cmd, problem, list => list.Select(Parsed).ToList()).Verdict;
@@ -336,6 +356,18 @@ public static class CommandSelfTest
         using (var k = hive.OpenSubKey(path)!)
             if (k.GetValueKind("Dword") != RegistryValueKind.DWord || unchecked((uint)(int)k.GetValue("Dword")!) != 0xFFFFFFF0) yield return "one value didn't come back with its type";
         if (TouchStates.Show(one, keptOne) != "4294967280") yield return $"the card would show the value as {TouchStates.Show(one, keptOne)}";
+    }
+
+    /// A device touch reads on or off for the card, and a device Windows doesn't have reads as not there.
+    static IEnumerable<string> DeviceState(Context ctx)
+    {
+        var states = new TouchStates(ctx.Person, admin: false);
+        // The root of Windows' device tree is on every PC and is always on.
+        var root = new Touch("device", @"HTREE\ROOT\0", null);
+        if (TouchStates.Show(root, states.Read(root)) != "On") yield return $"the root device read as {TouchStates.Show(root, states.Read(root)) ?? "not there"}";
+        var gone = new Touch("device", @"ROOT\RIG_NOT_THERE\0000", null);
+        if (TouchStates.Show(gone, states.Read(gone)) != null) yield return "a device Windows doesn't have read as there";
+        if (TouchStates.Show(root, JsonNode.Parse("{\"problem\":22}")) != "Off") yield return "a turned off device wouldn't read as off";
     }
 
     static IEnumerable<string> RegistryAnchors(Context ctx)
@@ -683,6 +715,7 @@ public static class CommandSelfTest
             Clean(ctx.Person);
             try { Directory.Delete(probe, recursive: true); } catch { }
             try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(root + "-files", recursive: true); } catch { }
         }
     }
 
@@ -831,13 +864,13 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
     /// its privileges taken away, at medium integrity, as Windows' everyday token for an administrator is.
     static class Limited
     {
-        public static IntPtr Start(string cmd, out int pid, out IntPtr limited)
+        public static IntPtr Start(string cmd, out int pid, out IntPtr limited, bool lua = true)
         {
             IntPtr own = IntPtr.Zero, token = IntPtr.Zero, sid = IntPtr.Zero;
             try
             {
                 if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT, out own)) throw Win("open its own token");
-                if (!CreateRestrictedToken(own, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out token)) throw Win("CreateRestrictedToken");
+                if (!CreateRestrictedToken(own, lua ? DISABLE_MAX_PRIVILEGE | LUA_TOKEN : 0, 0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out token)) throw Win("CreateRestrictedToken");
                 if (!ConvertStringSidToSidW("S-1-16-8192", out sid)) throw Win("ConvertStringSidToSid");
                 var label = new TOKEN_MANDATORY_LABEL { Sid = sid, Attributes = SE_GROUP_INTEGRITY };
                 if (!SetTokenInformation(token, TokenIntegrityLevel, ref label, Marshal.SizeOf<TOKEN_MANDATORY_LABEL>() + GetLengthSid(sid))) throw Win("set medium integrity");
@@ -902,5 +935,248 @@ Remove-LocalUser -Name {TestUser} -ErrorAction SilentlyContinue");
         var a = ctx.Apply(ctx.Preview(Harmless()));
         if (!Is(a, "limit") || !DateTimeOffset.TryParse(a["until"]?.ToString(), out var until) || until <= DateTimeOffset.UtcNow) yield return $"a change past the daily limit wasn't answered limit: {a.ToJsonString()}";
         if (Exists(ctx.Person, Key)) yield return "a change past the daily limit ran";
+        ctx.Rig.TestOnlyNativeOps = true;
+        try
+        {
+            var n = StepApply(ctx.Rig, StepPreview(ctx.Rig, NativeStep("rig-cap")));
+            if (!Is(n, "limit")) yield return $"a native step past the daily limit wasn't answered limit: {n.ToJsonString()}";
+            if (Exists(ctx.Person, Key)) yield return "a native step past the daily limit ran";
+        }
+        finally { ctx.Rig.TestOnlyNativeOps = false; }
+    }
+
+    // ----- Native steps -----
+
+    /// What the worker said of itself, for the self-test's output.
+    static JsonObject? workerSeen;
+
+    static JsonObject NativeStep(string value, bool run = false)
+    {
+        var op = new JsonObject { ["name"] = "selftest", ["value"] = value };
+        if (run) op["run"] = true;
+        return new JsonObject { ["kind"] = "native", ["op"] = op };
+    }
+
+    static JsonNode StepPreview(Commands rig, JsonObject step) => rig.Handle("step.preview", new JsonObject { ["step"] = step.DeepClone() });
+    static JsonNode StepApply(Commands rig, JsonNode preview) => rig.Handle("step.apply", new JsonObject { ["nonce"] = preview["nonce"]?.ToString() });
+    static JsonNode StepUndo(Commands rig, JsonNode applied, bool force = false) => rig.Handle("step.undo", new JsonObject { ["id"] = applied["undo"]?["id"]?.ToString(), ["force"] = force });
+    static NativeOpStep TestOp(string value) => (NativeOpStep)HelperStep.From(NativeStep(value), out _)!;
+
+    static IEnumerable<string> StepFingerprint()
+    {
+        // packages/core/test/check.test.ts holds the same value.
+        string? hash = HelperStep.From(NativeStep("rig", run: true), out _)?.Hash();
+        if (hash != "50bcf6ce4cdf697f2b1132c10add612042fab4e88029143c42eed35ed06afbf6") yield return $"a native step's is {hash}, not the app's";
+        string wrote = HelperStep.Encoded(JsonNode.Parse("""{"b":[1,-2,true,null],"a":"x"}"""));
+        if (wrote != "o2{s1:as1:xs1:ba4[n1;n-2;tz]}") yield return $"a value is written {wrote}";
+        bool fraction;
+        try { HelperStep.Encoded(JsonNode.Parse("1.5")); fraction = true; } catch (RigException) { fraction = false; }
+        if (fraction) yield return "a fraction was fingerprinted";
+        var command = HelperStep.From(new JsonObject { ["kind"] = "command", ["cmd"] = Harmless() }, out _);
+        if (command?.Hash() != Command.From(Harmless(), out _)!.Hash()) yield return "a command step's isn't the command's own";
+        if (HelperStep.Sent("command.preview", new JsonObject { ["cmd"] = Harmless() }, out _)?.Hash() != command?.Hash()) yield return "a command sent the way an older Rig app sends it isn't the same step";
+        if (HelperStep.From(new JsonObject { ["kind"] = "fix", ["call"] = new JsonObject() }, out _) != null) yield return "a fix was taken as a step to approve by nonce";
+    }
+
+    static IEnumerable<string> NativeWorkerRuns(Context ctx)
+    {
+        Clean(ctx.Person);
+        using var me = WindowsIdentity.GetCurrent();
+        int mine = Native.Integrity(me.Token), session = Process.GetCurrentProcess().SessionId;
+        var said = NativeWorker.Ask(ctx.Person, ctx.Store, "preview", TestOp("rig-worker"), null, selfTest: true);
+        workerSeen = new JsonObject { ["ok"] = said.Ok, ["integrity"] = said.Integrity, ["session"] = said.Session, ["personIntegrity"] = ctx.Person.Integrity, ["helperIntegrity"] = mine, ["helperSession"] = session };
+        if (!said.Ok) { yield return $"the worker didn't answer: {said.Error}"; yield break; }
+        if (said.Result["now"]?.ToString() != "Not set") yield return $"the worker read {said.Result.ToJsonString()}";
+        if (said.Integrity == 0 || said.Integrity != ctx.Person.Integrity) yield return $"the worker ran at integrity 0x{said.Integrity:x}, and the person's programs run at 0x{ctx.Person.Integrity:x}";
+        if (said.Session != session) yield return $"the worker ran in session {said.Session}, not the helper's {session}";
+        // Outside the self-test the worker doesn't know the test op, and with admin rights in force it does nothing at all.
+        var real = NativeWorker.Ask(ctx.Person, ctx.Store, "apply", TestOp("rig-worker"), null, selfTest: false);
+        workerSeen["outsideSelfTest"] = real.Error;
+        if (real.Ok || real.Error is not (NativeWorker.NoDesktop or Commands.AppElevated or Commands.UnknownOp)) yield return $"the worker took the test op outside the self-test: {real.Error}";
+        if (Exists(ctx.Person, Key)) yield return "the worker made the test op's change outside the self-test";
+    }
+
+    static int Counted(Context ctx)
+    {
+        try { return (int)Json.Num(JsonNode.Parse(File.ReadAllText(Path.Combine(ctx.Store.Root, "cap.json")))?["count"], 0); }
+        catch (IOException) { return 0; }
+    }
+
+    static IEnumerable<string> NativeApplied(Context ctx)
+    {
+        Clean(ctx.Person);
+        var rig = ctx.Rig;
+        var step = NativeStep("rig-1");
+        var unknown = StepPreview(rig, step);
+        if (!Is(unknown, "refused") || unknown["verdict"]?["refused"]?.ToString() != Commands.UnknownOp) yield return $"the test op was known outside the self-test's own switch: {unknown.ToJsonString()}";
+        rig.TestOnlyNativeOps = true;
+        try
+        {
+            if (rig.Handle("step.check", new JsonObject { ["step"] = step.DeepClone() })["verdict"]?["status"]?.ToString() != "allowed") yield return "step.check refused it";
+            var p = StepPreview(rig, step);
+            if (!Is(p, "ready") || p["nonce"] == null || Json.Num(p["verdict"]?["tier"], 0) != 2 || p["verdict"]?["admin"]?.GetValue<bool>() != false || p["read"]?.ToString() != "Not set")
+            {
+                yield return $"the preview wasn't ready: {p.ToJsonString()}";
+                yield break;
+            }
+            if (Exists(ctx.Person, Key)) yield return "a preview changed the registry";
+            if (p["hash"]?.ToString() != TestOp("rig-1").Hash()) yield return $"the preview didn't give the stored step's fingerprint: {p["hash"]}";
+
+            // The stored step is swapped for another after the preview.
+            string file = Path.Combine(ctx.Store.Root, "pending", p["nonce"] + ".json");
+            var stored = JsonNode.Parse(File.ReadAllText(file))!;
+            stored["step"]!["op"]!["value"] = "rig-swapped";
+            File.WriteAllText(file, stored.ToJsonString());
+            var swapped = StepApply(rig, p);
+            if (!Is(swapped, "refused") || Exists(ctx.Person, Key)) yield return $"a step changed after its preview wasn't refused, or ran: {swapped.ToJsonString()}";
+            if (!Is(StepApply(rig, p), "expired")) yield return "the nonce of a changed step still worked";
+
+            int counted = Counted(ctx);
+            p = StepPreview(rig, step);
+            var a = StepApply(rig, p);
+            if (!Is(a, "applied")) { yield return $"it wasn't applied: {a.ToJsonString()}"; yield break; }
+            if (Value(ctx.Person, Key, SelftestOp.Value) as string != "rig-1") yield return "the worker didn't write the value";
+            if (a["undo"]?["kind"]?.ToString() != "native" || a["result"]?["before"]?.ToString() != "Not set" || a["result"]?["after"]?.ToString() != "rig-1") yield return $"apply didn't report the state before and after: {a.ToJsonString()}";
+            if (Counted(ctx) != counted + 1) yield return $"the daily count went from {counted} to {Counted(ctx)}";
+            if (!Is(StepApply(rig, p), "expired") || !Is(ctx.Apply(p), "expired")) yield return "a nonce worked twice";
+
+            using (var hive = Hive(ctx.Person, Key, out string path))
+            using (var k = hive.CreateSubKey(path, writable: true)!) k.SetValue(SelftestOp.Value, "someone-else");
+            var u = StepUndo(rig, a);
+            if (!Is(u, "drifted") || Value(ctx.Person, Key, SelftestOp.Value) as string != "someone-else") yield return $"undo didn't stop at a later change: {u.ToJsonString()}";
+            var f = StepUndo(rig, a, force: true);
+            if (!Is(f, "undone") || f["printed"]?.ToString() != "Not set" || Exists(ctx.Person, Key)) yield return $"undo with force didn't put it back: {f.ToJsonString()}";
+            if (!Is(StepUndo(rig, a), "unknown")) yield return "a change could be undone twice";
+
+            // A command goes the same way under the new names.
+            var c = StepApply(rig, StepPreview(rig, new JsonObject { ["kind"] = "command", ["cmd"] = Harmless() }));
+            if (!Is(c, "applied") || c["undo"]?["kind"]?.ToString() != "command" || Value(ctx.Person, Key, "Flag") is not 1) yield return $"a command sent as a step wasn't applied: {c.ToJsonString()}";
+            else if (!Is(StepUndo(rig, c), "undone") || Exists(ctx.Person, Key)) yield return "a command sent as a step wasn't undone";
+        }
+        finally
+        {
+            rig.TestOnlyNativeOps = false;
+            Clean(ctx.Person);
+        }
+    }
+
+    static IEnumerable<string> NativeRunKey(Context ctx)
+    {
+        Clean(ctx.Person);
+        var rig = ctx.Rig;
+        rig.TestOnlyNativeOps = true;
+        try
+        {
+            var p = StepPreview(rig, NativeStep("rig-2", run: true));
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
+            var a = StepApply(rig, p);
+            if (!Is(a, "rolledBack") || a["sentinels"] is not JsonArray hit || !hit.Any(h => h?["sentinel"]?.ToString() == "run" && h["after"]?.ToString().Contains("rig-selftest-native") == true))
+                yield return $"the write wasn't reported as a Run key hit: {a.ToJsonString()}";
+            if (a["left"] is not JsonArray { Count: 0 }) yield return $"the rollback reported something left over: {a["left"]?.ToJsonString()}";
+            if (Value(ctx.Person, RunKey, "RigSelftest") != null) yield return "the Run value was left behind";
+            if (Exists(ctx.Person, Key)) yield return "the op's own change was left behind";
+        }
+        finally
+        {
+            rig.TestOnlyNativeOps = false;
+            Clean(ctx.Person);
+        }
+    }
+
+    static IEnumerable<string> NativeDied(Context ctx)
+    {
+        Clean(ctx.Person);
+        var rig = ctx.Rig;
+        string cap = Path.Combine(ctx.Store.Root, "cap.json");
+        string? count = File.Exists(cap) ? File.ReadAllText(cap) : null;
+        rig.TestOnlyNativeOps = true;
+        try
+        {
+            var step = NativeStep("rig-3");
+            step["op"]!["die"] = true;
+            var p = StepPreview(rig, step);
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
+            var a = StepApply(rig, p);
+            if (!Is(a, "rolledBack") || a["left"] is not JsonArray left || !left.Any(l => l?.ToString().StartsWith("This may still be changed", StringComparison.Ordinal) == true && l.ToString().Contains("rig-3")))
+                yield return $"a worker that died after its change wasn't reported as having maybe changed it: {a.ToJsonString()}";
+        }
+        finally
+        {
+            rig.TestOnlyNativeOps = false;
+            Clean(ctx.Person);
+            // Later checks need room under the daily limit.
+            if (count != null) File.WriteAllText(cap, count);
+        }
+    }
+
+    static IEnumerable<string> FileChanged(Context ctx)
+    {
+        // A long path: a short one (RUNNER~1) is refused by the check.
+        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RigSelftest-" + CommandStore.NewId());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string file = Path.Combine(dir, "driver.inf");
+            File.WriteAllText(file, "one");
+            var cmd = new JsonObject
+            {
+                ["does"] = "Writes a test file.",
+                ["read"] = $"Get-FileHash -LiteralPath '{file}' -Algorithm SHA256 | Format-List -Property Hash",
+                ["run"] = $"Set-Content -LiteralPath '{file}' -Value 'two'",
+                ["undo"] = $"Set-Content -LiteralPath '{file}' -Value 'one'",
+                ["touches"] = new JsonArray(new JsonObject { ["kind"] = "file", ["path"] = file }),
+            };
+            var p = ctx.Preview(cmd);
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
+            File.WriteAllText(file, "swapped");
+            var a = ctx.Apply(p);
+            if (!Is(a, "refused") || a["verdict"]?["refused"]?.ToString().Contains("changed since you looked at it") != true) yield return $"a file that changed after its preview wasn't refused: {a.ToJsonString()}";
+            if (File.ReadAllText(file) != "swapped") yield return "the change ran on a file that changed after its preview";
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch { } }
+    }
+
+    /// The Rig app's token is the person's everyday one: the worker must run at its level, below the helper's own.
+    static IEnumerable<string> NativeLimited(Context ctx)
+    {
+        var tried = new List<string>();
+        var found = new List<string>();
+        bool ran = false;
+        // The token Windows gives an everyday app first; then, for runners that start nothing with that one, the self-test's
+        // own token lowered to the same level.
+        foreach (bool lua in new[] { true, false })
+        {
+            if (ran) break;
+            string what = lua ? "a limited token" : "its own token at medium integrity";
+            IntPtr app = IntPtr.Zero, token = IntPtr.Zero;
+            int pid = 0;
+            try { app = Limited.Start(Path.Combine(Environment.SystemDirectory, "PING.EXE") + " -n 600 127.0.0.1", out pid, out token, lua); }
+            catch (InvalidOperationException e) { tried.Add($"{what}: {e.Message}"); continue; }
+            try
+            {
+                Person person;
+                try { person = Person.Find(pid); }
+                catch (RigException e) { tried.Add($"{what}: {e.Message}"); continue; }
+                using var mine = person;
+                var said = NativeWorker.Ask(person, ctx.Store, "preview", TestOp("rig-limited"), null, selfTest: true, timeoutMs: 20_000);
+                if (!said.Ok) { tried.Add($"{what}: {said.Error}"); continue; }
+                ran = true;
+                workerSeen ??= [];
+                workerSeen["withoutAdminRights"] = new JsonObject { ["token"] = what, ["integrity"] = said.Integrity, ["personIntegrity"] = person.Integrity };
+                if (said.Integrity != Native.MediumIntegrity) found.Add($"with {what} as the app's, the worker ran at integrity 0x{said.Integrity:x}");
+                var rig = new Commands(ctx.Store, pid, restorePoints: false) { TestOnlyElevatedApp = false, TestOnlyNativeOps = true };
+                Clean(ctx.Person);
+                var a = StepApply(rig, StepPreview(rig, NativeStep("rig-limited")));
+                if (!Is(a, "applied") || Value(ctx.Person, Key, SelftestOp.Value) as string != "rig-limited") found.Add($"with {what} the step wasn't applied: {a.ToJsonString()}");
+                else if (!Is(StepUndo(rig, a), "undone") || Exists(ctx.Person, Key)) found.Add($"with {what} the step wasn't undone");
+            }
+            finally
+            {
+                Limited.Stop(app, token);
+                Clean(ctx.Person);
+            }
+        }
+        if (!ran) found.Add($"{Skip}this runner starts no worker with a medium-integrity token ({string.Join("; ", tried)})");
+        return found;
     }
 }

@@ -85,25 +85,33 @@ public static class PowerShellHost
     /// A script behind one line of Rig's own: PowerShell adds the person's module folder back when it starts, so the line pins
     /// the module path again, loads Windows' own core modules by their full paths before any command is looked up, which also
     /// spares PowerShell searching every module for them, and makes the output UTF-8. A change stops at its first error.
-    public static string Pinned(string script, bool stopOnError) =>
+    /// With `winget`, the path the helper found for it, the names winget and winget.exe run that program and nothing else.
+    public static string Pinned(string script, bool stopOnError, string? winget = null) =>
         $"$env:PSModulePath = '{Modules}'; Import-Module -Name '{Modules}\\Microsoft.PowerShell.Utility', '{Modules}\\Microsoft.PowerShell.Management'; "
+        + (winget == null ? "" : string.Concat(new[] { "winget", "winget.exe" }.Select(n => $"Set-Alias -Name {n} -Value '{Quoted(winget)}' -Option Constant; ")))
         + "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }" + (stopOnError ? "; $ErrorActionPreference = 'Stop'" : "") + "\r\n" + script;
 
-    /// Writes a script as UTF-8 with a byte order mark, behind Rig's own first line.
-    public static void Write(string file, string script, bool stopOnError) =>
-        File.WriteAllText(file, Pinned(script, stopOnError), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+    /// Text for inside a single-quoted string: PowerShell ends one at ' and at each of the curly single quotes, so each is doubled.
+    static string Quoted(string text) => string.Concat(text.Select(c => c is '\'' or (>= '\u2018' and <= '\u201B') ? $"{c}{c}" : $"{c}"));
 
-    /// Runs with the helper's own rights, starting in `folder`, with temporary files in `temp`.
-    public static Ran RunHere(string args, int timeoutMs, string folder, string temp)
+    /// Writes a script as UTF-8 with a byte order mark, behind Rig's own first line.
+    public static void Write(string file, string script, bool stopOnError, string? winget = null) =>
+        File.WriteAllText(file, Pinned(script, stopOnError, winget), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+    /// Runs PowerShell with the helper's own rights, starting in `folder`, with temporary files in `temp`.
+    public static Ran RunHere(string args, int timeoutMs, string folder, string temp) => Start(Exe, args, timeoutMs, folder, temp);
+
+    /// Runs a program with the helper's own rights and the clean environment.
+    public static Ran Start(string exe, string args, int timeoutMs, string folder, string temp)
     {
-        var psi = new ProcessStartInfo(Exe, args)
+        var psi = new ProcessStartInfo(exe, args)
         {
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = folder,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
         };
         psi.Environment.Clear();
         foreach (var (k, v) in Mine(temp)) psi.Environment[k] = v;
-        using var p = Process.Start(psi) ?? throw new RigException("PowerShell didn't start.");
+        using var p = Process.Start(psi) ?? throw new RigException($"{Path.GetFileName(exe)} didn't start.");
         p.StandardInput.Close();
         var o = UserProcess.Drain(p.StandardOutput.BaseStream);
         var e = UserProcess.Drain(p.StandardError.BaseStream);
@@ -121,6 +129,8 @@ public sealed class Person : IDisposable
     /// The Rig app runs with admin rights, so a change without admin rights would run with them all the same. Windows says so
     /// for an app started as administrator, and also when User Account Control is off or the account is the built-in Administrator.
     public bool Elevated { get; }
+    /// The integrity level of the token programs started for the person get (Native.Integrity).
+    public int Integrity { get; }
     readonly IntPtr primary;
     readonly SafeAccessTokenHandle? borrowed;
 
@@ -130,6 +140,7 @@ public sealed class Person : IDisposable
         this.primary = primary;
         Elevation = elevation;
         Elevated = elevated;
+        using (var me = WindowsIdentity.GetCurrent()) Integrity = Native.Integrity(primary == IntPtr.Zero ? me.Token : primary);
         if (primary == IntPtr.Zero) return;
         if (!DuplicateTokenEx(primary, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenImpersonation, out IntPtr thread)) throw Win("borrow your Windows sign-in");
         borrowed = new SafeAccessTokenHandle(thread);
@@ -182,15 +193,28 @@ public sealed class Person : IDisposable
     /// Whether scripts run with the helper's own rights because the helper has none beyond the person's.
     public bool Here => primary == IntPtr.Zero;
 
+    /// The person's own %LOCALAPPDATA%, as Windows keeps it for their account.
+    public string LocalAppData()
+    {
+        if (primary == IntPtr.Zero) return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var id = new Guid("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
+        int hr = SHGetKnownFolderPath(ref id, 0, primary, out IntPtr path);
+        try { return hr == 0 ? Marshal.PtrToStringUni(path)! : throw new RigException($"Rig couldn't find your app data folder (Windows error {hr:X8})."); }
+        finally { Marshal.FreeCoTaskMem(path); }
+    }
+
     /// Does something to the person's own files or registry with the person's rights, not the helper's.
     public T Do<T>(Func<T> act) => borrowed == null ? act() : WindowsIdentity.RunImpersonated(borrowed, act);
 
     /// Runs a script file with the person's rights, starting in `folder`. Temporary files go to the person's own temp folder.
-    public PowerShellHost.Ran Run(string file, int timeoutMs, string folder)
+    public PowerShellHost.Ran Run(string file, int timeoutMs, string folder) => Start(PowerShellHost.Exe, PowerShellHost.Args(file), timeoutMs, folder);
+
+    /// Runs a program with the person's rights and the clean environment, on the desktop this helper is on: the one the
+    /// Rig app that started it is on.
+    public PowerShellHost.Ran Start(string exe, string args, int timeoutMs, string folder)
     {
-        string args = PowerShellHost.Args(file);
-        if (primary == IntPtr.Zero) return PowerShellHost.RunHere(args, timeoutMs, folder, Path.GetTempPath());
-        var (exit, o, e, timedOut) = UserProcess.RunAs(primary, PowerShellHost.Exe, args, timeoutMs, desktop: null, PowerShellHost.Clean(folder), folder, logonService: true, keep: PowerShellHost.Theirs);
+        if (primary == IntPtr.Zero) return PowerShellHost.Start(exe, args, timeoutMs, folder, Path.GetTempPath());
+        var (exit, o, e, timedOut) = UserProcess.RunAs(primary, exe, args, timeoutMs, desktop: null, PowerShellHost.Clean(folder), folder, logonService: true, keep: PowerShellHost.Theirs);
         return new PowerShellHost.Ran(exit, o, e, timedOut);
     }
 
@@ -205,6 +229,7 @@ public sealed class Person : IDisposable
     const uint MAXIMUM_ALLOWED = 0x02000000, TOKEN_DUPLICATE = 0x2, TOKEN_QUERY = 0x8;
     const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SecurityImpersonation = 2, TokenPrimary = 1, TokenImpersonation = 2, TokenElevationTypeClass = 18, TokenElevationClass = 20;
 
+    [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path);
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);

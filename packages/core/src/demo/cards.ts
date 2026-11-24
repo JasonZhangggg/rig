@@ -3,21 +3,20 @@
 // person applies or undoes it. The verdicts come from the same check the app
 // runs, so the cards show real parsed commands and tiers.
 
-import { checkStep, type ApplyReply, type Command, type CommandUndo, type PreviewReply, type RunResult, type Touch, type UndoReply } from "../change";
+import { checkStep, nativeOps, type ApplyReply, type Command, type CommandUndo, type HelperStep, type HelperUndo, type NativeOp, type NativeRule, type PreviewReply, type RunResult, type Touch, type UndoReply } from "../change";
 import type { Proposal } from "../client";
+import type { ScreenLook } from "../screen";
 
-export interface DemoCard {
-  key: "registry" | "firewall" | "uninstall" | "refused" | "rollback";
+interface DemoBase {
   /** A question that brings this card up in the demo chat. */
   ask: string;
   asks: RegExp;
   /** What Rig says above the card. */
   says: string;
   title: string;
-  cmd: Command;
-  /** What `read` prints before the change. */
+  /** What `read` prints before the change; for a native op, the helper's own read. */
   read: string;
-  /** Each touch's value before and after, in the order of `cmd.touches`. */
+  /** Each touch's value before and after, in the order of the step's touches. */
   values: [before: string | null, after: string | null][];
   after: string;
   alsoChanged?: string[];
@@ -28,6 +27,11 @@ export interface DemoCard {
   /** Steps Rig offers when the change is refused. */
   steps?: string[];
 }
+
+export interface DemoCard extends DemoBase { key: "registry" | "firewall" | "uninstall" | "refused" | "rollback"; cmd: Command }
+/** A native op the demo can show, preview, apply and undo. */
+export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
+export type AnyDemoCard = DemoCard | DemoNativeCard;
 
 const seconds = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
 const secondsPath = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
@@ -53,8 +57,8 @@ export const demoCards: DemoCard[] = [
     cmd: {
       does: "Lets other devices reach your Minecraft server on port 25565. Undo only turns the rule off.",
       read: "Get-NetFirewallRule -DisplayName 'Minecraft server' | Select-Object DisplayName, Enabled, Direction, Action",
-      run: "New-NetFirewallRule -DisplayName 'Minecraft server' -Direction Inbound -Protocol TCP -LocalPort 25565 -Action Allow",
-      undo: "Set-NetFirewallRule -DisplayName 'Minecraft server' -Enabled False",
+      run: "New-NetFirewallRule -Profile Private -Direction Inbound -Action Allow -Name 'Rig-minecraft' -DisplayName 'Minecraft server' -Protocol TCP -LocalPort 25565",
+      undo: "Set-NetFirewallRule -Name 'Rig-minecraft' -Enabled False",
       touches: [{ kind: "firewall", name: "Minecraft server" }],
     },
     read: "No rule with that name.", values: [[null, "On, inbound, TCP 25565, allow"]],
@@ -68,8 +72,8 @@ export const demoCards: DemoCard[] = [
     title: "Uninstall NVIDIA Broadcast",
     cmd: {
       does: "Uninstalls NVIDIA Broadcast with winget.",
-      read: "winget list --id Nvidia.Broadcast",
-      run: "winget uninstall --id Nvidia.Broadcast --silent",
+      read: "winget list --id 'Nvidia.Broadcast' --exact --source winget",
+      run: "winget uninstall --exact --source winget --id 'Nvidia.Broadcast' --silent --accept-source-agreements",
       touches: [{ kind: "other", name: "NVIDIA Broadcast (the app and its settings)" }],
     },
     read: "Name             Id               Version\n-----------------------------------------\nNVIDIA Broadcast Nvidia.Broadcast 2.0.1.25", values: [["Installed, version 2.0.1.25", null]],
@@ -103,34 +107,80 @@ export const demoCards: DemoCard[] = [
   },
 ];
 
-const step = (c: DemoCard) => ({ kind: "command" as const, cmd: c.cmd });
+const DEMO_LOOK = "5c0ffee05c0ffee05c0ffee05c0ffee0";
+const palworld = "C:\\Users\\Sam\\AppData\\Local\\Pal\\Saved\\Config\\Windows\\GameUserSettings.ini";
+const ue = "/Script/Engine.GameUserSettings";
+
+export const demoNativeCards: DemoNativeCard[] = [
+  {
+    key: "gpu", ask: "Turn on low latency mode for Cyberpunk", asks: /low latency|input lag/,
+    says: "NVIDIA's low latency mode keeps the CPU from lining up frames ahead of the graphics card, which cuts input lag in Cyberpunk 2077. It's one driver setting for that game, and Rig puts it back exactly on undo.",
+    title: "Turn on low latency mode for Cyberpunk 2077",
+    op: { name: "gpu", vendor: "nvidia", app: "cyberpunk2077.exe", setting: "lowLatency", value: "on", does: "Turns on low latency mode for Cyberpunk 2077 only." },
+    read: "Low latency mode for cyberpunk2077.exe, in NVIDIA's own profile \"Cyberpunk 2077\": Off: the game decides (the driver's default)",
+    values: [], after: "Low latency mode for cyberpunk2077.exe, in NVIDIA's own profile \"Cyberpunk 2077\": On: at most one frame waits (set for this game)",
+  },
+  {
+    key: "fileEdit", ask: "Turn off vsync in Palworld's settings file", asks: /settings file|palworld/,
+    says: "Palworld keeps vsync and its frame cap in its own settings file. This changes those two values and nothing else, and Rig saves a copy of the file first.",
+    title: "Turn off vsync and cap the frame rate in Palworld",
+    op: {
+      name: "fileEdit", does: "Turns off vsync and caps Palworld at 141 frames a second, just under the screen's 144 Hz.", path: palworld, format: "ini",
+      edits: [{ at: [ue, "bUseVSync"], value: "False" }, { at: [ue, "FrameRateLimit"], value: "141.000000" }],
+    },
+    read: [`${ue} › bUseVSync: True`, `${ue} › FrameRateLimit: 0.000000`, "File fingerprint 3f9a1c07b2e4, 2,184 bytes", "", "Line 14:", "- bUseVSync=True", "+ bUseVSync=False", "Line 22:", "- FrameRateLimit=0.000000", "+ FrameRateLimit=141.000000"].join("\n"),
+    values: [["2,184 bytes", "2,190 bytes"]],
+    after: [`${ue} › bUseVSync: False`, `${ue} › FrameRateLimit: 141.000000`, "File fingerprint 8c2177d0a51f, 2,190 bytes"].join("\n"),
+  },
+  {
+    key: "screen", ask: "Blacks look grey on my TV", asks: /dynamic range|look(s)? (grey|gray|washed)|washed out/,
+    says: "Over HDMI, NVIDIA often sends a limited range of colors, which makes blacks look grey. The switch is only in NVIDIA Control Panel, so Rig would set it there for you. I looked first: it's on Limited now.",
+    title: "Use the full range of colors on the TV",
+    op: { name: "screen", lookId: DEMO_LOOK, to: "Full", does: "Sets the output dynamic range to Full, so blacks look black." },
+    look: { lookId: DEMO_LOOK, path: ["NVIDIA Control Panel", "Change resolution", "Output dynamic range"], value: "Limited", options: ["Limited", "Full"], clean: true, expiresAt: "2099-01-01T00:00:00.000Z" },
+    read: "Output dynamic range: Limited", values: [], after: "Output dynamic range: Full",
+  },
+];
+
+const stepOf = (c: AnyDemoCard): HelperStep => ("cmd" in c ? { kind: "command", cmd: c.cmd } : { kind: "native", op: c.op });
+const touchesOf = (c: AnyDemoCard): Touch[] => ("cmd" in c ? c.cmd.touches : (nativeOps[c.op.name] as NativeRule<NativeOp>).touches?.(c.op) ?? []);
+const all = (): AnyDemoCard[] => [...demoCards, ...demoNativeCards];
+
 let reads = 0;
 const expires = () => new Date(Date.now() + 10 * 60_000).toISOString();
 
+const looksOf = (c: AnyDemoCard) => ("look" in c && c.look ? [c.look] : []);
+
 /** What the helper would answer when it previews this card's command. */
-export function demoPreview(c: DemoCard, tainted = false): PreviewReply {
-  const verdict = checkStep(step(c), { tainted });
+export function demoPreview(c: AnyDemoCard, tainted = false): PreviewReply {
+  const verdict = checkStep(stepOf(c), { tainted, looks: looksOf(c) });
   if (verdict.status === "refused") return { outcome: "refused", verdict };
-  return { outcome: "ready", nonce: `demo-${c.key}-${++reads}`, expiresAt: expires(), verdict, read: c.read, touches: c.cmd.touches.map((touch, i) => ({ touch, value: c.values[i][0] })) };
+  return { outcome: "ready", nonce: `demo-${c.key}-${++reads}`, expiresAt: expires(), verdict, read: c.read, touches: touchesOf(c).map((touch, i) => ({ touch, value: c.values[i][0] })) };
 }
 
-export function demoProposal(c: DemoCard, id = `demo-${c.key}`): Proposal {
+export function demoProposal(c: AnyDemoCard, id = `demo-${c.key}`): Proposal {
   const preview = demoPreview(c);
-  return { id, title: c.title, steps: [step(c)], tier: preview.outcome === "ready" ? preview.verdict.tier : 3, rows: [], status: "waiting", previews: [preview] };
+  const looks = looksOf(c);
+  return { id, title: c.title, steps: [stepOf(c)], tier: preview.outcome === "ready" ? preview.verdict.tier : 3, rows: [], status: "waiting", previews: [preview], ...(looks.length ? { looks } : {}) };
 }
 
-const result = (c: DemoCard): RunResult => ({
+const result = (c: AnyDemoCard): RunResult => ({
   before: c.read, after: c.after, output: "", alsoChanged: c.alsoChanged ?? [],
-  touches: c.cmd.touches.map((touch: Touch, i) => ({ touch, before: c.values[i][0], after: c.values[i][1] })),
+  touches: touchesOf(c).map((touch, i) => ({ touch, before: c.values[i][0], after: c.values[i][1] })),
 });
 
-export const demoUndoRecord = (c: DemoCard): CommandUndo => ({
-  kind: "command", id: `undo-${c.key}`, script: c.cmd.undo ?? undefined, outside: c.alsoChanged ?? [], fingerprint: `demo-${c.key}`,
+const kept = (c: AnyDemoCard) => ({
+  id: `undo-${c.key}`, outside: c.alsoChanged ?? [], fingerprint: `demo-${c.key}`,
   restorePoint: { seq: 41, name: `Rig: before "${c.title}"`, at: new Date().toISOString() },
 });
+export const demoUndoRecord = (c: DemoCard): CommandUndo => ({ kind: "command", script: c.cmd.undo ?? undefined, ...kept(c) });
+const undoRecord = (c: AnyDemoCard): HelperUndo => ("cmd" in c ? demoUndoRecord(c) : { kind: "native", ...kept(c) });
+
+/** The step a demo card proposes. */
+export const demoStep = stepOf;
 
 /** What the helper would answer when the person applies this card. */
-export function demoApply(c: DemoCard): ApplyReply {
+export function demoApply(c: AnyDemoCard): ApplyReply {
   const preview = demoPreview(c);
   if (preview.outcome === "refused") return { outcome: "refused", verdict: preview.verdict };
   if (c.rollsBack) {
@@ -139,13 +189,15 @@ export function demoApply(c: DemoCard): ApplyReply {
       sentinels: [{ sentinel: "run", before: "Discord, Steam, OneDrive", after: "Discord, Steam, OneDrive, ctxmenu.exe" }],
     };
   }
-  return { outcome: "applied", result: result(c), undo: demoUndoRecord(c) };
+  return { outcome: "applied", result: result(c), undo: undoRecord(c) };
 }
 
-export function demoUndo(c: DemoCard): UndoReply {
+export function demoUndo(c: AnyDemoCard): UndoReply {
   return { outcome: "undone", printed: c.read, left: c.key === "firewall" ? ["The rule itself. The undo script turns it off, and it stays in the firewall's list."] : [] };
 }
 
-export const demoCardFor = (question: string) => demoCards.find((c) => c.asks.test(question.toLowerCase()));
-export const demoCardByNonce = (nonce: string) => demoCards.find((c) => nonce.startsWith(`demo-${c.key}-`));
-export const demoCardByUndo = (id: string) => demoCards.find((c) => `undo-${c.key}` === id);
+export const demoCardFor = (question: string) => all().find((c) => c.asks.test(question.toLowerCase()));
+export const demoCardByNonce = (nonce: string) => all().find((c) => nonce.startsWith(`demo-${c.key}-`));
+export const demoCardByUndo = (id: string) => all().find((c) => `undo-${c.key}` === id);
+/** The demo card that proposes this step. */
+export const demoCardByStep = (step: HelperStep) => all().find((c) => (step.kind === "command" ? "cmd" in c && c.cmd.run === step.cmd.run : "op" in c && JSON.stringify(c.op) === JSON.stringify(step.op)));
