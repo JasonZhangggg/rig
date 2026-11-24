@@ -21,6 +21,20 @@ use tokio::sync::Mutex;
 #[cfg_attr(not(windows), allow(dead_code))]
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// A general command parses, reads, snapshots, runs and verifies in one call, each a PowerShell start, so it gets longer:
+/// the helper's own limits (Commands.cs) for the parse, the run, the restore point and the reads before and after,
+/// with room for the snapshot and the never-list readings around the run.
+#[cfg_attr(not(windows), allow(dead_code))]
+const COMMAND_PARSE_SECS: u64 = 30;
+#[cfg_attr(not(windows), allow(dead_code))]
+const COMMAND_RUN_SECS: u64 = 120;
+#[cfg_attr(not(windows), allow(dead_code))]
+const COMMAND_RESTORE_POINT_SECS: u64 = 15;
+#[cfg_attr(not(windows), allow(dead_code))]
+const COMMAND_READ_SECS: u64 = 20;
+#[cfg_attr(not(windows), allow(dead_code))]
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(COMMAND_PARSE_SECS + COMMAND_RUN_SECS + COMMAND_RESTORE_POINT_SECS + 3 * COMMAND_READ_SECS + 90);
+
 #[cfg_attr(not(windows), allow(dead_code))]
 pub enum CallError {
     /// The helper answered with an error. The connection is still fine.
@@ -70,7 +84,8 @@ impl<S: AsyncRead + AsyncWrite> Conn<S> {
                 }
             }
         };
-        let msg = match tokio::time::timeout(CALL_TIMEOUT, io).await {
+        let limit = if method.starts_with("command.") { COMMAND_TIMEOUT } else { CALL_TIMEOUT };
+        let msg = match tokio::time::timeout(limit, io).await {
             Err(_) => {
                 self.timeouts += 1;
                 let msg = "Rig's helper didn't answer in time.".to_string();

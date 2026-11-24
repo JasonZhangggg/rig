@@ -732,12 +732,28 @@ static class UserProcess
     {
         IntPtr user = FindToken(sid);
         if (user == IntPtr.Zero) return null;
-        IntPtr primary = IntPtr.Zero, env = IntPtr.Zero, outR = IntPtr.Zero, outW = IntPtr.Zero, errR = IntPtr.Zero, errW = IntPtr.Zero, inR = IntPtr.Zero, inW = IntPtr.Zero;
-        var pi = new PROCESS_INFORMATION();
+        IntPtr primary = IntPtr.Zero;
         try
         {
             if (!DuplicateTokenEx(user, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out primary)) throw Win("copy your Windows sign-in for the script");
-            if (!CreateEnvironmentBlock(out env, primary, false)) env = IntPtr.Zero;
+            return RunAs(primary, exe, args, timeoutMs, @"winsta0\default");
+        }
+        finally
+        {
+            Close(ref primary);
+            CloseHandle(user);
+        }
+    }
+
+    /// Runs a program with a primary token. `set` replaces variables in that account's own environment; `desktop` null keeps this process's desktop.
+    /// `logonService` has Windows' own logon service start it, which sets the program up on the desktop for that token.
+    public static (int Exit, string Out, string Err, bool TimedOut) RunAs(IntPtr primary, string exe, string args, int timeoutMs, string? desktop, IReadOnlyDictionary<string, string>? set = null, string? cwd = null, bool logonService = false)
+    {
+        IntPtr env = IntPtr.Zero, outR = IntPtr.Zero, outW = IntPtr.Zero, errR = IntPtr.Zero, errW = IntPtr.Zero, inR = IntPtr.Zero, inW = IntPtr.Zero;
+        var pi = new PROCESS_INFORMATION();
+        try
+        {
+            env = EnvironmentFor(primary, set ?? new Dictionary<string, string>());
             var sa = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf<SECURITY_ATTRIBUTES>(), bInheritHandle = 1 };
             if (!CreatePipe(out outR, out outW, ref sa, 0) || !CreatePipe(out errR, out errW, ref sa, 0) || !CreatePipe(out inR, out inW, ref sa, 0)) throw Win("connect to the script");
             // The script gets only its own ends.
@@ -746,11 +762,20 @@ static class UserProcess
             SetHandleInformation(inW, HANDLE_FLAG_INHERIT, 0);
             var si = new STARTUPINFO
             {
-                cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default", dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW,
+                cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = desktop, dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW,
                 wShowWindow = 0, hStdInput = inR, hStdOutput = outW, hStdError = errW,
             };
             var cmd = new StringBuilder($"\"{exe}\" {args}");
-            if (!CreateProcessAsUser(primary, exe, cmd, IntPtr.Zero, IntPtr.Zero, true, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, null, ref si, out pi)) throw Win("start the script");
+            if (logonService)
+            {
+                if (!CreateProcessWithTokenW(primary, 0, exe, cmd, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi)) throw Win("start the script");
+            }
+            else if (!CreateProcessAsUser(primary, exe, cmd, IntPtr.Zero, IntPtr.Zero, true, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi))
+            {
+                // Without the right to hand a process someone else's token, Windows' own logon service starts it instead.
+                if (Marshal.GetLastWin32Error() != ERROR_PRIVILEGE_NOT_HELD || !CreateProcessWithTokenW(primary, 0, exe, cmd, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi))
+                    throw Win("start the script");
+            }
             Close(ref outW); Close(ref errW); Close(ref inR); Close(ref inW);
             var o = Drain(new FileStream(new SafeFileHandle(outR, ownsHandle: true), FileAccess.Read));
             outR = IntPtr.Zero;
@@ -770,10 +795,35 @@ static class UserProcess
             Close(ref outR); Close(ref outW); Close(ref errR); Close(ref errW); Close(ref inR); Close(ref inW);
             if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
             if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
-            if (env != IntPtr.Zero) DestroyEnvironmentBlock(env);
-            Close(ref primary);
-            CloseHandle(user);
+            if (env != IntPtr.Zero) Marshal.FreeHGlobal(env);
         }
+    }
+
+    /// The account's own environment block with `set` on top, as memory the caller frees.
+    static IntPtr EnvironmentFor(IntPtr token, IReadOnlyDictionary<string, string> set)
+    {
+        var vars = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!CreateEnvironmentBlock(out IntPtr block, token, false))
+        {
+            if (set.Count == 0) return IntPtr.Zero;
+        }
+        else
+        {
+            try
+            {
+                for (IntPtr p = block; Marshal.PtrToStringUni(p) is { Length: > 0 } line; p += (line.Length + 1) * 2)
+                {
+                    int eq = line.IndexOf('=', 1);
+                    if (eq > 0) vars[line[..eq]] = line[(eq + 1)..];
+                }
+            }
+            finally { DestroyEnvironmentBlock(block); }
+        }
+        foreach (var (k, v) in set) vars[k] = v;
+        var sb = new StringBuilder();
+        foreach (var (k, v) in vars) sb.Append(k).Append('=').Append(v).Append('\0');
+        sb.Append('\0');
+        return Marshal.StringToHGlobalUni(sb.ToString());
     }
 
     /// Reads a stream to its end on the thread pool, keeping the start and dropping the rest so the program never blocks on a full pipe.
@@ -818,6 +868,7 @@ static class UserProcess
     static RigException Win(string what) => new($"Rig couldn't {what} (Windows error {Marshal.GetLastWin32Error()}).");
 
     const uint MAXIMUM_ALLOWED = 0x02000000, HANDLE_FLAG_INHERIT = 1, CREATE_NO_WINDOW = 0x08000000, CREATE_UNICODE_ENVIRONMENT = 0x400;
+    const int ERROR_PRIVILEGE_NOT_HELD = 1314;
     const int SecurityImpersonation = 2, TokenPrimary = 1, STARTF_USESTDHANDLES = 0x100, STARTF_USESHOWWINDOW = 0x1, WTSActive = 0, WTSDisconnected = 4;
 
     [StructLayout(LayoutKind.Sequential)] struct WTS_SESSION_INFO { public uint SessionId; public IntPtr WinStationName; public int State; }
@@ -844,4 +895,6 @@ static class UserProcess
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetExitCodeProcess(IntPtr process, out uint code);
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern bool CreateProcessAsUser(IntPtr token, string? app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string? cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool CreateProcessWithTokenW(IntPtr token, uint logonFlags, string? app, StringBuilder cmd, uint flags, IntPtr env, string? cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
 }
