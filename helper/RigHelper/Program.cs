@@ -38,6 +38,7 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
+            problems.AddRange(Reads.SelfChecks());
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -94,7 +95,8 @@ public static class Program
         app.Exited += (_, _) => cts.Cancel();
 
         using var hw = new Sensors();
-        var rig = new Handler(hw);
+        // Reads of HKCU go to the hive of the account the Rig app runs as, which isn't this process's own when someone else typed the admin password.
+        var rig = new Handler(hw, Native.ProcessUserSid(parent));
         var reader = new StreamReader(client, new UTF8Encoding(false));
         var writer = new StreamWriter(client, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
 
@@ -318,7 +320,7 @@ public static class Json
         n is not JsonValue v ? fallback : v.TryGetValue(out double d) ? d : v.TryGetValue(out long l) ? l : v.TryGetValue(out int i) ? i : fallback;
 }
 
-public class Handler(Sensors hw)
+public class Handler(Sensors hw, string? owner = null)
 {
     public JsonNode? Handle(string method, JsonNode? p) => method switch
     {
@@ -331,6 +333,7 @@ public class Handler(Sensors hw)
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
         "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
         "recorder.probes" => ProbeStore.Edit(p, hw),
+        "read" => Reads.Read(p?["read"] as JsonObject, owner),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

@@ -3,6 +3,7 @@ export * from "./telemetry";
 export * from "./drives";
 export * from "./actions";
 export * from "./change";
+export * from "./reads";
 export { checkScript, rulesVersion, type ScriptUse } from "./check";
 export * from "./client";
 export * from "./health";

@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import { scriptHash, type ActionCall, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
+import { scriptHash, type ActionCall, type PcReadSpec, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -18,6 +18,7 @@ export const tauriLink: HelperLink = {
   events: (sinceMs: number) => call<RawEvent[]>("events", { sinceMs }),
   processes: () => call<ProcessUse[]>("processes", { top: 8 }),
   storage: (fresh?: boolean) => call<StorageScan>("storage", { fresh: !!fresh }),
+  read: (req: PcReadSpec) => call<{ text: string }>("read", { read: req }).then((r) => r.text),
 };
 
 /** SQLite file in the app's data folder. */

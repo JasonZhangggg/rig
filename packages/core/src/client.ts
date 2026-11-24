@@ -12,6 +12,7 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import type { BoardLayoutReply, ReadLayoutRequest } from "./api";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
+import type { PcRead } from "./reads";
 
 export interface Proposal {
   id: string;
@@ -44,6 +45,11 @@ export interface ChatMessage {
   script?: { probe: ProbeSpec; status: "waiting" | "approved" | "declined"; error?: string };
   pending?: boolean;
   error?: boolean;
+  /**
+   * The server's signed note on this answer: whether it, or an answer before it, read outside text.
+   * Sent back with the history. An answer of Rig's without a valid one counts as having read outside text.
+   */
+  seal?: string;
 }
 
 /** The chat answer a change came from. */
@@ -85,6 +91,13 @@ export type ChatEvent =
   | { type: "probe"; op: "remove"; id: string; error?: string }
   /** Rig proposed a script for the background recorder. Nothing runs until the person approves it. */
   | { type: "script"; probe: ProbeSpec }
+  /**
+   * Desktop only: Rig wants to look at the PC before it goes on. The app runs each read through the helper and asks again
+   * with `resume` and the results. The stream ends after this event, without `done`.
+   */
+  | { type: "reads"; reads: PcRead[]; resume: string }
+  /** Keep this on the answer (ChatMessage.seal) and send it back with the history. */
+  | { type: "seal"; seal: string }
   | { type: "error"; message: string }
   | { type: "done" };
 

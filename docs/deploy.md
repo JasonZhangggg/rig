@@ -18,6 +18,7 @@ One Cloudflare Worker serves the website and, under `/api`, accounts, sync and c
    - `DATABASE_URL`, the Neon connection string
    - `BETTER_AUTH_SECRET`, a long random string (`openssl rand -base64 32`)
    - `ANTHROPIC_API_KEY`, for chat (without it, chat says it isn't set up)
+   - `CHAT_STATE_SECRET`, another long random string (`openssl rand -base64 32`). It signs where a chat answer stopped while the app reads the PC, and whether an answer read outside text. Without it, chat can't look at the PC live, and after the first answer in a chat it won't offer changes that can't be undone.
    - Optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
    - Optional: `BESTBUY_API_KEY`, for real photos and prices on Upgrades (free key from developer.bestbuy.com; without it every price is demo)
 4. Push to the `deploy` branch (`git push origin HEAD:deploy`), or Actions, Deploy, Run workflow. It creates the tables, connects Hyperdrive with its query cache off, builds the website and deploys. Running it again updates everything.
@@ -39,6 +40,7 @@ Run these from `apps/server`.
 6. Secrets (each one asks for the value; nothing goes in the repo):
    - `npx wrangler secret put BETTER_AUTH_SECRET` with a long random string (`openssl rand -base64 32`)
    - `npx wrangler secret put ANTHROPIC_API_KEY`
+   - `npx wrangler secret put CHAT_STATE_SECRET` with another long random string
    - Best Buy, optional: `npx wrangler secret put BESTBUY_API_KEY`, for real photos and prices on Upgrades.
    - Google, optional: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. In Google Cloud, the OAuth client's redirect URI is `<WEB_ORIGIN>/api/auth/callback/google`.
 7. `pnpm --filter @rig/web build`, then `npx wrangler deploy`.
@@ -48,7 +50,7 @@ Run these from `apps/server`.
 
 ```
 cd apps/server
-printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -base64 32)" > .dev.vars   # add ANTHROPIC_API_KEY=... for chat
+printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -base64 32)" > .dev.vars   # add ANTHROPIC_API_KEY=... and CHAT_STATE_SECRET=... for chat
 DATABASE_URL=postgres://rig:rig@localhost:5432/rig pnpm db:migrate
 pnpm --filter @rig/web build && npx wrangler dev                            # http://localhost:8787
 ```
