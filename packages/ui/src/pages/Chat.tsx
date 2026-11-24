@@ -7,7 +7,7 @@ import { ChatBar } from "./chat/ChatBar";
 import { ProbeNote, ScriptCard } from "./chat/ScriptCard";
 import { Composer } from "./chat/Composer";
 import { FollowUps, notAsked, StarterGrid, useStarters } from "./chat/starters";
-import { openManualLink } from "../manuals/viewerState";
+import { Sources } from "./chat/Sources";
 
 export function Chat() {
   const { client, clearChat } = useActions();
@@ -80,13 +80,7 @@ function Message({ m }: { m: ChatMessage }) {
       <div className="body">
         {paras.length ? paras.map((p, i) => <p key={i}>{p}</p>) : m.pending ? <p className="typing" aria-label="Rig is thinking"><i /><i /><i /></p> : null}
         {m.steps && <ol className="steps">{m.steps.map((s) => <li key={s}>{inUnit(s)}</li>)}</ol>}
-        {m.sources && m.sources.length > 0 && (
-          <div className="sources">{m.sources.map((s) => s.url?.startsWith("rig:manual/")
-            ? <button key={s.label} type="button" className="source" onClick={() => openManualLink(s.url)}><b>{s.kind}</b>{s.label}</button>
-            : s.url
-            ? <a key={s.label} className="source" href={s.url} target="_blank" rel="noreferrer"><b>{s.kind}</b>{s.label}</a>
-            : <span key={s.label} className="source"><b>{s.kind}</b>{s.label}</span>)}</div>
-        )}
+        {m.sources && <Sources sources={m.sources} />}
         {m.proposal && <ProposalCard p={m.proposal} />}
         {m.recording && <RecordingCard request={m.recording} />}
         {m.probe && <ProbeNote m={m} />}

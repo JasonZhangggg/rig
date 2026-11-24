@@ -59,10 +59,6 @@
 .mn-related { display: flex; flex-direction: column; gap: 8px; }
 .mn-ref { align-self: flex-start; font-size: 13.5px; font-weight: 500; }
 
-/* Manual sources in the chat open the viewer. */
-button.source { font: inherit; font-size: 12.5px; cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { button.source:hover { border-color: var(--line-strong); color: var(--text); } }
-
 /* ---------- Viewer ---------- */
 .mv-scrim { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; padding: 20px; background: var(--scrim); }
 .mv {

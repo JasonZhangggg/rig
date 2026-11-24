@@ -220,7 +220,7 @@ describe("Manuals", () => {
     const box = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.change(box, { target: { value: "Where do the front panel wires go?" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    const source = await screen.findByRole("button", { name: /^Manual.*p\. 9/ }, { timeout: 6000 });
+    const source = await screen.findByRole("button", { name: /, page 9$/ }, { timeout: 6000 });
     fireEvent.click(source);
     const v = await viewer();
     expect((v.getByLabelText("Page number") as HTMLInputElement).value).toBe("9");
