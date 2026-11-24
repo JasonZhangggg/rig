@@ -12,9 +12,14 @@
 //
 // Sentinels are the fixed places no command may change (the never list).
 // They are read twice before a run, which must agree, and once after; a
-// difference is a hit. What Windows changes by itself (drivers, its own
-// services' updates, its own scheduled tasks) isn't watched.
+// difference is a hit, and is put back where Windows lets it be: registry
+// values, the hosts file, new services, accounts, administrators and
+// scheduled tasks, service start types and remote access. Boot settings are
+// only reported: importing a saved copy over them can leave a PC unable to
+// start. What Windows changes by itself (drivers, its own services' updates,
+// its own scheduled tasks) isn't watched.
 
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
@@ -22,6 +27,7 @@ using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
@@ -368,12 +374,27 @@ public sealed record SentinelHit(string Sentinel, string Before, string After)
 }
 
 /// One reading of the never-list places: for each sentinel, its items and what each holds. Registry items hold "type:hex".
-public sealed class Sentinels(Person person)
+public sealed class Sentinels(Person person, string work)
 {
     public sealed class Reading : Dictionary<string, SortedDictionary<string, string>>
     {
         public byte[]? Hosts;
+        public Dictionary<string, byte[]> Tasks { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
+
+    static readonly Dictionary<string, string> Plain = new()
+    {
+        ["services"] = "the list of Windows services or how they start", ["run"] = "the apps that start with Windows", ["ifeo"] = "which program Windows opens in place of another",
+        ["winlogon"] = "what runs when you sign in", ["defenderExclusions"] = "the places Defender skips", ["localUsers"] = "the accounts on this PC",
+        ["administrators"] = "who is an administrator on this PC", ["rdp"] = "Remote Desktop", ["winrm"] = "remote management",
+        ["rootCertificates"] = "the certificates Windows trusts", ["hosts"] = "the hosts file", ["proxy"] = "the proxy settings",
+        ["scheduledTasks"] = "the scheduled tasks", ["bcd"] = "how Windows starts up",
+    };
+
+    public const string Unread = "(Rig couldn't read all of this)";
+
+    /// A sentinel in the words packages/ui's sentinelWords uses.
+    public static string Words(string sentinel) => Plain.TryGetValue(sentinel, out string? w) ? w : sentinel;
 
     sealed record Watch(string Sentinel, string Key, string[]? Values = null, int Depth = 0);
 
@@ -414,22 +435,28 @@ public sealed class Sentinels(Person person)
         new("proxy", @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\Connections", ["WinHttpSettings"]),
     ];
 
-    /// Services whose start type Windows changes by itself, so a change there says nothing about the command.
+    /// Services whose start type Windows changes by itself, so a change there says nothing about the command. None of them is a protection.
     static readonly HashSet<string> SelfStarting = new(StringComparer.OrdinalIgnoreCase)
-        { "BITS", "TrustedInstaller", "wuauserv", "UsoSvc", "WaaSMedicSvc", "DoSvc", "sppsvc", "ClipSVC", "msiserver", "AppXSvc", "InstallService", "WSearch" };
+        { "BITS", "TrustedInstaller", "DoSvc", "sppsvc", "ClipSVC", "msiserver", "AppXSvc", "InstallService", "WSearch" };
 
-    /// Services that update themselves, moving their program to a new version's folder or adding a service per version.
-    static readonly HashSet<string> SelfUpdating = new(StringComparer.OrdinalIgnoreCase)
+    /// Services that update themselves by moving their program to a new version's folder: what they run isn't watched, how they start is.
+    static readonly HashSet<string> NewVersions = new(StringComparer.OrdinalIgnoreCase)
         { "WinDefend", "WdNisSvc", "MDCoreSvc", "Sense", "SecurityHealthService", "edgeupdate", "edgeupdatem", "MicrosoftEdgeElevationService", "gupdate", "gupdatem", "MozillaMaintenance" };
-    static bool Updates(string service) => SelfUpdating.Contains(service) || service.StartsWith("GoogleUpdater", StringComparison.OrdinalIgnoreCase);
+
+    /// Google's updater adds a service for each version it installs, named for that version and nothing else.
+    static readonly Regex PerVersion = new(@"^GoogleUpdater(Internal)?Service\d+(\.\d+){3}\z", RegexOptions.CultureInvariant);
 
     /// Scheduled task folders Windows' own updaters fill and empty by themselves.
-    static readonly string[] SelfTasks =
+    static readonly string[] SelfTaskFolders =
     [
         @"\Microsoft\Windows\UpdateOrchestrator\", @"\Microsoft\Windows\WindowsUpdate\", @"\Microsoft\Windows\WaaSMedic\", @"\Microsoft\Windows\InstallService\",
         @"\Microsoft\Windows\Windows Defender\", @"\Microsoft\Windows\SoftwareProtectionPlatform\", @"\Microsoft\Windows\Flighting\", @"\Microsoft\Windows\Application Experience\",
-        @"\MicrosoftEdgeUpdateTask", @"\GoogleUpdaterTask",
     ];
+
+    /// The tasks Edge's and Google's updaters make for themselves, by their whole names.
+    static readonly Regex SelfTaskNames = new(@"^\\(MicrosoftEdgeUpdateTaskMachine(Core|UA)|GoogleUpdaterTask(System|User)\d+(\.\d+){3})(\{[^\\{}]+\})?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    static bool SelfTask(string task) => SelfTaskNames.IsMatch(task) || SelfTaskFolders.Any(f => task.StartsWith(f, StringComparison.OrdinalIgnoreCase));
 
     const int MaxItems = 20_000;
     const char Sep = '\t';
@@ -464,7 +491,7 @@ public sealed class Sentinels(Person person)
         void Try(string sentinel, Action<SortedDictionary<string, string>> read)
         {
             var items = Of(sentinel);
-            try { read(items); } catch (Exception e) { items["(Rig couldn't read all of this)"] = e.GetType().Name; }
+            try { read(items); } catch (Exception e) { items[Unread] = e.GetType().Name; }
         }
 
         foreach (var w in Watched) Try(w.Sentinel, items => Collect(items, w.Key, w.Values, w.Depth));
@@ -477,8 +504,8 @@ public sealed class Sentinels(Person person)
                 // Programs that run as services, not device drivers, which Windows installs with a device, nor the copies of a
                 // per-person service Windows makes for each sign-in.
                 if (s?.GetValue("Type") is not int type || (type & 0x30) == 0 || (type & 0xC0) != 0) continue;
-                if (Updates(name)) continue;
-                items[name + Sep + "program"] = s.GetValue("ImagePath", "", RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString() ?? "";
+                if (PerVersion.IsMatch(name)) continue;
+                items[name + Sep + "program"] = NewVersions.Contains(name) ? "" : s.GetValue("ImagePath", "", RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString() ?? "";
                 if (!SelfStarting.Contains(name)) items[name + Sep + "start"] = s.GetValue("Start")?.ToString() ?? "";
                 using var p = s.OpenSubKey("Parameters");
                 if (p?.GetValue("ServiceDll", null, RegistryValueOptions.DoNotExpandEnvironmentNames) is string dll) items[name + Sep + "dll"] = dll;
@@ -503,7 +530,17 @@ public sealed class Sentinels(Person person)
             foreach (string f in Directory.EnumerateFiles(root, "*", walk))
             {
                 string task = f[root.Length..];
-                if (!SelfTasks.Any(t => task.StartsWith(t, StringComparison.OrdinalIgnoreCase))) items[task] = "";
+                if (SelfTask(task)) continue;
+                // A task is known by what it does, not only by its name: its whole definition is fingerprinted and kept.
+                byte[]? xml = null;
+                try
+                {
+                    using var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    if (fs.Length <= 1 << 20) { xml = new byte[fs.Length]; fs.ReadExactly(xml); }
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                items[task] = xml == null ? "" : Convert.ToHexString(SHA256.HashData(xml));
+                if (xml != null) all.Tasks[task] = xml;
             }
         });
         Try("bcd", items =>
@@ -528,7 +565,7 @@ public sealed class Sentinels(Person person)
     {
         int colon = value.IndexOf(':');
         bool registry = item.StartsWith("HK", StringComparison.Ordinal) && colon > 0 && int.TryParse(value[..colon], out _);
-        if (sentinel is "hosts" or "bcd" or "rootCertificates") return Label(item);
+        if (sentinel is "hosts" or "bcd" or "rootCertificates" or "scheduledTasks") return Label(item);
         if (registry) value = TouchStates.ShowValue(new JsonObject { ["type"] = int.Parse(value[..colon]), ["data"] = value[(colon + 1)..] });
         return value.Length == 0 ? Label(item) : $"{Label(item)} = {value}";
     }
@@ -582,10 +619,19 @@ public sealed class Sentinels(Person person)
         return differences.GroupBy(d => d.Sentinel).Select(g => new SentinelHit(g.Key, Side(before, g.Key, g.Select(d => d.Item)), Side(after, g.Key, g.Select(d => d.Item)))).ToList();
     }
 
-    /// Puts back what it can of the items that differ: registry values and keys, and the hosts file. What it can't
-    /// (a new service, account or task, boot settings) shows up when the caller reads the sentinels again.
+    /// Puts back what it can of the items that differ: registry values and keys, the hosts file, services, accounts,
+    /// administrators, scheduled tasks and remote access. What it can't (boot settings, or what Windows refuses) shows up
+    /// when the caller reads the sentinels again.
     public void PutBack(Reading before, Reading after, List<(string Sentinel, string Item)> differences, bool admin)
     {
+        string[] order = ["administrators", "localUsers", "winrm", "services", "scheduledTasks"];
+        // Nothing is removed on the word of a reading that missed some of what was there.
+        var whole = differences.Where(d => !d.Item.StartsWith("HK", StringComparison.Ordinal) && !before[d.Sentinel].ContainsKey(Unread) && !after[d.Sentinel].ContainsKey(Unread));
+        foreach (var (sentinel, item) in whole.OrderBy(d => Array.IndexOf(order, d.Sentinel)))
+        {
+            try { PutBackOther(sentinel, item, before, after, admin && Native.IsAdmin()); }
+            catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or System.ServiceProcess.TimeoutException or ArgumentException or FormatException) { }
+        }
         T Do<T>(string path, Func<T> act) => path.StartsWith(@"HKLM\", StringComparison.Ordinal) && admin && Native.IsAdmin() ? act() : person.Do(act);
         // Keys that weren't there before go again once the values put back leave them empty, deepest first.
         var made = Changed(before, after).Where(d => KeyOnly(d.Item) && !before[d.Sentinel].ContainsKey(d.Item) && after[d.Sentinel].ContainsKey(d.Item)).ToList();
@@ -632,7 +678,113 @@ public sealed class Sentinels(Person person)
             catch { }
         }
     }
+
+    /// Undoes one difference that isn't a registry value. Services, accounts and remote access need the helper's admin rights and a change
+    /// approved with them; a scheduled task is put back with the helper's own rights, which reach at least the person's own tasks.
+    void PutBackOther(string sentinel, string item, Reading before, Reading after, bool elevated)
+    {
+        bool was = before[sentinel].TryGetValue(item, out string? old), now = after[sentinel].ContainsKey(item);
+        switch (sentinel)
+        {
+            case "scheduledTasks" when now:
+                if (!was) Schtasks("/Delete", "/TN", item, "/F");
+                else if (before.Tasks.TryGetValue(item, out byte[]? xml))
+                {
+                    string file = Path.Combine(work, CommandStore.NewId() + ".xml");
+                    try
+                    {
+                        File.WriteAllBytes(file, xml);
+                        Schtasks("/Create", "/TN", item, "/XML", file, "/F");
+                    }
+                    finally { File.Delete(file); }
+                }
+                break;
+            case "services" when elevated:
+                int tab = item.IndexOf(Sep);
+                string name = item[..tab], part = item[(tab + 1)..];
+                if (part == "program" && !was) ServiceControl.Delete(name);
+                else if (part == "program") ServiceControl.Change(name, program: old);
+                else if (part == "start" && was) ServiceControl.Change(name, start: uint.Parse(old!));
+                else if (part == "dll") ServiceControl.Dll(name, was ? old : null);
+                break;
+            case "winrm" when elevated && !was && now:
+                ServiceControl.Stop(item);
+                break;
+            case "localUsers" when elevated:
+                if (!was) Accounts.Delete(item);
+                else Accounts.Disable(item, old == "off");
+                break;
+            case "administrators" when elevated:
+                Accounts.Administrator(item, was);
+                break;
+        }
+    }
+
+    static void Schtasks(params string[] args)
+    {
+        var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "schtasks.exe")) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (string a in args) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi) ?? throw new InvalidOperationException("schtasks didn't start");
+        var o = p.StandardOutput.ReadToEndAsync();
+        var e = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(30_000)) { try { p.Kill(); } catch { } throw new InvalidOperationException("schtasks took too long"); }
+        if (p.ExitCode != 0) throw new InvalidOperationException($"schtasks {p.ExitCode}: {e.Result.Trim()}");
+    }
 }
+
+/// Services as the never list puts them back: removed when a change added one, and how one starts or what it runs as it was.
+static class ServiceControl
+{
+    public static void Stop(string name)
+    {
+        using var sc = new ServiceController(name);
+        if (sc.Status is ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending) return;
+        sc.Stop();
+        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(20));
+    }
+
+    public static void Delete(string name)
+    {
+        try { Stop(name); } catch (Exception e) when (e is InvalidOperationException or System.ServiceProcess.TimeoutException) { }
+        With(name, DELETE, svc => DeleteService(svc));
+    }
+
+    public static void Change(string name, uint start = SERVICE_NO_CHANGE, string? program = null) =>
+        With(name, SERVICE_CHANGE_CONFIG, svc => ChangeServiceConfigW(svc, SERVICE_NO_CHANGE, start, SERVICE_NO_CHANGE, program, null, IntPtr.Zero, null, null, null, null));
+
+    /// Puts a service's own program file back, or removes it when the change added it.
+    public static void Dll(string name, string? dll)
+    {
+        using var p = Registry.LocalMachine.CreateSubKey($@"SYSTEM\CurrentControlSet\Services\{name}\Parameters", writable: true);
+        if (dll == null) p.DeleteValue("ServiceDll", throwOnMissingValue: false);
+        else p.SetValue("ServiceDll", dll, RegistryValueKind.ExpandString);
+    }
+
+    static void With(string name, uint access, Func<IntPtr, bool> act)
+    {
+        if (name.IndexOfAny(['\\', '/']) >= 0) throw new ArgumentException("that isn't a service's name");
+        IntPtr scm = OpenSCManagerW(null, null, SC_MANAGER_CONNECT), svc = IntPtr.Zero;
+        try
+        {
+            if (scm != IntPtr.Zero) svc = OpenServiceW(scm, name, access);
+            if (svc == IntPtr.Zero || !act(svc)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+        finally
+        {
+            if (svc != IntPtr.Zero) CloseServiceHandle(svc);
+            if (scm != IntPtr.Zero) CloseServiceHandle(scm);
+        }
+    }
+
+    const uint SC_MANAGER_CONNECT = 0x1, SERVICE_CHANGE_CONFIG = 0x2, DELETE = 0x00010000, SERVICE_NO_CHANGE = 0xFFFFFFFF;
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern IntPtr OpenSCManagerW(string? machine, string? database, uint access);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern IntPtr OpenServiceW(IntPtr scm, string name, uint access);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool ChangeServiceConfigW(IntPtr svc, uint type, uint start, uint error, string? path, string? group, IntPtr tag, string? deps, string? user, string? password, string? display);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool DeleteService(IntPtr svc);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool CloseServiceHandle(IntPtr h);
+}
+
 
 /// A file the helper reads or writes with its own admin rights. It goes ahead only where every folder on the way is an
 /// ordinary folder owned by admins, the system or Windows' installer, and it opens the file itself without following a
@@ -774,10 +926,15 @@ static class Accounts
         return list;
     }
 
-    public static List<string> Administrators()
+    static string AdministratorsGroup()
     {
         string group = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Translate(typeof(NTAccount)).Value;
-        group = group[(group.IndexOf('\\') + 1)..];
+        return group[(group.IndexOf('\\') + 1)..];
+    }
+
+    public static List<string> Administrators()
+    {
+        string group = AdministratorsGroup();
         var list = new List<string>();
         IntPtr resume = IntPtr.Zero;
         int rc;
@@ -794,7 +951,45 @@ static class Accounts
         return list;
     }
 
-    const int FILTER_NORMAL_ACCOUNT = 2, ERROR_MORE_DATA = 234, UF_ACCOUNTDISABLE = 2;
+    public static void Delete(string name) => Check(NetUserDel(null, name), "NetUserDel");
+
+    public static void Disable(string name, bool disabled)
+    {
+        Check(NetUserGetInfo(null, name, 1, out IntPtr buf), "NetUserGetInfo");
+        int flags;
+        try { flags = Marshal.PtrToStructure<USER_INFO_1>(buf).Flags; }
+        finally { NetApiBufferFree(buf); }
+        flags = disabled ? flags | UF_ACCOUNTDISABLE : flags & ~UF_ACCOUNTDISABLE;
+        Check(NetUserSetInfo(null, name, 1008, ref flags, out _), "NetUserSetInfo");
+    }
+
+    /// Makes the account with this sid an administrator again, or no longer one.
+    public static void Administrator(string sid, bool member)
+    {
+        var bytes = new byte[SecurityIdentifier.MaxBinaryLength];
+        var id = new SecurityIdentifier(sid);
+        id.GetBinaryForm(bytes, 0);
+        IntPtr psid = Marshal.AllocHGlobal(id.BinaryLength);
+        try
+        {
+            Marshal.Copy(bytes, 0, psid, id.BinaryLength);
+            int rc = member ? NetLocalGroupAddMembers(null, AdministratorsGroup(), 0, ref psid, 1) : NetLocalGroupDelMembers(null, AdministratorsGroup(), 0, ref psid, 1);
+            if (rc != ERROR_MEMBER_IN_ALIAS && rc != ERROR_MEMBER_NOT_IN_ALIAS) Check(rc, member ? "NetLocalGroupAddMembers" : "NetLocalGroupDelMembers");
+        }
+        finally { Marshal.FreeHGlobal(psid); }
+    }
+
+    static void Check(int rc, string call)
+    {
+        if (rc != 0) throw new InvalidOperationException($"{call} {rc}");
+    }
+
+    const int FILTER_NORMAL_ACCOUNT = 2, ERROR_MORE_DATA = 234, UF_ACCOUNTDISABLE = 2, ERROR_MEMBER_NOT_IN_ALIAS = 1377, ERROR_MEMBER_IN_ALIAS = 1378;
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)] static extern int NetUserDel(string? server, string name);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)] static extern int NetUserGetInfo(string? server, string name, int level, out IntPtr buf);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)] static extern int NetUserSetInfo(string? server, string name, int level, ref int info, out int error);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)] static extern int NetLocalGroupAddMembers(string? server, string group, int level, ref IntPtr members, int count);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode)] static extern int NetLocalGroupDelMembers(string? server, string group, int level, ref IntPtr members, int count);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct USER_INFO_1

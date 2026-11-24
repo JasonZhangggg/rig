@@ -276,7 +276,7 @@ export type ApplyReply =
   | { outcome: "declined" }
   | { outcome: "applied"; result: RunResult; undo: CommandUndo }
   /** It ran, then the helper put everything back: a never-list write (`sentinels`) or a failure (`error`). Nothing to undo. */
-  | { outcome: "rolledBack"; result: RunResult; sentinels: SentinelHit[]; error?: string };
+  | { outcome: "rolledBack"; result: RunResult; sentinels: SentinelHit[]; error?: string; left?: string[] };
 
 export type UndoReply =
   | { outcome: "undone"; /** What `read` printed after. */ printed: string; /** What it couldn't put back. */ left: string[] }

@@ -131,7 +131,7 @@ public static class CommandCheck
     class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
     sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } }
     sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } }
-    sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
+    sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
     sealed class ReadRoot { public string Root { get; set; } = ""; public string[]? Ends { get; set; } }
@@ -140,6 +140,8 @@ public static class CommandCheck
     {
         public string[] Literal { get; set; } = [];
         public string LiteralPrefix { get; set; } = "";
+        public string[] Values { get; set; } = [];
+        public string[] Constants { get; set; } = [];
         public string[] Wildcards { get; set; } = [];
         public string[] Programs { get; set; } = [];
         public string[] ReadKinds { get; set; } = [];
@@ -324,7 +326,7 @@ public static class CommandCheck
 
     static List<Target> TargetsOf(Call call, Targets t)
     {
-        var shown = Shown(call.Args);
+        var shown = Shown(call.Args).Where(a => a.Kind == "hidden" || !R.Paths.Constants.Contains(Fold(a.Text))).ToList();
         Target Make(Arg a, bool literal)
         {
             bool hidden = a.Kind == "hidden";
@@ -332,18 +334,27 @@ public static class CommandCheck
             return new Target(a.Text, place, hidden ? "name" : KindOf(place), hidden, literal);
         }
         if (t.At != null) return t.At.Where(k => k < shown.Count).Select(k => Make(shown[k], false)).ToList();
-        string[] values = t.Values ?? [];
+        string[] values = t.Values ?? [], names = t.Names ?? [];
+        bool PlainName(Target x) => !x.Hidden && x.Kind == "name" && !R.Paths.Wildcards.Any(w => x.Text.Contains(w, StringComparison.Ordinal))
+            && !(t.Places && R.Paths.Programs.Any(p => x.Place.EndsWith(p, StringComparison.Ordinal)));
         var o = new List<Target>();
         for (int k = 0; k < shown.Count; k++)
         {
             var a = shown[k];
             if (!IsParam(a)) { o.Add(Make(a, false)); continue; }
-            string head = HeadOf(a), role = LiteralParam(head) ? "literal" : values.Contains(head) ? "value" : "path";
+            string head = HeadOf(a);
+            string role = LiteralParam(head) ? "literal" : values.Contains(head) || R.Paths.Values.Contains(head) ? "value" : names.Contains(head) ? "name" : "path";
+            void Add(Target x) { if (role == "literal" || (role == "name" && !PlainName(x))) o.Add(x); }
             string? inline = InlineOf(a);
-            if (!string.IsNullOrEmpty(inline)) { if (role != "value") o.Add(Make(new Arg("word", inline), role == "literal")); continue; }
+            if (!string.IsNullOrEmpty(inline))
+            {
+                if (role == "path") o.Add(Make(new Arg("word", inline), false));
+                else Add(Make(new Arg("word", inline), role == "literal"));
+                continue;
+            }
             if (role == "path" || k + 1 >= shown.Count || IsParam(shown[k + 1])) continue;
             k++;
-            if (role == "literal") o.Add(Make(shown[k], true));
+            Add(Make(shown[k], role == "literal"));
         }
         return o;
     }
@@ -378,7 +389,8 @@ public static class CommandCheck
         else if (t.Write)
         {
             if (targets.Any(x => x.Hidden)) return ("not-literal-change", name, "refused");
-            if (shown.Any(x => x.Kind == "relative") || !shown.Any(x => x.Kind is "registry" or "file" or "drive")) return ("full-path", name, "refused");
+            if (shown.FirstOrDefault(x => x.Kind is "relative" or "name") is Target loose) return ("relative", At(loose), "refused");
+            if (!shown.Any(x => x.Kind is "registry" or "file" or "drive")) return ("full-path", name, "refused");
         }
         if (t.Content)
         {
@@ -467,6 +479,7 @@ public static class CommandCheck
                 if (R.Paths.Wildcards.Any(w => f.Detail.Contains(w, StringComparison.Ordinal))) return (Words("wildcard", at), "refused", null);
                 if (Dots(place)) return (Words("dots", at), "refused", null);
                 if (R.Paths.Programs.Any(p => place.EndsWith(p, StringComparison.Ordinal))) return (Words("program-file", at), "refused", null);
+                if (KindOf(place) != "file") return (Words("relative", at), "refused", null);
                 return (null, "", Words());
             }
         }
