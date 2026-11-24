@@ -25,6 +25,7 @@ jobs:
   # Release (release.yml) builds the installer with the same steps.
   windows:
     runs-on: windows-latest
+    needs: check
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
