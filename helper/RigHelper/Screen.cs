@@ -107,8 +107,10 @@ static class ScreenRules
         }
         if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             throw new RigException($"Rig doesn't know an app by that name. Name one of its own ({string.Join(", ", R.Apps.Select(a => a.Name))}), a Settings page such as ms-settings:display, or a program's .exe.");
+        // A program named by its .exe is only ever found open, never started: a look is a read, and starting a program
+        // can be a change in itself. Rig starts only the apps and Settings pages its own rules list.
         if (name.Contains('\\') || name.Contains('/'))
-            return Refusal(name, null) is string refused ? throw new RigException(refused) : new ScreenApp("exe", name, name, null);
+            return Refusal(name, null) is string refused ? throw new RigException(refused) : new ScreenApp("open", "", name, null);
         return RefusedName(name, null) is string no ? throw new RigException(no) : new ScreenApp("open", "", name, null);
     }
 }

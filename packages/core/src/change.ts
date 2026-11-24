@@ -520,7 +520,7 @@ export interface StepRpc {
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
   /**
    * Walks to a control in an app's window and reads it, changing nothing. `app` is one of Rig's own names for an app,
-   * `ms-settings:` and a page, the full path of a program, or the file name of one that is open; `goal` is the names of
+   * `ms-settings:` and a page, or the .exe (full path or file name) of a program that is already open; `goal` is the names of
    * the controls to walk through, the last being the one to read. The helper keeps the walk under `lookId`.
    */
   "screen.look": { params: { app: string; goal: string[] }; reply: LookReply };

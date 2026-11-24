@@ -122,6 +122,12 @@ static class Win32
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr DefWindowProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool DestroyWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int how);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    /// Shows a window where it is without giving it the keyboard, on top of every other window when `onTop`. Unlike
+    /// ShowWindow, this isn't overridden by how the program itself was started, which for the worker is hidden.
+    public static void Show(IntPtr hwnd, bool onTop) => SetWindowPos(hwnd, onTop ? new IntPtr(-1) : IntPtr.Zero, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | 0x40 | (onTop ? 0u : 0x4));
     [DllImport("user32.dll")] public static extern int GetMessage(out MSG msg, IntPtr hwnd, uint min, uint max);
     [DllImport("user32.dll")] public static extern bool TranslateMessage(ref MSG msg);
     [DllImport("user32.dll")] public static extern IntPtr DispatchMessage(ref MSG msg);

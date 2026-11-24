@@ -81,6 +81,8 @@ sealed class ScreenTestWindow : IDisposable
         // A tab control only says which tab is chosen; showing that tab's controls is the window's own job.
         Win32.SetTimer(window, 1, 50, IntPtr.Zero);
         Win32.ShowWindow(window, 1);
+        Win32.Show(window, onTop: false);
+        Win32.SetForegroundWindow(window);
         ready.Set();
         while (Win32.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
@@ -179,7 +181,7 @@ public static partial class CommandSelfTest
         static string? Resolved(string ask) { try { return ScreenRules.Resolve(ask).Kind; } catch (RigException e) { return $"refused: {e.Message}"; } }
         foreach (string ask in new[] { "regedit.exe", @"C:\Windows\regedit.exe", "CHROME.EXE", @"C:\Program Files\Rig\Rig.exe", "ms-settings:windowsdefender", "ms-settings:signinoptions", "ms-settings:display/../accounts", "notepad", ScreenStep.TestApp, @"\\server\share\tool.exe", @"C:\Users\Public\tool.exe" })
             if (Resolved(ask)?.StartsWith("refused: ", StringComparison.Ordinal) != true) yield return $"\"{ask}\" was taken as an app Rig may drive";
-        if (Resolved("ms-settings:display") != "settings" || Resolved("NVIDIA Control Panel") != "aumid" || Resolved("MSIAfterburner.exe") != "open" || Resolved(@"C:\Program Files (x86)\MSI Afterburner\MSIAfterburner.exe") != "exe")
+        if (Resolved("ms-settings:display") != "settings" || Resolved("NVIDIA Control Panel") != "aumid" || Resolved("MSIAfterburner.exe") != "open" || Resolved(@"C:\Program Files (x86)\MSI Afterburner\MSIAfterburner.exe") != "open" || Resolved(@"C:\Windows\System32\logoff.exe") != "open")
             yield return "an app Rig may drive was refused";
 
         if (ScreenRules.Clean("Low\r\nLatency\tMode") != "Low Latency Mode" || ScreenRules.Clean("caf\u00e9 \u202eevil") != "caf? ?evil" || ScreenRules.Clean(new string('x', 500)).Length != ScreenRules.MaxText || ScreenRules.Plain("two\nlines") || ScreenRules.Plain(""))

@@ -29,13 +29,16 @@ sealed record Hop(string Name, int Type, string Id);
 sealed record ScreenReading(string Kind, string Value, IReadOnlyList<string> Options, string? Min = null, string? Max = null);
 
 /// The app a walk is in, as ScreenRules.Resolve worked it out from Rig's own rules.
-/// `Kind`: aumid, settings, exe (started when it isn't open), open (only when it is open already) or test.
+/// `Kind`: aumid or exe (one of Rig's listed apps, started when it isn't open), settings (a listed page), open (a
+/// program named by its .exe, used only when it is open already) or test.
 sealed record ScreenApp(string Kind, string Launch, string Image, string? Page);
 
 sealed class ScreenWalk : IDisposable
 {
     const int MaxControls = 6000, FindMs = 6000, StartMs = 20_000, PollMs = 150;
     static readonly HashSet<int> HopTypes = [Uia.TabItem, Uia.TreeItem, Uia.ListItem, Uia.Group, Uia.Button];
+    /// In Settings a list or tree item leads to another page, and Rig stays on the page its rules let it open.
+    static readonly HashSet<int> PageHopTypes = [Uia.TabItem, Uia.Group, Uia.Button];
     static readonly HashSet<int> TargetTypes = [Uia.CheckBox, Uia.RadioButton, Uia.ComboBox, Uia.Slider, Uia.Button];
     static readonly HashSet<int> Named = [.. HopTypes, .. TargetTypes];
 
@@ -48,15 +51,17 @@ sealed class ScreenWalk : IDisposable
     readonly HashSet<IntPtr> known;
     readonly HashSet<int> ours;
     readonly int pid;
+    readonly HashSet<int> hopTypes;
 
     /// The full path of the program the window belongs to.
     public string Image { get; }
     /// Something the walk read sat inside a document, which is where web pages and other outside text show.
     public bool ReadDocument { get; private set; }
 
-    ScreenWalk(IntPtr window, int pid, int frame, string image, string saying)
+    ScreenWalk(IntPtr window, int pid, int frame, string image, string saying, bool page)
     {
         this.pid = pid;
+        hopTypes = page ? PageHopTypes : HopTypes;
         Image = image;
         uia = (IUIAutomation)Activator.CreateInstance(Type.GetTypeFromCLSID(Uia.Automation)!)!;
         all = uia.CreateTrueCondition();
@@ -91,7 +96,7 @@ sealed class ScreenWalk : IDisposable
         using var me = WindowsIdentity.GetCurrent();
         int theirs = Native.ProcessIntegrity(pid), mine = Native.Integrity(me.Token);
         if (theirs == 0 || theirs > mine) throw new RigException("That app is running as administrator. Rig only works an app's buttons with the rights you have yourself, so it won't touch this window.");
-        return new ScreenWalk(window, pid, frame, image, saying);
+        return new ScreenWalk(window, pid, frame, image, saying, page: app.Kind == "settings");
     }
 
     /// The app's windows: each with the process its content belongs to. A packaged app's window belongs to Windows' frame
@@ -270,7 +275,7 @@ sealed class ScreenWalk : IDisposable
         for (int i = 0; i < names.Count; i++)
         {
             bool last = i == names.Count - 1;
-            var c = Find(names[i], last ? TargetTypes : HopTypes, kept?[i]);
+            var c = Find(names[i], last ? TargetTypes : hopTypes, kept?[i]);
             if (!last) Through(c);
             hops.Add(new Hop(c.Name, c.Type, Prop<string>(c.El, Uia.AutomationId) ?? ""));
             target = c;
@@ -357,10 +362,17 @@ sealed class ScreenWalk : IDisposable
             } while (waited.ElapsedMilliseconds < 1500);
             if (buttons.Count == 0) continue;
             if (buttons.Count > 1) throw new RigException($"The app has {buttons.Count} buttons named \"{name}\", so Rig can't tell which one applies the change.");
-            if (Prop<bool>(buttons[0].El, Uia.IsEnabled)) Invoke(buttons[0]);
+            if (!Prop<bool>(buttons[0].El, Uia.IsEnabled)) return;
+            var before = AppWindows();
+            Invoke(buttons[0]);
+            Thread.Sleep(400);
+            // A question from the app after Apply ("Keep these changes?") is the person's to answer, not Rig's.
+            if (AppWindows().Except(before).Any()) throw new RigException($"The app opened a window of its own after \"{name}\", and Rig doesn't answer an app's questions for you.");
             return;
         }
     }
+
+    List<IntPtr> AppWindows() => Win32.TopWindows().Where(w => { Win32.GetWindowThreadProcessId(w, out int owner); return owner == pid; }).ToList();
 
     /// The value once the app has settled on it: read until it is `want` or a moment has passed.
     public string Settled(string want)
@@ -413,7 +425,7 @@ sealed class StopBar : IDisposable
         Win32.SendMessage(text, Win32.WM_SETFONT, font, 1);
         Win32.SendMessage(stop, Win32.WM_SETFONT, font, 1);
         shown = this;
-        Win32.ShowWindow(window, Win32.SW_SHOWNOACTIVATE);
+        Win32.Show(window, onTop: true);
         ready.Set();
         while (Win32.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
