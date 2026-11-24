@@ -39,13 +39,9 @@ export function demoRecorderLines(inv: Inventory, now: number, dust: number): un
     return { k: "s", t, v, ...(d ? { d: 1 } : {}), ...(t % MIN < 30 * SEC ? { top: demoProcesses(inv, t) } : {}) };
   };
 
-  // Readings every 30 seconds. Days before yesterday only every two minutes: they're thinned once they're over anyway.
-  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  // The recorder reads every 30 seconds, but a day's log shows one reading every 4 minutes, so the demo writes only those.
   const base: ReturnType<typeof line>[] = [];
-  for (let t = from.getTime(); t <= now; t += 30 * SEC) {
-    if (t < today.getTime() - DAY && t % (2 * MIN) !== 0) continue;
-    base.push(line(t, false));
-  }
+  for (let t = from.getTime(); t <= now; t += 4 * MIN) base.push(line(t, false));
 
   // Closer looks: the graphics card at 88°C or more two readings running (once a day at most), and the Windows events that start one.
   const events = demoEvents(inv.machine.kind, now, from.getTime()).sort((a, b) => a.t - b.t);
@@ -97,6 +93,18 @@ export function demoProbe(inv: Inventory, now: number): { lines: unknown[]; stat
 
 /** Atlas's background recordings for the demo: a closer look around anything unusual, each day, and the custom log. */
 export function demoBackground(inv: Inventory, now: number, dust: number, limits: Limits): Recording[] {
+  // Every demo client in a page or a test file shares one week, made again every few minutes so today keeps up.
+  const key = `${inv.machine.id}|${dust}|${limits.cpu}|${limits.gpu}`;
+  const hit = made.get(key);
+  if (hit && Math.abs(now - hit.at) < 5 * MIN) return hit.recs;
+  const recs = makeBackground(inv, now, dust, limits);
+  made.set(key, { at: now, recs });
+  return recs;
+}
+
+const made = new Map<string, { at: number; recs: Recording[] }>();
+
+function makeBackground(inv: Inventory, now: number, dust: number, limits: Limits): Recording[] {
   const log = new BackgroundLog();
   log.ingest(demoRecorderLines(inv, now, dust));
   const probe = demoProbe(inv, now);
