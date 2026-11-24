@@ -157,7 +157,7 @@ public static class Protections
         IReadOnlyList<Revert>? armed = null;
         try { armed = Reverts.All(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException or RigException) { }
         var rows = new JsonArray();
-        foreach (var row in Rows)
+        foreach (var row in SelfTest ? [.. Rows, Test] : Rows)
         {
             var o = new JsonObject { ["id"] = row.Id };
             try { o["on"] = On(row); } catch (RigException) { o["on"] = null; }
