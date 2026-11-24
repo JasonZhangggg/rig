@@ -18,8 +18,8 @@ export interface Inventory {
   gpus: { name: string; vendor: "nvidia" | "amd" | "intel" | "other"; vramMb?: number; driverVersion?: string; driverDate?: string; integrated: boolean }[];
   board: { manufacturer: string; product: string; biosVersion: string; biosDate?: string };
   memory: { totalMb: number; slotsTotal?: number; modules: { manufacturer?: string; partNumber?: string; capacityMb: number; speedMhz?: number; slot?: string }[] };
-  disks: { model: string; sizeGb: number; media: "nvme" | "ssd" | "hdd" | "unknown"; healthPercent?: number; writtenTb?: number; /** Windows' own verdict from the drive's self-test (SMART). Missing from helpers before 0.1.5. */ status?: "healthy" | "warning" | "unhealthy" }[];
-  volumes: { letter: string; label?: string; sizeGb: number; freeGb: number }[];
+  disks: Disk[];
+  volumes: Volume[];
   battery?: { designWh?: number; fullWh?: number; cycles?: number };
   displays: {
     name: string; width: number; height: number; refreshHz: number; maxRefreshHz: number; primary: boolean;
@@ -27,6 +27,50 @@ export interface Inventory {
     connection?: DisplayConnection;
     /** Windows' name for the graphics that drive this screen ("NVIDIA GeForce RTX 4070 SUPER", "AMD Radeon(TM) Graphics"). Missing from older helpers. */
     gpu?: string;
+  }[];
+}
+
+export interface Disk {
+  model: string;
+  sizeGb: number;
+  media: "nvme" | "ssd" | "hdd" | "unknown";
+  /** Life left, as the drive reports it (NVMe "Percentage Used", or Windows' wear counter). */
+  healthPercent?: number;
+  writtenTb?: number;
+  /** Windows' own verdict from the drive's self-test (SMART). Missing from helpers before 0.1.5. */
+  status?: "healthy" | "warning" | "unhealthy";
+  /** Windows' disk number, which volumes point at. Missing from helpers before 0.1.8. */
+  number?: number;
+  /** Hours the drive has been powered on, from Windows' reliability counters (admin only). */
+  powerOnHours?: number;
+  /** Read and write errors the drive couldn't correct, from the same counters. */
+  errors?: number;
+}
+
+export interface Volume {
+  letter: string;
+  label?: string;
+  sizeGb: number;
+  freeGb: number;
+  /** The disk number of the drive it's on (Disk.number). Missing from helpers before 0.1.8, and for a volume spread over several drives. */
+  disk?: number;
+}
+
+/** What Rig sorts a drive's used space into. Whatever isn't counted is "other" on screen. */
+export type FillKind = "windows" | "apps" | "games" | "files" | "system";
+
+/**
+ * What fills each volume, from the helper's folder scan (`storage`). The scan walks folders at low priority in the
+ * background and is kept on disk for a day, so asking only returns what it last found and, if that's stale, starts another.
+ */
+export interface StorageScan {
+  /** When the last scan finished, ms since 1970. Missing: none has finished yet. */
+  at?: number;
+  /** A scan is running now. */
+  running: boolean;
+  volumes: {
+    letter: string;
+    fills: { kind: FillKind; gb: number; /** The biggest things in it (games by name, your folders), largest first, at most five. */ top?: { name: string; gb: number }[] }[];
   }[];
 }
 

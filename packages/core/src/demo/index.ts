@@ -3,7 +3,7 @@ import type { ActionCall } from "../actions";
 import { describeCall, titleFor } from "../actions";
 import { rangeMs, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
-import type { Inventory, Sensor, SystemFacts } from "../telemetry";
+import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
 import { shopFor } from "../shop";
@@ -16,6 +16,7 @@ import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
+import { demoScan } from "./storage";
 import { DemoManuals } from "./manualShelf";
 import { makerName } from "../manualParts";
 import atlasInv from "./fixtures/atlas.inventory.json";
@@ -29,11 +30,12 @@ export { applyToFacts } from "./apply";
 export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export { DemoManuals } from "./manualShelf";
+export { demoScan } from "./storage";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -74,7 +76,7 @@ export class DemoClient implements RigClient {
         source: { events: async (since) => demoEvents(inv.machine.kind, Date.now(), since), processes: async () => demoProcesses(inv, Date.now()) },
         onChange: () => recListeners.forEach((cb) => cb(recorder.list())),
       });
-      return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners };
+      return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners, scan: demoScan(inv, Date.now() - 3 * 36e5) };
     };
     this.pcs = {
       "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E" }, 1),
@@ -104,11 +106,23 @@ export class DemoClient implements RigClient {
     if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now) };
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
-    const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax);
+    const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
     return withAlerts({ ...pc, lastSync: "Demo PC" }, alerts);
   }
 
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }
+
+  /** Measures the demo drives again: running for a few seconds, then the same sizes, measured just now. */
+  async measureDrives(machineId: string) {
+    const p = this.pcs[machineId];
+    if (!p) throw new Error("Open Rig on that PC to measure its drives.");
+    if (p.scan.running) return;
+    p.scan = { ...p.scan, running: true };
+    this.emit(machineId);
+    await sleep(4000);
+    p.scan = demoScan(p.inv, Date.now());
+    this.emit(machineId);
+  }
 
   async account() { return { id: "demo", name: "You", email: "demo@rig.app" }; }
   async signOut() {}

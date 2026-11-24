@@ -2,7 +2,7 @@
 // desktop, received from the server on the web, or taken from demo data.
 
 import type { ActionCall } from "./actions";
-import type { DisplayConnection, SensorType } from "./telemetry";
+import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
 import type { BuildShape } from "./build";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
@@ -63,6 +63,43 @@ export interface HealthPart { label: string; value: number; note: string; sev: S
 export interface FanReading { label: string; rpm: number; max: number }
 export interface StorageSlice { label: string; gb: number }
 
+/** One share of a drive: a kind of thing Rig sized, what it couldn't sort (other), or free space. */
+export interface DriveFill {
+  kind: FillKind | "other" | "free";
+  label: string;
+  gb: number;
+  /** The biggest things in it, largest first. */
+  top?: { name: string; gb: number }[];
+}
+
+/** One physical drive for the storage map: what fills it and how healthy it is, from drives.ts. */
+export interface DriveMap {
+  /** The drive's model, or "Other drives" for volumes Rig couldn't place on a drive. */
+  model: string;
+  media: "nvme" | "ssd" | "hdd" | "unknown";
+  sizeGb: number;
+  /** Its volumes as Windows names them ("C: Windows"). */
+  volumes: string[];
+  /** Windows is on it. */
+  system: boolean;
+  usedGb?: number;
+  freeGb?: number;
+  /** Largest first, other and free last. Just used and free until a folder scan finishes. */
+  fills: DriveFill[];
+  /** When the folder sizes were measured (ISO), and whether a measurement is running now. */
+  scannedAt?: string;
+  scanning?: boolean;
+  /** The verdict in a few words and how worried to be. */
+  health: { sev: Severity; text: string };
+  lifeLeft?: number;
+  writtenTb?: number;
+  powerOnHours?: number;
+  errors?: number;
+  temp?: number;
+  /** What Windows couldn't tell Rig about this drive, one plain line each. */
+  unknown: string[];
+}
+
 export interface PC {
   id: string;
   name: string;
@@ -81,6 +118,8 @@ export interface PC {
   breakdown?: HealthPart[];
   fans?: FanReading[];
   storage?: { slices: StorageSlice[]; totalGb: number };
+  /** Each drive with what fills it and its health, for the storage map. */
+  drives?: DriveMap[];
   model?: { source: "library" | "generic"; label: string };
   parts?: Record<string, Part>;
   /** Windows settings Rig can switch, as they are now. */
@@ -124,7 +163,7 @@ export interface BoardFacts {
 }
 
 /** What a PC reads moment to moment: these change with nearly every reading. */
-export type LivePCKey = "health" | "seenAt" | "lastSync" | "online" | "stats" | "breakdown" | "fans" | "alerts" | "readings";
+export type LivePCKey = "health" | "seenAt" | "lastSync" | "online" | "stats" | "breakdown" | "fans" | "alerts" | "readings" | "drives";
 export type LivePartKey = "temp" | "tempMax" | "load" | "clock" | "fan" | "warn";
 /** A row of a part's specs that is a live reading (memory in use, power drawn, a fan's speed), not a fact about the part. */
 export const liveSpec = ([label, value]: [string, string]) => label === "In use" || label === "Drawing now" || / rpm$/.test(value);

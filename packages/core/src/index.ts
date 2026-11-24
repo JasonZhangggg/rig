@@ -1,5 +1,6 @@
 export * from "./model";
 export * from "./telemetry";
+export * from "./drives";
 export * from "./actions";
 export * from "./client";
 export * from "./health";

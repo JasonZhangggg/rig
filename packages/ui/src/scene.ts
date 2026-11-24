@@ -68,6 +68,13 @@ interface Label { anchor: THREE.Object3D; hidden: boolean }
 /** The camera's vertical field of view on a landscape stage, in degrees. */
 const BASE_FOV = 32;
 
+/** How far the camera sits from a part shown alone so it fills the same share of the stage whatever its size: its bounds fit the narrower side of the view with a margin. */
+export function soloDistance(radius: number, fov: number, aspect: number, margin = 1.3) {
+  const v = THREE.MathUtils.degToRad(fov) / 2;
+  const h = Math.atan(Math.tan(v) * aspect);
+  return (Math.max(radius, 0.01) / Math.sin(Math.min(v, h))) * margin;
+}
+
 /** Widens the view on a stage taller than it is wide, so the sides of the PC aren't cut off. */
 export function fovFor(aspect: number) {
   if (aspect >= 1) return BASE_FOV;
@@ -845,11 +852,12 @@ export function createScene(
     for (const e of mine) _box.union(_part.setFromObject(e.obj));
     _box.getBoundingSphere(_sphere);
     const dir = camera.position.clone().sub(controls.target).normalize();
-    // Alone, the part fills the stage; the camera may come as close as it needs for a small one.
+    // Alone, the part fills the stage by its own size, so a small drive shows as large as a graphics card;
+    // the camera may come as close as it needs. In the PC, small parts keep a floor so the view doesn't dive in.
     const alone = state.solo === id;
-    controls.minDistance = alone ? 1 : 4;
-    const fit = Math.max(_sphere.radius, 0.45) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * (alone ? 1.3 : 1.6);
-    const dist = alone ? fit : Math.min(fit, camera.position.distanceTo(controls.target));
+    const dist = alone ? soloDistance(_sphere.radius, camera.fov, camera.aspect)
+      : Math.min(Math.max(_sphere.radius, 0.45) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 1.6, camera.position.distanceTo(controls.target));
+    controls.minDistance = alone ? Math.min(1, dist * 0.5) : 4;
     camAnim = { from: camera.position.clone(), to: _sphere.center.clone().addScaledVector(dir, dist), t: 0, look: { from: controls.target.clone(), to: _sphere.center.clone() } };
     wake();
   }

@@ -29,12 +29,15 @@ public static class Program
             {
                 ("hello", null), ("inventory", null), ("facts", null), ("snapshot", null),
                 ("events", new JsonObject { ["sinceMs"] = weekAgo }), ("processes", new JsonObject { ["top"] = 8 }),
+                // Answers at once with the last scan (none yet on a fresh runner) and starts one in the background.
+                ("storage", null),
             };
             foreach (var (m, p) in calls)
             {
                 try { all[m] = h.Handle(m, p); } catch (Exception e) { all[m] = new JsonObject { ["error"] = e.ToString() }; }
             }
             var problems = SelfChecks(all, weekAgo).ToList();
+            problems.AddRange(StorageScan.SelfChecks());
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -149,6 +152,13 @@ public static class Program
         if (EventLogs.Queries(DateTime.UnixEpoch).Count() != 7) yield return "event queries are off";
         foreach (var p in RecorderChecks()) yield return p;
         foreach (var p in ProbeChecks()) yield return p;
+        if (all["storage"] is JsonObject scan && (scan["running"] is not JsonValue || scan["volumes"] is not JsonArray)) yield return "storage answered without running and volumes";
+        // Each volume names the drive it's on, so the storage map can draw it there.
+        if (all["inventory"]?["volumes"] is JsonArray vols && all["inventory"]?["disks"] is JsonArray disks)
+        {
+            var numbers = disks.Select(d => d?["number"]?.ToString()).ToHashSet();
+            if (vols.Any(v => v?["disk"] is null || !numbers.Contains(v["disk"]!.ToString()))) yield return "a volume isn't matched to a drive";
+        }
     }
 
     /// The background recorder's pure rules: file names, pruning, the line format and when it takes a closer look.
@@ -318,6 +328,7 @@ public class Handler(Sensors hw)
         "snapshot" => Json.From(hw.Snapshot()),
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
+        "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
         "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
         "recorder.probes" => ProbeStore.Edit(p, hw),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),

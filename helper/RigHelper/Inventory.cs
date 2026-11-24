@@ -164,10 +164,25 @@ public static class Inventory
         return new { totalMb = mods.Sum(m => m.capacityMb), slotsTotal = slots > 0 ? (long?)slots : null, modules = mods };
     }
 
+    /// Windows' reliability counters per disk number. They change slowly and the Storage provider can be slow, so they're read once an hour.
+    static (DateTime at, Dictionary<string, ManagementBaseObject> byDisk)? reliability;
+    static Dictionary<string, ManagementBaseObject> Reliability()
+    {
+        if (reliability is { } r && DateTime.UtcNow - r.at < TimeSpan.FromHours(1)) return r.byDisk;
+        // Needs admin rights; without them the list is empty and the screens say what's missing.
+        var byDisk = Query("SELECT DeviceId, Wear, PowerOnHours, ReadErrorsUncorrected, WriteErrorsUncorrected FROM MSFT_StorageReliabilityCounter", @"root\Microsoft\Windows\Storage")
+            .GroupBy(x => Str(x, "DeviceId")).ToDictionary(g => g.Key, g => g.First());
+        reliability = (DateTime.UtcNow, byDisk);
+        return byDisk;
+    }
+
+    static long? Opt(ManagementBaseObject? o, string p) { try { return o?[p] is null ? null : Convert.ToInt64(o[p]); } catch { return null; } }
+
     static object Disks(List<IHardware> lhm)
     {
         var list = new List<object>();
-        foreach (var d in Query("SELECT FriendlyName, Size, MediaType, BusType, HealthStatus FROM MSFT_PhysicalDisk", @"root\Microsoft\Windows\Storage"))
+        var rel = Reliability();
+        foreach (var d in Query("SELECT DeviceId, FriendlyName, Size, MediaType, BusType, HealthStatus FROM MSFT_PhysicalDisk", @"root\Microsoft\Windows\Storage"))
         {
             string model = Str(d, "FriendlyName");
             long bus = Num(d, "BusType"), media = Num(d, "MediaType");
@@ -176,12 +191,21 @@ public static class Inventory
             double? used = h?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Level && s.Name.Contains("Percentage Used", StringComparison.OrdinalIgnoreCase))?.Value;
             double? life = h?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Level && s.Name.Contains("Remaining Life", StringComparison.OrdinalIgnoreCase))?.Value;
             double? writtenGb = h?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && (s.Name.Contains("Data Written") || s.Name.Contains("Total Bytes Written")))?.Value;
+            string id = Str(d, "DeviceId");
+            var counters = rel.GetValueOrDefault(id);
+            string kind = bus == 17 ? "nvme" : media == 4 ? "ssd" : media == 3 ? "hdd" : "unknown";
+            // Windows' own wear counter, when LibreHardwareMonitor can't read the drive's. Hard drives don't wear this way, and 0 often means "not counted".
+            long? wear = kind is "nvme" or "ssd" && Opt(counters, "Wear") is long w0 and > 0 and <= 100 ? w0 : null;
+            long? errors = Opt(counters, "ReadErrorsUncorrected") is long re && Opt(counters, "WriteErrorsUncorrected") is long we ? re + we : null;
             list.Add(new
             {
                 model,
                 sizeGb = Num(d, "Size") / 1_000_000_000,
-                media = bus == 17 ? "nvme" : media == 4 ? "ssd" : media == 3 ? "hdd" : "unknown",
-                healthPercent = used is double u ? (int?)Math.Max(0, 100 - (int)Math.Round(u)) : life is double l ? (int?)Math.Round(l) : null,
+                media = kind,
+                number = int.TryParse(id, out int n) ? (int?)n : null,
+                healthPercent = used is double u ? (int?)Math.Max(0, 100 - (int)Math.Round(u)) : life is double l ? (int?)Math.Round(l) : wear is long wr ? (int?)(100 - wr) : null,
+                powerOnHours = Opt(counters, "PowerOnHours") is long hours and > 0 ? (long?)hours : null,
+                errors,
                 writtenTb = writtenGb is double w ? (double?)Math.Round(w / 1000, 1) : null,
                 // Windows' own reading of the drive's self-test: 0 healthy, 1 warning, 2 unhealthy, 5 unknown.
                 status = d["HealthStatus"] is null ? null : Num(d, "HealthStatus") switch { 0 => "healthy", 1 => "warning", 2 => "unhealthy", _ => (string?)null },
@@ -190,15 +214,25 @@ public static class Inventory
         return list;
     }
 
-    static object Volumes() => DriveInfo.GetDrives()
-        .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
-        .Select(d => new
-        {
-            letter = d.Name.TrimEnd('\\'),
-            label = string.IsNullOrWhiteSpace(d.VolumeLabel) ? null : d.VolumeLabel,
-            sizeGb = d.TotalSize / (1024L * 1024 * 1024),
-            freeGb = d.AvailableFreeSpace / (1024L * 1024 * 1024),
-        }).ToList();
+    static object Volumes()
+    {
+        // Which disk each lettered partition is on. A volume spread over several disks has partitions on each, so it gets none.
+        var onDisk = Query("SELECT DiskNumber, DriveLetter FROM MSFT_Partition", @"root\Microsoft\Windows\Storage")
+            .Select(p => (letter: p["DriveLetter"] switch { char c => c, ushort u => (char)u, _ => '\0' }, disk: (int)Num(p, "DiskNumber")))
+            .Where(p => char.IsLetter(p.letter))
+            .GroupBy(p => char.ToUpperInvariant(p.letter))
+            .ToDictionary(g => g.Key, g => g.Select(p => p.disk).Distinct().Count() == 1 ? (int?)g.First().disk : null);
+        return DriveInfo.GetDrives()
+            .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
+            .Select(d => new
+            {
+                letter = d.Name.TrimEnd('\\'),
+                label = string.IsNullOrWhiteSpace(d.VolumeLabel) ? null : d.VolumeLabel,
+                sizeGb = d.TotalSize / (1024L * 1024 * 1024),
+                freeGb = d.AvailableFreeSpace / (1024L * 1024 * 1024),
+                disk = onDisk.GetValueOrDefault(char.ToUpperInvariant(d.Name[0])),
+            }).ToList();
+    }
 
     static object? Battery()
     {

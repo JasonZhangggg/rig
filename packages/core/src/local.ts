@@ -17,7 +17,7 @@ import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
 import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
-import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
+import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -34,7 +34,16 @@ export interface HelperLink {
   events?(sinceMs: number): Promise<RawEvent[]>;
   /** The busiest apps right now, by processor and memory use. Read-only. */
   processes?(): Promise<ProcessUse[]>;
+  /**
+   * What fills each drive, from the helper's last folder scan; it starts another in the background when that's a day old,
+   * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
+   */
+  storage?(fresh?: boolean): Promise<StorageScan>;
 }
+
+/** The folder scan is asked for this often, and every few seconds while one runs, so the map fills in when it's done. */
+export const SCAN_ASK_MS = 30 * 60_000;
+export const SCAN_RUNNING_ASK_MS = 15_000;
 
 /** Small on-disk store kept by the desktop shell (SQLite). */
 export interface LocalStore {
@@ -126,6 +135,10 @@ export class LocalClient implements RigClient {
   private custom = new CustomLog();
   private customCursor: RecorderCursor | null = null;
   private probeStatus: ProbeStatus[] | null = null;
+  /** The helper's last folder scan, and when Rig last asked for it. */
+  private scan: StorageScan | null = null;
+  private scanAskedAt = -Infinity;
+  private scanReading: Promise<void> | null = null;
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
     this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, ...opts };
@@ -139,6 +152,7 @@ export class LocalClient implements RigClient {
     });
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
     if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
+    if (!link.storage) (this as Partial<Record<"measureDrives", unknown>>).measureDrives = undefined;
   }
 
   /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
@@ -245,6 +259,7 @@ export class LocalClient implements RigClient {
         void this.readBackground();
         // The crash checks read Windows' event log; it's cached, so this reads it at most every few minutes.
         if (this.link.events) void this.windowsEvents().catch(() => {});
+        void this.readStorage(now);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -287,7 +302,7 @@ export class LocalClient implements RigClient {
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now() });
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan });
     const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
@@ -484,6 +499,31 @@ export class LocalClient implements RigClient {
     const fromWindows = await this.windowsEvents().catch((e) => { if (this.bg.events.length) return []; throw e; });
     const { problems, power } = this.bg.cleanEvents();
     return [...cleanEvents([...fromWindows, ...problems]), ...power].sort((a, b) => b.t - a.t);
+  }
+
+  /**
+   * Asks the helper what fills each drive. The answer comes at once from its saved scan, so this never holds up a reading;
+   * the helper does the slow folder walk on its own thread. Asked every half hour, and every few seconds while a scan runs.
+   */
+  private readStorage(now: number, fresh = false): Promise<void> {
+    if (!this.link.storage) return Promise.resolve();
+    if (this.scanReading) return this.scanReading;
+    if (!fresh && now - this.scanAskedAt < (this.scan?.running ? SCAN_RUNNING_ASK_MS : SCAN_ASK_MS)) return Promise.resolve();
+    this.scanAskedAt = now;
+    const was = this.scan;
+    return this.scanReading = this.link.storage(fresh)
+      .then((s) => {
+        this.scan = s;
+        if (was?.running && !s.running) this.o.log("info", `storage: folders measured${s.at ? ` at ${new Date(s.at).toISOString()}` : ""}`);
+      })
+      .catch((e) => this.o.log("warn", `storage: ${e instanceof Error ? e.message : String(e)}`))
+      .finally(() => { this.scanReading = null; });
+  }
+
+  async measureDrives(id: string) {
+    if (!(await this.isLocal(id))) throw new Error("Open Rig on that PC to measure its drives.");
+    await this.readStorage(this.o.now(), true);
+    this.emit();
   }
 
   /** Reads what the background recorder added since the last read, at most once a minute (on every call while its first read runs). */
