@@ -12,6 +12,7 @@ import { arrowKeys } from "../components/modal";
 import { Warm } from "../components/common";
 import { BoardView } from "./board/BoardView";
 import { BoardUsage } from "./board/BoardUsage";
+import { BoardCables } from "./board/BoardCables";
 import { boardStage } from "./board/boardStage";
 import { StorageMap } from "./drives/StorageMap";
 
@@ -208,7 +209,7 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   const part = pc.parts![id];
   const ideas = ups.list?.filter((u) => partOf(u, pc) === id) ?? [];
   // The motherboard opens on what's plugged into it, storage on what fills each drive.
-  const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"]] : id === "ssd" && pc.drives?.length ? [["drives", "Drives"]] : [];
+  const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"], ["cables", "Cables"]] : id === "ssd" && pc.drives?.length ? [["drives", "Drives"]] : [];
   const tabs: [string, string][] = [...first, ["specs", "Specs"], ["manual", "Manual"]];
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
@@ -277,6 +278,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   if (tab === "manual") return <PartManual id={id} about={part.name} />;
   if (tab === "slots") return <BoardUsage />;
   if (tab === "drives") return <StorageMap />;
+  if (tab === "cables") return <BoardCables />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));
