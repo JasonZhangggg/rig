@@ -108,8 +108,15 @@ public sealed record Command(string Does, string Read, string Run, string? Undo,
     }
 }
 
-/// One command found in a script, and which of the step's scripts it is in.
-public sealed record FoundCommand(string Name, string Says, int Tier, string Script);
+/// One command found in a script, and which of the step's scripts it is in. `Expects`: the never-list places the rule it
+/// matched lets it change (the rules' `expects`), null when that rule has none.
+public sealed record FoundCommand(string Name, string Says, int Tier, string Script, IReadOnlyList<string>? Expects = null);
+
+/// An undo command that only takes back the run's own command of one of `Verbs` with the same `Key` (the arguments after the verb, up to the app's id).
+public sealed record Undoes(string Name, IReadOnlyList<string> Verbs, IReadOnlyList<string> Key);
+
+/// A command a script runs, by its rules name, with its written-out arguments folded.
+public sealed record Used(string Name, IReadOnlyList<string> Args);
 
 public sealed record Verdict(bool Allowed, int Tier, bool Admin, string Why, string Refused, IReadOnlyList<FoundCommand> Commands, IReadOnlyList<string> Reasons)
 {
@@ -142,8 +149,8 @@ public sealed record Write(string Kind, IReadOnlyList<string> Places)
 public static class CommandCheck
 {
     class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
-    sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } public bool Single { get; set; } public Dictionary<string, string>? Fit { get; set; } }
-    sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } }
+    sealed class When : Outcome { public string[]? Use { get; set; } public string[]? Undoes { get; set; } public string[]? Expects { get; set; } public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } public bool Single { get; set; } public Dictionary<string, string>? Fit { get; set; } }
+    sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } public bool Bare { get; set; } }
     sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public string[]? Renames { get; set; } public bool Leaves { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
@@ -205,7 +212,7 @@ public static class CommandCheck
     sealed record Find(string What, string Detail, bool Hidden = false);
     sealed record Target(string Text, string Place, string Kind, bool Hidden, bool Literal);
     /// `Joined`: the places a command's plain names make, held to the text rules like the script itself.
-    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null);
+    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null, Undoes? Undoes = null);
     /// A plain name a command gives what it makes or renames, which Rig joins to the place it is in.
     sealed record Named(string Text, bool Rename);
 
@@ -333,8 +340,9 @@ public static class CommandCheck
         return o;
     }
 
-    static bool Matches(When m, Call call, bool strict, bool exe)
+    static bool Matches(When m, Call call, string use, bool strict, bool exe)
     {
+        if (m.Use != null && !m.Use.Contains(use)) return false;
         var shown = m.After != null ? ValuesAfter(Shown(call.Args), m.After) : Shown(call.Args);
         var t = shown.Select(a => Fold(a.Text)).ToList();
         bool unseen = strict && shown.Any(a => a.Kind == "hidden");
@@ -396,6 +404,7 @@ public static class CommandCheck
         string[] starts = Folded(f.Starts) ?? [];
         for (int k = 0; k < starts.Length; k++)
             if (k >= shown.Count || shown[k].Kind == "hidden" || t[k] != starts[k]) return k < shown.Count && shown[k].Text.Length > 0 ? shown[k].Text : "its arguments";
+        if (f.Bare && shown.Count > starts.Length) return shown[starts.Length].Text.Length > 0 ? shown[starts.Length].Text : "an argument it can't see";
         if (f.Has != null && !f.Has.Any(t.Contains)) return $"no {f.Has[0]}";
         if (f.Free) return shown.Any(a => a.Kind == "hidden") ? "an argument it can't see" : null;
         string[] ps = f.Params ?? [], prefix = f.Prefix ?? [];
@@ -548,7 +557,7 @@ public static class CommandCheck
             return new Judged(Found($"{name}: {R.VerbSays[verbTier]}", verbTier), verbTier >= 2, verbTier > 0 ? Write.None : null);
         }
         if (entry.Blocks && call.Args.Any(a => a.Kind is "word" or "hidden")) return Construct("member-by-name", name);
-        var rule = entry.When?.FirstOrDefault(w => Matches(w, call, w.Never != null || w.Refused != null || w.Tier == 3, entry.Exe));
+        var rule = entry.When?.FirstOrDefault(w => Matches(w, call, use, w.Never != null || w.Refused != null || w.Tier == 3, entry.Exe));
         if (rule != null && (rule.Never != null || rule.Refused != null)) return Block(rule)!;
         if (remote != null) return remote;
 
@@ -568,7 +577,13 @@ public static class CommandCheck
             if (entry.Literal && call.Args.Any(a => a.Kind == "hidden")) return Construct("not-literal", name, "notRead");
             return Pass(new Outcome { Says = entry.Says }, 0);
         }
-        if (rule != null) return Done(Pass(rule, rule.Tier ?? 2, write));
+        if (rule != null)
+        {
+            var j = Done(Pass(rule, rule.Tier ?? 2, write));
+            j = j with { Found = j.Found with { Expects = rule.Expects } };
+            var key = Shown(call.Args).Skip(1).Take(rule.Starts?.Length ?? 0).Select(a => Fold(a.Text)).ToList();
+            return rule.Undoes != null ? j with { Undoes = new Undoes(name, Folded(rule.Undoes)!, key) } : j;
+        }
         if (reads) return Done(Pass(new Outcome { Says = entry.Says }, 0));
         return Block(entry) ?? Done(Pass(entry, entry.Tier ?? 2, write));
     }
@@ -666,9 +681,9 @@ public static class CommandCheck
     }
 
     /// The verdict on one script and what each change in it writes to, given what CommandAst.ps1 printed for it.
-    public static (Verdict Verdict, List<Write> Writes) InspectScript(string script, string use, JsonNode? parsed)
+    public static (Verdict Verdict, List<Write> Writes, List<Used> Uses, List<Undoes> Undoes) InspectScript(string script, string use, JsonNode? parsed)
     {
-        (Verdict, List<Write>) Refuse(string words, string why = "refused", IReadOnlyList<FoundCommand>? commands = null) => (Verdict.Refuse(words, why, commands), []);
+        (Verdict, List<Write>, List<Used>, List<Undoes>) Refuse(string words, string why = "refused", IReadOnlyList<FoundCommand>? commands = null) => (Verdict.Refuse(words, why, commands), [], [], []);
         if (Precheck(script) is string early) return Refuse(early);
         if (parsed?["errors"] is not JsonArray errors || parsed["calls"] is not JsonArray callNodes || parsed["finds"] is not JsonArray findNodes)
             return Refuse($"{R.Constructs["unreadable"]}: PowerShell's parser gave no answer.");
@@ -718,8 +733,13 @@ public static class CommandCheck
         if (use != "read" && reasons.Count == 0) reasons.Add(SecondLook);
         var writes = use == "read" ? [] : judged.Where(j => j.Write != null).Select(j => j.Write!)
             .Concat(finds.Where(f => f.What == "redirect").Select(f => new Write("path", [PlaceOf(f.Detail)]))).ToList();
-        return (new Verdict(true, tier, use != "read" && (judged.Any(j => j.Admin) || texts.Any(NeedsAdmin)), "", "", commands, reasons), writes);
+        var uses = calls.Select((c, k) => new Used(judged[k].Found.Name, Shown(c.Args).Select(a => Fold(a.Text)).ToList())).ToList();
+        return (new Verdict(true, tier, use != "read" && (judged.Any(j => j.Admin) || texts.Any(NeedsAdmin)), "", "", commands, reasons), writes, uses, judged.Select(j => j.Undoes).OfType<Undoes>().ToList());
     }
+
+    /// The undo commands that don't take back a command the run itself has.
+    public static List<Undoes> Unpaired(IEnumerable<Undoes> undoes, IReadOnlyList<Used> uses) =>
+        undoes.Where(u => !uses.Any(c => c.Name == u.Name && c.Args.Count > 0 && u.Verbs.Contains(c.Args[0]) && u.Key.Select((x, k) => k + 1 < c.Args.Count && c.Args[k + 1] == x).All(x => x))).ToList();
 
     public static Verdict CheckScript(string script, string use, JsonNode? parsed) => InspectScript(script, use, parsed).Verdict;
 
@@ -756,6 +776,11 @@ public static class CommandCheck
         {
             tier = 3;
             reasons.Add($"{lowers}.");
+        }
+        if (parts.Count > 2 && Unpaired(parts[2].Got.Undoes, run.Uses).Count > 0)
+        {
+            tier = 3;
+            reasons.Add($"{R.Constructs["unpaired-undo"]}.");
         }
         var held = cmd.Touches.Where(t => t.Snapshotted).ToList();
         bool Covered(Write w) => w.Kind != "none" && w.Places.Count > 0 && w.Places.All(p => held.Any(t => TouchKind(t) == w.Kind && Covers(TouchPlace(t), p)));

@@ -31,18 +31,25 @@ describe("appCommand", () => {
     expect(stop).toBe("if ($LASTEXITCODE -eq 0) { throw 'Mozilla.Firefox is already installed, so there is nothing to install.' }");
   });
 
-  it("updates at tier 2 only when winget can install the version it replaces again", () => {
+  it("updates at tier 3, since undo can only remove the person's copy and try the old version again", () => {
     const back = built(firefox({ action: "upgrade", from: "127.0.1", version: "128.0.3" }));
-    expect(back.does).toBe(`Updates Mozilla.Firefox from winget's community catalog from version 127.0.1 to version 128.0.3, with winget. ${LICENCE} Undo uninstalls it and installs version 127.0.1 again.`);
-    expect(back.run).toContain("if ($now -notmatch '(^|\\s)127\\.0\\.1(\\s|$)') { throw");
+    expect(back.does).toBe(`Updates Mozilla.Firefox from winget's community catalog from version 127.0.1 to version 128.0.3, with winget. ${LICENCE} Rig can't promise to put the old version back as it was, so this always gets Rig's strongest check. Undo tries: it uninstalls the app and installs version 127.0.1 again.`);
     expect(back.run).toContain("winget show --id 'Mozilla.Firefox' --exact --source winget --version '127.0.1'");
     expect(back.undo).toContain("winget install --exact --source winget --id 'Mozilla.Firefox' --version '127.0.1'");
-    expect(verdict(back)).toMatchObject({ status: "allowed", tier: 2 });
+    expect(verdict(back)).toMatchObject({ status: "allowed", tier: 3 });
 
     const newest = built(firefox({ action: "upgrade" }));
     expect(newest.does).toBe(`Updates Mozilla.Firefox from winget's community catalog to its newest version, with winget. ${LICENCE} Rig can't put the old version back, so this always gets Rig's strongest check.`);
     expect(newest.undo).toBeUndefined();
     expect(verdict(newest)).toMatchObject({ status: "allowed", tier: 3 });
+  });
+
+  it("reads the version installed now from the Version column, not the one winget has ready", () => {
+    const run = built(firefox({ action: "upgrade", from: "127.0.1", version: "128.0.3" })).run;
+    const check = /-notmatch '([^']+)'/.exec(run)![1].replaceAll("''", "'");
+    const row = (version: string, available = "") => `Name     Id              Version  Available Source\nFirefox  Mozilla.Firefox ${version}  ${available} winget`;
+    expect(new RegExp(check, "i").test(row("127.0.1", "128.0.3"))).toBe(true);
+    expect(new RegExp(check, "i").test(row("126.0", "127.0.1"))).toBe(false);
   });
 
   it("uninstalls at tier 3 and says so", () => {

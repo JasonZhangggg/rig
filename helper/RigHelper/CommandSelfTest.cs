@@ -170,7 +170,8 @@ public static partial class CommandSelfTest
             else if (v["step"]?["cmd"] is JsonObject cmd) scripts.AddRange(new[] { "read", "run", "undo" }.Select(k => cmd[k]?.ToString()).OfType<string>());
         }
         var texts = scripts.Where(s => CommandCheck.Precheck(s) == null).Distinct().ToList();
-        var parsed = ctx.Rig.Parse(texts);
+        // In parts, so a slow runner's parser answers each within its time limit.
+        var parsed = texts.Chunk(150).SelectMany(part => ctx.Rig.Parse(part)).ToList();
         var problems = new List<string>();
         if (parsed.Count != texts.Count) problems.Add($"the parser answered for {parsed.Count} of {texts.Count} scripts");
         JsonNode? Parsed(string s) => texts.IndexOf(s) is int i and >= 0 && i < parsed.Count ? parsed[i] : null;

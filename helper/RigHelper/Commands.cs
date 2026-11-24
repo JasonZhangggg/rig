@@ -291,6 +291,10 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// Only code in this process can set it; nothing that comes over the pipe reaches it.
     internal string? TestOnlyExtra { get; set; }
 
+    /// The self-test's way to treat a step as an install whose installer may change these never-list places, since it
+    /// installs nothing itself. Only code in this process can set it.
+    internal IReadOnlySet<string>? TestOnlyExpects { get; set; }
+
     /// The self-test's way to stand in for a Rig app started with "Run as administrator", or, set false, for one started
     /// normally: with admin rights the self-test is itself the app, and so is elevated.
     internal bool? TestOnlyElevatedApp { get; set; }
@@ -412,7 +416,9 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     // ----- Reads -----
 
     /// `winget`: the path the helper found for it, when the script uses it. winget may fetch its catalog first, so it gets longer.
-    string Read(Person person, string script, string? winget = null)
+    string Read(Person person, string script, string? winget = null) => Read(person, script, winget, out _);
+
+    string Read(Person person, string script, string? winget, out bool timedOut)
     {
         string file = Path.Combine(store.PersonScripts(person.Sid), CommandStore.NewId() + ".ps1");
         int limit = winget == null ? ReadTimeoutMs : RunTimeoutMs;
@@ -420,10 +426,16 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         {
             PowerShellHost.Write(file, script, stopOnError: false, winget);
             var ran = person.Run(file, limit, store.Empty());
+            timedOut = ran.TimedOut;
             return ran.TimedOut ? $"The read didn't finish in {limit / 1000} seconds, so Rig stopped it." : ran.Printed;
         }
         finally { try { File.Delete(file); } catch { } }
     }
+
+    /// What a read printed without the spinners and progress bars winget draws, so two reads of the same state are the same.
+    internal static string Settled(string printed) => string.Join("\n", printed.Replace("\r\n", "\n").Split('\n')
+        .Select(line => line.Split('\r', '\b').Select(x => x.Trim()).LastOrDefault(x => x.Length > 0) ?? "")
+        .Where(line => line.Trim('-', '\\', '|', '/', ' ').Length > 0 && line.IndexOfAny(['\u2588', '\u2592']) < 0));
 
     /// winget's real path for a step whose scripts use it, found by the helper itself and never taken from the step; null when
     /// they don't use it. `problem` says why it can't run: winget isn't there, or the app runs as administrator.
@@ -621,7 +633,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         var point = verdict.Tier >= 2 && restorePoints ? RestorePoints.Ensure(store) : null;
         var watch = new Sentinels(person, store.Work);
         var (guarded, moving) = watch.Baseline();
-        var (readBefore, unread) = Look(person, step, check.Held, winget);
+        bool beforeTimedOut = false;
+        var (readBefore, unread) = step is CommandStep looking ? (Read(person, looking.Cmd.Read, winget, out beforeTimedOut), null) : Look(person, step, check.Held, winget);
         if (unread != null || (check.Expect != null && readBefore != check.Expect))
         {
             store.DropRecord(id);
@@ -633,11 +646,13 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         var guardedAfter = watch.Read();
         var hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
         // What an installer is expected to add (the rules' `expects`) is listed on the result, not put back; any other hit rolls it back.
-        var expects = RunRules.Expects(verdict.Commands, "run");
+        var expects = TestOnlyExpects ?? RunRules.Expects(verdict.Commands, "run");
+        bool installs = TestOnlyExpects != null || RunRules.Installs(verdict.Commands);
         var expected = hits.Where(h => expects.Contains(h.Sentinel)).ToList();
         hits = hits.Except(expected).ToList();
         var after = touches.Select(t => { try { return states.Read(t); } catch (RigException) { return null; } }).ToList();
         string readAfter;
+        bool afterTimedOut = false;
         string? error = made.Error;
         // A walk the person stopped part way is left as it stands, unread, with its undo offered.
         if (step is NativeOpStep && made.Ok && made.Back?["stopped"] is JsonNode stopped) readAfter = stopped.ToString();
@@ -649,6 +664,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             if (!said.Ok) error = $"Rig couldn't read the change back, so it put it back. {said.Error}";
             else if (said.Result["problem"] is JsonNode problem) error = $"The change didn't hold when Rig read it back. {problem}";
         }
+        else if (step is CommandStep looked) readAfter = Read(person, looked.Cmd.Read, winget, out afterTimedOut);
         else readAfter = Look(person, step, check.Held, winget).Text;
         var result = new JsonObject
         {
@@ -673,15 +689,26 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             }
             else
             {
-                // An installer that changed a protected place is taken off again by the step's own undo (winget uninstall) first.
-                if (hits.Count > 0 && expects.Count > 0 && step is CommandStep { Cmd.Undo: string back })
+                // An install, update or uninstall that changed the app (its read prints something else) is taken back by the step's
+                // own undo first. When the read is the same, as when it stopped because the app was already there, the undo never runs.
+                bool unsure = beforeTimedOut || afterTimedOut, changed = !unsure && Settled(readAfter) != Settled(readBefore), undone = false;
+                if (installs && changed && step is CommandStep { Cmd.Undo: string back })
                 {
                     var ran = RunScript(person, verdict.Admin, dir, id + "-undo.ps1", back, stopOnError: false, RunRules.TimeoutMs(verdict.Commands, "undo", RunTimeoutMs), winget);
+                    undone = ran.Ok;
                     if (!ran.Ok) left.Add($"the app may still be installed: its undo {(ran.TimedOut ? "didn't finish" : $"stopped with an error: {ran.Printed.Split('\n')[0].Trim()}")}");
                     guardedAfter = watch.Read();
                 }
-                // A rollback puts back every never-list place, what an installer was expected to change included.
                 hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
+                // With the app still changed, or with no way to tell (a read or the installer that didn't finish), what its installer
+                // was expected to change stays and is listed.
+                if (installs && (changed || unsure || made.TimedOut) && !undone)
+                {
+                    var waived = hits.Where(h => expects.Contains(h.Sentinel)).ToList();
+                    hits = hits.Except(waived).ToList();
+                    left.AddRange(Sentinels.Hits(guarded, guardedAfter, waived).Select(h => $"{Sentinels.Words(h.Sentinel)}: {h.After}"));
+                    left.Add("the app may be only partly installed or removed; check it in Settings, Apps");
+                }
             }
             for (int i = 0; i < touches.Count; i++) PutBack(states, touches[i], before[i], Path.Combine(dir, $"{i}.bin"), left);
             if (hits.Count > 0) left.AddRange(GuardBack(watch, guarded, guardedAfter, hits, touches, moving, verdict.Admin));
@@ -873,9 +900,11 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             var (guarded, moving) = watch.Baseline();
             var ran = back();
             var guardedAfter = watch.Read();
-            // What an uninstall is expected to take away with the app (the rules' `expects`) stays as it left it.
+            // What an uninstall is expected to take away with the app (the rules' `expects`) stays as it left it, and is listed.
             var expects = RunRules.Expects(check?.Verdict.Commands ?? [], "undo");
-            var hits = Sentinels.Differences(guarded, guardedAfter, touches, moving).Where(h => !expects.Contains(h.Sentinel)).ToList();
+            var all = Sentinels.Differences(guarded, guardedAfter, touches, moving);
+            var hits = all.Where(h => !expects.Contains(h.Sentinel)).ToList();
+            left.AddRange(Sentinels.Hits(guarded, guardedAfter, all.Except(hits).ToList()).Select(h => $"the uninstall also changed {Sentinels.Words(h.Sentinel)}: {h.After}"));
             if (hits.Count > 0)
             {
                 var notBack = GuardBack(watch, guarded, guardedAfter, hits, touches, moving, admin).ToList();

@@ -10,9 +10,9 @@ import type { Allowed, FoundCommand, Refusal, Refused, Tier, Verdict } from "./c
 
 export type ScriptUse = "read" | "run" | "undo";
 
-interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[]; single?: boolean; fit?: Record<string, string> }
-interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string }
-interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean }
+interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[]; single?: boolean; fit?: Record<string, string>; use?: ScriptUse[] }
+interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string; undoes?: string[] }
+interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean; bare?: boolean }
 interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; renames?: string[]; leaves?: boolean; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
 interface Entry extends Outcome { name: string; exe?: boolean; literal?: boolean; blocks?: boolean; read?: Form[]; when?: (Match & Outcome)[]; targets?: Targets }
 interface TextRule { says: string; contains: string[] }
@@ -126,7 +126,8 @@ function valuesAfter(shown: Arg[], params: string[]): Arg[] {
   return out;
 }
 
-function matches(m: Match, call: Call, strict: boolean, exe: boolean): boolean {
+function matches(m: Match, call: Call, use: ScriptUse, strict: boolean, exe: boolean): boolean {
+  if (m.use && !m.use.includes(use)) return false;
   const shown = m.after ? valuesAfter(shownOf(call.args), m.after) : shownOf(call.args);
   const t = shown.map((a) => fold(a.text)), unseen = strict && shown.some((a) => a.kind === "hidden");
   const list = (xs?: string[]) => xs?.map(fold);
@@ -183,6 +184,7 @@ function fitsParams(params: string[], args: Arg[], skip: number): boolean {
 function offForm(f: Form, args: Arg[]): string | null {
   const shown = shownOf(args), t = shown.map((a) => fold(a.text)), starts = (f.starts ?? []).map(fold);
   for (let k = 0; k < starts.length; k++) if (shown[k]?.kind === "hidden" || t[k] !== starts[k]) return shown[k]?.text || "its arguments";
+  if (f.bare && shown.length > starts.length) return shown[starts.length].text || "an argument it can't see";
   if (f.has && !f.has.some((h) => t.includes(h))) return `no ${f.has[0]}`;
   if (f.free) return shown.some((a) => a.kind === "hidden") ? "an argument it can't see" : null;
   const params = f.params ?? [], prefix = f.prefix ?? [];
@@ -240,8 +242,13 @@ function underRoot(place: string, r: ReadRoot): boolean {
 /** What one change in a script acts on. `none`: something Rig can't name, so no touch can cover it. */
 export interface Write { kind: "path" | "service" | "none"; places: string[] }
 
+/** An undo command that only takes back the run's own command of one of `verbs` with the same `key` (the arguments after the verb, up to the app's id). */
+export interface Undoes { name: string; verbs: string[]; key: string[] }
+/** A command a script runs, by its rules name, with its written-out arguments folded. */
+export interface Used { name: string; args: string[] }
+
 /** `joined`: the places a command's plain names make, held to the text rules like the script itself. */
-interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; stop?: { words: string; why: Refusal } }
+interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; undoes?: Undoes; stop?: { words: string; why: Refusal } }
 const NONE: Write = { kind: "none", places: [] };
 
 /** Refuses what the targets of a file, registry or service command can't be, and says what it writes to. */
@@ -327,7 +334,7 @@ function judge(call: Call, use: ScriptUse): Judged {
     return { found: found(`${name}: ${R.verbSays[tier]}`, tier), admin: tier >= 2, ...(tier > 0 ? { write: NONE } : {}) };
   }
   if (entry.blocks && call.args.some((a) => a.kind === "word" || a.kind === "hidden")) return construct("member-by-name", name);
-  const rule = entry.when?.find((w) => matches(w, call, !!(w.never || w.refused || w.tier === 3), !!entry.exe));
+  const rule = entry.when?.find((w) => matches(w, call, use, !!(w.never || w.refused || w.tier === 3), !!entry.exe));
   const block = (o: Outcome) => (o.never ? stop(`Rig won't run ${name}: it ${o.never}.`, "never") : o.refused ? stop(`Rig won't run ${name}: it ${o.refused}.`) : null);
   if (rule && (rule.never || rule.refused)) return block(rule)!;
   if (remote) return remote;
@@ -347,7 +354,11 @@ function judge(call: Call, use: ScriptUse): Judged {
     if (entry.literal && call.args.some((a) => a.kind === "hidden")) return construct("not-literal", name, "notRead");
     return pass({ says: entry.says }, 0);
   }
-  if (rule) return done(pass(rule, rule.tier ?? 2, write));
+  if (rule) {
+    const j = done(pass(rule, rule.tier ?? 2, write));
+    const key = shownOf(call.args).slice(1, (rule.starts?.length ?? 0) + 1).map((a) => fold(a.text));
+    return rule.undoes ? { ...j, undoes: { name, verbs: rule.undoes.map(fold), key } } : j;
+  }
   if (reads) return done(pass({ says: entry.says }, 0));
   return block(entry) ?? done(pass(entry, entry.tier ?? 2, write));
 }
@@ -403,9 +414,9 @@ function wroteProgram(calls: Call[], judged: Judged[], finds: Find[]): string | 
 }
 
 /** The verdict on one script, with what each change in it writes to. */
-export function inspectScript(script: string, use: ScriptUse): { verdict: Verdict; writes: Write[] } {
-  const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []): { verdict: Refused; writes: Write[] } =>
-    ({ verdict: { status: "refused", refused, why, commands, rulesVersion }, writes: [] });
+export function inspectScript(script: string, use: ScriptUse): { verdict: Verdict; writes: Write[]; uses: Used[]; undoes: Undoes[] } {
+  const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []) =>
+    ({ verdict: { status: "refused", refused, why, commands, rulesVersion } as Refused, writes: [], uses: [], undoes: [] });
   if (typeof script !== "string" || !script.trim()) return refuse(`${R.constructs.empty}.`);
   if (script.length > R.maxLength) return refuse(`${R.constructs["too-long"]}.`);
   if (DISGUISED.test(script)) return refuse(`${R.constructs.characters}.`);
@@ -447,8 +458,13 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
   const writes = use === "read" ? [] : [...judged.flatMap((j) => (j.write ? [j.write] : [])),
     ...parsed.finds.filter((f) => f.what === "redirect").map((f): Write => ({ kind: "path", places: [placeOf(f.detail)] }))];
   const allowed: Allowed = { status: "allowed", tier, admin: use !== "read" && (judged.some((j) => j.admin) || [script, ...joined].some(textNeedsAdmin)), commands, reasons, rulesVersion };
-  return { verdict: allowed, writes };
+  const uses = parsed.calls.map((c, k): Used => ({ name: judged[k].found.name, args: shownOf(c.args).map((a) => fold(a.text)) }));
+  return { verdict: allowed, writes, uses, undoes: judged.flatMap((j) => (j.undoes ? [j.undoes] : [])) };
 }
+
+/** The undo commands that don't take back a command the run itself has. */
+export const unpaired = (undoes: Undoes[], uses: Used[]) =>
+  undoes.filter((u) => !uses.some((c) => c.name === u.name && u.verbs.includes(c.args[0]) && u.key.every((x, k) => c.args[k + 1] === x)));
 
 /** The verdict on one script. A read is tier 0 or refused; a change is tier 2 or 3 or refused. */
 export function checkScript(script: string, use: ScriptUse): Verdict {

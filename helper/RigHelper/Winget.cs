@@ -1,5 +1,6 @@
 // What the rules say about how long a program may run and as whom (an entry's
-// `person`, `minutes` and `expects` in commands.json), and where winget is.
+// `person` and `minutes` in commands.json), what an installer may change (a
+// rule's `expects`), and where winget is.
 //
 // winget is an app execution alias in the person's own
 // %LOCALAPPDATA%\Microsoft\WindowsApps, which isn't on the clean PATH a script
@@ -16,7 +17,7 @@ namespace Rig.Helper;
 
 public static class RunRules
 {
-    sealed record Row(bool Person, int Minutes, string[] Expects);
+    sealed record Row(bool Person, int Minutes);
 
     static readonly Dictionary<string, Row> Rows = Load();
 
@@ -25,9 +26,8 @@ public static class RunRules
         var rows = new Dictionary<string, Row>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in JsonNode.Parse(CommandCheck.Resource("Rig.Rules.commands.json"))!["commands"]!.AsArray())
         {
-            if (e is not JsonObject o || (o["person"] == null && o["minutes"] == null && o["expects"] == null)) continue;
-            rows[o["name"]!.ToString()] = new Row(o["person"]?.GetValue<bool>() == true, (int)Json.Num(o["minutes"], 0),
-                (o["expects"] as JsonArray ?? []).Select(x => x!.ToString()).ToArray());
+            if (e is not JsonObject o || (o["person"] == null && o["minutes"] == null)) continue;
+            rows[o["name"]!.ToString()] = new Row(o["person"]?.GetValue<bool>() == true, (int)Json.Num(o["minutes"], 0));
         }
         return rows;
     }
@@ -41,8 +41,16 @@ public static class RunRules
     /// How long a script may run: the longest its programs' rows allow, or `fallback`.
     public static int TimeoutMs(IEnumerable<FoundCommand> found, string script, int fallback) => Of(found, script).Select(r => r.Minutes * 60_000).Append(fallback).Max();
 
-    /// The never-list places a script's programs are expected to change, which are listed rather than put back.
-    public static HashSet<string> Expects(IEnumerable<FoundCommand> found, string script) => Of(found, script).SelectMany(r => r.Expects).ToHashSet();
+    /// The never-list places a script is expected to change, which are listed rather than put back: only when every command
+    /// in it that changes something matched a rule with `expects`, so a word that merely names winget waives nothing.
+    public static HashSet<string> Expects(IEnumerable<FoundCommand> found, string script)
+    {
+        var changing = found.Where(c => c.Script == script && c.Tier > 0).ToList();
+        return changing.Count > 0 && changing.All(c => c.Expects != null) ? changing.SelectMany(c => c.Expects!).ToHashSet() : [];
+    }
+
+    /// Whether a step's run installs, updates or uninstalls an app: some command in it matched a rule that expects changes.
+    public static bool Installs(IEnumerable<FoundCommand> found) => found.Any(c => c.Script == "run" && c.Expects is { Count: > 0 });
 }
 
 public static class Winget
