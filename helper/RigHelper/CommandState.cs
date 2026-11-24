@@ -437,26 +437,28 @@ public sealed class Sentinels(Person person, string work)
 
     /// Services whose start type Windows changes by itself, so a change there says nothing about the command. None of them is a protection.
     static readonly HashSet<string> SelfStarting = new(StringComparer.OrdinalIgnoreCase)
-        { "BITS", "TrustedInstaller", "DoSvc", "sppsvc", "ClipSVC", "msiserver", "AppXSvc", "InstallService", "WSearch" };
+        { "BITS", "TrustedInstaller", "DoSvc", "sppsvc", "ClipSVC", "msiserver", "AppXSvc", "InstallService", "WSearch", "edgeupdate", "edgeupdatem", "gupdate", "gupdatem", "MozillaMaintenance" };
 
     /// Services that update themselves by moving their program to a new version's folder: what they run isn't watched, how they start is.
     static readonly HashSet<string> NewVersions = new(StringComparer.OrdinalIgnoreCase)
-        { "WinDefend", "WdNisSvc", "MDCoreSvc", "Sense", "SecurityHealthService", "edgeupdate", "edgeupdatem", "MicrosoftEdgeElevationService", "gupdate", "gupdatem", "MozillaMaintenance" };
+        { "WinDefend", "WdNisSvc", "MDCoreSvc", "Sense", "SecurityHealthService", "MicrosoftEdgeElevationService" };
 
-    /// Google's updater adds a service for each version it installs, named for that version and nothing else.
+    /// Google's updater adds a service for each version it installs, named for that version and nothing else: a new one is
+    /// still seen, but what it runs and how it starts aren't watched.
     static readonly Regex PerVersion = new(@"^GoogleUpdater(Internal)?Service\d+(\.\d+){3}\z", RegexOptions.CultureInvariant);
 
-    /// Scheduled task folders Windows' own updaters fill and empty by themselves.
+    /// Scheduled task folders Windows' own updaters fill and empty by themselves, each by itself: a task in a folder inside one is watched.
     static readonly string[] SelfTaskFolders =
     [
-        @"\Microsoft\Windows\UpdateOrchestrator\", @"\Microsoft\Windows\WindowsUpdate\", @"\Microsoft\Windows\WaaSMedic\", @"\Microsoft\Windows\InstallService\",
-        @"\Microsoft\Windows\Windows Defender\", @"\Microsoft\Windows\SoftwareProtectionPlatform\", @"\Microsoft\Windows\Flighting\", @"\Microsoft\Windows\Application Experience\",
+        @"\Microsoft\Windows\UpdateOrchestrator\", @"\Microsoft\Windows\WindowsUpdate\", @"\Microsoft\Windows\WindowsUpdate\RUXIM\", @"\Microsoft\Windows\WaaSMedic\",
+        @"\Microsoft\Windows\InstallService\", @"\Microsoft\Windows\Windows Defender\", @"\Microsoft\Windows\SoftwareProtectionPlatform\", @"\Microsoft\Windows\Flighting\FeatureConfig\",
+        @"\Microsoft\Windows\Flighting\OneSettings\", @"\Microsoft\Windows\Application Experience\",
     ];
 
     /// The tasks Edge's and Google's updaters make for themselves, by their whole names.
     static readonly Regex SelfTaskNames = new(@"^\\(MicrosoftEdgeUpdateTaskMachine(Core|UA)|GoogleUpdaterTask(System|User)\d+(\.\d+){3})(\{[^\\{}]+\})?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    static bool SelfTask(string task) => SelfTaskNames.IsMatch(task) || SelfTaskFolders.Any(f => task.StartsWith(f, StringComparison.OrdinalIgnoreCase));
+    static bool SelfTask(string task) => SelfTaskNames.IsMatch(task) || SelfTaskFolders.Contains(task[..(task.LastIndexOf('\\') + 1)], StringComparer.OrdinalIgnoreCase);
 
     const int MaxItems = 20_000;
     const char Sep = '\t';
@@ -504,7 +506,11 @@ public sealed class Sentinels(Person person, string work)
                 // Programs that run as services, not device drivers, which Windows installs with a device, nor the copies of a
                 // per-person service Windows makes for each sign-in.
                 if (s?.GetValue("Type") is not int type || (type & 0x30) == 0 || (type & 0xC0) != 0) continue;
-                if (PerVersion.IsMatch(name)) continue;
+                if (PerVersion.IsMatch(name))
+                {
+                    items[name + Sep + "program"] = "";
+                    continue;
+                }
                 items[name + Sep + "program"] = NewVersions.Contains(name) ? "" : s.GetValue("ImagePath", "", RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString() ?? "";
                 if (!SelfStarting.Contains(name)) items[name + Sep + "start"] = s.GetValue("Start")?.ToString() ?? "";
                 using var p = s.OpenSubKey("Parameters");
@@ -818,6 +824,21 @@ static class AdminFile
             }
             var leaf = new FileInfo(full);
             return !leaf.Exists || (!leaf.Attributes.HasFlag(FileAttributes.ReparsePoint) && OwnedByAdmins(leaf));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or InvalidOperationException) { return false; }
+    }
+
+    /// Whether only admins could have put anything in this folder: it, the folders above it and everything in it.
+    public static bool TrustedTree(string dir)
+    {
+        try
+        {
+            var root = new DirectoryInfo(Path.GetFullPath(dir));
+            if (root.FullName.StartsWith(@"\\", StringComparison.Ordinal) || !root.Exists) return false;
+            for (var d = root; d != null; d = d.Parent)
+                if (d.Attributes.HasFlag(FileAttributes.ReparsePoint) || !OwnedByAdmins(d)) return false;
+            var walk = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = 0, IgnoreInaccessible = false };
+            return root.EnumerateFileSystemInfos("*", walk).All(i => !i.Attributes.HasFlag(FileAttributes.ReparsePoint) && OwnedByAdmins(i));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or InvalidOperationException) { return false; }
     }

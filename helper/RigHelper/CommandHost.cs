@@ -118,16 +118,18 @@ public sealed class Person : IDisposable
     public string Sid { get; }
     /// How Windows elevated the Rig app's token, one of the TokenElevationType values, or 0 when the helper is the person.
     public int Elevation { get; }
-    /// The Rig app runs as administrator, so a change without admin rights would run with them all the same.
-    public bool Elevated => Elevation == TokenElevationTypeFull;
+    /// The Rig app runs with admin rights, so a change without admin rights would run with them all the same. Windows says so
+    /// for an app started as administrator, and also when User Account Control is off or the account is the built-in Administrator.
+    public bool Elevated { get; }
     readonly IntPtr primary;
     readonly SafeAccessTokenHandle? borrowed;
 
-    Person(string sid, IntPtr primary, int elevation = 0)
+    Person(string sid, IntPtr primary, int elevation = 0, bool elevated = false)
     {
         Sid = sid;
         this.primary = primary;
         Elevation = elevation;
+        Elevated = elevated;
         if (primary == IntPtr.Zero) return;
         if (!DuplicateTokenEx(primary, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenImpersonation, out IntPtr thread)) throw Win("borrow your Windows sign-in");
         borrowed = new SafeAccessTokenHandle(thread);
@@ -154,7 +156,7 @@ public sealed class Person : IDisposable
             string theirs;
             using (var id = new WindowsIdentity(app)) theirs = id.User?.Value ?? throw new RigException("Rig couldn't tell which Windows account you're signed in as.");
             if (!DuplicateTokenEx(app, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out token)) throw Win("copy your Windows sign-in");
-            var person = new Person(theirs, token, ElevationOf(app));
+            var person = new Person(theirs, token, ElevationOf(app), IsElevated(app));
             token = IntPtr.Zero;
             return person;
         }
@@ -172,6 +174,10 @@ public sealed class Person : IDisposable
     /// everyday token, default when the account has no second token. 0 when Windows won't say.
     public static int ElevationOf(IntPtr token) =>
         GetTokenInformation(token, TokenElevationTypeClass, out int type, sizeof(int), out _) ? type : 0;
+
+    /// Whether a token has admin rights in force, however Windows gave them. True when Windows won't say.
+    public static bool IsElevated(IntPtr token) =>
+        !GetTokenInformation(token, TokenElevationClass, out int elevated, sizeof(int), out _) || elevated != 0;
 
     /// Whether scripts run with the helper's own rights because the helper has none beyond the person's.
     public bool Here => primary == IntPtr.Zero;
@@ -197,7 +203,7 @@ public sealed class Person : IDisposable
     static RigException Win(string what) => new($"Rig couldn't {what} (Windows error {Marshal.GetLastWin32Error()}), so it can't look or change anything as you.");
 
     const uint MAXIMUM_ALLOWED = 0x02000000, TOKEN_DUPLICATE = 0x2, TOKEN_QUERY = 0x8;
-    const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SecurityImpersonation = 2, TokenPrimary = 1, TokenImpersonation = 2, TokenElevationTypeClass = 18;
+    const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SecurityImpersonation = 2, TokenPrimary = 1, TokenImpersonation = 2, TokenElevationTypeClass = 18, TokenElevationClass = 20;
 
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
