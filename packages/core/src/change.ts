@@ -374,6 +374,8 @@ export type PreviewReply =
       /** What `read` printed now; for a native op, the state it changes as the helper's worker read it. */
       read: string;
       touches: TouchValue[];
+      /** The fingerprint of the step the helper stored. The app shows the card only when its own stepHash agrees. */
+      hash?: string;
     };
 
 export type ApplyReply =

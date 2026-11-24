@@ -130,7 +130,7 @@ public sealed record Write(string Kind, IReadOnlyList<string> Places)
 public static class CommandCheck
 {
     class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
-    sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } }
+    sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } public bool Single { get; set; } public Dictionary<string, string>? Fit { get; set; } }
     sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } }
     sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public string[]? Renames { get; set; } public bool Leaves { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
@@ -298,17 +298,43 @@ public static class CommandCheck
         string[]? starts = Folded(m.Starts), has = Folded(m.Has), prefix = Folded(m.Prefix), contains = Folded(m.Contains);
         if (m.Piped && !call.Piped) return false;
         if (m.After != null && shown.Count == 0) return false;
+        // A cmdlet's parameter is only ever a parameter: a quoted '-Program' is a value.
+        bool Named(string x, int k) => exe || !x.StartsWith('-') || IsParam(shown[k]);
         if (starts != null)
             for (int k = 0; k < starts.Length; k++)
-                if (!((k < t.Count && t[k] == starts[k]) || (strict && k < shown.Count && shown[k].Kind == "hidden"))) return false;
-        if (has != null && !unseen && !t.Any(has.Contains)) return false;
+                if (!((k < t.Count && t[k] == starts[k] && Named(starts[k], k)) || (strict && k < shown.Count && shown[k].Kind == "hidden"))) return false;
+        if (has != null && !unseen && !t.Where((x, k) => has.Contains(x) && Named(x, k)).Any()) return false;
         bool prefixUnseen = unseen && (exe || m.After != null);
         bool FitsPrefix(string x, Arg a) => prefix!.Any(p => x.StartsWith(p, StringComparison.Ordinal) || ((x.StartsWith('-') || x.StartsWith('/')) && Abbreviates(HeadOf(a), p)));
         if (prefix != null && !prefixUnseen && !shown.Where((a, k) => FitsPrefix(t[k], a)).Any()) return false;
         if (contains != null && !unseen && !t.Any(x => contains.Any(p => x.Contains(p, StringComparison.Ordinal)))) return false;
         if (m.Params != null && !FitsParams(m.Params, call.Args, starts?.Length ?? 0)) return false;
+        if (m.Single && !Single(Shown(call.Args), starts?.Length ?? 0)) return false;
+        if (m.Fit != null && !FitsValues(m.Fit, Shown(call.Args))) return false;
         return true;
     }
+
+    /// No list and nothing positional: every argument after `starts` that isn't a parameter is the one value right after a parameter with no value after its colon.
+    static bool Single(List<Arg> shown, int skip) =>
+        shown.Select((a, k) => k < skip || IsParam(a) || (k > 0 && IsParam(shown[k - 1]) && string.IsNullOrEmpty(InlineOf(shown[k - 1])))).All(x => x);
+
+    /// What the parameter at `k` is given: the text after its colon, then each argument that isn't a parameter right after it (a list).
+    static List<string> GivenTo(List<Arg> shown, int k)
+    {
+        string? inline = InlineOf(shown[k]);
+        var o = string.IsNullOrEmpty(inline) ? new List<string>() : [inline];
+        for (int j = k + 1; j < shown.Count && !IsParam(shown[j]); j++) o.Add(shown[j].Text);
+        return o;
+    }
+
+    /// Every value given to a listed parameter matches its pattern in full.
+    static bool FitsValues(Dictionary<string, string> fit, List<Arg> shown) =>
+        shown.Select((a, k) => (a, k)).All(x =>
+        {
+            if (!IsParam(x.a)) return true;
+            string? pattern = fit.FirstOrDefault(p => Abbreviates(HeadOf(x.a), Fold(p.Key))).Value;
+            return pattern == null || GivenTo(shown, x.k).All(v => Regex.IsMatch(Fold(v), $"^(?:{pattern})\\z", RegexOptions.CultureInvariant));
+        });
 
     /// A positive grammar for a rule that allows: nothing hidden, and every switch after `starts` is listed, written in full.
     static bool FitsParams(string[] ps, List<Arg> args, int skip)

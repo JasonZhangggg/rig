@@ -1,7 +1,9 @@
 // The device shorthand: turn one device off or on by its instance id. The run
 // stops when the device is already that way, so undo (the opposite) puts back
 // exactly what was there, and it won't turn off a part Windows needs to run or
-// the last working screen adapter, keyboard or mouse.
+// the last working screen adapter, keyboard or mouse. That guard is only in
+// the run: a rule can't read a device's kind, so commands.json puts every
+// Disable-PnpDevice at tier 3, and both ways round get Rig's strongest check.
 
 import type { Command } from "../change";
 import { plain, quote } from "./text";
@@ -38,7 +40,9 @@ export function deviceCommand(raw: unknown): Command | string {
         off,
       ];
   return {
-    does: d.enabled ? `Turns on the device ${id}. Undo turns it off again.` : `Turns off the device ${id} until it's turned back on. Undo turns it on again.`,
+    does: d.enabled
+      ? `Turns on the device ${id}. Undo turns it off again, and turning a device off always gets Rig's strongest check, so this does too.`
+      : `Turns off the device ${id} until it's turned back on. Undo turns it on again. Rig can't tell from the command alone whether Windows needs a device, so this always gets Rig's strongest check.`,
     read: `Get-PnpDevice -InstanceId ${at} | Format-List -Property FriendlyName, Class, Status, Problem, InstanceId`,
     run: run.join("\n"),
     undo: d.enabled ? off : on,

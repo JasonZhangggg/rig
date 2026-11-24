@@ -44,19 +44,20 @@ using Microsoft.Win32;
 
 namespace Rig.Helper;
 
-public sealed record Pending(string Nonce, string Hash, HelperStep Step, Verdict Verdict, string Person, long ExpiresAt, long ApprovedAt)
+/// `Seen`: each touch's state as the card showed it, for a file the person could read; null where Rig didn't hold it to that.
+public sealed record Pending(string Nonce, string Hash, HelperStep Step, Verdict Verdict, string Person, long ExpiresAt, long ApprovedAt, JsonArray? Seen = null)
 {
     public JsonObject ToJson() => new()
     {
         ["nonce"] = Nonce, ["hash"] = Hash, ["step"] = Step.ToJson(), ["verdict"] = Verdict.ToJson(),
-        ["person"] = Person, ["expiresAt"] = ExpiresAt, ["approvedAt"] = ApprovedAt,
+        ["person"] = Person, ["expiresAt"] = ExpiresAt, ["approvedAt"] = ApprovedAt, ["seen"] = Seen?.DeepClone(),
     };
 
     public static Pending? From(JsonNode? n)
     {
         if (n is not JsonObject o || HelperStep.Stored(o) is not HelperStep step || Verdict.From(o["verdict"]) is not Verdict verdict) return null;
         return new Pending(o["nonce"]?.ToString() ?? "", o["hash"]?.ToString() ?? "", step, verdict,
-            o["person"]?.ToString() ?? "", (long)Json.Num(o["expiresAt"], 0), (long)Json.Num(o["approvedAt"], 0));
+            o["person"]?.ToString() ?? "", (long)Json.Num(o["expiresAt"], 0), (long)Json.Num(o["approvedAt"], 0), o["seen"]?.DeepClone() as JsonArray);
     }
 }
 
@@ -299,6 +300,12 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     public const string AppElevated = "Rig is running as administrator, so it can't keep changes to what you approved. Open Rig normally and ask again.";
     public const string StoreRebuilt = "Rig found something in its own store of changes that it didn't put there, so it cleared the store and nothing ran. Ask again.";
     public const string UnknownOp = "Rig's helper doesn't make this kind of change. Update Rig, then ask again.";
+    /// What a native op that stopped without its way back is reported as: it may have changed what it changes.
+    public static string MayHaveChanged(string now)
+    {
+        string n = now.Trim(), reads = n.Length == 0 ? "nothing Rig could read" : $"\"{(n.Length <= 200 ? n : n[..200] + "…")}\"";
+        return $"This may still be changed: Rig's worker stopped before it said how to put it back. It reads {reads} now";
+    }
     public const string AppElevatedUndo = "Rig is running as administrator, so it can't keep the undo to what you approved. Open Rig normally and undo again.";
 
     static string? Str(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
@@ -442,15 +449,18 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         // Nothing is approved yet, so everything here is read with the person's rights.
         var states = new TouchStates(person, admin: false);
         var touches = new JsonArray();
+        var seen = new JsonArray();
         foreach (var t in check.Touches)
         {
             string? value;
-            try { value = TouchStates.Show(t, states.Read(t)); } catch (RigException e) { value = $"Rig couldn't read this as you: {e.Message}."; }
+            JsonNode? state = null;
+            try { state = states.Read(t); value = TouchStates.Show(t, state); } catch (RigException e) { value = $"Rig couldn't read this as you: {e.Message}."; }
             touches.Add(new JsonObject { ["touch"] = t.ToJson(), ["value"] = value });
+            seen.Add(t.Kind == "file" ? state?.DeepClone() : null);
         }
         if (verdict.Tier >= 2 && RestorePoints.ProtectionOff())
             verdict = verdict with { Reasons = [.. verdict.Reasons, "Windows' System Protection is off on this PC, so there will be no restore point to fall back on."] };
-        var pending = new Pending(CommandStore.NewId(), step.Hash(), step, verdict, person.Sid, DateTimeOffset.UtcNow.AddMinutes(NonceMinutes).ToUnixTimeMilliseconds(), 0);
+        var pending = new Pending(CommandStore.NewId(), step.Hash(), step, verdict, person.Sid, DateTimeOffset.UtcNow.AddMinutes(NonceMinutes).ToUnixTimeMilliseconds(), 0, seen);
         var (read, unread) = Look(person, step);
         if (unread != null) return Refused($"Rig couldn't read what this would change, so there is nothing to approve. {unread}");
         store.Save(pending);
@@ -458,7 +468,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         return new JsonObject
         {
             ["outcome"] = "ready", ["nonce"] = pending.Nonce, ["expiresAt"] = DateTimeOffset.FromUnixTimeMilliseconds(pending.ExpiresAt).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            ["verdict"] = verdict.ToJson(), ["read"] = read, ["touches"] = touches,
+            ["verdict"] = verdict.ToJson(), ["read"] = read, ["touches"] = touches, ["hash"] = pending.Hash,
         };
     }
 
@@ -542,6 +552,12 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                 store.DropRecord(id);
                 return Refused($"Rig couldn't take a snapshot of {TouchStates.Name(touches[i])} ({e.Message}), so it didn't run this.");
             }
+            // A file the card showed is the file that runs: a driver's .inf or catalog swapped after the person looked is refused.
+            if (pending.Seen?.ElementAtOrDefault(i) is JsonNode shown && !Same(shown, before[i]))
+            {
+                store.DropRecord(id);
+                return Refused($"{TouchStates.Name(touches[i])} changed since you looked at it, so nothing ran. Look at it again.");
+            }
         }
         if (verdict.Tier >= 2 && !store.CountToday(DailyCap))
         {
@@ -589,7 +605,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             {
                 // What a native op changed outside its touches only its own Undo knows, so that runs first, and the
                 // never-list places are read again after it.
-                if (made.Back == null) { if (made.TimedOut) left.Add("Rig's worker was stopped before it could say how to put this back"); }
+                // With no way back, what the state reads now is all Rig has to tell whether the worker changed it before it stopped.
+                if (made.Back == null) { if (made.TimedOut || readAfter != readBefore) left.Add(MayHaveChanged(readAfter)); }
                 else if (Ask(person, "undo", undoing, made.Back) is { Ok: false } stuck) left.Add($"Rig's own way back didn't finish ({stuck.Error.TrimEnd('.')})");
                 guardedAfter = watch.Read();
                 hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);

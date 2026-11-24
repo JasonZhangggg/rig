@@ -10,7 +10,7 @@ import type { Allowed, FoundCommand, Refusal, Refused, Tier, Verdict } from "./c
 
 export type ScriptUse = "read" | "run" | "undo";
 
-interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[] }
+interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[]; single?: boolean; fit?: Record<string, string> }
 interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string }
 interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean }
 interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; renames?: string[]; leaves?: boolean; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
@@ -132,15 +132,40 @@ function matches(m: Match, call: Call, strict: boolean, exe: boolean): boolean {
   const starts = list(m.starts), has = list(m.has), prefix = list(m.prefix), contains = list(m.contains);
   if (m.piped && !call.piped) return false;
   if (m.after && !shown.length) return false;
-  if (starts && !starts.every((want, k) => t[k] === want || (strict && shown[k]?.kind === "hidden"))) return false;
-  if (has && !unseen && !t.some((x) => has.includes(x))) return false;
+  // A cmdlet's parameter is only ever a parameter: a quoted '-Program' is a value.
+  const named = (x: string, k: number) => exe || !x.startsWith("-") || isParam(shown[k]);
+  if (starts && !starts.every((want, k) => (t[k] === want && named(want, k)) || (strict && shown[k]?.kind === "hidden"))) return false;
+  if (has && !unseen && !t.some((x, k) => has.includes(x) && named(x, k))) return false;
   // A program gets its arguments as text, so a hidden one may be anything; a cmdlet's hidden argument can only be a value.
   const prefixUnseen = unseen && (exe || !!m.after);
   const fitsPrefix = (x: string, a: Arg) => prefix!.some((p) => x.startsWith(p) || (/^[-/]/.test(x) && abbreviates(headOf(a), p)));
   if (prefix && !prefixUnseen && !shown.some((a, k) => fitsPrefix(t[k], a))) return false;
   if (contains && !unseen && !t.some((x) => contains.some((p) => x.includes(p)))) return false;
   if (m.params && !fitsParams(m.params, call.args, starts?.length ?? 0)) return false;
+  if (m.single && !single(shownOf(call.args), starts?.length ?? 0)) return false;
+  if (m.fit && !fitsValues(m.fit, shownOf(call.args))) return false;
   return true;
+}
+
+/** No list and nothing positional: every argument after `starts` that isn't a parameter is the one value right after a parameter with no value after its colon. */
+function single(shown: Arg[], skip: number): boolean {
+  return shown.every((a, k) => k < skip || isParam(a) || (k > 0 && isParam(shown[k - 1]) && !inlineOf(shown[k - 1])));
+}
+
+/** What the parameter at `k` is given: the text after its colon, then each argument that isn't a parameter right after it (a list). */
+function givenTo(shown: Arg[], k: number): string[] {
+  const inline = inlineOf(shown[k]), out = inline ? [inline] : [];
+  for (let j = k + 1; j < shown.length && !isParam(shown[j]); j++) out.push(shown[j].text);
+  return out;
+}
+
+/** Every value given to a listed parameter matches its pattern in full. */
+function fitsValues(fit: Record<string, string>, shown: Arg[]): boolean {
+  return shown.every((a, k) => {
+    if (!isParam(a)) return true;
+    const pattern = Object.entries(fit).find(([p]) => abbreviates(headOf(a), fold(p)))?.[1];
+    return pattern === undefined || givenTo(shown, k).every((v) => new RegExp(`^(?:${pattern})$`).test(fold(v)));
+  });
 }
 
 /** A positive grammar for a rule that allows: nothing hidden, and every switch after `starts` is listed, written in full. */

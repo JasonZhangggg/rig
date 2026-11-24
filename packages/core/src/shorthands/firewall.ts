@@ -1,8 +1,9 @@
 // The firewall shorthand: add one rule, or turn an existing rule on or off.
 // A new rule is named Rig-<id> so its undo can delete exactly that rule. The
 // limits here (a program or a port for anything that lets connections in,
-// never the remote-access ports, the kind of network first) are also rules in
-// commands.json, so a hand-written command meets the same ones.
+// never the remote-access ports, the kind of network first, no program in the
+// Windows folder) are also rules in commands.json, so a hand-written command
+// meets the same ones.
 
 import type { Command } from "../change";
 import { filePath, plain, quote } from "./text";
@@ -56,6 +57,7 @@ function addCommand(r: Partial<FirewallRuleShorthand>): Command | string {
   const letsIn = r.direction === "inbound" && r.action === "allow";
   if (letsIn && !ports && !program) return "a rule that lets connections in needs a program or ports, so it doesn't open the whole PC";
   if (letsIn && ports?.some((p) => NEVER_PORTS.includes(p))) return `Rig never opens the ports Windows uses for remote access or file sharing (${NEVER_PORTS.join(", ")})`;
+  if (letsIn && program && /\\windows\\|\\svchost\.exe$/i.test(program)) return "Rig won't let connections in to a program in the Windows folder: Windows' own services, like Remote Desktop and file sharing, run from there. Name the program's ports instead";
   if (letsIn && program && /\d-/.test(program)) return "Rig can't check a program path with a dash right after a number; move the program or name its ports instead";
 
   const name = ruleId([r.name, r.direction, r.action, profile, r.protocol ?? null, ports ?? null, program ?? null]), at = quote(name);
