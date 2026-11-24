@@ -737,7 +737,7 @@ static class AdminFile
     struct BY_HANDLE_FILE_INFORMATION
     {
         public uint Attributes;
-        public long Created, Accessed, Written;
+        public uint CreatedLow, CreatedHigh, AccessedLow, AccessedHigh, WrittenLow, WrittenHigh;
         public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
     }
 
