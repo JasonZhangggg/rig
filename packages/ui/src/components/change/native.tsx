@@ -25,6 +25,8 @@ interface NativePart<O extends NativeOp> {
   confirm?(op: O, read: string | undefined): string | null;
   /** What the result says once it ran, in place of the values before and after. */
   done?(op: O, result: RunResult, look?: ScreenLook): ReactNode;
+  /** What Undo does once it ran, when it isn't putting back exactly what Rig read before. Says the same as `red.undo`. */
+  back?(op: O, look?: ScreenLook): string;
 }
 
 /**
@@ -100,11 +102,14 @@ const screen: NativePart<ScreenOp> = {
         <>
           <div className="cc-first" role="status"><b>Rig stopped part way.</b></div>
           <p className="cc-note">{clip(result.after, 240)}</p>
-          <p className="cc-note">Undo walks the same path and sets {look?.value ? `${control} back to ${look.value}` : `${control} back`}.</p>
         </>
       );
     }
     return <p className="cc-note" role="status">Rig set {control} to {op.to} in {inApp(look)} and read it back.</p>;
+  },
+  back: (_op, look) => {
+    const control = look ? lookControl(look) : "the setting";
+    return `Rig can't promise this undo. It walks the same path in ${inApp(look)} and sets ${look?.value ? `${control} back to ${look.value}` : `${control} back`}, which can miss if the app changed.`;
   },
 };
 

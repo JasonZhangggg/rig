@@ -192,7 +192,9 @@ export type Touch =
   | { kind: "registry"; key: string; value?: string }
   | { kind: "file"; path: string }
   | { kind: "service"; name: string }
-  | { kind: "task" | "firewall" | "other"; name: string };
+  | { kind: "task" | "firewall" | "other"; name: string }
+  /** A device by its instance id. Rig reads whether it's on or off, and keeps no copy: the undo script turns it back. */
+  | { kind: "device"; name: string };
 
 /** One command Rig found in a script, in plain words for the card, and which of the step's scripts it is in. */
 export interface FoundCommand { name: string; says: string; tier: Tier; script: ScriptUse }
@@ -251,7 +253,7 @@ function touchOf(t: unknown): Touch | null {
       return typeof x.value === "string" ? { kind: "registry", key, value: x.value } : { kind: "registry", key };
     }
     case "file": return localFile(text) ? { kind: "file", path: text } : null;
-    case "service": case "task": case "firewall": case "other": return { kind: x.kind, name: text };
+    case "service": case "task": case "firewall": case "other": case "device": return { kind: x.kind, name: text };
     default: return null;
   }
 }
@@ -272,6 +274,19 @@ const touchText = (t: Touch) => (t.kind === "registry" ? `${t.key}\\${t.value ??
 /** Where a snapshotted touch is, compared the way writes are. */
 const touchPlace = (t: Touch) => (t.kind === "registry" ? placeOf(t.key) : t.kind === "file" ? placeOf(t.path) : t.kind === "service" ? placeOf(t.name) : "");
 const touchKind = (t: Touch): Write["kind"] => (t.kind === "service" ? "service" : "path");
+/** Whether one of a script's writes reaches a snapshotted touch. */
+const writesTo = (writes: Write[], t: Touch) => writes.some((w) => w.kind === touchKind(t) && w.places.some((p) => covers(touchPlace(t), p) || covers(p, touchPlace(t))));
+
+/**
+ * The snapshotted touches the change script writes to: the only ones Rig's copy can put back. A listed place it doesn't
+ * write to, like a driver's .inf that Rig keeps a copy of to check it isn't swapped, has nothing for undo to put back.
+ */
+export function writtenTouches(cmd: Command): Touch[] {
+  const held = cmd.touches.filter(snapshotted);
+  if (!held.length) return [];
+  const { writes } = inspectScript(cmd.run, "run");
+  return held.filter((t) => writesTo(writes, t));
+}
 
 /** The verdict on one step. Refusals say in plain words what was refused. */
 export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): Verdict {
@@ -294,13 +309,14 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
       const rule = nativeRule(op.name)!;
       const no = rule.refusal?.(op, ctx);
       if (no) return refuse(no.refused, no.why);
+      // The op's own never list goes first, so the card says why in that kind's own words.
+      const own = rule.never?.(op);
+      if (own) return refuse(`${own}.`, "never");
       const touches = rule.touches?.(op) ?? [];
       for (const t of touches) {
         const never = textOnNeverList(touchText(t), "run");
         if (never) return refuse(`${never}.`, "never");
       }
-      const never = rule.never?.(op);
-      if (never) return refuse(`${never}.`, "never");
       let tier = rule.tier(op);
       const reasons = rule.reasons(op);
       const lowers = touches.map((t) => textLowersProtection(touchText(t))).find((x) => x);
@@ -347,7 +363,7 @@ function checkCommand(raw: Command, ctx: CheckContext): Verdict {
   const held = cmd.touches.filter(snapshotted);
   const covered = (w: Write) => w.kind !== "none" && w.places.length > 0 && w.places.every((p) => held.some((t) => touchKind(t) === w.kind && covers(touchPlace(t), p)));
   // The touch's own text is Claude's, so the reason counts the unused ones instead of naming them.
-  const unused = held.filter((t) => !run.writes.some((w) => w.kind === touchKind(t) && w.places.some((p) => covers(touchPlace(t), p) || covers(p, touchPlace(t))))).length;
+  const unused = held.filter((t) => !writesTo(run.writes, t)).length;
   if (unused) reasons.push(`${ruleWords("unused-touch")} ${unused === 1 ? "one of them" : `${unused} of them`}.`);
   if (typeof cmd.undo !== "string" && (cmd.touches.length === 0 || held.length < cmd.touches.length || !run.writes.every(covered))) {
     tier = 3;

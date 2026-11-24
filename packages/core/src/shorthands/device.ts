@@ -4,6 +4,8 @@
 // the last working screen adapter, keyboard or mouse. That guard is only in
 // the run: a rule can't read a device's kind, so commands.json puts every
 // Disable-PnpDevice at tier 3, and both ways round get Rig's strongest check.
+// The touch is the device itself, so the card shows whether it's on or off now,
+// as the helper reads it, and the result shows it before and after.
 
 import type { Command } from "../change";
 import { plain, quote } from "./text";
@@ -46,6 +48,6 @@ export function deviceCommand(raw: unknown): Command | string {
     read: `Get-PnpDevice -InstanceId ${at} | Format-List -Property FriendlyName, Class, Status, Problem, InstanceId`,
     run: run.join("\n"),
     undo: d.enabled ? off : on,
-    touches: [{ kind: "other", name: `Device ${id}` }],
+    touches: [{ kind: "device", name: id }],
   };
 }

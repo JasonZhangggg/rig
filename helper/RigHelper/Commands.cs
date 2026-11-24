@@ -386,9 +386,10 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                 NativeCheck found;
                 try { found = held == null ? op.Check(n.Op) : op.Recheck(n.Op, held); }
                 catch (RigException e) { return No(Verdict.Refuse(e.Message)); }
+                // The op's own never list goes first, so the card says why in that kind's own words (checkStep in change.ts).
+                if (found.Never != null) return No(Verdict.Refuse($"{found.Never}.", "never"));
                 foreach (var t in found.Touches)
                     if (CommandCheck.OnNeverList(t.RuleText, "run") is string never) return No(Verdict.Refuse($"{never}.", "never"));
-                if (found.Never != null) return No(Verdict.Refuse($"{found.Never}.", "never"));
                 int tier = Math.Clamp(found.Tier, 1, 3);
                 var reasons = found.Reasons.ToList();
                 if (found.Touches.Select(t => CommandCheck.LowersProtection(t.RuleText)).FirstOrDefault(x => x != null) is string lowers)
@@ -807,7 +808,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// Puts one touch back as it was, unless it already is. What it couldn't do goes on `left`.
     static void PutBack(TouchStates states, Touch t, JsonNode? was, string copy, List<string> left)
     {
-        if (was == null) return;
+        // A device is read, never written: its undo script turns it back, and NotBack checks it is.
+        if (was == null || !t.Snapshotted) return;
         try
         {
             if (!Same(states.Read(t), was)) states.Write(t, was, copy);

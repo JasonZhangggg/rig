@@ -190,7 +190,7 @@ describe("checking a step", () => {
 
   it("says when a touch isn't written, and needs every write covered when there is no undo", () => {
     const stray = checkStep(command({ undo: undefined, touches: [{ kind: "registry", key: "HKCU\\Software\\Rig" }] }));
-    expect(stray).toMatchObject({ status: "allowed", tier: 3, reasons: expect.arrayContaining([expect.stringContaining("doesn't write there"), expect.stringContaining("no undo script")]) });
+    expect(stray).toMatchObject({ status: "allowed", tier: 3, reasons: expect.arrayContaining([expect.stringContaining("doesn't write to every place listed"), expect.stringContaining("no undo script")]) });
     expect(checkStep(command({ undo: undefined }))).toMatchObject({ status: "allowed", tier: 2 });
     expect(checkStep(command({ undo: undefined, touches: [{ kind: "registry", key: "HKCU\\Control Panel" }] }))).toMatchObject({ tier: 2 });
   });
@@ -247,7 +247,7 @@ describe("checking a file edit", () => {
   });
 
   it("refuses files on the never list, programs, and paths that aren't a local file", () => {
-    expect(refusal(edit({ path: "C:\\Users\\Sam\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\x\\logins.json" }))).toMatchObject({ why: "never" });
+    expect(refusal(edit({ path: "C:\\Users\\Sam\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\x\\logins.json" }))).toMatchObject({ why: "never", refused: "Rig never edits sign-in, key or browser profile files." });
     expect(refusal(edit({ path: "C:\\Users\\Sam\\Game\\start.ps1" }))?.refused).toContain("doesn't edit programs");
     for (const path of ["settings.json", "\\\\server\\share\\settings.json", `${game}:stream`, "C:\\Users\\Sam\\..\\Bo\\settings.json", "C:\\PROGRA~1\\Game\\settings.json"]) {
       expect(refusal(edit({ path }))?.refused).toContain("full path");
