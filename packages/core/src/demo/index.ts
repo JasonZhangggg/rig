@@ -1,7 +1,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
 import { appliedHelperStep, cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type HelperStep, type PreviewReply, type Step, type UndoReply } from "../change";
-import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoUndo } from "./cards";
+import { demoApply, demoCards, demoCardByNonce, demoCardByStep, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoStep, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
@@ -34,7 +34,7 @@ export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export { DemoManuals } from "./manualShelf";
 export { demoScan } from "./storage";
-export { demoApply, demoCards, demoPreview, demoProposal, demoUndo, demoUndoRecord, type DemoCard } from "./cards";
+export { demoApply, demoCards, demoNativeCards, demoPreview, demoProposal, demoStep, demoUndo, demoUndoRecord, type AnyDemoCard, type DemoCard, type DemoNativeCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
@@ -276,15 +276,15 @@ export class DemoClient implements RigClient {
     return change;
   }
 
-  /** Reads the way the helper would for one of the demo's command cards. */
+  /** Reads the way the helper would for one of the demo's example changes. */
   async previewStep(id: string, step: HelperStep, tainted = false): Promise<PreviewReply> {
-    const card = step.kind === "command" ? demoCards.find((c) => c.cmd.run === step.cmd.run) : undefined;
+    const card = demoCardByStep(step);
     if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
     await sleep(300);
     return demoPreview(card, tainted);
   }
 
-  /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
+  /** Answers the way the helper would for one of the demo's example changes. Nothing on the demo PC changes. */
   async applyStep(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
     const p = this.pcs[id];
     const card = demoCardByNonce(nonce);
@@ -293,8 +293,8 @@ export class DemoClient implements RigClient {
     await sleep(400);
     const reply = demoApply(card);
     if (reply.outcome !== "applied") return reply;
-    const step = { kind: "command" as const, cmd: card.cmd };
-    const rows = runRows(reply.result);
+    const step = demoStep(card);
+    const rows = runRows(reply.result, step);
     const tier = cardTier([step]);
     p.changes.unshift({
       id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? card.title, by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows,
