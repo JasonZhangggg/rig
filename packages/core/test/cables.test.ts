@@ -72,6 +72,13 @@ describe("the graphics card's plug", () => {
     expect(gpuPlug("Intel(R) Arc(TM) A770 Graphics").plug).toBe("8-pin PCIe");
   });
 
+  it("says an RX 6700 XT takes an 8-pin with a 6-pin or a second 8-pin, and a known card's own plugs", () => {
+    expect(gpuPlug("AMD Radeon RX 6700 XT")).toEqual({ plug: "8-pin or 6-pin PCIe", words: "RX 6700 XT cards take one or two PCIe plugs, 8-pin or 6-pin, depending on the maker. Look at the card's top edge." });
+    const gpu = (power: ("8-pin" | "6-pin" | "16-pin")[]) => cableGuide(tomahawk, "AMD Radeon RX 6700 XT", power.map((kind, i) => ({ id: `power-${i + 1}`, kind, label: "" }))).cables.find((c) => c.id === "gpu")!;
+    expect(gpu(["8-pin", "6-pin"])).toMatchObject({ plug: "8-pin + 6-pin PCIe", how: expect.stringMatching(/^This card takes one 8-pin and one 6-pin PCIe plugs\./) });
+    expect(gpu(["8-pin", "8-pin"]).how).toMatch(/^This card takes two 8-pin PCIe plugs\./);
+  });
+
   it("says to look at the card when Rig can't tell the chip", () => {
     expect(gpuPlug("Graphics card")).toMatchObject({ plug: "16-pin or 8-pin", words: expect.stringMatching(/Look at the card's top edge/) });
   });

@@ -334,7 +334,7 @@ export class LocalClient implements RigClient {
     const payload: MachineSync = {
       at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
       history: this.unsynced, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
-      identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt }, identityAt: this.identity.at,
+      identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt, picks: this.identity.picks }, identityAt: this.identity.at,
       events: await this.windowsEvents().catch(() => []),
     };
     const sent = payload.history.length;
@@ -396,7 +396,7 @@ export class LocalClient implements RigClient {
     return makeExport({
       account: null,
       machines: [{
-        id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt },
+        id: this.id, view: this.view(), inventory: this.inv, facts: this.facts, identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt, picks: this.identity.picks },
         changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
         events: await this.events(this.id), recordings: [...await this.recorder.all(), ...this.bgRecs],
       }],

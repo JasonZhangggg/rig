@@ -10,6 +10,7 @@ import {
   type AddManualRequest, type BoardLayoutReply, type ChatRequest, type ReadLayoutRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
 } from "./api";
 import type { DataExport } from "./export";
+import type { Identity } from "./view";
 import type { Account, Change, ChatEvent, ChatMessage, Log, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { Shop } from "./shop";
@@ -179,7 +180,7 @@ export class CloudClient implements RigClient {
     return () => { stopped = true; clearTimeout(timer); };
   }
 
-  async rename(id: string, patch: { name?: string; accent?: string; cleanedAt?: string }) {
+  async rename(id: string, patch: Identity) {
     await this.req(paths.machine(id), { method: "PATCH", body: JSON.stringify(patch) });
   }
 
