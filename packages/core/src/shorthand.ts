@@ -5,6 +5,12 @@
 // it back.
 
 import type { Command, Touch } from "./change";
+import { plain, quote } from "./shorthands/text";
+
+export * from "./shorthands/firewall";
+export * from "./shorthands/policy";
+export * from "./shorthands/device";
+export * from "./shorthands/driver";
 
 export type RegistryType = "dword" | "qword" | "string" | "expandString" | "multiString";
 /** How a service starts. `automaticDelayed` is automatic, a little after Windows has started. */
@@ -21,10 +27,6 @@ const START_WORDS: Record<ServiceStart, string> = { automatic: "start with Windo
 const MAX_TEXT = 32_767;
 const DWORD_MAX = 0xffffffffn;
 const QWORD_MAX = 0xffffffffffffffffn;
-
-/** Printable ASCII only: anything else could read as a quote, a dash or a different letter to PowerShell. */
-const plain = (s: string) => /^[\x20-\x7e]*$/.test(s);
-const quote = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
 /** HKCU\... or HKLM\..., or why the key can't be used. */
 function keyOf(raw: unknown): { hive: "HKCU" | "HKLM"; rest: string } | string {

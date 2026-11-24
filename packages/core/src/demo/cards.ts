@@ -53,7 +53,7 @@ export const demoCards: DemoCard[] = [
     cmd: {
       does: "Lets other devices reach your Minecraft server on port 25565. Undo only turns the rule off.",
       read: "Get-NetFirewallRule -DisplayName 'Minecraft server' | Select-Object DisplayName, Enabled, Direction, Action",
-      run: "New-NetFirewallRule -DisplayName 'Minecraft server' -Direction Inbound -Protocol TCP -LocalPort 25565 -Action Allow",
+      run: "New-NetFirewallRule -Profile Private -Direction Inbound -Action Allow -DisplayName 'Minecraft server' -Protocol TCP -LocalPort 25565",
       undo: "Set-NetFirewallRule -DisplayName 'Minecraft server' -Enabled False",
       touches: [{ kind: "firewall", name: "Minecraft server" }],
     },

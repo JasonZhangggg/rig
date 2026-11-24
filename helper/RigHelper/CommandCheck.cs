@@ -129,7 +129,7 @@ public sealed record Write(string Kind, IReadOnlyList<string> Places)
 public static class CommandCheck
 {
     class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
-    sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } }
+    sealed class When : Outcome { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } }
     sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } }
     sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public string[]? Renames { get; set; } public bool Leaves { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
@@ -305,7 +305,17 @@ public static class CommandCheck
         bool FitsPrefix(string x, Arg a) => prefix!.Any(p => x.StartsWith(p, StringComparison.Ordinal) || ((x.StartsWith('-') || x.StartsWith('/')) && Abbreviates(HeadOf(a), p)));
         if (prefix != null && !prefixUnseen && !shown.Where((a, k) => FitsPrefix(t[k], a)).Any()) return false;
         if (contains != null && !unseen && !t.Any(x => contains.Any(p => x.Contains(p, StringComparison.Ordinal)))) return false;
+        if (m.Params != null && !FitsParams(m.Params, call.Args, starts?.Length ?? 0)) return false;
         return true;
+    }
+
+    /// A positive grammar for a rule that allows: nothing hidden, and every switch after `starts` is listed, written in full.
+    static bool FitsParams(string[] ps, List<Arg> args, int skip)
+    {
+        var shown = Shown(args);
+        var listed = Folded(ps)!;
+        if (shown.Any(a => a.Kind == "hidden")) return false;
+        return shown.Skip(skip).Select(a => Fold(a.Text)).All(x => !((x.StartsWith('-') || x.StartsWith('/')) && x.Length > 1) || listed.Contains(x.Split(':')[0]));
     }
 
     /// Null when the arguments fit the read form, else the argument that doesn't.
