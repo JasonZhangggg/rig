@@ -17,7 +17,8 @@
 // graphics driver's own code.
 //
 // The one exception is an op that Windows allows only with admin rights
-// (firmware settings, a restart into firmware setup: Firmware.cs). It runs in
+// (firmware settings, a restart into firmware setup: Firmware.cs; a protection
+// turned off for a while and kept off: Protection.cs). It runs in
 // the helper itself, only after Windows' own permission prompt approved it
 // like an admin command, and it is Rig's own code calling Windows: it loads no
 // driver or program of anyone else's and takes nothing from the op but keys
@@ -166,13 +167,14 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp(), new FirmwareStep(), new RestartToFirmwareStep()];
+    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp(), new FirmwareStep(), new RestartToFirmwareStep(), new ProtectionStep(), new ProtectionKeepStep()];
 
-    /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
-    static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
+    /// Known only inside --selftest. Nothing that comes over the pipe can ask for these. The protection ops' own copies
+    /// there know the test rows, and stand in for the real ones.
+    static readonly INativeStep[] SelfTestOnly = [new SelftestOp(), new ProtectionStep(selfTest: true), new ProtectionKeepStep(selfTest: true)];
 
     public static INativeStep? Find(string name, bool selfTest) =>
-        All.Concat(selfTest ? SelfTestOnly : []).FirstOrDefault(s => s.Name == name);
+        (selfTest ? SelfTestOnly : []).Concat(All).FirstOrDefault(s => s.Name == name);
 }
 
 /// The worker: how the helper asks it, and what it does when started.

@@ -5,7 +5,12 @@
 // wrong (heat, a sudden jump, full memory, a crash or hardware error) it
 // writes the last few minutes it held in memory and then every reading for a
 // while. It also writes Windows' crash, error and power events as they
-// happen, and sleep, wake and battery changes. It changes nothing on the PC.
+// happen, and sleep, wake and battery changes.
+//
+// It changes one thing on the PC: a Windows protection that Rig turned off for
+// a while, with the person's approval, is turned back on by this service when
+// its time is up (Reverts.cs). It only ever turns one on, and it never runs a
+// script or anything else a step holds.
 
 using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
@@ -21,6 +26,7 @@ namespace Rig.Helper;
 public sealed class RecorderService : ServiceBase
 {
     RecorderCore? core;
+    RevertKeeper? keeper;
     Thread? thread;
     readonly CancellationTokenSource cts = new();
 
@@ -36,6 +42,9 @@ public sealed class RecorderService : ServiceBase
     protected override void OnStart(string[] args)
     {
         core = new RecorderCore(RecorderPaths.Data, onSelfRemove: Stop);
+        // First, so a protection whose time came while the PC was off is back on before anything else starts.
+        keeper = new RevertKeeper(Protections.Finder(RecorderPaths.SelfTest), core.Note);
+        keeper.Start();
         thread = new Thread(() => core.Run(cts.Token)) { IsBackground = true, Name = "Rig recorder" };
         thread.Start();
     }
@@ -45,12 +54,17 @@ public sealed class RecorderService : ServiceBase
 
     protected override bool OnPowerEvent(PowerBroadcastStatus status)
     {
+        // A revert that came due while the PC slept is made as it wakes.
+        keeper?.Wake();
         core?.Power(status);
         return true;
     }
 
     void Halt(string why)
     {
+        // A stopped service may not be back, so every protection is turned on first. A shutdown isn't that: the ledger
+        // stays, and the next start picks it up.
+        keeper?.Stop(raise: why == "stop");
         cts.Cancel();
         // The recorder's own thread stops the service when it removes itself; it can't wait for itself.
         if (thread != null && thread != Thread.CurrentThread) thread.Join(TimeSpan.FromSeconds(15));
@@ -356,7 +370,7 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
 
     // ----- Housekeeping -----
 
-    void Note(string text)
+    public void Note(string text)
     {
         var o = LogLine.Of("note", Now);
         o["text"] = EventLogs.Clean(text, 300);

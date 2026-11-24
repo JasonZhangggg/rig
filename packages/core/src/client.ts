@@ -4,6 +4,7 @@
 
 import type { ActionCall } from "./actions";
 import type { AppliedStep, ApplyReply, HelperStep, PreviewReply, Step, Tier, UndoReply } from "./change";
+import type { OpenRevert } from "./protection";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -212,6 +213,10 @@ export interface RigClient {
   applyStep?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
   /** Puts a step back, by the id in its undo record. With `force`, even when something else changed those places since. */
   undoStep?(machineId: string, undoId: string, force?: boolean): Promise<UndoReply>;
+  /** The protections that are off because of a change made here, after asking the helper which are back on. */
+  reverts?(machineId: string): Promise<OpenRevert[]>;
+  /** The person's own second choice to keep one of them off. Asks Windows for permission like any admin change. */
+  keepOff?(machineId: string, changeId: string): Promise<ApplyReply>;
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }

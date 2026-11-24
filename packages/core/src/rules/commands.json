@@ -1,5 +1,5 @@
 {
-  "version": 18,
+  "version": 19,
   "about": [
     "One table for the server, the app and the helper. The helper reads scripts with PowerShell's own parser; everything else here says how Rig's TypeScript reader sees a script, so the helper can match it. The vectors file holds examples of each rule, for scripts (`script`, `as`) and for whole steps (`cmd`).",
     "Text: a script is refused when it is empty or only spaces, longer than `maxLength` characters (UTF-16 code units), or holds any character in `disguised` (hex ranges, inclusive). Case is folded for ASCII A-Z only, and only space, tab, CR and LF count as spaces; `disguised` holds the letters that fold into ASCII in .NET (U+017F, U+0130, U+0131, U+212A), so ASCII folding can't be tricked. CR LF and lone CR read as LF.",
@@ -71,12 +71,12 @@
     {"says": "Rig never adds Defender exclusions", "applies": "change", "contains": ["Windows Defender\\Exclusions"]},
     {"says": "Rig never adds trusted root certificates", "applies": "change", "contains": ["SystemCertificates\\Root", "SystemCertificates\\AuthRoot", "Cert:\\LocalMachine\\Root", "Cert:\\CurrentUser\\Root", "Cert:\\LocalMachine\\AuthRoot"]},
     {"says": "Rig never turns on ways into this PC from outside (Remote Desktop, WinRM, an SSH server, Remote Registry)", "applies": "change", "contains": ["fDenyTSConnections", "Remote Desktop", "TermService", "winrm", "wsman:", "sshd", "OpenSSH.Server", "\\Services\\RemoteRegistry"]},
-    {"says": "Rig never changes its own files, log or guard", "applies": "change", "contains": ["RigHelper", "app.rig.desktop", "\\Rig\\Commands"]},
+    {"says": "Rig never changes User Account Control, the Windows prompt its own approvals rely on", "applies": "change", "contains": ["\\Policies\\System", "EnableLUA", "ConsentPromptBehavior", "PromptOnSecureDesktop", "FilterAdministratorToken", "LocalAccountTokenFilterPolicy"]},
+    {"says": "Rig never changes its own files, log, guard or the service that turns protections back on", "applies": "change", "contains": ["RigHelper", "app.rig.desktop", "\\Rig\\Commands", "\\Rig\\Reverts", "RigRecorder"]},
     {"says": "Rig never changes how Windows starts, which can stop this PC booting", "applies": "change", "contains": ["BCD00000000", "\\Boot\\BCD", "\\EFI\\Microsoft\\Boot"]},
     {"says": "Rig never changes firmware (BIOS) settings through a maker's tool, module or management class; it changes the few on its own list with a firmware step", "applies": "change", "contains": ["DellSmbios", "root\\dcim\\sysman", "BIOSAttributeInterface", "root\\HP\\InstrumentedBIOS", "HP_BIOSSettingInterface", "Lenovo_SetBiosSetting", "Lenovo_SaveBiosSettings", "Lenovo_SetBiosPassword", "Lenovo_WmiOpcodeInterface", "Lenovo_SetBiosPasswordSettings"]}
   ],
   "protectText": [
-    {"says": "It changes User Account Control, which asks before apps get admin rights", "contains": ["\\Policies\\System", "EnableLUA", "ConsentPromptBehavior", "PromptOnSecureDesktop", "FilterAdministratorToken", "LocalAccountTokenFilterPolicy"]},
     {"says": "It changes Microsoft Defender's settings or policy, which can turn protection off", "contains": ["\\Policies\\Microsoft\\Windows Defender", "\\Microsoft\\Windows Defender\\", "DisableAntiSpyware", "DisableAntiVirus", "DisableRealtimeMonitoring", "DisableBehaviorMonitoring", "DisableIOAVProtection", "SpynetReporting", "SubmitSamplesConsent", "Windows-Defender"]},
     {"says": "It changes SmartScreen, Core isolation, Credential Guard or Safe Mode", "contains": ["SmartScreen", "\\Control\\DeviceGuard", "\\Control\\SafeBoot"]},
     {"says": "It changes the Windows firewall's policy", "contains": ["\\Policies\\Microsoft\\WindowsFirewall", "\\SharedAccess\\Parameters\\FirewallPolicy"]},

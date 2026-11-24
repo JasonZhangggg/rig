@@ -42,8 +42,8 @@ public static class RecorderSetup
             SecureDataFolder(data);
             if (appDir != null) SetInstallDirs(data, InstallDirs(data).Append(Path.GetFullPath(appDir)));
 
-            Scm.CreateOrUpdate(RecorderPaths.ServiceName, "Rig background recorder", $"\"{exe}\" --service",
-                "Keeps a log of temperatures, load, crashes and power events for Rig, even while the Rig app is closed. It reads only and changes nothing.");
+            Scm.CreateOrUpdate(RecorderPaths.ServiceName, RecorderPaths.SelfTest ? "Rig self-test recorder" : "Rig background recorder", $"\"{exe}\" {RecorderPaths.ServiceArgs}",
+                "Keeps a log of temperatures, load, crashes and power events for Rig, even while the Rig app is closed. It also turns back on a Windows protection that Rig turned off for a while. It makes no other change.");
             using var sc = new ServiceController(RecorderPaths.ServiceName);
             if (sc.Status != ServiceControllerStatus.Running)
             {
@@ -80,6 +80,7 @@ public static class RecorderSetup
                 }
             }
             StopService(TimeSpan.FromSeconds(20));
+            RaiseProtections("uninstall");
             Scm.Delete(RecorderPaths.ServiceName);
             WaitGone(TimeSpan.FromSeconds(20));
             DeleteFolder(RecorderPaths.Program);
@@ -98,6 +99,7 @@ public static class RecorderSetup
     /// Called by the running service when every Rig install it knew of is gone.
     public static void RemoveSelf()
     {
+        RaiseProtections("uninstall");
         try { Scm.Delete(RecorderPaths.ServiceName); } catch { }
         try { DeleteFolder(RecorderPaths.Data); } catch { }
         // Its own program can't be deleted while it runs: a hidden command does it a few seconds after the service stops.
@@ -108,6 +110,22 @@ public static class RecorderSetup
             { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
         }
         catch { }
+    }
+
+    /// Nothing is left to turn a protection back on once the service is gone, so every one Rig turned off for a while
+    /// is turned on first, and only then is the ledger removed. The service does the same as it stops; this covers one
+    /// that was killed or never ran.
+    static void RaiseProtections(string why)
+    {
+        try
+        {
+            if (!Directory.Exists(RecorderPaths.Reverts)) return;
+            var ledger = Ledger.Open();
+            var stuck = ledger.RaiseAll(Protections.Finder(RecorderPaths.SelfTest), why);
+            if (stuck.Count > 0) Log(RecorderPaths.Data, $"a protection didn't come back on before the recorder was removed: {string.Join("; ", stuck)}");
+            ledger.Drop();
+        }
+        catch (Exception e) { Log(RecorderPaths.Data, $"turning protections back on failed: {e.Message}"); }
     }
 
     /// Rig installs other than appDir that are still on this PC.

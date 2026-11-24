@@ -100,6 +100,7 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
   const native = step.kind === "native" ? nativeOf(step.op, looks) : null;
   const own = native?.part.red?.(native.op);
   const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo, own?.words ? own : undefined, native?.part.back?.(native.op, native.look));
+  const button = native?.part.button;
   const again = outcome.undo?.outcome === "failed";
   const drifted = outcome.undo?.outcome === "drifted";
   return (
@@ -112,10 +113,10 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
           <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo(true)}>{busy ? "Undoing…" : "Put back anyway"}</button>
         </div>
       )}
-      {(!outcome.undo || again) && (
+      {(!outcome.undo || again) && button !== "none" && (
         <div className="cc-undo">
           {!again && <p className={reach.can ? "faint" : "cc-undo-line none"}>{reach.line}<Untied names={reach.untied} after />{reach.can && !canApply && <> Undo it in the Rig app on {pcName}.</>}</p>}
-          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? "Undoing…" : again ? "Try undo again" : "Undo"}</button>}
+          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? (button ? "Turning it back on…" : "Undoing…") : again ? (button ? "Try again" : "Try undo again") : button ?? "Undo"}</button>}
         </div>
       )}
     </>

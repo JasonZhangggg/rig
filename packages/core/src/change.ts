@@ -15,6 +15,7 @@ import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
 import { canonicalFirmware, firmwareReasons, firmwareRefused, firmwareRows, firmwareTitle, RESTART_WORDS, type FirmwareOp, type RestartFirmwareOp } from "./firmware";
 import type { DiffRow } from "./model";
+import { protectionKeepRule, protectionRule, type ProtectionKeepOp, type ProtectionOp, type RevertNote, type RevertsReply } from "./protection";
 import rulesJson from "./rules/commands.json";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
 import { recipeCommand, type RecipeStep } from "./shorthand";
@@ -42,10 +43,10 @@ export function helperStep(step: HelperStep | RecipeStep): HelperStep | string {
 
 /**
  * A change the helper's own code makes: as the person and never elevated, or, for the few ops whose rule says `admin`,
- * in the helper itself after Windows' permission prompt. A new op is one member here, one entry in `nativeOps`, and one
+ * in the helper itself after Windows' permission prompt (firmware, and the protection ops). A new op is one member here, one entry in `nativeOps`, and one
  * class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp | FirmwareOp | RestartFirmwareOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp | FirmwareOp | RestartFirmwareOp | ProtectionOp | ProtectionKeepOp;
 
 /**
  * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
@@ -146,6 +147,8 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
     title: () => RESTART_WORDS.title,
     rows: () => [RESTART_WORDS.row],
   },
+  protection: protectionRule,
+  protectionKeep: protectionKeepRule,
 };
 
 /** The control's name and value from the helper's one-line read of it, when it is one. */
@@ -229,6 +232,8 @@ export interface CheckContext {
   tainted: boolean;
   /** The looks the helper answered in this chat (`screen.look`). A screen step is checked against the one it names. */
   looks?: ScreenLook[];
+  /** The step comes from a button the person pressed in the Rig app, not from Claude. Only the app's own code sets it. */
+  byPerson?: boolean;
 }
 
 /** Programs that run only as the person, never with admin rights (`person` in the rules). */
@@ -470,13 +475,14 @@ export type AppliedStep =
   /** `unverified`: what the helper saw when it read the fix back and the change wasn't there, in plain words. */
   | { step: FixStep; undo: FixUndo; rows: DiffRow[]; unverified?: string }
   | { step: CommandStep; undo: CommandUndo; rows: DiffRow[]; verify?: VerifyResult }
-  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult };
+  /** `revert`: a protection turned off for a while, and when it comes back on. */
+  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult; revert?: RevertNote };
 
 /** A helper step as the changes log keeps it once applied: the undo record is filed under the step's own kind. */
-export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult): AppliedStep {
+export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult, revert?: RevertNote): AppliedStep {
   switch (step.kind) {
     case "command": return { step, undo: { ...undo, kind: "command" }, rows, verify };
-    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify };
+    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify, ...(revert ? { revert } : {}) };
   }
 }
 
@@ -518,6 +524,8 @@ export interface RunResult {
   alsoChanged: string[];
   /** A screen step that stopped part way, by the Stop bar or the app: the control may be half set, wasn't read back, `after` says why, and undo is offered. */
   stopped?: true;
+  /** A protection turned off for a while: the ledger's id for it and when Rig's service turns it back on (ISO time). */
+  revert?: { id: string; dueAt: string };
 }
 
 /** A run's touches as rows for the changes log: what, before, after. */
@@ -632,6 +640,8 @@ export interface StepRpc {
   "firmware.after": { params: Record<string, never>; reply: { found: { id: string; says: string }[] } };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
+  /** The protections that are off for now and how the last ones ended. Missing on helpers from before them. */
+  "protection.reverts": { params: Record<string, never>; reply: RevertsReply };
 }
 
 /** The part of the helper link that carries steps. */

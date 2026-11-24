@@ -10,6 +10,8 @@
 .ch-log { padding-bottom: 10px; }
 .ch-log .card-head { flex-wrap: wrap; padding-bottom: 4px; }
 .ch-next .rows { padding-bottom: 10px; }
+.ch-keep { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 16px 14px; }
+.ch-keep p { flex-basis: 100%; margin: 0; }
 /* The before and after under Details, in a frame, as wide as the title: the buttons' column stays clear. */
 :is(.ch-log, .ch-next) .row-more { grid-column: 1; align-items: stretch; }
 :is(.ch-log, .ch-next) .row-more .diff-wrap { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }

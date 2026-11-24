@@ -38,13 +38,13 @@ describe("a card of Rig's own fixes", () => {
   });
 });
 
-const uac = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System";
-const lowersUac: Command = {
-  does: "Stops Windows asking before apps get admin rights.",
-  read: `Get-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin`,
-  run: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 0`,
-  undo: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 5`,
-  touches: [{ kind: "registry", key: uac.replace(":", ""), value: "ConsentPromptBehaviorAdmin" }],
+const defender = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender";
+const lowersDefender: Command = {
+  does: "Turns off Defender's virus checks by policy.",
+  read: `Get-ItemProperty -Path '${defender}' -Name DisableAntiSpyware`,
+  run: `Set-ItemProperty -Path '${defender}' -Name DisableAntiSpyware -Value 1`,
+  undo: `Set-ItemProperty -Path '${defender}' -Name DisableAntiSpyware -Value 0`,
+  touches: [{ kind: "registry", key: defender.replace(":", ""), value: "DisableAntiSpyware" }],
 };
 const uninstall: Command = { does: "Uninstalls Foo.", read: "winget list --id Foo.Bar --exact --source winget", run: "winget uninstall --exact --source winget --id Foo.Bar --silent", touches: [{ kind: "other", name: "Foo" }] };
 const fooLog = "C:\\Users\\Sam\\AppData\\Local\\Foo\\foo.log";
@@ -197,8 +197,8 @@ describe("the red card", () => {
   });
 
   it("asks for \"lower\" when it lowers a protection that can be put back", () => {
-    show(one(lowersUac, true));
-    expect(screen.getByRole("note").textContent).toBe("This lowers a protection on this PC.It changes User Account Control, which asks before apps get admin rights.");
+    show(one(lowersDefender, true));
+    expect(screen.getByRole("note").textContent).toBe("This lowers a protection on this PC.It changes Microsoft Defender's settings or policy, which can turn protection off.");
     expect(screen.getByText("Lowers a protection", { selector: ".chip" })).toBeTruthy();
     expect(glance("Can it be undone")).toBe("Rig saves the listed value first and keeps an undo script. Until you undo it, the PC is less protected.");
     expect(screen.getByRole("textbox", { name: /Type lower to turn on Apply/ })).toBeTruthy();

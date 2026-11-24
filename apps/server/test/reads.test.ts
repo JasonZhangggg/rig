@@ -271,6 +271,29 @@ describe("general command steps", () => {
     expect(p.rows![0]).toEqual(["Set Vertical sync to Off for game.exe", "As it is now", "Changed by Rig"]);
   });
 
+  it("offers a protection only for a while, as a red card, and never User Account Control or keeping one off", async () => {
+    const { live } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Turn the firewall off", why: "y", steps: [{ protection: { id: "firewall-public", revertAfter: 15, script: "Set-NetFirewallProfile -Enabled False", keep: true } }] } } },
+      { text: "Review the card." },
+    ]);
+    const p = of(await live(ask("Turn off my firewall for a bit")), "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 3, steps: [{ kind: "native", op: { name: "protection", id: "firewall-public", revertAfter: 15 } }] });
+    expect(Object.keys((p.steps![0] as { op: object }).op).sort()).toEqual(["id", "name", "revertAfter"]);
+    expect(p.rows![0]).toEqual(["Windows Firewall on public networks", "On", "Off for 15 minutes"]);
+
+    for (const [step, says] of [
+      [{ protection: { id: "uac" } }, "Rig never lowers User Account Control"],
+      [{ protection: { id: "firewall-public", revertAfter: 100000 } }, "15 minutes, 1 hour or 4 hours"],
+      [{ protectionKeep: { id: "firewall-public" } }, ""],
+      [{ protection: { name: "protectionKeep", id: "firewall-public" } }, "ok"],
+    ] as const) {
+      const no = await chatSetup([{ tool: { name: "propose_change", input: { title: "x", why: "y", steps: [step] } } }, { text: "." }]);
+      const cards = of(await no.live(ask("Do it")), "proposal");
+      if (says === "ok") expect(cards[0].proposal.steps![0]).toMatchObject({ op: { name: "protection", revertAfter: 60 } });
+      else { expect(cards).toHaveLength(0); expect(lastToolResults(no.seen[1])).toContain(says); }
+    }
+  });
+
   it("builds a file edit as Rig's own step, with a row for each value, and refuses a never-list file", async () => {
     const path = "C:\\Users\\Lee\\AppData\\Local\\Game\\GameUserSettings.ini";
     const { live } = await chatSetup([

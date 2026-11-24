@@ -7,6 +7,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
 import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
+import { openRevert, protectionRow, revertResult, type OpenRevert } from "./protection";
 import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
@@ -802,12 +803,16 @@ export class LocalClient implements RigClient {
     return this.stepLink()("step.undo", force ? { id: undoId, force: true } : { id: undoId });
   }
 
-  async previewStep(id: string, step: HelperStep, tainted: boolean): Promise<PreviewReply> {
+  previewStep(id: string, step: HelperStep, tainted: boolean): Promise<PreviewReply> {
+    return this.previewAs(id, step, tainted, false);
+  }
+
+  private async previewAs(id: string, step: HelperStep, tainted: boolean, byPerson: boolean): Promise<PreviewReply> {
     await this.local(id);
     const helper = this.stepLink();
     const now = this.o.now();
     for (const [k, l] of this.looks) if (!(Date.parse(l.expiresAt) > now)) this.looks.delete(k);
-    const mine = checkStep(step, { tainted, looks: [...this.looks.values()] });
+    const mine = checkStep(step, { tainted, looks: [...this.looks.values()], byPerson });
     if (mine.status === "refused") return { outcome: "refused", verdict: mine };
     const canonical = canonicalStep(step) as HelperStep;
     const reply = await helper("step.preview", { step: canonical });
@@ -851,7 +856,7 @@ export class LocalClient implements RigClient {
     this.o.log("info", `change: ${held.step.kind} ${reply.outcome}`);
     if (reply.outcome !== "applied") return reply;
     const rows = runRows(reply.result, held.step);
-    const applied = appliedHelperStep(held.step, reply.undo, rows, { before: reply.result.before, after: reply.result.after });
+    const applied = appliedHelperStep(held.step, reply.undo, rows, { before: reply.result.before, after: reply.result.after }, reply.result.revert);
     const change: Change = {
       id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle([held.step]),
       by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: held.verdict.tier, applied: [applied], from: meta.from,
@@ -877,6 +882,52 @@ export class LocalClient implements RigClient {
       await this.store.putChange({ ...c, status: "undone" });
       void this.sync();
     }
+    return reply;
+  }
+
+  /**
+   * The protections that are off because of a change made here. Asks the helper how its ledger stands first, and
+   * files every change whose protection is back on as undone, with how that came about.
+   */
+  async reverts(id: string): Promise<OpenRevert[]> {
+    await this.local(id);
+    const open = async () => (await this.store.changes()).map(changeOf).filter((c) => c.status === "applied")
+      .flatMap((c) => c.applied.flatMap((a) => (a.step.kind === "native" && a.undo.kind === "native" && "revert" in a && a.revert ? [{ c, undoId: a.undo.id, row: a.step.op.name === "protection" ? a.step.op.id : "", revert: a.revert }] : [])));
+    const mine = await open();
+    if (mine.length === 0 || !this.link.step) return [];
+    const reply = await this.stepLink()("protection.reverts", {}).catch(() => null);
+    if (!reply?.readable) return mine.flatMap((m) => openRevert(m.c.id, m.undoId, m.row, m.revert, false));
+    let changed = false;
+    for (const m of mine) {
+      const end = reply.ended.find((e) => e.id === m.revert.id);
+      const gone = !end && !m.revert.kept && !reply.waiting.some((w) => w.id === m.revert.id);
+      const name = protectionRow(m.row)?.name ?? "The protection";
+      if (end?.how === "kept") {
+        if (m.revert.kept) continue;
+        await this.store.putChange({ ...m.c, applied: m.c.applied.map((a) => ("revert" in a && a.revert?.id === m.revert.id ? { ...a, revert: { ...a.revert, kept: true as const } } : a)) });
+      } else if (end) await this.store.putChange({ ...m.c, status: "undone", result: revertResult(end.how, end.why, end.at, name) });
+      else if (gone) await this.store.putChange({ ...m.c, status: "undone", result: `${name} is back on.` });
+      else continue;
+      changed = true;
+    }
+    if (!changed) return mine.flatMap((m) => openRevert(m.c.id, m.undoId, m.row, m.revert, true));
+    void this.sync();
+    this.emit();
+    return (await open()).flatMap((m) => openRevert(m.c.id, m.undoId, m.row, m.revert, true));
+  }
+
+  /**
+   * The person's second choice: keep a protection off past its time. It is a step of its own, checked as theirs,
+   * previewed and approved at Windows' prompt like any other, and kept in the changes log.
+   */
+  async keepOff(id: string, changeId: string): Promise<ApplyReply> {
+    const was = (await this.reverts(id)).find((r) => r.changeId === changeId && !r.kept);
+    if (!was) return { outcome: "expired" };
+    const step: HelperStep = { kind: "native", op: { name: "protectionKeep", id: was.row.id } };
+    const seen = await this.previewAs(id, step, false, true);
+    if (seen.outcome !== "ready") return seen;
+    const reply = await this.applyStep(id, seen.nonce, { by: "you", why: `You chose to keep it off after Rig turned it off for a while.` });
+    if (reply.outcome === "applied") await this.reverts(id);
     return reply;
   }
 
