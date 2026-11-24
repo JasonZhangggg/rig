@@ -453,12 +453,15 @@ sealed class ScreenWalk : IDisposable
         var all = new List<Node> { new(top, null, 0) };
         // Some controls answer as their own descendants. A control is read once, by the id Windows gives it.
         var seen = new HashSet<string> { Uia.RuntimeId(top) };
+        int frame = Uia.Int(top, Uia.ProcessId);
         for (int i = 0; i < all.Count; i++)
         {
             if (i % 50 == 0) bar.Check();
             if (all[i].Depth >= MaxDepth) continue;
             foreach (var child in Uia.ChildrenOf(all[i].El, controls))
             {
+                // A drop-down's list is a window of its own, and Windows can hand back the desktop's controls beside it.
+                if (Uia.Int(child, Uia.ProcessId) is var owner && owner != pid && owner != frame) continue;
                 if (Uia.RuntimeId(child) is { Length: > 0 } rid && !seen.Add(rid)) continue;
                 if (all.Count >= MaxNodes)
                 {
@@ -618,9 +621,9 @@ sealed class ScreenWalk : IDisposable
             case "toggle": return Uia.Int(c.El, Uia.ToggleState) switch { 0 => "Off", 1 => "On", _ => "Mixed" };
             case "range": return double.IsNaN(Uia.Number(c.El, Uia.RangeValue)) ? "" : ScreenLook.Number(Uia.Number(c.El, Uia.RangeValue));
             default:
-                if (spot.Items.Where(i => Uia.Bool(i.El, Uia.IsSelected)).ToList() is [var chosen]) return chosen.Name;
                 string text = Uia.Text(c.El, Uia.ValueValue);
-                return spot.Items.Count(i => i.Name == text) == 1 ? text : "";
+                if (spot.Items.Count(i => i.Name == text) == 1) return text;
+                return spot.Items.Where(i => Uia.Bool(i.El, Uia.IsSelected)).ToList() is [var chosen] ? chosen.Name : "";
         }
     }
 
@@ -761,20 +764,39 @@ sealed class ScreenWalk : IDisposable
                 break;
             default:
                 string name = look.Options.FirstOrDefault(o => o.Says == to).Name ?? "";
-                if (spot.Items.Where(i => i.Name == name).ToList() is not [var row]) throw new RigException($"{look.Target.Says} in {app.Name} no longer offers {to}, so Rig changed nothing.");
-                var select = Uia.Pattern<IUIAutomationSelectionItemPattern>(row.El, Uia.SelectionItem) ?? throw Gone();
-                Guard(row);
-                Did(select.Select(), row);
+                if (!spot.Items.Any(i => i.Name == name)) throw new RigException($"{look.Target.Says} in {app.Name} no longer offers {to}, so Rig changed nothing.");
+                Pick(spot.Items, name);
                 // A drop-down takes the row for good when it closes, and the app's Apply must see it taken.
                 Close(spot);
+                if (Took(look, spot, to, 1000) || spot.Opened || Uia.Pattern<IUIAutomationExpandCollapsePattern>(c.El, Uia.ExpandCollapse) is not { } fold) break;
+                // Some drop-downs take a row only while they are open, and some only once they have closed again.
+                Guard(c);
+                Did(fold.Expand(), c);
+                Thread.Sleep(300);
+                Pick(ItemsOf(c, Snapshot(), byElement: true), name);
+                if (Uia.Int(c.El, Uia.ExpandState) != 0 && Uia.Int(c.El, Uia.ProcessId) == pid) fold.Collapse();
+                if (!Took(look, spot, to, 1000)) Pick(spot.Items, name);
                 break;
         }
+        if (!Took(look, spot, to, SettleMs)) throw new RigException($"{app.Name} didn't take {to} for {look.Target.Says}. It reads {Says(look, Now(spot))}.");
+    }
+
+    void Pick(List<Node> rows, string name)
+    {
+        if (rows.Where(i => i.Name == name).ToList() is not [var row] || Uia.Pattern<IUIAutomationSelectionItemPattern>(row.El, Uia.SelectionItem) is not { } select) return;
+        Guard(row);
+        Did(select.Select(), row);
+    }
+
+    bool Took(ScreenLook look, Spot spot, string to, int ms)
+    {
         var clock = Stopwatch.StartNew();
         while (!look.Same(Says(look, Now(spot)), to))
         {
-            if (clock.ElapsedMilliseconds > SettleMs) throw new RigException($"{app.Name} didn't take {to} for {look.Target.Says}.");
+            if (clock.ElapsedMilliseconds > ms) return false;
             Thread.Sleep(150);
         }
+        return true;
     }
 
     /// Presses the app's own Apply button, or OK in a window that also has Cancel. No other button is ever pressed.
