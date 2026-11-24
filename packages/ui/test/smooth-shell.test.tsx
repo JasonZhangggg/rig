@@ -47,7 +47,8 @@ describe("Upgrades tab", () => {
     vi.spyOn(client, "upgrades").mockImplementation(async (id) => { await new Promise((r) => setTimeout(r, 60)); return slow(id); });
     location.hash = "#upgrades";
     render(<RigApp client={client} />);
-    const rail = await screen.findByRole("navigation", { name: "Kinds of part" });
+    // The first test in the file pays for the app's cold start, which takes a few seconds on a busy CI runner.
+    const rail = await screen.findByRole("navigation", { name: "Kinds of part" }, { timeout: 5000 });
     expect(screen.getByText(/^Rig's pick for/)).toBeTruthy();
     const first = rail.querySelector('[aria-current="true"]')?.textContent;
     await new Promise((r) => setTimeout(r, 150));

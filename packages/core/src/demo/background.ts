@@ -39,9 +39,11 @@ export function demoRecorderLines(inv: Inventory, now: number, dust: number): un
     return { k: "s", t, v, ...(d ? { d: 1 } : {}), ...(t % MIN < 30 * SEC ? { top: demoProcesses(inv, t) } : {}) };
   };
 
-  // The recorder reads every 30 seconds, but a day's log shows one reading every 4 minutes, so the demo writes only those.
+  // The recorder reads every 30 seconds, but a day's log shows one reading every 4 minutes, so the demo writes only
+  // those, and one every 8 minutes before yesterday, to keep the demo quick to start.
+  const yesterday = new Date(now - DAY); yesterday.setHours(0, 0, 0, 0);
   const base: ReturnType<typeof line>[] = [];
-  for (let t = from.getTime(); t <= now; t += 4 * MIN) base.push(line(t, false));
+  for (let t = from.getTime(); t <= now; t += t < yesterday.getTime() ? 8 * MIN : 4 * MIN) base.push(line(t, false));
 
   // Closer looks: the graphics card at 88°C or more two readings running (once a day at most), and the Windows events that start one.
   const events = demoEvents(inv.machine.kind, now, from.getTime()).sort((a, b) => a.t - b.t);
