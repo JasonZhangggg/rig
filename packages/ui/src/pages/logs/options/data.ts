@@ -1,9 +1,9 @@
 // Preview data for the Logs page options: one day of what Rig's background recorder keeps on the demo PC (Atlas).
 // The recorder writes every temperature, load, fan, power and fan-control sensor every 30 seconds, and every
 // 5 seconds for a few minutes around anything unusual. Made up, but shaped like a real Sunday: work in the
-// afternoon, Counter-Strike 2 twice, a hot spot that passed 95°C and a Discord crash late at night.
+// afternoon, Counter-Strike 2 twice, the graphics card reaching 89°C and a Discord crash late at night.
 
-export type Unit = "temp" | "percent" | "rpm" | "watt";
+export type Unit = "temp" | "percent" | "rpm" | "watt" | "mb";
 
 export interface SensorDef { id: string; part: PartId; name: string; unit: Unit; lead?: boolean }
 export type PartId = "cpu" | "gpu" | "ram" | "board" | "fans";
@@ -45,7 +45,9 @@ export const sensors: SensorDef[] = [
 export const byId = Object.fromEntries(sensors.map((s) => [s.id, s])) as Record<string, SensorDef>;
 
 /** Safe limits, from the part makers. */
-export const limits: Record<string, number> = { "cpu.temp": 89, "gpu.temp": 88, "gpu.hot": 100 };
+export const limits: Record<string, number> = { "cpu.temp": 89, "gpu.temp": 90, "gpu.hot": 100 };
+/** What the recorder watches for: two readings in a row at or over these start a closer look. */
+export const watch: Record<string, number> = { "cpu.temp": 95, "gpu.temp": 88 };
 
 const H = 36e5, M = 60_000;
 /** Sunday, Nov 22, 2026, midnight. */
@@ -61,11 +63,11 @@ export const games: Span[] = [
   { from: at(19, 31), to: at(22, 3), title: "Counter-Strike 2", kind: "game" },
 ];
 export const looks: Span[] = [
-  { from: at(21, 38), to: at(21, 47, 30), title: "Hot spot passed 95°C", kind: "look" },
+  { from: at(21, 36, 45), to: at(21, 48), title: "Graphics card reached 88°C", kind: "look" },
   { from: at(23, 7), to: at(23, 15), title: "Discord crashed", kind: "look" },
 ];
 export const moments: Moment[] = [
-  { t: at(21, 42, 15), title: "Hot spot reached 97°C", detail: "During Counter-Strike 2. 3° under its limit; the GPU fans were at 78%.", look: true, kind: "look" },
+  { t: at(21, 41, 45), title: "Graphics card reached 88°C", detail: "During Counter-Strike 2. Rig took a closer look.", look: true, kind: "look" },
   { t: at(23, 12, 5), title: "Discord.exe crashed", detail: "Crash, logged by Application Error. Nothing else was busy.", look: true, kind: "event" },
   { t: at(9, 14), title: "Windows Update installed a driver", detail: "Realtek audio, logged by Windows Update.", look: false, kind: "event" },
 ];
@@ -107,8 +109,8 @@ export const day: Point[] = (() => {
     const spike = !game && a > 0.2 && r() < 0.08 ? 0.5 : 0; // a build or an export now and then
     const load = Math.min(1, a + spike + n() * 0.12);
     heat += (load - heat) * k;
-    // In the late game the round gets heavier: the hot spot climbs toward 97°C at 9:42.
-    const late = t > at(21, 20) && t < at(21, 50) ? Math.max(0, 1 - Math.abs(t - at(21, 42, 15)) / (14 * M)) : 0;
+    // In the late game the round gets heavier: the graphics card climbs to 89°C around 9:43.
+    const late = t > at(21, 20) && t < at(21, 50) ? Math.max(0, 1 - Math.abs(t - at(21, 43, 30)) / (10 * M)) : 0;
     const gload = game ? Math.min(99, 84 + n() * 6 + late * 12) : Math.max(0, a * 18 + n() * 4);
     gheat += (gload / 100 - gheat) * k;
     const crash = t >= at(23, 12, 5) && t < at(23, 12, 40);
@@ -119,8 +121,8 @@ export const day: Point[] = (() => {
     v["cpu.ccd"] = v["cpu.temp"] - 3 - r() * 1.5;
     v["cpu.power"] = 24 + load * (game ? 58 : 66) + n() * 4;
     v["gpu.load"] = crash ? 0 : clamp(gload, 0, 99);
-    v["gpu.temp"] = 36 + gheat * 41 + late * 6 + n();
-    v["gpu.hot"] = v["gpu.temp"] + 6 + gheat * 9 + late * 1.2 + n();
+    v["gpu.temp"] = 36 + gheat * 41 + late * 15 + n() * 0.6;
+    v["gpu.hot"] = v["gpu.temp"] + 3 + gheat * 4 + n();
     v["gpu.mem"] = v["gpu.temp"] + 6 + gheat * 4 + n() * 0.8;
     v["gpu.vram"] = game ? 58 + n() * 4 : 14 + a * 20 + n() * 2;
     v["gpu.power"] = 11 + (v["gpu.load"] / 100) * 196 + late * 12 + n() * 5;
@@ -142,7 +144,30 @@ export const day: Point[] = (() => {
 })();
 
 // The first moment sits where the hot spot actually peaked.
-moments[0].t = day.reduce((m, p) => (p.v["gpu.hot"] > m.v["gpu.hot"] ? p : m)).t;
+// The closer look starts at the second reading in a row at or over 88°C, as the recorder's watch does.
+moments[0].t = day.find((p, i) => i > 0 && p.t > at(21, 30) && p.v["gpu.temp"] >= 88 && day[i - 1].v["gpu.temp"] >= 88)?.t ?? moments[0].t;
+
+/** A custom log Rig's chat set up after Discord crashed: Discord's memory and processor use every 10 seconds while it runs. */
+export const discordLog = {
+  label: "Discord's memory and processor use",
+  by: "chat" as const,
+  started: at(-2, 50),
+  ends: DAY0 + 14 * 24 * H,
+  every: 10,
+  points: ((): Point[] => {
+    const r = rand(11);
+    const out: Point[] = [];
+    for (let t = at(17, 0); t <= at(23, 59); t += 10_000) {
+      if (t > at(23, 12, 5) && t < at(23, 13, 30)) continue; // not running
+      const fresh = t >= at(23, 13, 30);
+      const grow = fresh ? (t - at(23, 13, 30)) / (6 * H) : (t - at(17, 0)) / (at(23, 12) - at(17, 0));
+      const mem = fresh ? 310 + grow * 120 + (r() - 0.5) * 10 : 360 + grow * grow * 1580 + (r() - 0.5) * 18;
+      const cpu = Math.max(0.2, 1.4 + (r() - 0.5) * 1.6 + (games.some((g) => t >= g.from && t <= g.to) ? 2.5 : 0));
+      out.push({ t, v: { mem: Math.round(mem), cpu: Math.round(cpu * 10) / 10 } });
+    }
+    return out;
+  })(),
+};
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -174,6 +199,7 @@ export function fmt(unit: Unit, v: number | null | undefined, temp: (c: number) 
   if (unit === "temp") return temp(v);
   if (unit === "percent") return `${Math.round(v)}%`;
   if (unit === "watt") return `${Math.round(v)} W`;
+  if (unit === "mb") return v >= 1000 ? `${(v / 1000).toFixed(1)} GB` : `${Math.round(v)} MB`;
   return Math.round(v).toLocaleString("en-US") + " rpm";
 }
 

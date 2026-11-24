@@ -45,7 +45,7 @@ export function DayStep({ label }: { label: string }) {
   );
 }
 
-const kindTitle: Record<Unit, string> = { temp: "Temperatures", percent: "Usage", watt: "Power", rpm: "Fans" };
+const kindTitle: Record<Unit, string> = { temp: "Temperatures", percent: "Usage", watt: "Power", rpm: "Fans", mb: "Memory" };
 const cycle = ["c-ink", "c-brass", "c-grey"];
 
 /** The live view's kinds, for recorded readings: one lane per kind of sensor the part has, every sensor of that kind in it. */
@@ -54,7 +54,7 @@ export function partLanes(part: PartId, h?: number): Lane[] {
   const units = [...new Set(mine.map((s) => s.unit))];
   return units.map((u, i) => ({
     title: kindTitle[u], unit: u, h: i === 0 ? h : undefined,
-    series: mine.filter((s) => s.unit === u).map((s, j) => ({ id: s.id, cls: s.id === "gpu.hot" ? "c-look" : cycle[j % cycle.length] })),
+    series: mine.filter((s) => s.unit === u).map((s, j) => ({ id: s.id, cls: s.id === "gpu.temp" ? "c-look" : cycle[j % cycle.length] })),
   }));
 }
 

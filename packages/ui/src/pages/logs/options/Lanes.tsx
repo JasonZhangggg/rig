@@ -23,27 +23,32 @@ export interface Lane { title: string; unit: Unit; series: LaneSeries[]; limit?:
 /** One line per sensor as an SVG path, bucketed to about two pixels so a day of readings stays light. Spikes keep their peak. */
 export function pathOf(points: readonly Point[], id: string, x: (t: number) => number, y: (v: number) => number, t0: number, t1: number, w: number, peak = true) {
   const n = Math.max(20, Math.round(w / 2));
-  const b: { t: number; v: number; c: number }[] = [];
+  const b: { t: number; v: number; c: number; gap?: boolean }[] = [];
+  let last = -Infinity;
   for (const p of points) {
     if (p.t < t0 || p.t > t1) continue;
     const v = p.v[id];
     if (v == null) continue;
     const i = Math.min(n - 1, Math.floor(((p.t - t0) / (t1 - t0)) * n));
     const cur = b[i];
-    if (!cur) b[i] = { t: p.t, v, c: 1 };
+    // A stretch with no readings (the program wasn't running) is left as a gap, not joined.
+    const gap = p.t - last > 60_000 && last > -Infinity;
+    last = p.t;
+    if (!cur) b[i] = { t: p.t, v, c: 1, gap };
     else if (peak) { if (v > cur.v) { cur.v = v; cur.t = p.t; } }
     else { cur.v = (cur.v * cur.c + v) / (cur.c + 1); cur.c++; }
   }
   let d = "";
-  for (const p of b) if (p) d += `${d ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+  for (const p of b) if (p) d += `${d && !p.gap ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
   return d;
 }
 
 function scale(unit: Unit, vals: number[], limit?: number) {
   const top = Math.max(...vals, limit ?? 0);
-  if (unit === "percent") return { lo: 0, hi: 100, step: 50 };
+  if (unit === "percent") return top < 20 ? { lo: 0, hi: Math.ceil(top / 5) * 5, step: 5 } : { lo: 0, hi: 100, step: 50 };
   if (unit === "rpm") { const step = top > 2000 ? 1000 : 500; return { lo: 0, hi: Math.ceil(top / step) * step || step, step }; }
   if (unit === "watt") { const step = top > 150 ? 100 : 50; return { lo: 0, hi: Math.ceil(top / step) * step, step }; }
+  if (unit === "mb") { const step = top > 1500 ? 1000 : 500; return { lo: 0, hi: Math.ceil(top / step) * step, step }; }
   const lo = Math.floor(Math.min(...vals) / 20) * 20;
   return { lo, hi: Math.ceil((top + 2) / 20) * 20, step: 20 };
 }
@@ -91,7 +96,7 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
     return { lane, h, y, grid, paths };
   }), [points, lanes, t0, t1, w]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const gridLabel = (u: Unit, v: number) => u === "percent" ? `${v}%` : u === "rpm" ? (v >= 1000 ? `${v / 1000}k` : `${v}`) : u === "watt" ? `${v}W` : `${v}°`;
+  const gridLabel = (u: Unit, v: number) => u === "percent" ? `${v}%` : u === "rpm" ? (v >= 1000 ? `${v / 1000}k` : `${v}`) : u === "watt" ? `${v}W` : u === "mb" ? (v >= 1000 ? `${v / 1000} GB` : `${v} MB`) : `${v}°`;
 
   return (
     <div ref={ref} className="ln" onPointerMove={move} onPointerLeave={() => onCursor(null)}>

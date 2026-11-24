@@ -123,3 +123,21 @@
   .op-rail .pf-part { flex: 0 0 140px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "now" "spark"; }
   .op-kinds .seg { overflow-x: auto; max-width: 100%; }
 }
+
+/* One log's own page. */
+.op-log { gap: 26px; max-width: 1180px; }
+.op-loghead { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.op-back { margin: 0 0 8px -8px; }
+.op-kind { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.op-logtitle { margin: 0; font: var(--t-title); }
+.op-when { margin: 2px 0 0; font-size: 13px; }
+.op-why, .op-cap, .op-lead, .op-came { display: flex; flex-direction: column; gap: 8px; }
+.op-sech { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.op-legend { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.op-limitkey { width: 16px; border-top: 1px dashed var(--text-3); }
+.op-verdict { margin: 0; max-width: 760px; font-size: 15px; line-height: 1.55; }
+.op-note-sm { margin: 4px 0 0; font-size: 12.5px; }
+.op-all { display: flex; flex-direction: column; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+.op-log .op-cap .rows { max-width: 760px; }
+.op-log .op-logtitle { font-size: 26px; }
+.op-why .op-verdict { font-size: 16px; }

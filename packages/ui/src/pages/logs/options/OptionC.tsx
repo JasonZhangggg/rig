@@ -35,15 +35,15 @@ export function OptionC() {
   const marks = moments.filter((m) => m.t >= s.from && m.t <= s.to);
   const [part, setPart] = useState(new URLSearchParams(location.search).get("part") ?? "all");
   const whole: Lane[] = [
-    { title: "Temperatures", unit: "temp", series: [{ id: "gpu.hot", cls: "c-look" }, { id: "gpu.temp", cls: "c-ink" }, { id: "cpu.temp", cls: "c-brass", name: "Processor" }], h: 120 },
+    { title: "Temperatures", unit: "temp", series: [{ id: "gpu.temp", cls: "c-look", name: "Graphics card" }, { id: "gpu.hot", cls: "c-grey" }, { id: "cpu.temp", cls: "c-brass", name: "Processor" }], h: 120 },
     { title: "Usage", unit: "percent", series: [{ id: "gpu.load", cls: "c-ink", name: "Graphics card" }, { id: "cpu.load", cls: "c-brass", name: "Processor" }], h: 120 },
     { title: "Power", unit: "watt", series: [{ id: "gpu.power", cls: "c-ink", name: "Graphics card" }, { id: "cpu.power", cls: "c-brass", name: "Processor" }], h: 120 },
     { title: "Fans", unit: "rpm", series: [{ id: "gpu.fan", cls: "c-ink" }, { id: "fans.cpu", cls: "c-brass" }], h: 120 },
   ];
   const tiles = part === "all" ? whole : partLanes(part as PartId, 120).map((l) => ({ ...l, h: 120 }));
   const figs = [
-    { label: "Hot spot, highest", v: temp(hot.max), note: `At ${clock(hot.maxAt)}. Limit ${temp(limits["gpu.hot"])}.`, look: hot.max >= limits["gpu.hot"] - 5 },
-    { label: "Graphics card, highest", v: temp(core.max), note: `${temp(core.avg)} on average.` },
+    { label: "Graphics card, highest", v: temp(core.max), note: `At ${clock(core.maxAt)}. Limit ${temp(limits["gpu.temp"])}.`, look: core.max >= limits["gpu.temp"] - 5 },
+    { label: "Hot spot, highest", v: temp(hot.max), note: `Limit ${temp(limits["gpu.hot"])}.` },
     { label: "Processor, highest", v: temp(cpu.max), note: `${temp(cpu.avg)} on average.` },
     { label: "Graphics card power", v: `${Math.round(power.avg)} W`, note: `Up to ${Math.round(power.max)} W.` },
   ];
@@ -83,11 +83,11 @@ export function OptionC() {
       <div className="op-dhead">
         <div>
           <h2 id="op-d-h" className="op-dtitle">{s.title}</h2>
-          <p className="faint">Sunday, Nov 22 · {clock(s.from)} to {clock(s.to)} · {span(s.from, s.to)} · readings every 30 seconds, every 5 around 9:38 PM</p>
+          <p className="faint">Sunday, Nov 22 · {clock(s.from)} to {clock(s.to)} · {span(s.from, s.to)} · readings every 30 seconds, every 5 around 9:40 PM</p>
         </div>
         {!phone && <div className="gm-actions"><button type="button" className="btn ghost sm">Export CSV</button><button type="button" className="btn primary sm">Ask about this</button></div>}
       </div>
-      <p className="lg-lede-text op-lede">The hot spot reached {temp(hot.max)} at {clock(hot.maxAt)}, {temp(limits["gpu.hot"] - Math.round(hot.max), { delta: true, mark: "degree" })} under its limit. Everything else stayed in its usual range.</p>
+      <p className="lg-lede-text op-lede">The graphics card reached {temp(core.max)} at {clock(core.maxAt)}, {temp(limits["gpu.temp"] - Math.round(core.max), { delta: true, mark: "degree" })} under its limit. Everything else stayed in its usual range.</p>
       <dl className="op-figs">
         {figs.map((f) => <div key={f.label}><dt>{f.label}</dt><dd className={`num op-fig${f.look ? " look" : ""}`}>{f.v}</dd><dd className="faint">{f.note}</dd></div>)}
       </dl>
@@ -101,7 +101,7 @@ export function OptionC() {
         <section className="op-sub">
           <h3 className="lg-h">What happened</h3>
           <Rows timeline>
-            <Row time={clock(marks[0].t)} mark="look" title={`Hot spot reached ${temp(hot.max)}`} meta="The GPU fans were at 78%. Rig took a closer look for 10 minutes." name="Hot spot" />
+            <Row time={clock(marks[0].t)} mark="look" title={`Graphics card reached ${temp(core.max)}`} meta={`Rig took a closer look for ${span(looks[0].from, looks[0].to)}.`} name="Graphics card" />
             <Row time={clock(s.from)} mark="dot" title="Counter-Strike 2 started" meta="cs2.exe, in front the whole time." name="Game" />
           </Rows>
         </section>

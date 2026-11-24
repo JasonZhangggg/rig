@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Row, RowFigure, Rows } from "../../../components/Rows";
 import { useStillPC, useTemp } from "../../../state";
-import { clock, DAY0, DAY1, day, games, limits, looks, moments, span, stat } from "./data";
+import { clock, DAY0, DAY1, day, games, limits, looks, moments, span, stat, watch } from "./data";
 import { Lanes, Overview, type Lane } from "./Lanes";
 import { DayStep, OptHead, PartRail, partLanes, RecorderLine, Seg } from "./Shared";
 import type { PartId } from "./data";
@@ -18,14 +18,14 @@ export function OptionA() {
   const marks = moments.filter((m) => m.t >= from);
   const [part, setPart] = useState(new URLSearchParams(location.search).get("part") ?? "all");
   const whole: Lane[] = [
-    { title: "Temperatures", unit: "temp", series: [{ id: "gpu.hot", cls: "c-look" }, { id: "gpu.temp", cls: "c-ink" }, { id: "cpu.temp", cls: "c-brass", name: "Processor" }], h: phone ? 110 : 132 },
+    { title: "Temperatures", unit: "temp", series: [{ id: "gpu.temp", cls: "c-look", name: "Graphics card" }, { id: "gpu.hot", cls: "c-grey" }, { id: "cpu.temp", cls: "c-brass", name: "Processor" }], h: phone ? 110 : 132 },
     { title: "Usage", unit: "percent", series: [{ id: "gpu.load", cls: "c-ink", name: "Graphics card" }, { id: "cpu.load", cls: "c-brass", name: "Processor" }] },
     { title: "Power", unit: "watt", series: [{ id: "gpu.power", cls: "c-ink", name: "Graphics card" }, { id: "cpu.power", cls: "c-brass", name: "Processor" }] },
     { title: "Fans", unit: "rpm", series: [{ id: "gpu.fan", cls: "c-ink" }, { id: "fans.cpu", cls: "c-brass" }, { id: "fans.sys1", cls: "c-grey" }] },
     { title: "Memory", unit: "percent", series: [{ id: "ram.load", cls: "c-ink" }, { id: "gpu.vram", cls: "c-grey" }] },
   ];
   const lanes = part === "all" ? whole : partLanes(part as PartId, phone ? 110 : 132);
-  const hot = stat("gpu.hot", from, to);
+  const hot = stat("gpu.temp", from, to);
   const game = games[1];
 
   return (
@@ -51,8 +51,8 @@ export function OptionA() {
       <section className="lg-section op-in" aria-labelledby="op-in-h">
         <h2 id="op-in-h" className="lg-h">In this stretch</h2>
         <Rows timeline>
-          <Row time={clock(marks[0].t)} mark="look" title="Hot spot came close to its limit" meta={`During ${game.title}. ${temp(limits["gpu.hot"] - Math.round(hot.max), { delta: true, mark: "degree" })} under its limit; the fans were at 78%.`} figure={<RowFigure value={temp(hot.max)} word="hot spot" look />} name="Hot spot" pick={{ pressed: true, onPick: () => setCursor(marks[0].t) }} />
-          <Row time={clock(looks[0].from)} mark="dot" title="Closer look" meta={`Readings every 5 seconds for ${span(looks[0].from, looks[0].to)}, because the hot spot passed 95°C.`} name="Closer look" />
+          <Row time={clock(marks[0].t)} mark="look" title={`Graphics card reached ${temp(watch["gpu.temp"])}`} meta={`During ${game.title}. Highest ${temp(hot.max)}, ${temp(limits["gpu.temp"] - Math.round(hot.max), { delta: true, mark: "degree" })} under its limit.`} figure={<RowFigure value={temp(hot.max)} word="graphics card" look />} name="Graphics card" pick={{ pressed: true, onPick: () => setCursor(marks[0].t) }} />
+          <Row time={clock(looks[0].from)} mark="dot" title="Closer look" meta={`Readings every 5 seconds for ${span(looks[0].from, looks[0].to)}, because the graphics card reached ${temp(watch["gpu.temp"])}.`} name="Closer look" />
           <Row time={clock(game.from)} mark="dot" title={game.title} meta={`${span(game.from, game.to)}, until ${clock(game.to)}.`} figure={<RowFigure value={temp(stat("gpu.temp", game.from, game.to).max)} word="graphics card" />} name={game.title} />
           <Row time={clock(marks[1].t)} mark="look" title="Discord.exe crashed" meta="Crash, logged by Application Error. Rig took a closer look."  name="Discord crash" pick={{ pressed: false, onPick: () => setCursor(marks[1].t) }} />
         </Rows>

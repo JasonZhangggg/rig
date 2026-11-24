@@ -10,8 +10,9 @@ import { LogsHead } from "./logs/Head";
 import { OptionA } from "./logs/options/OptionA";
 import { OptionB } from "./logs/options/OptionB";
 import { OptionC } from "./logs/options/OptionC";
+import { LogPage } from "./logs/options/LogPage";
 
-/** Preview only: ?logs=a|b|c shows one of the redesign options. */
+/** Preview only: ?logs=a|b|c shows one of the redesign options, ?logs=log one log's own page (&kind=custom for a custom log). */
 const option = typeof location !== "undefined" ? new URLSearchParams(location.search).get("logs") : null;
 
 /** What the Windows logs say about this PC lately: a count per thing that went wrong, the events behind each, and the recordings Rig made to find out why. */
@@ -19,6 +20,7 @@ export function Logs() {
   if (option === "a") return <OptionA />;
   if (option === "b") return <OptionB />;
   if (option === "c") return <OptionC />;
+  if (option === "log") return <LogPage />;
   return <LogsNow />;
 }
 
