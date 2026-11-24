@@ -746,7 +746,8 @@ static class UserProcess
     }
 
     /// Runs a program with a primary token. `set` replaces variables in that account's own environment; `desktop` null keeps this process's desktop.
-    public static (int Exit, string Out, string Err, bool TimedOut) RunAs(IntPtr primary, string exe, string args, int timeoutMs, string? desktop, IReadOnlyDictionary<string, string>? set = null, string? cwd = null)
+    /// `logonService` has Windows' own logon service start it, which sets the program up on the desktop for that token.
+    public static (int Exit, string Out, string Err, bool TimedOut) RunAs(IntPtr primary, string exe, string args, int timeoutMs, string? desktop, IReadOnlyDictionary<string, string>? set = null, string? cwd = null, bool logonService = false)
     {
         IntPtr env = IntPtr.Zero, outR = IntPtr.Zero, outW = IntPtr.Zero, errR = IntPtr.Zero, errW = IntPtr.Zero, inR = IntPtr.Zero, inW = IntPtr.Zero;
         var pi = new PROCESS_INFORMATION();
@@ -765,7 +766,11 @@ static class UserProcess
                 wShowWindow = 0, hStdInput = inR, hStdOutput = outW, hStdError = errW,
             };
             var cmd = new StringBuilder($"\"{exe}\" {args}");
-            if (!CreateProcessAsUser(primary, exe, cmd, IntPtr.Zero, IntPtr.Zero, true, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi))
+            if (logonService)
+            {
+                if (!CreateProcessWithTokenW(primary, 0, exe, cmd, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi)) throw Win("start the script");
+            }
+            else if (!CreateProcessAsUser(primary, exe, cmd, IntPtr.Zero, IntPtr.Zero, true, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi))
             {
                 // Without the right to hand a process someone else's token, Windows' own logon service starts it instead.
                 if (Marshal.GetLastWin32Error() != ERROR_PRIVILEGE_NOT_HELD || !CreateProcessWithTokenW(primary, 0, exe, cmd, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, env, cwd, ref si, out pi))

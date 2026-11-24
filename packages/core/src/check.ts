@@ -296,6 +296,9 @@ function judgeFind(f: Find, use: ScriptUse): { refuse?: string; why?: Refusal; r
   return { refuse: `Rig only looks with plain commands. ${words()}`, why: "notRead" };
 }
 
+/** The reason a general command gets when nothing about it is riskier than that. */
+export const secondLook = "A general command, so it needs a second look before it runs.";
+
 /** A program the script itself may have put in place, so not the program Rig looked up. */
 function wroteProgram(calls: Call[], judged: Judged[], finds: Find[]): string | null {
   const redirected = finds.filter((f) => f.what === "redirect").map((f) => placeOf(f.detail));
@@ -359,7 +362,7 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
   const tier = use === "read" ? 0 : lowers ? 3 : (Math.max(2, top) as Tier);
   for (const c of commands) if (c.tier === 3) reasons.push(`${c.says}. Rig can't promise to put this back.`);
   if (lowers) reasons.push(`${lowers}.`);
-  if (use !== "read" && !reasons.length) reasons.push("A general command, so it needs a second look before it runs.");
+  if (use !== "read" && !reasons.length) reasons.push(secondLook);
   const writes = use === "read" ? [] : [...judged.flatMap((j) => (j.write ? [j.write] : [])),
     ...parsed.finds.filter((f) => f.what === "redirect").map((f): Write => ({ kind: "path", places: [placeOf(f.detail)] }))];
   const allowed: Allowed = { status: "allowed", tier, admin: use !== "read" && (judged.some((j) => j.admin) || textNeedsAdmin(script)), commands, reasons, rulesVersion };

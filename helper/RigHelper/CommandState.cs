@@ -1,17 +1,22 @@
 // What the general command runner reads and puts back.
 //
 // TouchStates takes the snapshot of what a command says it touches: registry
-// values and keys through the Win32 API as type and bytes (or "absent"),
-// files as copies up to a size cap, and a service's start type and whether it
-// runs. The person's hive is HKEY_USERS\<their SID>, never this process's
+// values and keys through the Win32 API as type and bytes (or absent, with the
+// deepest key that was there, so a restore removes only the keys the change
+// made), files as copies up to a size cap, and a service's start type and
+// whether it runs. Whether a service runs is shown, but is never drift: Windows
+// starts and stops services by itself. The person's hive is HKEY_USERS\<their SID>, never this process's
 // HKEY_CURRENT_USER. Anything in the person's reach is read and written with
 // the person's rights; the helper's admin rights are used only for places
 // the rules say need them, and only for a command approved as admin.
 //
 // Sentinels are the fixed places no command may change (the never list).
-// They are compared before and after every run; a difference is a hit.
+// They are read twice before a run, which must agree, and once after; a
+// difference is a hit. What Windows changes by itself (drivers, its own
+// services' updates, its own scheduled tasks) isn't watched.
 
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.ServiceProcess;
@@ -28,10 +33,24 @@ public sealed class TouchStates(Person person, bool admin)
     public const long MaxKeyBytes = 4L << 20, MaxFileBytes = 8L << 20;
     const string Absent = "absent";
 
-    public static bool IsAbsent(JsonNode? state) => state is JsonValue v && v.TryGetValue(out string? s) && s == Absent;
+    public static bool IsAbsent(JsonNode? state) =>
+        (state is JsonValue v && v.TryGetValue(out string? s) && s == Absent) || (state is JsonObject o && o["absent"] is JsonValue a && a.TryGetValue(out bool b) && b);
+
+    /// A state without what doesn't count as a change since: the deepest key a registry snapshot found, and whether a service runs.
+    public static JsonNode? Core(JsonNode? state)
+    {
+        if (state is not JsonObject o) return state?.DeepClone();
+        var c = o.DeepClone().AsObject();
+        c.Remove("anchor");
+        c.Remove("running");
+        return c;
+    }
+
+    public static bool SameCore(JsonNode? a, JsonNode? b) => (Core(a)?.ToJsonString() ?? "null") == (Core(b)?.ToJsonString() ?? "null");
 
     /// With the helper's rights only where the rules say the place needs admin, and only for a command approved as admin.
-    T Do<T>(string place, Func<T> act) => admin && Native.IsAdmin() && CommandCheck.NeedsAdmin(place) ? act() : person.Do(act);
+    bool Elevated(string place) => admin && Native.IsAdmin() && CommandCheck.NeedsAdmin(place);
+    T Do<T>(string place, Func<T> act) => Elevated(place) ? act() : person.Do(act);
 
     // ----- Registry -----
 
@@ -96,12 +115,42 @@ public sealed class TouchStates(Person person, bool admin)
         }
     }
 
+    static bool Exists(RegistryKey root, string sub) { using var k = root.OpenSubKey(sub); return k != null; }
+    static string Parent(string sub) => sub.Contains('\\') ? sub[..sub.LastIndexOf('\\')] : "";
+
+    /// The deepest part of the path that is there now.
+    static string Anchor(RegistryKey root, string sub)
+    {
+        string at = sub;
+        while (at.Length > 0 && !Exists(root, at)) at = Parent(at);
+        return at;
+    }
+
+    /// Removes now-empty keys from `sub` up to, and not including, `anchor`: the keys a change made, and no others.
+    static void Prune(RegistryKey root, string sub, string anchor)
+    {
+        for (string at = sub; at.Length > anchor.Length && at.StartsWith(anchor, StringComparison.OrdinalIgnoreCase); at = Parent(at))
+        {
+            using (var k = root.OpenSubKey(at))
+            {
+                if (k == null) continue;
+                if (k.ValueCount > 0 || k.SubKeyCount > 0) return;
+            }
+            root.DeleteSubKey(at, throwOnMissingSubKey: false);
+        }
+    }
+
     JsonNode ReadRegistry(Touch t) => Do(t.Text, () =>
     {
         using var root = Root(t.Text, out string sub);
         using var key = root.OpenSubKey(sub);
-        if (t.Value != null) return new JsonObject { ["key"] = key != null, ["value"] = key == null ? Absent : ReadValue(key, t.Value) };
-        if (key == null) return (JsonNode)Absent;
+        if (t.Value != null)
+        {
+            var o = new JsonObject { ["key"] = key != null, ["value"] = key == null ? Absent : ReadValue(key, t.Value) };
+            if (key == null) o["anchor"] = Anchor(root, sub);
+            return o;
+        }
+        if (key == null) return (JsonNode)new JsonObject { ["absent"] = true, ["anchor"] = Anchor(root, sub) };
         int entries = 0;
         long bytes = 0;
         return ReadTree(key, ref entries, ref bytes);
@@ -112,7 +161,12 @@ public sealed class TouchStates(Person person, bool admin)
         using var root = Root(t.Text, out string sub);
         if (t.Value == null)
         {
-            if (IsAbsent(state)) { root.DeleteSubKeyTree(sub, throwOnMissingSubKey: false); return 0; }
+            if (IsAbsent(state))
+            {
+                root.DeleteSubKeyTree(sub, throwOnMissingSubKey: false);
+                if (state["anchor"]?.ToString() is string top) Prune(root, Parent(sub), top);
+                return 0;
+            }
             using var whole = root.CreateSubKey(sub, writable: true);
             WriteTree(whole, state);
             return 0;
@@ -123,23 +177,25 @@ public sealed class TouchStates(Person person, bool admin)
             WriteValue(made, t.Value, state["value"]!);
             return 0;
         }
-        bool empty;
         using (var key = root.OpenSubKey(sub, writable: true))
         {
             if (key == null) return 0;
             key.DeleteValue(t.Value, throwOnMissingValue: false);
-            empty = key.ValueCount == 0 && key.SubKeyCount == 0;
         }
-        // The key wasn't there before the change either: take it away again once nothing is left in it.
-        if (empty && state["key"]?.GetValue<bool>() == false) root.DeleteSubKey(sub, throwOnMissingSubKey: false);
+        // The key wasn't there before the change either: take away the keys the change made once nothing is left in them.
+        if (state["key"]?.GetValue<bool>() == false) Prune(root, sub, state["anchor"]?.ToString() ?? sub);
         return 0;
     });
 
     // ----- Files -----
 
+    /// The helper's own rights reach a file only through folders that only admins could have made or changed. Anywhere
+    /// else the person's rights do it, so a link the person planted leads only where the person could go anyway.
+    bool AsHelper(string path) => Elevated(path) && AdminFile.Trusted(path);
+
     JsonNode ReadFile(Touch t, string? copyTo)
     {
-        byte[]? bytes = Do(t.Text, () =>
+        byte[]? bytes = AsHelper(t.Text) ? AdminFile.Read(t.Text, MaxFileBytes) : person.Do(() =>
         {
             if (Directory.Exists(t.Text)) throw new RigException("it is a folder, and Rig snapshots single files");
             if (!File.Exists(t.Text)) return null;
@@ -154,7 +210,12 @@ public sealed class TouchStates(Person person, bool admin)
     void WriteFile(Touch t, JsonNode state, string? copy)
     {
         byte[]? bytes = IsAbsent(state) ? null : File.ReadAllBytes(copy ?? throw new RigException("its copy is missing"));
-        Do(t.Text, () =>
+        if (AsHelper(t.Text))
+        {
+            AdminFile.Write(t.Text, bytes);
+            return;
+        }
+        person.Do(() =>
         {
             if (bytes == null) File.Delete(t.Text);
             else File.WriteAllBytes(t.Text, bytes);
@@ -195,10 +256,15 @@ public sealed class TouchStates(Person person, bool admin)
             if (svc != IntPtr.Zero) CloseServiceHandle(svc);
             if (scm != IntPtr.Zero) CloseServiceHandle(scm);
         }
+        // Whether it runs is put back as far as Windows lets it: a service may stop or start again by itself.
         bool want = state["running"]?.GetValue<bool>() == true;
-        using var sc = new ServiceController(t.Text);
-        if (want && sc.Status != ServiceControllerStatus.Running) { sc.Start(); sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(15)); }
-        if (!want && sc.Status != ServiceControllerStatus.Stopped) { sc.Stop(); sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15)); }
+        try
+        {
+            using var sc = new ServiceController(t.Text);
+            if (want && sc.Status != ServiceControllerStatus.Running) { sc.Start(); sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(15)); }
+            if (!want && sc.Status != ServiceControllerStatus.Stopped && sc.CanStop) { sc.Stop(); sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15)); }
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ServiceProcess.TimeoutException or System.ComponentModel.Win32Exception) { }
     }
 
     // ----- One touch -----
@@ -352,6 +418,19 @@ public sealed class Sentinels(Person person)
     static readonly HashSet<string> SelfStarting = new(StringComparer.OrdinalIgnoreCase)
         { "BITS", "TrustedInstaller", "wuauserv", "UsoSvc", "WaaSMedicSvc", "DoSvc", "sppsvc", "ClipSVC", "msiserver", "AppXSvc", "InstallService", "WSearch" };
 
+    /// Services that update themselves, moving their program to a new version's folder or adding a service per version.
+    static readonly HashSet<string> SelfUpdating = new(StringComparer.OrdinalIgnoreCase)
+        { "WinDefend", "WdNisSvc", "MDCoreSvc", "Sense", "SecurityHealthService", "edgeupdate", "edgeupdatem", "MicrosoftEdgeElevationService", "gupdate", "gupdatem", "MozillaMaintenance" };
+    static bool Updates(string service) => SelfUpdating.Contains(service) || service.StartsWith("GoogleUpdater", StringComparison.OrdinalIgnoreCase);
+
+    /// Scheduled task folders Windows' own updaters fill and empty by themselves.
+    static readonly string[] SelfTasks =
+    [
+        @"\Microsoft\Windows\UpdateOrchestrator\", @"\Microsoft\Windows\WindowsUpdate\", @"\Microsoft\Windows\WaaSMedic\", @"\Microsoft\Windows\InstallService\",
+        @"\Microsoft\Windows\Windows Defender\", @"\Microsoft\Windows\SoftwareProtectionPlatform\", @"\Microsoft\Windows\Flighting\", @"\Microsoft\Windows\Application Experience\",
+        @"\MicrosoftEdgeUpdateTask", @"\GoogleUpdaterTask",
+    ];
+
     const int MaxItems = 20_000;
     const char Sep = '\t';
     static readonly string HostsFile = Path.Combine(Environment.SystemDirectory, @"drivers\etc\hosts");
@@ -395,8 +474,10 @@ public sealed class Sentinels(Person person)
             foreach (string name in services?.GetSubKeyNames() ?? [])
             {
                 using var s = services!.OpenSubKey(name);
-                // Programs that run as services, not device drivers, which Windows installs with a device.
-                if (s?.GetValue("Type") is not int type || (type & 0x30) == 0) continue;
+                // Programs that run as services, not device drivers, which Windows installs with a device, nor the copies of a
+                // per-person service Windows makes for each sign-in.
+                if (s?.GetValue("Type") is not int type || (type & 0x30) == 0 || (type & 0xC0) != 0) continue;
+                if (Updates(name)) continue;
                 items[name + Sep + "program"] = s.GetValue("ImagePath", "", RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString() ?? "";
                 if (!SelfStarting.Contains(name)) items[name + Sep + "start"] = s.GetValue("Start")?.ToString() ?? "";
                 using var p = s.OpenSubKey("Parameters");
@@ -419,7 +500,11 @@ public sealed class Sentinels(Person person)
         {
             string root = Path.Combine(Environment.SystemDirectory, "Tasks");
             var walk = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 };
-            foreach (string f in Directory.EnumerateFiles(root, "*", walk)) items[f[root.Length..]] = "";
+            foreach (string f in Directory.EnumerateFiles(root, "*", walk))
+            {
+                string task = f[root.Length..];
+                if (!SelfTasks.Any(t => task.StartsWith(t, StringComparison.OrdinalIgnoreCase))) items[task] = "";
+            }
         });
         Try("bcd", items =>
         {
@@ -448,22 +533,40 @@ public sealed class Sentinels(Person person)
         return value.Length == 0 ? Label(item) : $"{Label(item)} = {value}";
     }
 
-    /// The items that differ between two readings. A service named in `touches` may have its start type changed, and nothing else.
-    public static List<(string Sentinel, string Item)> Differences(Reading before, Reading after, IEnumerable<Touch> touches)
+    /// A key that is there with nothing of its own watched in it: whether it is there says nothing until a value appears.
+    static bool KeyOnly(string item) => item.StartsWith("HK", StringComparison.Ordinal) && !item.Contains(Sep);
+
+    static IEnumerable<(string Sentinel, string Item)> Changed(Reading before, Reading after)
     {
-        var allowed = touches.Where(t => t.Kind == "service").Select(t => t.Text + Sep + "start").ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var list = new List<(string, string)>();
         foreach (var (sentinel, was) in before)
         {
             var now = after[sentinel];
             foreach (string item in was.Keys.Union(now.Keys, StringComparer.OrdinalIgnoreCase))
-            {
-                if (was.TryGetValue(item, out string? a) == now.TryGetValue(item, out string? b) && a == b) continue;
-                if (sentinel == "services" && allowed.Contains(item)) continue;
-                // A way in that stopped running is no one let in.
-                if (sentinel == "winrm" && b == null && !item.StartsWith("HK", StringComparison.Ordinal)) continue;
-                list.Add((sentinel, item));
-            }
+                if (was.TryGetValue(item, out string? a) != now.TryGetValue(item, out string? b) || a != b) yield return (sentinel, item);
+        }
+    }
+
+    /// Two readings before a run: what differs between them is changing by itself, so it says nothing about the command.
+    public (Reading Before, HashSet<(string, string)> Moving) Baseline()
+    {
+        var first = Read();
+        var second = Read();
+        return (second, Changed(first, second).ToHashSet());
+    }
+
+    /// The items that differ between two readings. A service named in `touches` may have its start type changed, and nothing else.
+    public static List<(string Sentinel, string Item)> Differences(Reading before, Reading after, IEnumerable<Touch> touches, IReadOnlySet<(string, string)>? moving = null)
+    {
+        var allowed = touches.Where(t => t.Kind == "service").Select(t => t.Text + Sep + "start").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var list = new List<(string, string)>();
+        foreach (var (sentinel, item) in Changed(before, after))
+        {
+            bool gone = !after[sentinel].ContainsKey(item);
+            if (moving?.Contains((sentinel, item)) == true || KeyOnly(item)) continue;
+            if (sentinel == "services" && allowed.Contains(item)) continue;
+            // A service, task or way in that went away is no one let in.
+            if (gone && (sentinel is "services" or "scheduledTasks" || (sentinel == "winrm" && !item.StartsWith("HK", StringComparison.Ordinal)))) continue;
+            list.Add((sentinel, item));
         }
         return list;
     }
@@ -484,7 +587,10 @@ public sealed class Sentinels(Person person)
     public void PutBack(Reading before, Reading after, List<(string Sentinel, string Item)> differences, bool admin)
     {
         T Do<T>(string path, Func<T> act) => path.StartsWith(@"HKLM\", StringComparison.Ordinal) && admin && Native.IsAdmin() ? act() : person.Do(act);
-        foreach (var (sentinel, item) in differences.OrderBy(d => d.Item.Length))
+        // Keys that weren't there before go again once the values put back leave them empty, deepest first.
+        var made = Changed(before, after).Where(d => KeyOnly(d.Item) && !before[d.Sentinel].ContainsKey(d.Item) && after[d.Sentinel].ContainsKey(d.Item)).ToList();
+        differences = [.. differences, .. made];
+        foreach (var (sentinel, item) in differences.OrderBy(d => KeyOnly(d.Item)).ThenByDescending(d => d.Item.Length))
         {
             try
             {
@@ -501,8 +607,11 @@ public sealed class Sentinels(Person person)
                 {
                     if (sep < 0)
                     {
-                        if (was) Open(path, writable: true)?.Dispose();
-                        else { int cut = path.LastIndexOf('\\'); using var parent = Open(path[..cut], writable: true); parent?.DeleteSubKeyTree(path[(cut + 1)..], throwOnMissingSubKey: false); }
+                        if (was) { Open(path, writable: true)?.Dispose(); return 0; }
+                        using (var k = Open(path)) if (k == null || k.ValueCount > 0 || k.SubKeyCount > 0) return 0;
+                        int cut = path.LastIndexOf('\\');
+                        using var parent = Open(path[..cut], writable: true);
+                        parent?.DeleteSubKey(path[(cut + 1)..], throwOnMissingSubKey: false);
                         return 0;
                     }
                     if (was)
@@ -523,6 +632,122 @@ public sealed class Sentinels(Person person)
             catch { }
         }
     }
+}
+
+/// A file the helper reads or writes with its own admin rights. It goes ahead only where every folder on the way is an
+/// ordinary folder owned by admins, the system or Windows' installer, and it opens the file itself without following a
+/// link, refusing one that is a link, has a second name or isn't the file the path names.
+static class AdminFile
+{
+    static readonly HashSet<string> Owners = OwnerSids();
+
+    static HashSet<string> OwnerSids()
+    {
+        var set = new HashSet<string> { new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null).Value };
+        try { set.Add(((SecurityIdentifier)new NTAccount("NT SERVICE", "TrustedInstaller").Translate(typeof(SecurityIdentifier))).Value); } catch (IdentityNotMappedException) { }
+        return set;
+    }
+
+    static bool OwnedByAdmins(FileSystemInfo item) =>
+        (item is DirectoryInfo d ? d.GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) : ((FileInfo)item).GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier))) is SecurityIdentifier o
+        && Owners.Contains(o.Value);
+
+    /// Whether only admins could have put what is at this path there.
+    public static bool Trusted(string path)
+    {
+        try
+        {
+            string full = Path.GetFullPath(path);
+            if (full.StartsWith(@"\\", StringComparison.Ordinal)) return false;
+            for (var dir = new DirectoryInfo(Path.GetDirectoryName(full)!); dir != null; dir = dir.Parent)
+            {
+                if (!dir.Exists) continue;
+                if (dir.Attributes.HasFlag(FileAttributes.ReparsePoint) || !OwnedByAdmins(dir)) return false;
+            }
+            var leaf = new FileInfo(full);
+            return !leaf.Exists || (!leaf.Attributes.HasFlag(FileAttributes.ReparsePoint) && OwnedByAdmins(leaf));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or InvalidOperationException) { return false; }
+    }
+
+    /// Opens the file named, never one a link leads to. Null when there is nothing there and `create` is false.
+    static SafeFileHandle? Open(string path, uint access, bool create)
+    {
+        string full = Path.GetFullPath(path);
+        var h = CreateFileW(full, access, FILE_SHARE_READ, IntPtr.Zero, create ? OPEN_ALWAYS : OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+        if (h.IsInvalid)
+        {
+            int rc = Marshal.GetLastWin32Error();
+            h.Dispose();
+            if (!create && rc is ERROR_FILE_NOT_FOUND or ERROR_PATH_NOT_FOUND) return null;
+            throw new RigException($"Windows wouldn't open it (error {rc})");
+        }
+        try
+        {
+            if (!GetFileInformationByHandle(h, out var info)) throw new RigException($"Windows wouldn't say what it is (error {Marshal.GetLastWin32Error()})");
+            if ((info.Attributes & (uint)FileAttributes.ReparsePoint) != 0) throw new RigException("it is a link to somewhere else, which Rig doesn't follow with admin rights");
+            if ((info.Attributes & (uint)FileAttributes.Directory) != 0) throw new RigException("it is a folder, and Rig snapshots single files");
+            if (info.Links > 1) throw new RigException("it has more than one name, so it may be another file too");
+            var name = new StringBuilder(1024);
+            int len = GetFinalPathNameByHandleW(h, name, name.Capacity, 0);
+            string final = len > 0 && len < name.Capacity ? name.ToString() : "";
+            if (final.StartsWith(@"\\?\", StringComparison.Ordinal)) final = final[4..];
+            if (!string.Equals(final, full, StringComparison.OrdinalIgnoreCase)) throw new RigException("it isn't where its path says, so it may be a link");
+            return h;
+        }
+        catch
+        {
+            h.Dispose();
+            throw;
+        }
+    }
+
+    public static byte[]? Read(string path, long max)
+    {
+        using var h = Open(path, GENERIC_READ, create: false);
+        if (h == null) return null;
+        using var f = new FileStream(h, FileAccess.Read);
+        if (f.Length > max) throw new RigException($"it is over {max >> 20} MB");
+        var bytes = new byte[f.Length];
+        f.ReadExactly(bytes);
+        return bytes;
+    }
+
+    /// Writes the file as given, or removes it for null.
+    public static void Write(string path, byte[]? bytes)
+    {
+        if (bytes == null)
+        {
+            using var gone = Open(path, DELETE, create: false);
+            if (gone == null) return;
+            var info = new FILE_DISPOSITION_INFO { DeleteFile = true };
+            if (!SetFileInformationByHandle(gone, FileDispositionInfo, ref info, Marshal.SizeOf<FILE_DISPOSITION_INFO>())) throw new RigException($"Windows wouldn't remove it (error {Marshal.GetLastWin32Error()})");
+            return;
+        }
+        using var h = Open(path, GENERIC_READ | GENERIC_WRITE, create: true)!;
+        using var f = new FileStream(h, FileAccess.ReadWrite);
+        f.SetLength(0);
+        f.Write(bytes);
+    }
+
+    const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, DELETE = 0x00010000, FILE_SHARE_READ = 1, OPEN_EXISTING = 3, OPEN_ALWAYS = 4, FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+    const int ERROR_FILE_NOT_FOUND = 2, ERROR_PATH_NOT_FOUND = 3, FileDispositionInfo = 4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct BY_HANDLE_FILE_INFORMATION
+    {
+        public uint Attributes;
+        public long Created, Accessed, Written;
+        public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct FILE_DISPOSITION_INFO { [MarshalAs(UnmanagedType.U1)] public bool DeleteFile; }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetFileInformationByHandle(SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern int GetFinalPathNameByHandleW(SafeFileHandle h, StringBuilder name, int size, uint flags);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetFileInformationByHandle(SafeFileHandle h, int kind, ref FILE_DISPOSITION_INFO info, int size);
 }
 
 /// Local accounts and who is an administrator, straight from Windows.

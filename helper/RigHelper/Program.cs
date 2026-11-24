@@ -39,7 +39,6 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
-            problems.AddRange(Commands.SelfChecks());
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -49,6 +48,10 @@ public static class Program
                 Processes.Top(5, fresh: false);
                 if (Processes.GpuReads != reads) problems.Add($"the recorder's app list read the graphics counters {Processes.GpuReads - reads} more times within five minutes");
             }
+            // The general command runner last: it runs PowerShell many times, and the checks above count on timing.
+            var (commandChecks, commandProblems) = CommandSelfTest.Run();
+            all["commands"] = commandChecks;
+            problems.AddRange(commandProblems);
             // Each sensor's id is worked out once, not with every reading.
             var (r1, r2) = (hw0.Readings(), hw0.Readings());
             if (r1.Count == r2.Count && r1.Zip(r2).Any(x => !ReferenceEquals(x.First.Id, x.Second.Id))) problems.Add("sensor ids are built again with every reading");
@@ -319,7 +322,7 @@ public static class Json
 
     /// A number from a request or a reply, whichever number type it was written as.
     public static double Num(JsonNode? n, double fallback) =>
-        n is not JsonValue v ? fallback : v.TryGetValue(out double d) ? d : v.TryGetValue(out long l) ? l : v.TryGetValue(out int i) ? i : fallback;
+        n is not JsonValue v ? fallback : v.TryGetValue(out double d) ? d : v.TryGetValue(out long l) ? l : v.TryGetValue(out int i) ? i : v.TryGetValue(out uint u) ? u : v.TryGetValue(out ulong ul) ? ul : fallback;
 }
 
 public class Handler(Sensors hw, int? appPid = null)
@@ -338,7 +341,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
         "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
         "recorder.probes" => ProbeStore.Edit(p, hw),
-        "command.check" or "command.preview" or "command.apply" or "command.undo" => commands.Value.Handle(method, p),
+        "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

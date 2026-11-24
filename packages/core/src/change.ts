@@ -150,10 +150,9 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
   // A write is covered when a snapshotted touch holds every place it writes; a touch is used when some write reaches it.
   const held = cmd.touches.filter(snapshotted);
   const covered = (w: Write) => w.kind !== "none" && w.places.length > 0 && w.places.every((p) => held.some((t) => touchKind(t) === w.kind && covers(touchPlace(t), p)));
-  for (const t of held) {
-    const used = run.writes.some((w) => w.kind === touchKind(t) && w.places.some((p) => covers(touchPlace(t), p) || covers(p, touchPlace(t))));
-    if (!used) reasons.push(`${ruleWords("unused-touch")} (${touchText(t).replace(/\\$/, "")}).`);
-  }
+  // The touch's own text is Claude's, so the reason counts the unused ones instead of naming them.
+  const unused = held.filter((t) => !run.writes.some((w) => w.kind === touchKind(t) && w.places.some((p) => covers(touchPlace(t), p) || covers(p, touchPlace(t))))).length;
+  if (unused) reasons.push(`${ruleWords("unused-touch")} ${unused === 1 ? "one of them" : `${unused} of them`}.`);
   if (typeof cmd.undo !== "string" && (cmd.touches.length === 0 || held.length < cmd.touches.length || !run.writes.every(covered))) {
     tier = 3;
     reasons.push(`${ruleWords("no-undo")}.`);

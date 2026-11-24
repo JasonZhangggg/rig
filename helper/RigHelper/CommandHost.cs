@@ -7,11 +7,10 @@
 //
 // "The person" is whoever is using the Rig app. When the helper has admin
 // rights, a read and any change that doesn't need them still run with the
-// person's own rights: from a copy of the helper's token with the admin rights
-// taken out, or, when an admin signed the Windows prompt for someone else,
-// from the Rig app's own token. The helper also borrows that identity to
-// read and write the person's files and registry, so a link planted there
-// can't point the helper's admin rights at something else.
+// person's own rights: with a copy of the Rig app's own token, the one
+// Windows gave the person when they started Rig. The helper also borrows that
+// identity to read and write the person's files and registry, so a link
+// planted there can't point the helper's admin rights at something else.
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -94,58 +93,41 @@ public sealed class Person : IDisposable
         borrowed = new SafeAccessTokenHandle(thread);
     }
 
-    /// The person behind the Rig app with this process id, or behind this process when there is no app (the self-test).
-    /// Throws, in plain words, when the helper has admin rights and can't get a sign-in without them.
+    /// The account this helper runs as.
+    public static string Mine()
+    {
+        using var me = WindowsIdentity.GetCurrent();
+        return me.User?.Value ?? throw new RigException("Rig couldn't tell which Windows account this is.");
+    }
+
+    /// The person behind the Rig app with this process id. Without admin rights the helper already is the person.
+    /// With them, the app's own token is the person's: an elevated helper with no app to take it from runs nothing.
     public static Person Find(int? appPid)
     {
-        string mine;
-        using (var me = WindowsIdentity.GetCurrent()) mine = me.User?.Value ?? throw new RigException("Rig couldn't tell which Windows account this is.");
+        string mine = Mine();
         if (!Native.IsAdmin()) return new Person(mine, IntPtr.Zero);
-
-        IntPtr app = IntPtr.Zero, self = IntPtr.Zero, token = IntPtr.Zero;
+        if (appPid is not int pid) throw new RigException("Rig's helper has admin rights but wasn't started by the Rig app, so it has no way to act as you. Restart Rig.");
+        IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid), app = IntPtr.Zero, token = IntPtr.Zero;
         try
         {
-            if (appPid is int pid)
-            {
-                IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-                if (process == IntPtr.Zero || !OpenProcessToken(process, TOKEN_DUPLICATE | TOKEN_QUERY, out app)) app = IntPtr.Zero;
-                if (process != IntPtr.Zero) CloseHandle(process);
-                if (app == IntPtr.Zero) throw Win("read the Rig app's Windows sign-in");
-                string theirs;
-                using (var id = new WindowsIdentity(app)) theirs = id.User?.Value ?? "";
-                if (theirs != mine)
-                {
-                    if (!DuplicateTokenEx(app, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out token)) throw Win("copy your Windows sign-in");
-                    return new Person(theirs, token);
-                }
-            }
-            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, out self)) throw Win("read its own Windows sign-in");
-            if (!CreateRestrictedToken(self, LUA_TOKEN, 0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out token)) throw Win("make a sign-in without admin rights");
-            var medium = new SecurityIdentifier("S-1-16-8192");
-            byte[] sid = new byte[medium.BinaryLength];
-            medium.GetBinaryForm(sid, 0);
-            var pin = GCHandle.Alloc(sid, GCHandleType.Pinned);
-            try
-            {
-                var label = new TOKEN_MANDATORY_LABEL { Sid = pin.AddrOfPinnedObject(), Attributes = SE_GROUP_INTEGRITY };
-                if (!SetTokenInformation(token, TokenIntegrityLevel, ref label, Marshal.SizeOf<TOKEN_MANDATORY_LABEL>() + sid.Length)) throw Win("lower its rights to yours");
-            }
-            finally { pin.Free(); }
-            var person = new Person(mine, token);
+            if (process == IntPtr.Zero || !OpenProcessToken(process, TOKEN_DUPLICATE | TOKEN_QUERY, out app)) throw Win("read the Rig app's Windows sign-in");
+            string theirs;
+            using (var id = new WindowsIdentity(app)) theirs = id.User?.Value ?? throw new RigException("Rig couldn't tell which Windows account you're signed in as.");
+            if (!DuplicateTokenEx(app, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out token)) throw Win("copy your Windows sign-in");
+            var person = new Person(theirs, token);
             token = IntPtr.Zero;
             return person;
         }
-        catch
-        {
-            if (token != IntPtr.Zero) CloseHandle(token);
-            throw;
-        }
         finally
         {
+            if (token != IntPtr.Zero) CloseHandle(token);
             if (app != IntPtr.Zero) CloseHandle(app);
-            if (self != IntPtr.Zero) CloseHandle(self);
+            if (process != IntPtr.Zero) CloseHandle(process);
         }
     }
+
+    /// Whether scripts run with the helper's own rights because the helper has none beyond the person's.
+    public bool Here => primary == IntPtr.Zero;
 
     /// Does something to the person's own files or registry with the person's rights, not the helper's.
     public T Do<T>(Func<T> act) => borrowed == null ? act() : WindowsIdentity.RunImpersonated(borrowed, act);
@@ -155,7 +137,7 @@ public sealed class Person : IDisposable
     {
         string args = PowerShellHost.Args(file);
         if (primary == IntPtr.Zero) return PowerShellHost.RunHere(args, timeoutMs);
-        var (exit, o, e, timedOut) = UserProcess.RunAs(primary, PowerShellHost.Exe, args, timeoutMs, desktop: null, PowerShellHost.Pinned, PowerShellHost.Folder);
+        var (exit, o, e, timedOut) = UserProcess.RunAs(primary, PowerShellHost.Exe, args, timeoutMs, desktop: null, PowerShellHost.Pinned, PowerShellHost.Folder, logonService: true);
         return new PowerShellHost.Ran(exit, o, e, timedOut);
     }
 
@@ -167,17 +149,11 @@ public sealed class Person : IDisposable
 
     static RigException Win(string what) => new($"Rig couldn't {what} (Windows error {Marshal.GetLastWin32Error()}), so it can't look or change anything as you.");
 
-    const uint MAXIMUM_ALLOWED = 0x02000000, TOKEN_DUPLICATE = 0x2, TOKEN_QUERY = 0x8, TOKEN_ALL_ACCESS = 0xF01FF, LUA_TOKEN = 0x4, SE_GROUP_INTEGRITY = 0x20;
-    const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SecurityImpersonation = 2, TokenPrimary = 1, TokenImpersonation = 2, TokenIntegrityLevel = 25;
-
-    [StructLayout(LayoutKind.Sequential)] struct TOKEN_MANDATORY_LABEL { public IntPtr Sid; public uint Attributes; }
+    const uint MAXIMUM_ALLOWED = 0x02000000, TOKEN_DUPLICATE = 0x2, TOKEN_QUERY = 0x8;
+    const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SecurityImpersonation = 2, TokenPrimary = 1, TokenImpersonation = 2;
 
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
-    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool DuplicateTokenEx(IntPtr token, uint access, IntPtr attributes, int level, int type, out IntPtr newToken);
-    [DllImport("advapi32.dll", SetLastError = true)]
-    static extern bool CreateRestrictedToken(IntPtr token, uint flags, int disableCount, IntPtr disable, int deleteCount, IntPtr delete, int restrictCount, IntPtr restrict, out IntPtr newToken);
-    [DllImport("advapi32.dll", SetLastError = true)] static extern bool SetTokenInformation(IntPtr token, int kind, ref TOKEN_MANDATORY_LABEL info, int size);
 }
