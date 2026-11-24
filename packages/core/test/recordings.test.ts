@@ -244,15 +244,38 @@ describe("demo logs", () => {
   it("shows a finished recording on Atlas with the reset, the heat and the conversation that asked for it", async () => {
     const demo = new DemoClient();
     const list = await new Promise<{ id: string; state: string; headline?: string }[]>((res) => { const stop = demo.watchRecordings("demo-atlas", (l) => { stop(); res(l); }); });
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ state: "done", headline: expect.stringMatching(/graphics driver stopped/i) });
-    const r = (await demo.recording("demo-atlas", list[0].id))!;
+    const mine = list.filter((x) => !x.id.startsWith("bg-"));
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ state: "done", headline: expect.stringMatching(/graphics driver stopped/i) });
+    const r = (await demo.recording("demo-atlas", mine[0].id))!;
     const s = summarise(r, { cpu: 89, gpu: 88 });
     expect(s.moments.map((m) => m.kind)).toEqual(["heat", "event", "drop"]);
     const kinds = new Set((await demo.events("demo-atlas")).map((e: PCEvent) => e.kind));
     expect([...kinds].sort()).toEqual(["crash", "disk", "driver", "hardware", "other", "shutdown"]);
     expect(await demo.events("demo-pebble")).toEqual([]);
-    expect(demo.conversation("demo-atlas")[1].recording!.id).toBe(list[0].id);
+    expect(demo.conversation("demo-atlas")[1].recording!.id).toBe(mine[0].id);
+  });
+
+  it("gives Atlas a week of background log, with every sensor and a closer look at the driver reset", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 24, 9, 0));
+    const demo = new DemoClient();
+    const list = await new Promise<{ id: string; reason: string }[]>((res) => { const stop = demo.watchRecordings("demo-atlas", (l) => { stop(); res(l); }); });
+    expect(list.filter((x) => x.id.startsWith("bg-d-"))).toHaveLength(7);
+    const look = list.find((x) => x.reason === "Windows logged Display event 4101")!;
+    const crash = list.find((x) => x.reason === "Windows logged Application Error event 1000");
+    expect(crash).toBeTruthy();
+    const r = (await demo.recording("demo-atlas", look.id))!;
+    expect(r.sensors!.map((s) => s.name)).toEqual(expect.arrayContaining(["GPU Hot Spot", "GPU Memory Junction", "GPU Package", "GPU Fan 2"]));
+    expect(r.sensors!.some((s) => s.hw === "storage")).toBe(false);
+    // Every 5 seconds around the reset, and every sensor in each reading.
+    expect(r.samples[1].t - r.samples[0].t).toBe(5000);
+    expect(r.samples.every((s) => s.all?.length === r.sensors!.length)).toBe(true);
+    expect(r.events.map((e) => e.kind)).toContain("driver");
+    expect(list.some((x) => x.reason.startsWith("Custom log: Discord"))).toBe(true);
+    const pebble = await new Promise<{ id: string }[]>((res) => { const stop = demo.watchRecordings("demo-pebble", (l) => { stop(); res(l); }); });
+    expect(pebble).toEqual([]);
+    vi.useRealTimers();
   });
 
   it("lets the pretend helper answer the new read-only calls", async () => {

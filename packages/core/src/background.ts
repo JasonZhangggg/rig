@@ -7,7 +7,7 @@
 
 import {
   RIG_EVENT, captureKinds, cleanEvents, cleanProcesses, sampleFrom, summarise,
-  type Limits, type PCEvent, type RawEvent, type Recording, type RecordingSample,
+  type Limits, type PCEvent, type RawEvent, type Recording, type RecordingSample, type SensorRef,
 } from "./recordings";
 import type { HardwareKind, Sensor, SensorType, Snapshot } from "./telemetry";
 import type { ProbeSpec, ProbeStatus } from "./probes";
@@ -94,8 +94,12 @@ export class BackgroundLog {
   settled = new Map<number, SettledDay>();
   /** Each finished day's recording, with what it was made from, so a new line today doesn't redo the week. */
   dayRecs = new Map<number, { key: string; rec: Recording }>();
-  /** The sensor list the next readings refer to. */
+  /** Every sensor the recorder has named, in the order first seen. Each reading's `all` lines up with it. */
+  sensors: SensorRef[] = [];
+  private where = new Map<string, number>();
+  /** The sensor list the next readings refer to, and where each of its sensors sits in `sensors`. */
   private header: Omit<Sensor, "value">[] | null = null;
+  private slots: number[] = [];
 
   /** Adds lines from the log, in the order they were written. Lines it doesn't know are skipped. */
   ingest(lines: unknown[]) {
@@ -109,6 +113,11 @@ export class BackgroundLog {
           const list = Array.isArray(r.list) ? r.list : [];
           this.header = list.filter((x): x is unknown[] => Array.isArray(x) && x.length >= 5)
             .map(([id, hw, hwName, type, name]) => ({ id: str(id), hw: str(hw) as HardwareKind, hwName: str(hwName), type: str(type) as SensorType, name: str(name) }));
+          this.slots = this.header.map((h) => {
+            let i = this.where.get(h.id);
+            if (i == null) { i = this.sensors.length; this.where.set(h.id, i); this.sensors.push(h); }
+            return i;
+          });
           break;
         }
         case "s": {
@@ -118,6 +127,9 @@ export class BackgroundLog {
           const s: BackgroundSample = sampleFrom(snap, captureKinds, Array.isArray(r.top) ? cleanProcesses(r.top) : undefined);
           delete s.game;
           if (r.d) s.detail = true;
+          const all: (number | null)[] = new Array(this.sensors.length).fill(null);
+          this.slots.forEach((slot, i) => { const x = num(v[i]); all[slot] = x == null ? null : Math.round(x * 10) / 10; });
+          s.all = all;
           this.samples.push(s);
           break;
         }
@@ -219,7 +231,7 @@ export function backgroundRecordings(log: BackgroundLog, pcId: string, limits: L
   const close = () => {
     if (!open) return;
     const { from, to, texts, at } = open;
-    out.push(make(`bg-a-${at}`, texts[0] + (texts.length > 1 ? `, and ${texts.length - 1} more` : ""), from, to, samples.filter((s) => s.t >= from && s.t <= to), events, pcId, limits, at));
+    out.push(make(`bg-a-${at}`, texts[0] + (texts.length > 1 ? `, and ${texts.length - 1} more` : ""), from, to, samples.filter((s) => s.t >= from && s.t <= to), events, pcId, limits, at, log.sensors));
     open = null;
   };
   for (const a of sorted(log.anomalies)) {
@@ -239,9 +251,9 @@ export function backgroundRecordings(log: BackgroundLog, pcId: string, limits: L
   for (const [day, d] of log.settled) {
     if (!d.samples.length) continue;
     const inside = events.filter((e) => e.t >= d.first - 60_000 && e.t <= d.last + 60_000);
-    const key = `${limitsKey}|${pcId}|${d.first}|${d.last}|${d.samples.length}|${inside.length}|${inside.map((e) => e.t).join()}`;
+    const key = `${limitsKey}|${pcId}|${d.first}|${d.last}|${d.samples.length}|${inside.length}|${inside.map((e) => e.t).join()}|${log.sensors.length}`;
     let got = log.dayRecs.get(day);
-    if (got?.key !== key) log.dayRecs.set(day, (got = { key, rec: make(`bg-d-${dayId(day)}`, label(day), d.first, d.last, d.samples, inside, pcId, limits, day, d.intervalMs, true) }));
+    if (got?.key !== key) log.dayRecs.set(day, (got = { key, rec: make(`bg-d-${dayId(day)}`, label(day), d.first, d.last, d.samples, inside, pcId, limits, day, log.sensors, d.intervalMs, true) }));
     out.push(got.rec);
   }
   const byDay = new Map<number, BackgroundSample[]>();
@@ -252,7 +264,7 @@ export function backgroundRecordings(log: BackgroundLog, pcId: string, limits: L
   }
   for (const [day, list] of byDay) {
     const thin = thinned(list, day, day + DAY);
-    out.push(make(`bg-d-${dayId(day)}`, label(day), list[0].t, list[list.length - 1].t, thin.samples, events, pcId, limits, day, thin.intervalMs, true));
+    out.push(make(`bg-d-${dayId(day)}`, label(day), list[0].t, list[list.length - 1].t, thin.samples, events, pcId, limits, day, log.sensors, thin.intervalMs, true));
   }
   return out.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
 }
@@ -275,6 +287,13 @@ export function thinned(list: BackgroundSample[], from: number, to: number, max 
     }
     const busiest = b.filter((s) => s.top).sort((x, y) => (y.cpuLoad ?? 0) - (x.cpuLoad ?? 0))[0];
     if (busiest?.top) out.top = busiest.top;
+    // Every other sensor keeps its highest reading in the stretch too, so a spike still shows.
+    const width = Math.max(0, ...b.map((s) => s.all?.length ?? 0));
+    if (width) {
+      const all: (number | null)[] = new Array(width).fill(null);
+      for (const s of b) s.all?.forEach((v, i) => { if (v != null && (all[i] == null || v > all[i]!)) all[i] = v; });
+      out.all = all;
+    }
     return out;
   });
   return { samples, intervalMs: width };
@@ -282,7 +301,7 @@ export function thinned(list: BackgroundSample[], from: number, to: number, max 
 
 function strip(s: BackgroundSample): RecordingSample { const { detail: _d, ...rest } = s; return rest; }
 
-function make(id: string, reason: string, from: number, to: number, samples: RecordingSample[], events: PCEvent[], pcId: string, limits: Limits, created: number, intervalMs = 5000, daily = false): Recording {
+function make(id: string, reason: string, from: number, to: number, samples: RecordingSample[], events: PCEvent[], pcId: string, limits: Limits, created: number, sensors: SensorRef[], intervalMs = 5000, daily = false): Recording {
   // Events a minute either side: Windows writes some a little after the fact.
   const inside = events.filter((e) => e.t >= from - 60_000 && e.t <= to + 60_000);
   const span = Math.max(0, to - from);
@@ -292,6 +311,7 @@ function make(id: string, reason: string, from: number, to: number, samples: Rec
     pcId, state: "done", intervalMs, startedAt: from, endsAt: to, finishedAt: to, sampleCount: samples.length, eventCount: inside.length,
     samples: samples.map(strip), events: inside, background: true,
   };
+  if (r.samples.some((x) => x.all)) r.sensors = sensors.slice();
   r.headline = summarise(r, limits).headline;
   return r;
 }
