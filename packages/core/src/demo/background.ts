@@ -19,8 +19,11 @@ const LOOK_MS = 3 * MIN;
 
 export const DEMO_PROBE_ID = "discord-mem";
 
+/** Let the page and its timers run between batches of readings, so making the week never holds the app up. */
+const pause = () => new Promise<void>((r) => setTimeout(r, 0));
+
 /** A week of the recorder's lines for a demo PC, oldest first. Only Atlas has the recorder on. */
-export function demoRecorderLines(inv: Inventory, now: number, dust: number): unknown[] {
+export async function demoRecorderLines(inv: Inventory, now: number, dust: number): Promise<unknown[]> {
   if (inv.machine.kind !== "tower") return [];
   const from = new Date(now - 7 * DAY); from.setHours(0, 0, 0, 0);
   const hot = hotEvening(now);
@@ -43,7 +46,10 @@ export function demoRecorderLines(inv: Inventory, now: number, dust: number): un
   // those, and one every 8 minutes before yesterday, to keep the demo quick to start.
   const yesterday = new Date(now - DAY); yesterday.setHours(0, 0, 0, 0);
   const base: ReturnType<typeof line>[] = [];
-  for (let t = from.getTime(); t <= now; t += t < yesterday.getTime() ? 8 * MIN : 4 * MIN) base.push(line(t, false));
+  for (let t = from.getTime(); t <= now; t += t < yesterday.getTime() ? 8 * MIN : 4 * MIN) {
+    base.push(line(t, false));
+    if (base.length % 100 === 0) await pause();
+  }
 
   // Closer looks: the graphics card at 88°C or more two readings running (once a day at most), and the Windows events that start one.
   const events = demoEvents(inv.machine.kind, now, from.getTime()).sort((a, b) => a.t - b.t);
@@ -64,7 +70,10 @@ export function demoRecorderLines(inv: Inventory, now: number, dust: number): un
   const close = (t: number) => looks.some((l) => t >= l.t - 5 * MIN && t <= l.t + LOOK_MS);
   const lines: unknown[] = [{ k: "sensors", t: from.getTime(), list: sensors.map((s) => [s.id, s.hw, s.hwName, s.type, s.name]) }];
   for (const l of base) if (!close(l.t)) lines.push(l);
-  for (const l of looks) for (let t = Math.ceil((l.t - 5 * MIN) / (5 * SEC)) * 5 * SEC; t <= Math.min(now, l.t + LOOK_MS); t += 5 * SEC) lines.push(line(t, true));
+  for (const l of looks) {
+    for (let t = Math.ceil((l.t - 5 * MIN) / (5 * SEC)) * 5 * SEC; t <= Math.min(now, l.t + LOOK_MS); t += 5 * SEC) lines.push(line(t, true));
+    await pause();
+  }
   for (const l of looks) lines.push({ k: "anomaly", t: l.t, why: l.why, text: l.text });
   for (const e of events) lines.push({ k: "e", t: e.t, log: e.log, source: e.source, id: e.id, level: e.level, message: e.message });
   return lines.sort((a, b) => (a as { t: number }).t - (b as { t: number }).t);
@@ -94,21 +103,23 @@ export function demoProbe(inv: Inventory, now: number): { lines: unknown[]; stat
 }
 
 /** Atlas's background recordings for the demo: a closer look around anything unusual, each day, and the custom log. */
-export function demoBackground(inv: Inventory, now: number, dust: number, limits: Limits): Recording[] {
+export function demoBackground(inv: Inventory, now: number, dust: number, limits: Limits): Promise<Recording[]> {
   // Every demo client in a page or a test file shares one week, made again every few minutes so today keeps up.
   const key = `${inv.machine.id}|${dust}|${limits.cpu}|${limits.gpu}`;
   const hit = made.get(key);
   if (hit && Math.abs(now - hit.at) < 5 * MIN) return hit.recs;
   const recs = makeBackground(inv, now, dust, limits);
   made.set(key, { at: now, recs });
+  recs.catch(() => made.delete(key));
   return recs;
 }
 
-const made = new Map<string, { at: number; recs: Recording[] }>();
+const made = new Map<string, { at: number; recs: Promise<Recording[]> }>();
 
-function makeBackground(inv: Inventory, now: number, dust: number, limits: Limits): Recording[] {
+async function makeBackground(inv: Inventory, now: number, dust: number, limits: Limits): Promise<Recording[]> {
   const log = new BackgroundLog();
-  log.ingest(demoRecorderLines(inv, now, dust));
+  log.ingest(await demoRecorderLines(inv, now, dust));
+  await pause();
   const probe = demoProbe(inv, now);
   const custom = new CustomLog();
   custom.ingest(probe.lines);
