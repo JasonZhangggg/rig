@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fixSteps, LocalClient, MemoryStore, type ActionCall, type ChatEvent, type HelperLink, type MachineSync, type PC, type Snapshot, type Step } from "../src";
+import { fixSteps, LocalClient, MemoryStore, type ActionCall, type ChatEvent, type ChatMessage, type HelperLink, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type Snapshot, type Step } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -246,6 +246,64 @@ describe("LocalClient", () => {
     const events: ChatEvent[] = [];
     await off.client.chat(off.client.id, [{ id: "1", from: "you", text: "hi" }], (e) => events.push(e));
     expect(events[0]).toMatchObject({ type: "error" });
+  });
+
+  it("runs the chat's reads through the helper and goes on with what they found", async () => {
+    const asks: { resume?: { resume: string; results: PcReadResult[] }; live?: { reads?: boolean; steps?: boolean } }[] = [];
+    const cloud = {
+      signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
+      chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: AbortSignal | undefined, live: { reads?: boolean; steps?: boolean }, resume?: { resume: string; results: PcReadResult[] }) => {
+        asks.push({ resume, live });
+        if (!resume) {
+          onEvent({ type: "text", text: "Let me look." });
+          onEvent({ type: "reads", resume: "signed-state", reads: [
+            { id: "r1", kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "WallPaper" },
+            { id: "r2", kind: "script", script: "Remove-Item -Path 'C:\\Temp' -Recurse" },
+            { id: "r3", kind: "cim", class: "Win32_BIOS" },
+          ] });
+          return;
+        }
+        onEvent({ type: "text", text: " The wallpaper is set." });
+        onEvent({ type: "done" });
+      },
+    } as unknown as CloudClient;
+    const read = vi.fn(async (r: PcReadSpec) => {
+      if (r.kind === "cim") throw new Error("WMI isn't answering.");
+      return '{"data":"C:\\\\Pictures\\\\sea.jpg"}';
+    });
+    const { client } = setup({ read }, cloud);
+    await client.start();
+    const events: ChatEvent[] = [];
+    await client.chat(client.id, [{ id: "1", from: "you", text: "What's my wallpaper?" }], (e) => events.push(e));
+    client.stop();
+
+    expect(asks).toHaveLength(2);
+    expect(asks[0].live?.reads).toBe(true);
+    // This app shows command steps, so the server may offer them; older apps don't say so and only get fixes.
+    expect(asks[0].live?.steps).toBe(true);
+    expect(asks[1].resume?.resume).toBe("signed-state");
+    // The helper only got the reads that check as reads here too, without the server's ids.
+    expect(read.mock.calls.map(([r]) => r)).toEqual([{ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "WallPaper" }, { kind: "cim", class: "Win32_BIOS" }]);
+    const results = asks[1].resume!.results;
+    expect(results[0]).toEqual({ id: "r1", ok: true, text: '{"data":"C:\\\\Pictures\\\\sea.jpg"}' });
+    expect(results[1]).toMatchObject({ id: "r2", ok: false });
+    expect(results[2]).toEqual({ id: "r3", ok: false, error: "WMI isn't answering." });
+    // The person sees one answer; the stop in the middle stays between the app and the server.
+    expect(events.map((e) => e.type)).toEqual(["text", "text", "done"]);
+  });
+
+  it("tells the server it can't read live when the helper is older", async () => {
+    let live: { reads?: boolean } | undefined;
+    const cloud = {
+      signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
+      chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: unknown, l: { reads?: boolean }) => { live = l; onEvent({ type: "done" }); },
+    } as unknown as CloudClient;
+    const { client } = setup({}, cloud);
+    await client.start();
+    await client.chat(client.id, [{ id: "1", from: "you", text: "hi" }], () => {});
+    client.stop();
+    expect(live).toBeDefined();
+    expect(live?.reads).toBeUndefined();
   });
 
   it("exports this PC from disk when signed out, and the account when signed in", async () => {

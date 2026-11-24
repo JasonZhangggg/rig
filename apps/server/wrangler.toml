@@ -43,5 +43,6 @@ CHAT_DAILY_LIMIT = "40"
 # Secrets, set with `wrangler secret put NAME` (or in .dev.vars for local runs):
 #   BETTER_AUTH_SECRET   required, a long random string
 #   ANTHROPIC_API_KEY    for chat
+#   CHAT_STATE_SECRET    for chat, a long random string; without it chat can't look at the PC live
 #   GOOGLE_CLIENT_ID     optional, Google sign-in
 #   GOOGLE_CLIENT_SECRET optional, Google sign-in

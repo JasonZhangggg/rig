@@ -40,7 +40,7 @@ Before saying a change works, run the tests for the packages it touches and `pnp
 ## Rules
 
 - Never commit secrets. Server secrets live in GitHub Actions secrets and Cloudflare.
-- Every change Rig makes to a PC goes through the fix catalog, is previewed before it happens and stores its undo. Don't add a way around that.
+- Every change Rig makes to a PC is previewed with its current values, approved in the app, snapshotted, verified, and undone where possible; what can't be undone says so. Tiers, the never list and refusals come from the shared rules (`packages/core/src/rules/commands.json`), checked on the server, in the app and again in the helper. Don't add a way around that.
 - Deploying the server (pushing to the `deploy` branch) and releasing (`docs/releasing.md`) change what people use. Ask Jason first.
 - Change the version only with `pnpm version:set X`, so every file agrees.
 - Words on screen are plain and short, say what happened and what to do next, and never blame the person.

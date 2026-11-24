@@ -32,6 +32,8 @@
   --ok: var(--good-text); --ok-bg: var(--good-bg);
   --warn: var(--look-text); --warn-bg: var(--look-bg);
   --info: var(--graphite); --info-bg: var(--surface-2);
+  /* A change that can't be undone, or not for sure. Apart from the data colors, so no palette makes it look routine. */
+  --red: #C8372D; --red-text: #A1241B; --red-bg: #FBE4E1;
 
   /* Chart series on light cards: a is the usual reading, b needs a look, c is expected. */
   --s-a: var(--good); --s-mark-a: var(--good-mark); --s-b: var(--look); --s-c: var(--expected);
