@@ -13,6 +13,7 @@ import type { BoardLayoutReply, ReadLayoutRequest } from "./api";
 import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
 import type { PcRead } from "./reads";
+import type { ScreenLook } from "./screen";
 
 export interface Proposal {
   id: string;
@@ -32,6 +33,8 @@ export interface Proposal {
   outcomes?: (StepOutcome | null)[];
   /** Rig read text from outside this PC earlier in the conversation. */
   tainted?: boolean;
+  /** The looks its screen steps came from, as the helper answered them: the app, the path and the value, all in the app's own words. */
+  looks?: ScreenLook[];
 }
 
 /** One command step after the person pressed Apply, and after Undo if they pressed that too. */

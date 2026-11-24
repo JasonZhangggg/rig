@@ -5,6 +5,7 @@
 
 import { checkStep, nativeOps, type ApplyReply, type Command, type CommandUndo, type HelperStep, type HelperUndo, type NativeOp, type NativeRule, type PreviewReply, type RunResult, type Touch, type UndoReply } from "../change";
 import type { Proposal } from "../client";
+import type { ScreenLook } from "../screen";
 
 interface DemoBase {
   /** A question that brings this card up in the demo chat. */
@@ -29,7 +30,7 @@ interface DemoBase {
 
 export interface DemoCard extends DemoBase { key: "registry" | "firewall" | "uninstall" | "refused" | "rollback"; cmd: Command }
 /** A native op the demo can show, preview, apply and undo. */
-export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit"; op: NativeOp }
+export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
 export type AnyDemoCard = DemoCard | DemoNativeCard;
 
 const seconds = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
@@ -106,6 +107,7 @@ export const demoCards: DemoCard[] = [
   },
 ];
 
+const DEMO_LOOK = "5c0ffee05c0ffee05c0ffee05c0ffee0";
 const palworld = "C:\\Users\\Sam\\AppData\\Local\\Pal\\Saved\\Config\\Windows\\GameUserSettings.ini";
 const ue = "/Script/Engine.GameUserSettings";
 
@@ -130,6 +132,14 @@ export const demoNativeCards: DemoNativeCard[] = [
     values: [["2,184 bytes", "2,190 bytes"]],
     after: [`${ue} › bUseVSync: False`, `${ue} › FrameRateLimit: 141.000000`, "File fingerprint 8c2177d0a51f, 2,190 bytes"].join("\n"),
   },
+  {
+    key: "screen", ask: "Blacks look grey on my TV", asks: /dynamic range|look(s)? (grey|gray|washed)|washed out/,
+    says: "Over HDMI, NVIDIA often sends a limited range of colors, which makes blacks look grey. The switch is only in NVIDIA Control Panel, so Rig would set it there for you. I looked first: it's on Limited now.",
+    title: "Use the full range of colors on the TV",
+    op: { name: "screen", lookId: DEMO_LOOK, to: "Full", does: "Sets the output dynamic range to Full, so blacks look black." },
+    look: { lookId: DEMO_LOOK, path: ["NVIDIA Control Panel", "Change resolution", "Output dynamic range"], value: "Limited", options: ["Limited", "Full"], clean: true, expiresAt: "2099-01-01T00:00:00.000Z" },
+    read: "Output dynamic range: Limited", values: [], after: "Output dynamic range: Full",
+  },
 ];
 
 const stepOf = (c: AnyDemoCard): HelperStep => ("cmd" in c ? { kind: "command", cmd: c.cmd } : { kind: "native", op: c.op });
@@ -139,16 +149,19 @@ const all = (): AnyDemoCard[] => [...demoCards, ...demoNativeCards];
 let reads = 0;
 const expires = () => new Date(Date.now() + 10 * 60_000).toISOString();
 
+const looksOf = (c: AnyDemoCard) => ("look" in c && c.look ? [c.look] : []);
+
 /** What the helper would answer when it previews this card's command. */
 export function demoPreview(c: AnyDemoCard, tainted = false): PreviewReply {
-  const verdict = checkStep(stepOf(c), { tainted });
+  const verdict = checkStep(stepOf(c), { tainted, looks: looksOf(c) });
   if (verdict.status === "refused") return { outcome: "refused", verdict };
   return { outcome: "ready", nonce: `demo-${c.key}-${++reads}`, expiresAt: expires(), verdict, read: c.read, touches: touchesOf(c).map((touch, i) => ({ touch, value: c.values[i][0] })) };
 }
 
 export function demoProposal(c: AnyDemoCard, id = `demo-${c.key}`): Proposal {
   const preview = demoPreview(c);
-  return { id, title: c.title, steps: [stepOf(c)], tier: preview.outcome === "ready" ? preview.verdict.tier : 3, rows: [], status: "waiting", previews: [preview] };
+  const looks = looksOf(c);
+  return { id, title: c.title, steps: [stepOf(c)], tier: preview.outcome === "ready" ? preview.verdict.tier : 3, rows: [], status: "waiting", previews: [preview], ...(looks.length ? { looks } : {}) };
 }
 
 const result = (c: AnyDemoCard): RunResult => ({

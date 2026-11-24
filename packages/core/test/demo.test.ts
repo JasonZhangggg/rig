@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC, type WeekEvenings } from "../src";
+import { fanTrend, insightContext, weekEvenings, weekTemps, type HistoryPoint, type PC, type Proposal, type WeekEvenings } from "../src";
 import { DemoClient } from "../src/demo";
 
 afterEach(() => { vi.useRealTimers(); });
@@ -102,15 +102,17 @@ describe("the demo's approval cards", () => {
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
   });
 
-  it("has a graphics setting and a settings file change, each brought up, applied and undone like a command", async () => {
+  it("has a graphics setting, a settings file change and an app window change, each brought up, applied and undone like a command", async () => {
     const { demoNativeCards, demoPreview, demoStep } = await import("../src/demo");
     const demo = new DemoClient();
     const meta = { by: "rig" as const };
-    expect(demoNativeCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}` : p.verdict.why]; })).toEqual([["gpu", "tier 1"], ["fileEdit", "tier 1"]]);
+    expect(demoNativeCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}` : p.verdict.why]; })).toEqual([["gpu", "tier 1"], ["fileEdit", "tier 1"], ["screen", "tier 3"]]);
     for (const c of demoNativeCards) {
-      const events: string[] = [];
-      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => { if (e.type === "proposal") events.push(e.proposal.title); });
-      expect(events).toEqual([c.title]);
+      const events: Proposal[] = [];
+      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => { if (e.type === "proposal") events.push(e.proposal); });
+      expect(events.map((p) => p.title)).toEqual([c.title]);
+      // A screen card carries the look it came from, so the card can show the app's path and value.
+      expect(events[0].looks).toEqual(c.look ? [c.look] : undefined);
       const read = await demo.previewStep("demo-atlas", demoStep(c));
       expect(read.outcome === "ready" && read.read).toBe(c.read);
       expect((await demo.applyStep("demo-atlas", read.outcome === "ready" ? read.nonce : "", meta)).outcome).toBe("applied");

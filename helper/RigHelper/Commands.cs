@@ -647,6 +647,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             ["touches"] = new JsonArray(touches.Select((t, i) => (JsonNode)new JsonObject { ["touch"] = t.ToJson(), ["before"] = TouchStates.Show(t, before[i]), ["after"] = TouchStates.Show(t, after[i]) }).ToArray()),
             ["output"] = made.Printed, ["alsoChanged"] = new JsonArray(),
         };
+        if (step is NativeOpStep && made.Ok && made.Back?["stopped"] != null) result["stopped"] = true;
 
         if (hits.Count > 0 || error != null)
         {

@@ -20,6 +20,7 @@ import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
 import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
 import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec } from "./reads";
+import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
@@ -165,6 +166,8 @@ export class LocalClient implements RigClient {
   private scanReading: Promise<void> | null = null;
   /** Steps the helper previewed, by nonce: the step as it was checked and the helper's verdict. */
   private previewed = new Map<string, { step: HelperStep; verdict: Allowed; expiresAt: string }>();
+  /** The looks the helper answered for the chat, by id, so a screen step is checked here against the look it names. */
+  private looks = new Map<string, ScreenLook>();
 
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
     this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, approveStep: null, ...opts };
@@ -783,7 +786,9 @@ export class LocalClient implements RigClient {
   async previewStep(id: string, step: HelperStep, tainted: boolean): Promise<PreviewReply> {
     await this.local(id);
     const helper = this.stepLink();
-    const mine = checkStep(step, { tainted });
+    const now = this.o.now();
+    for (const [k, l] of this.looks) if (!(Date.parse(l.expiresAt) > now)) this.looks.delete(k);
+    const mine = checkStep(step, { tainted, looks: [...this.looks.values()] });
     if (mine.status === "refused") return { outcome: "refused", verdict: mine };
     const canonical = canonicalStep(step) as HelperStep;
     const reply = await helper("step.preview", { step: canonical });
@@ -793,7 +798,6 @@ export class LocalClient implements RigClient {
     if (reply.verdict.tier === 3 && tainted) {
       return { outcome: "refused", verdict: { status: "refused", why: "tainted", refused: `${ruleWords("tainted")}.`, commands: reply.verdict.commands, rulesVersion } };
     }
-    const now = this.o.now();
     for (const [n, p] of this.previewed) if (!(Date.parse(p.expiresAt) > now)) this.previewed.delete(n);
     this.previewed.set(reply.nonce, { step: canonical, verdict: reply.verdict, expiresAt: reply.expiresAt });
     return reply;
@@ -989,6 +993,7 @@ export class LocalClient implements RigClient {
       const spec = checkRead(rest);
       if (typeof spec === "string") { out.push({ id, ok: false, error: spec }); continue; }
       const command = this.link.step?.bind(this.link);
+      if (spec.kind === "screen") { out.push(await this.lookForChat(id, spec)); continue; }
       const script = spec.kind === "cmdlet" ? spec.command : spec.kind === "script" ? spec.script : null;
       if (!(script !== null && command) && !this.link.read) { out.push({ id, ok: false, error: "This PC's Rig helper can't look at settings yet. Update Rig." }); continue; }
       try {
@@ -1004,6 +1009,22 @@ export class LocalClient implements RigClient {
       }
     }
     return out;
+  }
+
+  /** A look in an app's window for the chat, through the helper. Its answer is parsed here, and a look it found is kept for the card. */
+  private async lookForChat(id: string, spec: Extract<PcReadSpec, { kind: "screen" }>): Promise<PcReadResult> {
+    if (!this.link.step) return { id, ok: false, error: "This PC's Rig helper can't look in an app's window yet. Update Rig." };
+    try {
+      const look = screenLookReply(await this.link.step("screen.look", { app: spec.app, goal: spec.goal }));
+      if (!look) return { id, ok: false, error: "Rig's helper answered with something that isn't a look." };
+      if (isLook(look)) {
+        if (this.looks.size >= 32) this.looks.delete(this.looks.keys().next().value!);
+        this.looks.set(look.lookId, look);
+      }
+      return { id, ok: true, text: lookText(look), look };
+    } catch (e) {
+      return { id, ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 500) };
+    }
   }
 }
 

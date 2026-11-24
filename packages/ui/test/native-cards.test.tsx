@@ -77,6 +77,59 @@ describe("a graphics setting card", () => {
   });
 });
 
+describe("an app window card", () => {
+  const screenCard = () => card("screen") as Extract<AnyDemoCard, { key: "screen" }>;
+
+  it("shows the app, the path and the value now and after in the app's words, on a red card", () => {
+    show(demoProposal(screenCard()), { canApply: false });
+    expect(screen.getByRole("heading", { name: "Changes a setting in NVIDIA Control Panel" })).toBeTruthy();
+    expect(screen.getByText("Can't promise an undo")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toContain("Rig can't promise to undo this.");
+    expect(glance("What changes")).toContain("App NVIDIA Control Panel");
+    expect(glance("What changes")).toContain("Path Change resolution › Output dynamic range · names and values in the app's own words");
+    expect(changes()).toEqual(["Output dynamic range:Limited→ changed to Full"]);
+    expect(glance("How risky")).toMatch(/^High\./);
+    expect(glance("Can it be undone")).toMatch(/^Not for sure\. Undo walks the same path/);
+    expect(screen.getByText(/Rig will click through NVIDIA Control Panel's window to set it/).textContent).toContain("A Stop bar shows at the top of the screen while it does");
+    expect(screen.getByText("Changes are made in the Rig app on Atlas. Open Rig there to apply this.")).toBeTruthy();
+    expect(button("Apply")).toBeNull();
+  });
+
+  it("asks for the card's word before Apply, on the PC", () => {
+    show(demoProposal(screenCard()));
+    const apply = button("Apply") as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Type permanent/), { target: { value: "permanent" } });
+    expect(apply.disabled).toBe(false);
+  });
+
+  it("is refused when the proposal doesn't carry the look it names", () => {
+    const { looks: _l, ...bare } = demoProposal(screenCard());
+    show({ ...bare, previews: [] });
+    expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
+    expect(screen.getByText(/Rig hasn't looked at this control/)).toBeTruthy();
+  });
+
+  it("says what Rig set once it ran", () => {
+    show(demoProposal(screenCard()), { outcomes: [{ apply: demoApply(screenCard()) }] });
+    expect(screen.getByText("Applied")).toBeTruthy();
+    expect(screen.getByText("Rig set Output dynamic range to Full in NVIDIA Control Panel and read it back.")).toBeTruthy();
+    expect(changes("What changed")).toEqual(["Output dynamic range:Limited→ changed to Full"]);
+  });
+
+  it("says Rig stopped when the person pressed Stop, and offers undo", () => {
+    const ran = demoApply(screenCard());
+    if (ran.outcome !== "applied") throw new Error("the demo card should apply");
+    const stopped = { ...ran, result: { ...ran.result, stopped: true as const, after: "You pressed Stop, so Rig stopped. It had started setting Output dynamic range to Full and didn't read it back." } };
+    const on = show(demoProposal(screenCard()), { outcomes: [{ apply: stopped }] });
+    expect(screen.getByRole("status").textContent).toBe("You pressed Stop, so Rig stopped part way.");
+    expect(screen.getByText(/Rig didn't read Output dynamic range back, so check it in NVIDIA Control Panel/).textContent).toContain("sets it back to Limited");
+    expect(screen.queryByRole("list", { name: "What changed" })).toBeNull();
+    fireEvent.click(button("Undo")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "undo");
+  });
+});
+
 describe("a kind of change this Rig doesn't know", () => {
   it("is refused in plain words, never left blank", () => {
     const on = show(unread({ name: "refreshRate", does: "Sets the screen to 144 Hz.", hz: 144 } as unknown as NativeOp));
