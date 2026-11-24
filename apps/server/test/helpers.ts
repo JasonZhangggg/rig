@@ -11,8 +11,10 @@ import { testDb } from "./pglite";
 
 export const ORIGIN = "http://localhost:8787";
 
-/** A pretend Claude: each round answers with the next scripted message. */
-export function fakeClaude(rounds: { text?: string; tool?: { name: string; input: unknown }; stop?: string }[]) {
+export type FakeRound = { text?: string; tool?: { name: string; input: unknown }; tools?: { name: string; input: unknown }[]; blocks?: unknown[]; stop?: string };
+
+/** A pretend Claude: each round answers with the next scripted message. `blocks` are server tool blocks, like a web fetch, put before the tool calls. */
+export function fakeClaude(rounds: FakeRound[]) {
   const seen: { messages: unknown[]; tools: unknown[]; system?: unknown; params: Record<string, unknown> }[] = [];
   let i = 0;
   const client = {
@@ -28,8 +30,10 @@ export function fakeClaude(rounds: { text?: string; tool?: { name: string; input
             events.push({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
             events.push({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: r.text } });
           }
-          if (r.tool) content.push({ type: "tool_use", id: `tu_${i}`, name: r.tool.name, input: r.tool.input });
-          const message = { content, stop_reason: r.stop ?? (r.tool ? "tool_use" : "end_turn") };
+          content.push(...(r.blocks ?? []));
+          const uses = [...(r.tool ? [r.tool] : []), ...(r.tools ?? [])];
+          uses.forEach((u, n) => content.push({ type: "tool_use", id: n ? `tu_${i}_${n}` : `tu_${i}`, name: u.name, input: u.input }));
+          const message = { content, stop_reason: r.stop ?? (uses.length ? "tool_use" : "end_turn") };
           return {
             async *[Symbol.asyncIterator]() { yield* events; },
             finalMessage: async () => message,
@@ -43,7 +47,7 @@ export function fakeClaude(rounds: { text?: string; tool?: { name: string; input
 
 export async function setup(env: Partial<Env> = {}, claude?: Streamer, fetch?: Fetch, wait?: (ms: number) => Promise<void>) {
   const db = await testDb<RigTables & AuthTables>();
-  const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", ...env };
+  const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", CHAT_STATE_SECRET: "test-chat-state-secret-0123456789abcdef", ...env };
   const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }), fetch, wait });
   const call = (path: string, init: RequestInit & { json?: unknown; cookie?: string; token?: string } = {}) => {
     const headers = new Headers(init.headers);

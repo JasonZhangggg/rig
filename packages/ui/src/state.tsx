@@ -434,6 +434,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           else if (e.type === "recording") edit((m) => ({ ...m, recording: e.request }));
           else if (e.type === "probe") edit((m) => ({ ...m, probe: e.op === "add" ? { op: "add", id: e.probe.id, label: e.probe.label, error: e.error } : { op: "remove", id: e.id, error: e.error } }));
           else if (e.type === "script") edit((m) => ({ ...m, script: { probe: e.probe, status: "waiting" } }));
+          else if (e.type === "seal") edit((m) => ({ ...m, seal: e.seal }));
           else if (e.type === "error") edit((m) => ({ ...m, error: true, text: m.text || e.message }));
         }, ab.signal)
           .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""} Check your internet connection and send it again.`.replace(/\s+/g, " ").trim() })))

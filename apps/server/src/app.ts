@@ -8,11 +8,12 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { manualRoutes } from "./routes-manuals";
 import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
-import { answer, type ChatContext, type Streamer } from "./chat";
+import { answer, type ChatContext, type Progress, type Streamer, type Turn } from "./chat";
+import { open, sha256, sign } from "./seal";
 import { present, Store } from "./db";
 import type { Env } from "./env";
 import { bestBuyFeed, type RetailFeed } from "./retail";
@@ -73,11 +74,11 @@ export function createApp(deps: AppDeps = {}) {
     try { ctx = c.executionCtx; } catch { /* no Workers context, as in tests */ }
     if (ctx) ctx.waitUntil(conn.close()); else await conn.close();
   });
-  // A manual's page text can be several megabytes; everything else is small.
+  // A manual's page text can be several megabytes, and so can a chat that goes on after the PC's reads; everything else is small.
   const tooBig = (c: C) => c.json({ message: "That upload is too big." }, 413);
   const smallBody = bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooBig });
   const pagesBody = bodyLimit({ maxSize: 8 * 1024 * 1024, onError: tooBig });
-  app.use("/api/*", (c, next) => (c.req.method === "PUT" && /^\/api\/machines\/[^/]+\/manuals\/[^/]+\/pages$/.test(c.req.path) ? pagesBody : smallBody)(c, next));
+  app.use("/api/*", (c, next) => ((c.req.method === "PUT" && /^\/api\/machines\/[^/]+\/manuals\/[^/]+\/pages$/.test(c.req.path)) || (c.req.method === "POST" && c.req.path === "/api/chat") ? pagesBody : smallBody)(c, next));
 
   app.on(["GET", "POST"], "/api/auth/*", (c) => authFor(c).handler(c.req.raw));
 
@@ -263,13 +264,34 @@ export function createApp(deps: AppDeps = {}) {
         } : {}),
       };
       const limit = dailyLimit(c);
+      // Signed notes: where an answer stopped for the PC's reads, and whether an answer read outside text.
+      const secret = c.env.CHAT_STATE_SECRET;
+      const pc = row?.id ?? body.machineId;
+      if (secret) {
+        ctx.seal = async (text, tainted) => sign(secret, { use: "seal", user: user.id, pc, tainted, text: await sha256(text) } satisfies SealNote);
+        if (ctx.live && body.reads === true) {
+          ctx.pause = (progress) => sign(secret, { use: "resume", user: user.id, pc, exp: now().getTime() + RESUME_MS, progress } satisfies ResumeNote);
+        }
+      }
+      if (ctx.live && !ctx.pause) ctx.readsOff = !secret ? "Looking at the PC live isn't set up on Rig's server yet." : "The Rig app on this PC needs an update before Rig can look at its settings live.";
+
+      if (body.resume !== undefined) {
+        // Going on after the PC's reads. It's the same question, so it doesn't count again.
+        const note = secret ? await open<ResumeNote>(secret, body.resume) : null;
+        if (!note || note.use !== "resume" || note.user !== user.id || note.pc !== pc || typeof note.exp !== "number" || !note.progress) {
+          return { message: "Rig couldn't check where this answer left off, so it stopped. Ask again." };
+        }
+        if (note.exp < now().getTime()) return { message: "Rig waited too long for the PC to answer, so it stopped. Ask again." };
+        return { ctx, turn: { history: body.messages, resume: { progress: note.progress, results: cleanResults(body.results) } } as Turn };
+      }
+      const tainted = await historyTainted(secret, user.id, pc, body.messages);
       if (!(await store.useChat(user.id, limit, now()))) return { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.` };
-      return { ctx };
+      return { ctx, turn: { history: body.messages, tainted } as Turn };
     })();
     return streamSSE(c, async (stream) => {
       const send = (e: ChatEvent) => stream.writeSSE({ data: JSON.stringify(e) });
       if ("message" in problem) { await send({ type: "error", message: problem.message! }); await send({ type: "done" }); return; }
-      await answer(claude(c.env), problem.ctx, body!.messages, send, c.req.raw.signal);
+      await answer(claude(c.env), problem.ctx, problem.turn, send, c.req.raw.signal);
     });
   });
 
@@ -284,6 +306,37 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   return app;
+}
+
+/** How long the app on the PC has to send back its reads. */
+const RESUME_MS = 5 * 60_000;
+
+interface ResumeNote { use: "resume"; user: string; pc: string; exp: number; progress: Progress }
+interface SealNote { use: "seal"; user: string; pc: string; tainted: boolean; text: string }
+
+/**
+ * Whether an earlier answer in this chat read outside text. The server keeps no transcript, so each answer carries a seal it signed:
+ * the answer's text and whether the chat was tainted by then. An answer of Rig's without a valid seal for this account, this PC
+ * and that exact text counts as tainted, so an app that drops or swaps seals can only make the chat stricter.
+ */
+async function historyTainted(secret: string | undefined, user: string, pc: string, history: ChatRequest["messages"]): Promise<boolean> {
+  for (const m of history) {
+    if (m?.from !== "rig" || typeof m.text !== "string" || !m.text.trim()) continue;
+    const note = secret ? await open<SealNote>(secret, m.seal) : null;
+    if (!note || note.use !== "seal" || note.user !== user || note.pc !== pc || note.text !== await sha256(m.text) || note.tainted !== false) return true;
+  }
+  return false;
+}
+
+/** What the desktop says each read found: only the fields the chat uses, cut to size. */
+function cleanResults(list: unknown): PcReadResult[] {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, READ_LIMITS.perRound).filter((r): r is Record<string, unknown> => !!r && typeof r === "object" && typeof r.id === "string").map((r) => {
+    const id = (r.id as string).slice(0, 100);
+    return r.ok === true && typeof r.text === "string"
+      ? { id, ok: true as const, text: r.text.slice(0, READ_LIMITS.resultChars) }
+      : { id, ok: false as const, error: typeof r.error === "string" ? r.error.slice(0, 500) : "The PC didn't say." };
+  });
 }
 
 /** The custom logs the desktop says its recorder keeps: only what the chat needs, and no more than the recorder can hold. */

@@ -7,6 +7,8 @@ import type { BoardLayout } from "./boardLayout";
 import type { ManualDiagram, ManualPage, ManualTarget } from "./manuals";
 import type { PCEvent, RecordingRequest } from "./recordings";
 import type { ProbeStatus } from "./probes";
+import type { PcReadResult } from "./reads";
+import { fixSteps } from "./change";
 import type { Inventory, SystemFacts } from "./telemetry";
 import type { Identity } from "./view";
 
@@ -42,13 +44,18 @@ export interface ServerConfig { google: boolean; chat: boolean }
 /** Body of POST /api/chat. The desktop sends its live view; the web sends only the id. */
 export interface ChatRequest {
   machineId: string;
-  messages: Pick<ChatMessage, "from" | "text">[];
+  messages: Pick<ChatMessage, "from" | "text" | "seal">[];
   view?: PC;
   facts?: SystemFacts;
   /** The person's time zone, like "Europe/Berlin", so Rig can say when to check back. */
   tz?: string;
   /** The desktop's custom logs, when its background recorder is on. Missing means the chat can't set them up from here. */
   probes?: ProbeStatus[];
+  /** The desktop can run live reads through its helper (the `reads` event). */
+  reads?: boolean;
+  /** Going on with an answer after its reads: the `resume` from the `reads` event, and what each read found. */
+  resume?: string;
+  results?: PcReadResult[];
 }
 
 export const paths = {
@@ -136,11 +143,17 @@ export async function readChatStream(res: Response, onEvent: (e: ChatEvent) => v
       buf = buf.slice(cut + 2);
       const data = frame.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
       if (!data) continue;
-      const e = JSON.parse(data) as ChatEvent;
+      const e = olderProposal(JSON.parse(data) as ChatEvent);
       onEvent(e);
       if (e.type === "done") return;
     }
   }
+}
+
+/** A server from before steps sends a proposal's fixes only as `calls`. */
+function olderProposal(e: ChatEvent): ChatEvent {
+  if (e.type !== "proposal" || Array.isArray(e.proposal.steps) || !Array.isArray(e.proposal.calls)) return e;
+  return { ...e, proposal: { ...e.proposal, steps: fixSteps(e.proposal.calls), tier: e.proposal.tier ?? 1 } };
 }
 
 /** Shown when the request never reached the server. */

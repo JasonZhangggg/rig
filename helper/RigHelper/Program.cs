@@ -331,6 +331,7 @@ public class Handler(Sensors hw)
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
         "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
         "recorder.probes" => ProbeStore.Edit(p, hw),
+        "read" => Reads.Read(p?["read"] as JsonObject),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

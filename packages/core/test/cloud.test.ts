@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CloudClient, serverDownText, unreachableText, wrongServerText, type ManualTarget } from "../src";
+import { CloudClient, serverDownText, unreachableText, wrongServerText, type ChatEvent, type ManualTarget } from "../src";
 
 const client = () => new CloudClient({ base: "/api" });
 
@@ -121,5 +121,24 @@ describe("CloudClient manuals", () => {
     expect(new Uint8Array(buf)).toEqual(pdf);
     server(() => Response.json({ message: "This manual was added from a file, so only the device it was added on has it." }, { status: 404 }));
     await expect(client().manualFile("pc", "m1")).rejects.toThrow(/added from a file/);
+  });
+});
+
+describe("CloudClient chat", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends each answer's seal back, and reads a proposal from an older server as fix steps", async () => {
+    const sent: unknown[] = [];
+    const proposal = { id: "p1", title: "Turn on Game Mode", rows: [], status: "waiting", calls: [{ kind: "windows.gameMode", enabled: true }] };
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)));
+      return new Response(`data: ${JSON.stringify({ type: "proposal", proposal })}\n\ndata: {"type":"done"}\n\n`, { headers: { "content-type": "text/event-stream" } });
+    });
+    const events: ChatEvent[] = [];
+    await client().chat("pc", [{ id: "1", from: "you", text: "Hi" }, { id: "2", from: "rig", text: "Hello.", seal: "s1", sources: [] }, { id: "3", from: "you", text: "Faster?" }], (e) => events.push(e));
+    expect((sent[0] as { messages: unknown[] }).messages).toEqual([{ from: "you", text: "Hi" }, { from: "rig", text: "Hello.", seal: "s1" }, { from: "you", text: "Faster?" }]);
+    const p = (events[0] as Extract<ChatEvent, { type: "proposal" }>).proposal;
+    expect(p.steps).toEqual([{ kind: "fix", call: { kind: "windows.gameMode", enabled: true } }]);
+    expect(p.tier).toBe(1);
   });
 });

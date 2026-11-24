@@ -17,6 +17,7 @@ import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoi
 import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
 import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
+import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec } from "./reads";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
@@ -40,7 +41,12 @@ export interface HelperLink {
    * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
    */
   storage?(fresh?: boolean): Promise<StorageScan>;
+  /** One read the chat asked for: a registry key, CIM instances, or a command or script that checks as a read. Returns what it found as text. Missing on helpers before live reads. */
+  read?(req: PcReadSpec): Promise<string>;
 }
+
+/** How many times one answer can stop to read the PC and go on. The server's round cap stops it first. */
+const MAX_READ_HOPS = 8;
 
 /** The folder scan is asked for this often, and every few seconds while one runs, so the map fills in when it's done. */
 export const SCAN_ASK_MS = 30 * 60_000;
@@ -821,22 +827,55 @@ export class LocalClient implements RigClient {
     }
     const here = await this.isLocal(id);
     const probes = here ? await this.customLogs() : null;
-    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}) } : undefined;
+    const live = here && this.inv && this.facts ? { view: this.view(), facts: this.facts, ...(probes ? { probes } : {}), ...(this.link.read ? { reads: true } : {}) } : undefined;
     // Rig reads recordings on the server, so it needs the latest ones before it answers.
     if (live) for (const rid of [...this.unsent]) await this.sendRecording(rid);
     // Custom log changes are made here, on the PC, in the order they came; the answer's events wait for them.
     let applying: Promise<void> = Promise.resolve();
     const send = (f: () => void | Promise<void>) => { applying = applying.then(f).catch(() => {}); };
-    await this.cloud.chat(id, history, (e) => {
-      // A recording for this PC starts right away instead of waiting for the next sync.
-      if (e.type === "recording" && live) {
-        this.begin(e.request).catch(() => {});
-        send(() => onEvent({ ...e, queued: false }));
-      } else if (e.type === "probe" && live) {
-        send(async () => onEvent({ ...e, error: await this.applyProbe(e) }));
-      } else send(() => onEvent(e));
-    }, signal, live);
-    await applying;
+    // When Rig wants to look at the PC, the stream ends with the reads; the answer goes on in the next request.
+    let resume: { resume: string; results: PcReadResult[] } | undefined;
+    for (let hop = 0; ; hop++) {
+      let reads: Extract<ChatEvent, { type: "reads" }> | null = null;
+      await this.cloud.chat(id, history, (e) => {
+        if (e.type === "reads") { if (live) reads = e; return; }
+        // A recording for this PC starts right away instead of waiting for the next sync.
+        if (e.type === "recording" && live) {
+          this.begin(e.request).catch(() => {});
+          send(() => onEvent({ ...e, queued: false }));
+        } else if (e.type === "probe" && live) {
+          send(async () => onEvent({ ...e, error: await this.applyProbe(e) }));
+        } else send(() => onEvent(e));
+      }, signal, live, resume);
+      await applying;
+      const asked = reads as Extract<ChatEvent, { type: "reads" }> | null;
+      if (!asked || signal?.aborted) return;
+      if (hop >= MAX_READ_HOPS) {
+        onEvent({ type: "error", message: "Rig kept asking to look at the PC, so it stopped. Ask again." });
+        onEvent({ type: "done" });
+        return;
+      }
+      resume = { resume: asked.resume, results: await this.readForChat(asked.reads) };
+    }
+  }
+
+  /** Runs the chat's reads through the helper, checked again here first. Each answers with what it found or why it couldn't. */
+  private async readForChat(reads: PcRead[]): Promise<PcReadResult[]> {
+    const out: PcReadResult[] = [];
+    for (const r of reads.slice(0, READ_LIMITS.perRound)) {
+      const id = typeof r?.id === "string" ? r.id.slice(0, 100) : "";
+      const { id: _id, ...rest } = r ?? {};
+      const spec = checkRead(rest);
+      if (typeof spec === "string") { out.push({ id, ok: false, error: spec }); continue; }
+      if (!this.link.read) { out.push({ id, ok: false, error: "This PC's Rig helper can't look at settings yet. Update Rig." }); continue; }
+      try {
+        const text = await this.link.read(spec);
+        out.push({ id, ok: true, text: String(text ?? "").slice(0, READ_LIMITS.resultChars) });
+      } catch (e) {
+        out.push({ id, ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 500) });
+      }
+    }
+    return out;
   }
 }
 
