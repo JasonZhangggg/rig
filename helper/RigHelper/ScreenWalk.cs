@@ -90,6 +90,7 @@ static class Uia
     public static int Int(IUIAutomationElement el, int property) => Value(el, property) is int i ? i : 0;
     public static bool Bool(IUIAutomationElement el, int property) => Value(el, property) is bool b && b;
     public static double Number(IUIAutomationElement el, int property) => Value(el, property) is double d ? d : double.NaN;
+    public static string RuntimeId(IUIAutomationElement el) => Value(el, 30000) is int[] parts ? string.Join(".", parts) : "";
 
     public static T? Pattern<T>(IUIAutomationElement el, int pattern) where T : class
     {
@@ -291,14 +292,15 @@ sealed class StopBar : IDisposable
 
 sealed class ScreenWalk : IDisposable
 {
-    const int MaxNodes = 5000, OpenMs = 30_000, FirstHopMs = 12_000, HopMs = 6_000, SettleMs = 3_000;
+    const int MaxNodes = 5000, MaxDepth = 48, OpenMs = 30_000, FirstHopMs = 12_000, HopMs = 6_000, SettleMs = 3_000;
     static readonly int[] WayTypes = [Uia.TabItem, Uia.TreeItem, Uia.ListItem, Uia.DataItem, Uia.Group];
     static readonly int[] TargetTypes = [Uia.CheckBox, Uia.ComboBox, Uia.Slider, Uia.Button, Uia.Group, Uia.ListItem, Uia.TreeItem, Uia.DataItem];
     static readonly int[] CleanTypes = [Uia.Button, Uia.CheckBox, Uia.ComboBox, Uia.ListItem, Uia.RadioButton, Uia.Slider, Uia.TabItem, Uia.TreeItem];
 
     /// One control in a snapshot of the window, with the one it sits in.
-    sealed class Node(IUIAutomationElement el, Node? parent)
+    sealed class Node(IUIAutomationElement el, Node? parent, int depth = 0)
     {
+        public int Depth => depth;
         public IUIAutomationElement El => el;
         public int Type { get; } = Uia.Int(el, Uia.ControlType);
         public string Name { get; } = Uia.Text(el, Uia.Name);
@@ -448,14 +450,22 @@ sealed class ScreenWalk : IDisposable
     {
         bar.Check();
         if (uia.ElementFromHandle(hwnd, out var top) < 0 || top == null) throw new RigException($"{app.Name}'s window has gone.");
-        var all = new List<Node> { new(top, null) };
+        var all = new List<Node> { new(top, null, 0) };
+        // Some controls answer as their own descendants. A control is read once, by the id Windows gives it.
+        var seen = new HashSet<string> { Uia.RuntimeId(top) };
         for (int i = 0; i < all.Count; i++)
         {
             if (i % 50 == 0) bar.Check();
+            if (all[i].Depth >= MaxDepth) continue;
             foreach (var child in Uia.ChildrenOf(all[i].El, controls))
             {
-                if (all.Count >= MaxNodes) throw new RigException($"{app.Name}'s window holds more than Rig reads in one go, so it can't be sure which control is which.");
-                all.Add(new Node(child, all[i]));
+                if (Uia.RuntimeId(child) is { Length: > 0 } rid && !seen.Add(rid)) continue;
+                if (all.Count >= MaxNodes)
+                {
+                    var most = all.GroupBy(n => $"{n.Cls} {n.Says}".Trim()).OrderByDescending(g => g.Count()).First();
+                    throw new RigException($"{app.Name}'s window holds more than Rig reads in one go, so it can't be sure which control is which (mostly {ScreenRules.Plain(most.Key)}, {most.Count()} times).");
+                }
+                all.Add(new Node(child, all[i], all[i].Depth + 1));
             }
         }
         return all;
