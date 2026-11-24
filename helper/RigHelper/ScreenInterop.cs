@@ -63,11 +63,11 @@ static class Uia
 {
     public static readonly Guid Automation = new("ff48dba4-60ef-4201-aa87-54103eef594e");
     public const int Children = 2;
-    public const int ProcessId = 30002, ControlType = 30003, Name = 30005, IsEnabled = 30010, AutomationId = 30011, IsPassword = 30019,
+    public const int ProcessId = 30002, NativeWindowHandle = 30020, ControlType = 30003, Name = 30005, IsEnabled = 30010, AutomationId = 30011, IsPassword = 30019,
         ValueValue = 30045, RangeValue = 30047, RangeReadOnly = 30048, RangeMinimum = 30049, RangeMaximum = 30050,
         ExpandState = 30070, IsSelected = 30079, ToggleState = 30086;
     public const int InvokePattern = 10000, RangeValuePattern = 10003, ExpandCollapsePattern = 10005, SelectionItemPattern = 10010, TogglePattern = 10015;
-    public const int Button = 50000, CheckBox = 50002, ComboBox = 50003, ListItem = 50007, RadioButton = 50013, Slider = 50015,
+    public const int Button = 50000, Window = 50032, CheckBox = 50002, ComboBox = 50003, ListItem = 50007, RadioButton = 50013, Slider = 50015,
         TabItem = 50019, TreeItem = 50024, Group = 50026, Document = 50030;
 }
 

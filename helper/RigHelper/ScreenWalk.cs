@@ -165,6 +165,9 @@ sealed class ScreenWalk : IDisposable
         var queue = new Queue<(IUIAutomationElement El, bool InDocument)>();
         queue.Enqueue((from ?? root, false));
         int seen = 0;
+        // A drop-down's list is a window of its own, and Windows can list every window on the desktop under it. A window
+        // is read once, and another whole window is never read as part of this one.
+        var windows = new HashSet<int> { Prop<int>(root, Uia.NativeWindowHandle) };
         while (queue.Count > 0)
         {
             var (parent, inDocument) = queue.Dequeue();
@@ -178,6 +181,8 @@ sealed class ScreenWalk : IDisposable
                 try { el = children!.GetElement(i); } catch (COMException) { continue; }
                 if (Prop<int>(el, Uia.ProcessId) != pid) continue;
                 int type = Prop<int>(el, Uia.ControlType);
+                int handle = Prop<int>(el, Uia.NativeWindowHandle);
+                if (handle != 0 && (type == Uia.Window || !windows.Add(handle))) continue;
                 if (Named.Contains(type)) found.Add(new Control(el, Prop<string>(el, Uia.Name) ?? "", type, inDocument));
                 queue.Enqueue((el, inDocument || type == Uia.Document));
             }
