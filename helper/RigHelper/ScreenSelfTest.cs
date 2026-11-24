@@ -222,7 +222,7 @@ static class ScreenSelfTest
         ("screen: after Stop during the read-back the change stands and nothing walks the window again", () => OnDesktop(rig, store, StoppedVerify)),
         ("screen: an app that wants a button Rig doesn't know pressed isn't reported as changed", () => OnDesktop(rig, store, UnknownCommit)),
         ("screen: Apply isn't pressed over changes the card didn't show", () => OnDesktop(rig, store, NotShown)),
-        ("screen: OK is pressed only in a window the walk opened", () => OnDesktop(rig, store, OkWindow)),
+        ("screen: OK isn't pressed in a window Rig didn't open, and a look presses no button", () => OnDesktop(rig, store, OkWindow)),
         ("screen: a look picks no list row and presses nothing in web content", () => OnDesktop(rig, store, LookActs)),
         ("screen: a look at a program that ships with Windows and saves nothing with a button", () => OnDesktop(rig, store, RealProgram, last: true)),
     ];
@@ -487,8 +487,8 @@ static class ScreenSelfTest
     }
 
     /// The window's Apply reads OK beside a Cancel: OK there keeps whatever else is changed in it, so a look is refused and
-    /// a change looked at before is refused before it sets anything. Advanced... opens a window of its own with OK and
-    /// Cancel, and there the walk presses OK and reads the change back.
+    /// a change looked at before is refused before it sets anything. A look presses no button, so it doesn't open the window
+    /// Advanced... would.
     static IEnumerable<string> OkWindow(Commands rig)
     {
         const string onlyMine = "Rig presses OK only in a window it opened itself";
@@ -506,20 +506,9 @@ static class ScreenSelfTest
 
         Reset();
         var opened = LookAt(rig, App, "Advanced...", "Smooth edges");
-        if (opened["lookId"] == null || opened["value"]?.ToString() != "Off" || Options(opened) != "On,Off" || opened["clean"]?.GetValue<bool>() != true)
-        {
-            yield return $"the look in the window Advanced... opens answered {opened.ToJsonString()}";
-            yield break;
-        }
-        if (Win.FindWindowW(DialogClass, null) != IntPtr.Zero || appliedSmooth != 0) yield return "the look left the window it opened open, or pressed its OK";
-        var q = Preview(rig, Step(opened, "On"));
-        if (!Is(q, "ready") || q["read"]?.ToString() != "Smooth edges: Off") { yield return $"the preview in the opened window answered {q.ToJsonString()}"; yield break; }
-        var b = Apply(rig, q);
-        if (!Is(b, "applied") || b["result"]?["after"]?.ToString() != "Smooth edges: On") yield return $"apply in the window the walk opened answered {b.ToJsonString()}";
-        if (appliedSmooth != 1 || Win.FindWindowW(DialogClass, null) != IntPtr.Zero) yield return $"after apply the opened window's OK took {appliedSmooth}, and the window is {(Win.FindWindowW(DialogClass, null) != IntPtr.Zero ? "still open" : "closed")}";
-        if (applied != 0) yield return $"apply in the opened window pressed the main window's Apply {applied} times";
-        var u = Undo(rig, b);
-        if (!Is(u, "undone") || appliedSmooth != 0 || Win.FindWindowW(DialogClass, null) != IntPtr.Zero) yield return $"undo in the opened window answered {u.ToJsonString()}, and its OK took {appliedSmooth}";
+        if (opened["refused"]?.ToString().Contains("presses no button while it only looks") != true || opened["lookId"] != null)
+            yield return $"a look through Advanced... answered {opened.ToJsonString()}";
+        if (Win.FindWindowW(DialogClass, null) != IntPtr.Zero || appliedSmooth != 0) yield return "a look pressed Advanced... or its window's OK";
     }
 
     /// Stop is pressed on the bar of the read-back, after the checkbox was set and Apply pressed (its tab is emptied so the

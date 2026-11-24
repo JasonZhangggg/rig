@@ -5,9 +5,10 @@
 // act are SelectionItem.Select, ExpandCollapse.Expand and Collapse,
 // Toggle.Toggle, RangeValue.SetValue and Invoke. Invoke is made on the app's
 // own Apply button at the end of an approved change, on OK only in a window
-// the walk itself opened, and on the way only on a button whose name ends in
-// an ellipsis, which by Windows' convention opens a window; the walk goes on
-// in that window and closes it as it ends. None is ever made on a control
+// the walk itself opened, and on the way, only inside an approved change, on a
+// button whose name ends in an ellipsis, which by Windows' convention opens a
+// window; the walk goes on in that window and closes it as it ends. A look
+// presses no button. None is ever made on a control
 // inside web content (under a Document). A
 // classic Windows drop-down list, which UI Automation can't set, takes the
 // approved entry inside an approved change by three messages to its own
@@ -384,11 +385,13 @@ sealed class ScreenWalk : IDisposable
     HashSet<IntPtr> before = [];
     bool first, armed, committed;
     JsonObject? started;
+    readonly bool changing;
 
     public ScreenWalk(ScreenApp app, bool changing, string setting)
     {
         if (StopBar.AnyPressed) throw new RigException(StopBar.Stopped);
         this.app = app;
+        this.changing = changing;
         bar = new StopBar($"Rig is {(changing ? "changing" : "reading")} {setting} in {app.Name}.");
         try
         {
@@ -618,6 +621,8 @@ sealed class ScreenWalk : IDisposable
     /// with an ellipsis, which by Windows' convention asks for more before it does anything, and only one in a walk.
     void Opens(Node node)
     {
+        // A look presses nothing, whatever a button is called, so a setting behind one is out of reach for now.
+        if (!changing) throw new RigException($"{node.Says} opens another window, and Rig presses no button while it only looks, so it can't read this setting yet.");
         if (app.Settings || dialog != IntPtr.Zero || !Opener(node) || KindOf(node) != null
             || Commits(node, ScreenRules.Commit.Apply) || Commits(node, ScreenRules.Commit.Ok) || Commits(node, ScreenRules.Commit.Cancel))
             throw new RigException($"Rig only presses a button on the way when its name ends in ... and it opens a window, and only one in a walk, so it didn't press {node.Says}.");
