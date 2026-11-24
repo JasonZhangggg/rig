@@ -91,7 +91,7 @@ const screen: NativePart<ScreenOp> = {
       return (
         <>
           <div className="cc-first" role="status"><b>You pressed Stop, so Rig stopped part way.</b></div>
-          <p className="cc-note">Rig didn&apos;t read {control} back, so check it in {inApp(look)}. Undo walks the same path and sets {look ? `it back to ${look.value}` : "it back"}.</p>
+          <p className="cc-note">Rig didn't read {control} back, so check it in {inApp(look)}. Undo walks the same path and sets {look?.value ? `it back to ${look.value}` : "it back"}.</p>
         </>
       );
     }
