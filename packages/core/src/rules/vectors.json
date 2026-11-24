@@ -480,5 +480,22 @@
   {"script": "Copy-Item -LiteralPath 'C:\\Users\\me\\Downloads\\Startup' -Destination 'C:\\Users\\me\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs' -Recurse", "as": "run", "expect": {"refused": true, "why": "never"}, "note": "a name joins the place it is made in"},
   {"script": "Move-Item 'C:\\Users\\me\\Downloads\\Startup' 'C:\\Users\\me\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs'", "as": "run", "expect": {"refused": true, "why": "never"}, "note": "a name joins the place it is made in"},
   {"script": "Move-Item -LiteralPath 'HKCU:\\Software\\Rig\\exefile' -Destination 'HKCU:\\Software\\Classes'", "as": "run", "expect": {"refused": true, "why": "never"}, "note": "a name joins the place it is made in"},
-  {"script": "Copy-Item -LiteralPath 'C:\\Users\\me\\Documents\\notes.txt' -Destination 'C:\\Users\\me\\Desktop'", "as": "run", "expect": {"tier": 2}, "note": "a name joins the place it is made in"}
+  {"script": "Copy-Item -LiteralPath 'C:\\Users\\me\\Documents\\notes.txt' -Destination 'C:\\Users\\me\\Desktop'", "as": "run", "expect": {"tier": 2}, "note": "a name joins the place it is made in"},
+  {"script": "Get-NetAdapter", "as": "read", "expect": {"tier": 0, "commands": ["Get-NetAdapter"]}},
+  {"script": "Get-CimInstance Win32_Tpm -Namespace root/cimv2/Security/MicrosoftTpm", "as": "read", "expect": {"tier": 0, "commands": ["Get-CimInstance"]}},
+  {"script": "Get-NetAdapter -CimSession server", "as": "read", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Get-Tpm -cn pc2", "as": "read", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Get-Process -HostName box -SSHTransport", "as": "read", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Get-CimInstance -ClassName Win32_Tpm -ComputerName pc2", "as": "read", "expect": {"refused": true, "why": "refused"}, "note": "a listed entry's own rule still refuses it"},
+  {"script": "Set-TimeZone -Id 'Pacific Standard Time'", "as": "run", "expect": {"tier": 2}},
+  {"script": "Set-TimeZone -Id 'Pacific Standard Time' -ComputerName pc2", "as": "run", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Set-DnsClientServerAddress -InterfaceAlias Ethernet -ServerAddresses 1.1.1.1 -CimSession server", "as": "run", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Set-NetConnectionProfile -InterfaceAlias Ethernet -NetworkCategory Private -cims s", "as": "run", "expect": {"refused": true, "why": "refused"}, "note": "short forms count"},
+  {"script": "Restart-Service -Name Spooler -Credential admin", "as": "run", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Rename-Computer -NewName box -cred admin", "as": "run", "expect": {"refused": true, "why": "refused"}, "note": "short forms count"},
+  {"script": "Set-PrintConfiguration -PrinterName Office -Color $false -Session:$s", "as": "undo", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Remove-Printer -Name Fax -ComputerName pc2", "as": "undo", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Set-Service -Name Spooler -StartupType Manual -co pc2", "as": "undo", "expect": {"refused": true, "why": "refused"}, "note": "a remote parameter is refused for every cmdlet"},
+  {"script": "Set-Clipboard -Value '-ComputerName pc2'", "as": "run", "expect": {"tier": 2}, "note": "a quoted value isn't a parameter"},
+  {"script": "powercfg -h off", "as": "run", "expect": {"tier": 2}, "note": "a program's own switches aren't cmdlet parameters"}
 ]

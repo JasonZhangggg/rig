@@ -37,6 +37,49 @@ static partial class Native
         finally { CloseHandle(p); }
     }
 
+    // ----- Who owns what this process makes -----
+    const uint TOKEN_ADJUST_DEFAULT = 0x0080;
+    const int TokenOwnerClass = 4;
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info, int length, out int returned);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool SetTokenInformation(IntPtr token, int infoClass, ref IntPtr owner, int length);
+
+    /// Who Windows makes the owner of each new file, folder and key this process and the programs it starts make, or null
+    /// when Windows won't say.
+    public static SecurityIdentifier? DefaultOwner()
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, out var t)) return null;
+        try
+        {
+            GetTokenInformation(t, TokenOwnerClass, IntPtr.Zero, 0, out int size);
+            if (size <= 0) return null;
+            IntPtr buf = Marshal.AllocHGlobal(size);
+            try { return GetTokenInformation(t, TokenOwnerClass, buf, size, out _) ? new SecurityIdentifier(Marshal.ReadIntPtr(buf)) : null; }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+        finally { CloseHandle(t); }
+    }
+
+    /// Makes `owner` the owner of what this process and the programs it starts make from now on. Windows allows only the
+    /// process's own account or a group its token may make owner, such as Administrators in an admin token.
+    public static bool SetDefaultOwner(SecurityIdentifier owner)
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_DEFAULT, out var t)) return false;
+        var bytes = new byte[owner.BinaryLength];
+        owner.GetBinaryForm(bytes, 0);
+        IntPtr sid = Marshal.AllocHGlobal(bytes.Length);
+        try
+        {
+            Marshal.Copy(bytes, 0, sid, bytes.Length);
+            return SetTokenInformation(t, TokenOwnerClass, ref sid, IntPtr.Size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(sid);
+            CloseHandle(t);
+        }
+    }
+
     // ----- Windows in front -----
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);

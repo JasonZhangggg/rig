@@ -84,6 +84,10 @@ public sealed class CommandStore
     {
         if (secured)
         {
+            // Under the "object creator" owner policy, what an admin makes is owned by the admin's own account, which the
+            // store's owner check refuses. From here on this process and the programs it starts make everything owned by
+            // Administrators, so the store is admins' own whatever the policy.
+            Native.SetDefaultOwner(Admins);
             // ProgramData lets anyone make folders. The parent is always taken over and locked, so no one else can add or
             // swap anything beside the store; a store someone else made, or a link in its place, is replaced, so nothing
             // planted there is ever read.
