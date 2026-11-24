@@ -70,14 +70,16 @@ export function ResultView({ cmd, outcome, pcName, canApply, busy, onUndo }: Res
   if (a.outcome === "expired") return <p className="cc-note">This card was too old to run, so nothing changed on {pcName}. Ask again and Rig will read the settings fresh.</p>;
   if (a.outcome === "refused") return <p className="cc-note"><b>Rig didn't run this, so nothing changed on {pcName}.</b> {a.verdict.refused}</p>;
   if (a.outcome === "rolledBack") return <RolledBackResult reply={a} pcName={pcName} />;
+  const reach = undoReach(cmd, a.undo);
+  const again = outcome.undo?.outcome === "failed";
   return (
     <>
       <AppliedResult reply={a} />
       {outcome.undo ? <Undone undo={outcome.undo} /> : null}
-      {(!outcome.undo || outcome.undo.outcome === "failed") && (
+      {(!outcome.undo || again) && (
         <div className="cc-undo">
-          <p className="faint">{undoReach(cmd, a.undo)}{!canApply && <> Undo it in the Rig app on {pcName}.</>}</p>
-          {canApply && <button className="btn sm" type="button" disabled={busy} onClick={onUndo}>{busy ? "Undoing…" : outcome.undo ? "Try undo again" : "Undo"}</button>}
+          {!again && <p className={reach.can ? "faint" : "cc-undo-line none"}>{reach.line}{reach.can && !canApply && <> Undo it in the Rig app on {pcName}.</>}</p>}
+          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={onUndo}>{busy ? "Undoing…" : again ? "Try undo again" : "Undo"}</button>}
         </div>
       )}
     </>
@@ -92,7 +94,7 @@ export function StepRecord({ applied }: { applied: Extract<AppliedStep, { step: 
       <ClaudeSays text={cmd.does} />
       {applied.verify && <ReadCompare before={applied.verify.before} after={applied.verify.after} />}
       <AlsoChanged items={applied.undo.outside} />
-      <p className="faint cc-reach">{undoReach(cmd, applied.undo)}</p>
+      <p className="faint cc-reach">{undoReach(cmd, applied.undo).line}</p>
       <Scripts cmd={{ ...cmd, undo: applied.undo.script ?? cmd.undo }} />
     </div>
   );

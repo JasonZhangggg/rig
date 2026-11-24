@@ -2,7 +2,7 @@
 // the demo each provide their own implementation, so the UI never knows where
 // the data comes from.
 
-import type { AppliedStep, ApplyReply, PreviewReply, Step, Tier, UndoReply } from "./change";
+import type { AppliedStep, ApplyReply, Command, PreviewReply, Step, Tier, UndoReply } from "./change";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -182,6 +182,8 @@ export interface RigClient {
 
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];
+  /** Has the helper read the current settings for a command step and check it, so its card can show them. Only where changes can be made. */
+  previewCommand?(machineId: string, cmd: Command, tainted: boolean): Promise<PreviewReply>;
   /** Runs a command step the helper previewed, by the nonce from its preview. Only where changes can be made. */
   applyCommand?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
   /** Puts a command step back, by the id in its undo record. */

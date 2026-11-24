@@ -137,6 +137,9 @@ function judge(call: Call, use: ScriptUse): Judged {
 const ALWAYS = ["dynamic", "dot-source", "obfuscated", "splat", "keyword", "provider-variable", "dynamic-member", "stray", "unc"];
 
 /** The verdict on one script. A read is tier 0 or refused; a change is tier 2 or 3 or refused. */
+/** The reason a general command gets when nothing about it is riskier than that. */
+export const secondLook = "A general command, so it needs a second look before it runs.";
+
 export function checkScript(script: string, use: ScriptUse): Verdict {
   const refuse = (refused: string, why: Refusal = "refused", commands: FoundCommand[] = []): Refused => ({ status: "refused", refused, why, commands, rulesVersion });
   if (typeof script !== "string" || !script.trim()) return refuse(`${R.constructs.empty}.`);
@@ -178,7 +181,7 @@ export function checkScript(script: string, use: ScriptUse): Verdict {
   const tier = use === "read" ? 0 : lowers ? 3 : (Math.max(2, top) as Tier);
   for (const c of commands) if (c.tier === 3) reasons.push(`${c.says}. Rig can't promise to put this back.`);
   if (lowers) reasons.push(`${lowers}.`);
-  if (use !== "read" && !reasons.length) reasons.push("A general command, so it needs a second look before it runs.");
+  if (use !== "read" && !reasons.length) reasons.push(secondLook);
   const allowed: Allowed = { status: "allowed", tier, admin: use !== "read" && (judged.some((j) => j.admin) || textNeedsAdmin(script)), commands, reasons, rulesVersion };
   return allowed;
 }

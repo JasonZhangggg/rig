@@ -253,7 +253,6 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 .warm-mark { display: inline-flex; margin-left: 3px; color: var(--warn); vertical-align: .12em; }
 
 /* ---------- Change cards: what a command reads, runs and touches ---------- */
-.chip.tier-amber { background: var(--amber-bg); color: var(--amber-text); }
 .chip.tier-red { background: var(--red-bg); color: var(--red-text); }
 .btn.danger { background: var(--red); border-color: var(--red); color: #FFFFFF; font-weight: 500; }
 @media (hover: hover) and (pointer: fine) { .btn.danger:not(:disabled):hover { background: var(--red-text); border-color: var(--red-text); } }
@@ -269,11 +268,9 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 .cc-list li { display: grid; align-items: baseline; gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--line); }
 .cc-list li:first-child { border-top: 0; padding-top: 2px; }
 .cc-list code { font: 12.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
-.cc-cmd { grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; }
-.cc-cmd.t0 { color: var(--text-2); }
+.cc-cmd { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+.cc-cmd.t3 span { color: var(--red-text); font-weight: 500; }
 .cc-tag { font-size: 12px; font-weight: 600; color: var(--text-3); white-space: nowrap; }
-.cc-cmd.t2 .cc-tag { color: var(--amber-text); }
-.cc-cmd.t3 .cc-tag { color: var(--red-text); }
 .cc-touch { grid-template-columns: auto minmax(0, 1fr); }
 .cc-values { grid-column: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; overflow-wrap: anywhere; }
 .cc-values b { font-weight: 600; }
@@ -284,9 +281,16 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 .cc-note, .cc-refused, .cc-undo-line, .cc-reach { margin: 0; font-size: 13.5px; color: var(--text-2); }
 .cc-refused { font-size: inherit; color: var(--text); font-weight: 500; }
 .cc-undo-line { padding-left: 12px; border-left: 2px solid var(--good-mark); color: var(--text); }
-.cc-undo-line.script { border-left-color: var(--amber); }
 .cc-undo-line.none { border-left-color: var(--red); color: var(--red-text); font-weight: 500; }
-.cc-outside { padding: 8px 12px; border-radius: 12px; background: var(--amber-bg); color: var(--amber-text); }
+.cc-outside { padding: 8px 12px; border-radius: 12px; background: var(--warn-bg); color: var(--warn); }
+.cc-glance { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); margin: 0 0 14px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.cc-glance > div { min-width: 0; padding: 10px 14px; }
+.cc-glance > div + div { border-left: 1px solid var(--line); }
+.cc-glance dt { margin-bottom: 3px; font: var(--t-label); color: var(--text-3); }
+.cc-glance dd { margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.cc-glance .cc-plain { gap: 6px; }
+.cc-where { display: block; color: var(--text-3); font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
+.cc-no { color: var(--red-text); font-weight: 500; }
 .cc-first { display: grid; gap: 4px; padding: 10px 14px; border-radius: 12px; background: var(--red-bg); color: var(--red-text); }
 .cc-first[role="status"] { display: block; background: var(--surface-2); color: var(--text); }
 .cc-folds { display: grid; margin-top: 12px; border-top: 1px solid var(--line); }
@@ -306,11 +310,12 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 .cc-undone p { margin: 0; }
 @media (hover: hover) and (pointer: fine) { .cc-fold summary:hover { color: var(--text); } }
 @media (max-width: 760px) {
-  .cc-cmd { grid-template-columns: minmax(0, 1fr) auto; }
-  .cc-cmd span:not(.cc-tag) { grid-column: 1 / -1; grid-row: 2; }
+  .cc-cmd { grid-template-columns: minmax(0, 1fr); }
+  .cc-glance { grid-template-columns: minmax(0, 1fr); }
+  .cc-glance > div + div { border-left: 0; border-top: 1px solid var(--line); }
+  .cc-compare { grid-template-columns: 1fr; }
   .cc-touch { grid-template-columns: minmax(0, 1fr); }
   .cc-values { grid-column: 1; }
   .cc-confirm .input { max-width: none; }
 }
-@media (max-width: 560px) { .cc-compare { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .cc-fold summary::before { transition: none; } }

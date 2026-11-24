@@ -101,13 +101,14 @@ export const demoCards: DemoCard[] = [
 ];
 
 const step = (c: DemoCard) => ({ kind: "command" as const, cmd: c.cmd });
+let reads = 0;
 const expires = () => new Date(Date.now() + 10 * 60_000).toISOString();
 
 /** What the helper would answer when it previews this card's command. */
 export function demoPreview(c: DemoCard): PreviewReply {
   const verdict = checkStep(step(c));
   if (verdict.status === "refused") return { outcome: "refused", verdict };
-  return { outcome: "ready", nonce: `demo-${c.key}`, expiresAt: expires(), verdict, read: c.read, touches: c.cmd.touches.map((touch, i) => ({ touch, value: c.values[i][0] })) };
+  return { outcome: "ready", nonce: `demo-${c.key}-${++reads}`, expiresAt: expires(), verdict, read: c.read, touches: c.cmd.touches.map((touch, i) => ({ touch, value: c.values[i][0] })) };
 }
 
 export function demoProposal(c: DemoCard, id = `demo-${c.key}`): Proposal {
@@ -143,5 +144,5 @@ export function demoUndo(c: DemoCard): UndoReply {
 }
 
 export const demoCardFor = (question: string) => demoCards.find((c) => c.asks.test(question.toLowerCase()));
-export const demoCardByNonce = (nonce: string) => demoCards.find((c) => `demo-${c.key}` === nonce);
+export const demoCardByNonce = (nonce: string) => demoCards.find((c) => nonce.startsWith(`demo-${c.key}-`));
 export const demoCardByUndo = (id: string) => demoCards.find((c) => `undo-${c.key}` === id);

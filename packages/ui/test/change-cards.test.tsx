@@ -1,7 +1,7 @@
 // The cards that ask before a command runs, and what they show afterwards.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fixSteps, type Proposal, type StepOutcome } from "@rig/core";
+import { checkStep, fixSteps, type Command, type PreviewReply, type Proposal, type StepOutcome } from "@rig/core";
 import { DemoClient, demoApply, demoCards, demoProposal, demoUndo, demoUndoRecord } from "@rig/core/demo";
 import { ChangeCards, StepRecord, type ChangeCardsProps } from "../src/components/change";
 
@@ -37,19 +37,38 @@ describe("a card of Rig's own fixes", () => {
   });
 });
 
+const uac = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System";
+const lowersUac: Command = {
+  does: "Stops Windows asking before apps get admin rights.",
+  read: `Get-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin`,
+  run: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 0`,
+  undo: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 5`,
+  touches: [{ kind: "registry", key: uac.replace(":", ""), value: "ConsentPromptBehaviorAdmin" }],
+};
+const reinstall: Command = { does: "Uninstalls Foo.", read: "winget list --id Foo.Bar", run: "winget uninstall --id Foo.Bar --silent", undo: "winget install --id Foo.Bar --silent", touches: [{ kind: "other", name: "Foo" }] };
+
+/** A proposal of one command, with a preview the way the helper would give it, or none. */
+function one(cmd: Command, read: boolean): Proposal {
+  const verdict = checkStep({ kind: "command", cmd });
+  const preview: PreviewReply | null = read && verdict.status === "allowed" ? { outcome: "ready", nonce: "n", expiresAt: new Date().toISOString(), verdict, read: "", touches: cmd.touches.map((touch) => ({ touch, value: null })) } : null;
+  return { id: "p", title: "A change", steps: [{ kind: "command", cmd }], tier: 3, rows: [], status: "waiting", previews: [preview] };
+}
+
+const glance = (dt: string) => screen.getByText(dt, { selector: "dt" }).nextElementSibling!.textContent;
+
 describe("the amber card", () => {
-  it("labels Claude's sentence and shows what Rig read, found and would change", () => {
+  it("says what changes, how risky it is and whether it can be undone, from Rig's own reads", () => {
     show(demoProposal(card("registry")));
     expect(screen.getByRole("heading", { name: "Changes a registry value" })).toBeTruthy();
     expect(screen.getByText("Check before you apply")).toBeTruthy();
+    const touch = within(screen.getByRole("list", { name: "What it changes" })).getByRole("listitem");
+    expect(touch.textContent).toBe("Registry ShowSecondsInSystemClock now 0HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced");
+    expect(glance("How risky")).toBe("Medium.");
+    expect(glance("Can it be undone")).toBe("Yes. Rig saves the current value first and keeps an undo script.");
     expect(screen.getByText("Claude says").parentElement!.textContent).toContain("Turns on seconds in the taskbar clock");
     expect(screen.getByLabelText("Now").textContent).toBe("ShowSecondsInSystemClock : 0");
     const found = within(screen.getByRole("list", { name: "Commands Rig found" })).getAllByRole("listitem").map((li) => li.textContent);
-    expect(found).toEqual(["Set-ItemPropertychanges a registry valueChanges", "Get-ItemPropertyreads a registry value or file detailsReads"]);
-    const touch = within(screen.getByRole("list", { name: "What it changes" })).getByRole("listitem");
-    expect(touch.textContent).toContain("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\ShowSecondsInSystemClock");
-    expect(touch.textContent).toMatch(/Now 0$/);
-    expect(screen.getByText(/^Can be undone\. Rig saves the current value first, then runs the undo script\.$/)).toBeTruthy();
+    expect(found).toEqual(["Set-ItemPropertychanges a registry value"]);
   });
 
   it("keeps the full scripts folded, one tap away", () => {
@@ -67,29 +86,57 @@ describe("the amber card", () => {
     fireEvent.click(button("Review")!);
     expect(on.onCommandStep).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Change script").closest("details")!.open).toBe(true);
-    fireEvent.click(button("Apply")!);
+    const apply = button("Apply") as HTMLButtonElement;
+    await waitFor(() => expect(apply.disabled).toBe(false));
+    fireEvent.click(apply);
     expect(on.onCommandStep).toHaveBeenCalledWith(0, "apply");
-    await waitFor(() => expect(button("Apply")).toBeTruthy());
   });
 
-  it("says when Windows will ask for permission", () => {
+  it("doesn't apply on a double press of Review, and Back changes nothing", () => {
+    const on = show(demoProposal(card("registry")));
+    fireEvent.click(button("Review")!);
+    fireEvent.click(button("Apply")!);
+    expect(on.onCommandStep).not.toHaveBeenCalled();
+    fireEvent.click(button("Back")!);
+    expect(button("Review")).toBeTruthy();
+    expect(on.onCommandStep).not.toHaveBeenCalled();
+  });
+
+  it("says when Windows will ask for permission, and when undo relies on a script", () => {
     show(demoProposal(card("firewall")));
     expect(screen.getByRole("heading", { name: "Adds a firewall rule" })).toBeTruthy();
-    expect(screen.getByText("Admin")).toBeTruthy();
-    expect(screen.getByText(/runs as admin, so Windows will ask for permission/)).toBeTruthy();
-    expect(screen.getByText(/Rig can't save a copy of this first, so undo relies on that script/)).toBeTruthy();
-    expect(within(screen.getByRole("list", { name: "What it changes" })).getByRole("listitem").textContent).toMatch(/Minecraft server.*Not there/);
+    expect(glance("How risky")).toBe("Medium. Needs admin, so Windows asks first.");
+    expect(glance("Can it be undone")).toBe("Yes, with its undo script. Rig can't save a copy first.");
+    expect(within(screen.getByRole("list", { name: "What it changes" })).getByRole("listitem").textContent).toBe("Firewall rule Minecraft server now Not there");
+    expect(within(screen.getByRole("list", { name: "Commands Rig found" })).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["New-NetFirewallRuleadds a firewall rule"]);
   });
 
   it("says when Rig read outside text before suggesting it", () => {
     show(demoProposal(card("registry")), { tainted: true });
-    expect(screen.getByText(/Rig suggested this after reading text from outside this PC/)).toBeTruthy();
+    expect(screen.getByText(/Rig suggested this after reading outside text/)).toBeTruthy();
   });
 
   it("can be turned down", () => {
     const on = show(demoProposal(card("registry")));
     fireEvent.click(button("Not now")!);
     expect(on.onDecline).toHaveBeenCalledOnce();
+  });
+
+  it("asks Rig to read the current settings when it hasn't yet", () => {
+    const on = show(demoProposal(card("registry")), { previews: [] });
+    expect(glance("Can it be undone")).toMatch(/^Yes\./);
+    expect(within(screen.getByRole("list", { name: "What it changes" })).getByRole("listitem").textContent).not.toContain("now");
+    expect(button("Review")).toBeNull();
+    fireEvent.click(button("Read current settings")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "read");
+  });
+
+  it("reads again when the card waited too long to run", () => {
+    const on = show(demoProposal(card("registry")), { outcomes: [{ apply: { outcome: "expired" } }] });
+    expect(screen.getByText("This waited too long to run, so Rig needs to read the settings again. Nothing changed.")).toBeTruthy();
+    expect(button("Review")).toBeNull();
+    fireEvent.click(button("Read again")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "read");
   });
 });
 
@@ -100,24 +147,53 @@ describe("the red card", () => {
     const first = within(box).getByRole("note");
     expect(first.textContent).toMatch(/^This can't be undone\./);
     expect(first.textContent).toContain("There is no undo script");
-    expect(first.compareDocumentPosition(screen.getByText("Claude says")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText(/^No undo\. Rig can't save a copy of NVIDIA Broadcast/)).toBeTruthy();
+    expect(first.textContent).not.toContain("second look");
+    expect(first.compareDocumentPosition(within(box).getByRole("heading")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Can't be undone", { selector: ".chip" })).toBeTruthy();
+    expect(glance("How risky")).toBe("High. Read it slowly.");
+    expect(glance("Can it be undone")).toBe("No.");
     expect(screen.queryByLabelText("Undo script")).toBeNull();
   });
 
   it("keeps Apply off until the word it shows is typed", () => {
     const on = show(demoProposal(card("uninstall")));
     const apply = button("Apply") as HTMLButtonElement;
-    const box = screen.getByRole("textbox", { name: /Type confirm to turn on Apply/ });
+    const box = screen.getByRole("textbox", { name: /Type permanent to turn on Apply/ });
     expect(apply.disabled).toBe(true);
     fireEvent.click(apply);
-    fireEvent.change(box, { target: { value: "yes" } });
+    fireEvent.change(box, { target: { value: "confirm" } });
     expect(apply.disabled).toBe(true);
     expect(on.onCommandStep).not.toHaveBeenCalled();
-    fireEvent.change(box, { target: { value: "Confirm " } });
+    fireEvent.change(box, { target: { value: "Permanent " } });
     expect(apply.disabled).toBe(false);
     fireEvent.click(apply);
     expect(on.onCommandStep).toHaveBeenCalledWith(0, "apply");
+  });
+
+  it("asks for \"lower\" when it lowers a protection that can be put back", () => {
+    show(one(lowersUac, true));
+    expect(screen.getByRole("note").textContent).toBe("This lowers a protection on this PC.It changes User Account Control, which asks before apps get admin rights.");
+    expect(screen.getByText("Lowers a protection", { selector: ".chip" })).toBeTruthy();
+    expect(glance("Can it be undone")).toBe("Yes. Until you undo it, the PC is less protected.");
+    expect(screen.getByRole("textbox", { name: /Type lower to turn on Apply/ })).toBeTruthy();
+  });
+
+  it("can't promise an undo when the undo itself can't be sure", () => {
+    show(one(reinstall, true));
+    expect(screen.getByRole("note").textContent).toMatch(/^Rig can't promise to undo this\./);
+    expect(screen.getByText("Can't promise an undo", { selector: ".chip" })).toBeTruthy();
+    expect(screen.queryByText("Can't be undone", { selector: ".chip" })).toBeNull();
+    expect(glance("Can it be undone")).toBe("Not for sure.");
+    expect(screen.getByRole("textbox", { name: /Type permanent to turn on Apply/ })).toBeTruthy();
+  });
+
+  it("has no typed word until Rig has read the current settings", () => {
+    const on = show(demoProposal(card("uninstall")), { previews: [] });
+    expect(screen.getByRole("note").textContent).toMatch(/^This can't be undone\./);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(button("Apply")).toBeNull();
+    fireEvent.click(button("Read current settings")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "read");
   });
 
   it("gives each step its own card", () => {
@@ -131,11 +207,13 @@ describe("the red card", () => {
 });
 
 describe("a refused change", () => {
-  it("says what was refused and that nothing changed, with no way to apply", () => {
+  it("says once what was refused and that nothing changed, with no way to apply", () => {
     const on = show(demoProposal(card("refused")));
-    expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
-    expect(screen.getByText(/Rig won't run Add-MpPreference: it adds a Defender exclusion/, { selector: "p" })).toBeTruthy();
-    expect(screen.getByText("Nothing changed on Atlas.")).toBeTruthy();
+    const box = screen.getByRole("region", { name: "Rig won't make this change" });
+    expect(screen.getByText("Nothing changed", { selector: ".chip" })).toBeTruthy();
+    expect(box.textContent!.match(/Rig won't run Add-MpPreference/g)).toHaveLength(1);
+    expect(screen.getByText(/Rig won't run Add-MpPreference: it adds a Defender exclusion.*Rig never makes this change, whoever asks\.$/, { selector: "p" })).toBeTruthy();
+    expect(screen.queryByText(/undo/i, { selector: ":not(summary):not(pre)" })).toBeNull();
     expect(button(/apply/i)).toBeNull();
     expect(button("Review")).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -155,7 +233,7 @@ describe("after a change", () => {
     expect(screen.getByLabelText("After").textContent).toMatch(/Minecraft server\s+True\s+Inbound\s+Allow/);
     expect(within(screen.getByRole("list", { name: "What changed" })).getByRole("listitem").textContent).toMatch(/Minecraft serverNot there→On, inbound, TCP 25565, allow$/);
     expect(screen.getByText("Also changed").closest(".cc-fact")!.textContent).toContain("FirewallPolicy\\FirewallRules");
-    expect(screen.getByText(/Undo runs the undo script\. It can't put back the other thing that changed\. As a last resort, Windows has a restore point/)).toBeTruthy();
+    expect(screen.getByText(/^Undo runs the undo script\. It can't put back what's under Also changed\. As a last resort, Windows has a restore point/)).toBeTruthy();
     expect(button("Apply")).toBeNull();
     fireEvent.click(button("Undo")!);
     expect(on.onCommandStep).toHaveBeenCalledWith(0, "undo");
@@ -180,9 +258,10 @@ describe("after a change", () => {
     expect(button("Apply")).toBeNull();
   });
 
-  it("says so when the card was too old to run", () => {
-    show(demoProposal(card("registry")), { outcomes: [{ apply: { outcome: "expired" } }] });
-    expect(screen.getByText(/too old to run, so nothing changed on Atlas\. Ask again/)).toBeTruthy();
+  it("has no Undo when nothing can be put back, and says so", () => {
+    show(demoProposal(card("uninstall")), { outcomes: [done("uninstall")] });
+    expect(screen.getByText(/^Rig can't undo this: it had no copy to save and no undo script\. As a last resort/)).toBeTruthy();
+    expect(button("Undo")).toBeNull();
   });
 });
 
@@ -195,7 +274,7 @@ describe("a command in the changes log", () => {
     expect(screen.getByLabelText("After").textContent).toContain("Minecraft server");
     expect(screen.getByText("Also changed")).toBeTruthy();
     expect(screen.getByLabelText("Change script").textContent).toBe(c.cmd.run);
-    expect(screen.getByText(/It can't put back the other thing that changed/)).toBeTruthy();
+    expect(screen.getByText(/It can't put back what's under Also changed/)).toBeTruthy();
   });
 });
 
@@ -217,8 +296,15 @@ describe("on the website", () => {
 });
 
 describe("in the demo", () => {
-  async function ask(q: string) {
-    render(<RigApp client={new DemoClient()} />);
+  /** The demo, with each proposal coming before Rig has read the current settings. */
+  class Unread extends DemoClient {
+    override chat(...[id, history, onEvent, signal]: Parameters<DemoClient["chat"]>) {
+      return super.chat(id, history, (e) => onEvent(e.type === "proposal" ? { ...e, proposal: { ...e.proposal, previews: [] } } : e), signal);
+    }
+  }
+
+  async function ask(q: string, client: DemoClient = new DemoClient()) {
+    render(<RigApp client={client} />);
     await screen.findByText(/Things to look at/i);
     await act(async () => { location.hash = "chat"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
     const box = await screen.findByRole("textbox", { name: "Message" });
@@ -229,11 +315,24 @@ describe("in the demo", () => {
   it("applies a command from its card, shows the result, and logs it in Changes", async () => {
     await ask(card("registry").ask);
     fireEvent.click(await screen.findByRole("button", { name: "Review" }, { timeout: 4000 }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    const apply = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    await waitFor(() => expect(apply.disabled).toBe(false));
+    fireEvent.click(apply);
     expect((await screen.findByLabelText("After", {}, { timeout: 4000 })).textContent).toBe("ShowSecondsInSystemClock : 1");
     expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
     await act(async () => { location.hash = "changes"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
     expect(await screen.findByText("Show seconds on the taskbar clock")).toBeTruthy();
+  });
+
+  it("reads the current settings first when the card came without them", async () => {
+    await ask(card("firewall").ask, new Unread());
+    fireEvent.click(await screen.findByRole("button", { name: "Read current settings" }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }, { timeout: 4000 }));
+    expect(screen.getByLabelText("Now").textContent).toBe("No rule with that name.");
+    const apply = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    await waitFor(() => expect(apply.disabled).toBe(false));
+    fireEvent.click(apply);
+    expect((await screen.findByLabelText("After", {}, { timeout: 4000 })).textContent).toContain("Minecraft server");
   });
 
   it("answers a refused card's ask for steps", async () => {

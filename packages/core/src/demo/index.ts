@@ -1,7 +1,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
-import { cardTier, fixSteps, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type Step, type Touch, type UndoReply } from "../change";
-import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoProposal, demoUndo } from "./cards";
+import { cardTier, fixSteps, stepsTitle, type AppliedStep, type ApplyReply, type Command, type FixStep, type PreviewReply, type Step, type Touch, type UndoReply } from "../change";
+import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
@@ -278,6 +278,14 @@ export class DemoClient implements RigClient {
     return change;
   }
 
+  /** Reads the way the helper would for one of the demo's command cards. */
+  async previewCommand(id: string, cmd: Command): Promise<PreviewReply> {
+    const card = demoCards.find((c) => c.cmd.run === cmd.run);
+    if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
+    await sleep(300);
+    return demoPreview(card);
+  }
+
   /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
   async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
     const p = this.pcs[id];
@@ -304,7 +312,6 @@ export class DemoClient implements RigClient {
     if (!card || !c || c.status === "undone") return { outcome: "unknown" };
     await sleep(300);
     c.status = "undone";
-    this.used.delete(`demo-${card.key}`);
     this.emit(id);
     return demoUndo(card);
   }

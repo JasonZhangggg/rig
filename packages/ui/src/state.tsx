@@ -122,8 +122,8 @@ export interface Ctx {
   review: (steps: Step[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
   confirmReview: () => Promise<void>;
   declineProposal: (proposalId: string) => void;
-  /** The one way a card applies or undoes a command step. Rig's own fixes go through `review`. */
-  commandStep: (proposalId: string, index: number, act: "apply" | "undo") => Promise<void>;
+  /** The one way a card reads, applies or undoes a command step. Rig's own fixes go through `review`. */
+  commandStep: (proposalId: string, index: number, act: "read" | "apply" | "undo") => Promise<void>;
   /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
   approveScript: (messageId: string) => Promise<void>;
   declineScript: (messageId: string) => void;
@@ -500,10 +500,18 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         const preview = p?.previews?.[index];
         const was = p?.outcomes?.[index];
         if (!p) return;
-        if (!client.caps.applyChanges || !client.applyCommand || !client.undoCommand) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
-        const keep = (o: StepOutcome) => setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId
-          ? { ...m, proposal: { ...m.proposal, outcomes: m.proposal.steps.map((_, i) => (i === index ? o : m.proposal!.outcomes?.[i] ?? null)) } } : m)) }));
+        if (!client.caps.applyChanges || !client.previewCommand || !client.applyCommand || !client.undoCommand) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
+        const at = <T,>(list: (T | null | undefined)[] | undefined, v: T | null) => p.steps.map((_, i) => (i === index ? v : list?.[i] ?? null));
+        const patch = (f: (q: NonNullable<ChatMessage["proposal"]>) => Partial<NonNullable<ChatMessage["proposal"]>>) =>
+          setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId ? { ...m, proposal: { ...m.proposal, ...f(m.proposal) } } : m)) }));
+        const keep = (o: StepOutcome) => patch((q) => ({ outcomes: at(q.outcomes, o) }));
+        const step = p.steps[index];
         try {
+          if (act === "read" && step?.kind === "command" && (!was || was.apply.outcome === "expired")) {
+            const fresh = await client.previewCommand(pcId, step.cmd, !!p.tainted);
+            patch((q) => ({ previews: at(q.previews, fresh), outcomes: at(q.outcomes, null) }));
+            return;
+          }
           if (act === "apply" && preview?.outcome === "ready" && !was) {
             const apply = await client.applyCommand(pcId, preview.nonce, { title: p.title, why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
             keep({ apply });
@@ -513,7 +521,8 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           const changes = await client.changes(pcId);
           setData((d) => ({ ...d, changes }));
         } catch (e) {
-          toast(`Rig couldn't ${act === "apply" ? "make this change" : "undo this"}. ${e instanceof Error ? e.message : ""} Try again, and if it keeps happening, restart Rig.`.replace(/\s+/g, " ").trim());
+          const what = act === "read" ? "read the current settings" : act === "apply" ? "make this change" : "undo this";
+          toast(`Rig couldn't ${what}. ${e instanceof Error ? e.message : ""} Try again, and if it keeps happening, restart Rig.`.replace(/\s+/g, " ").trim());
         }
       }),
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { FoundCommand, Touch } from "@rig/core";
-import { commandSays, commandTag, lines, touchKind, touchName, uniqueCommands, value } from "./words";
+import { commandSays, lines, touchKind, touchName, touchShort, touchWhere, value } from "./words";
 
 /** A labelled block on a change card. The label says whose words or reading it is. */
 export function Fact({ label, note, children }: { label: string; note?: string; children: ReactNode }) {
@@ -32,18 +32,52 @@ export function ReadCompare({ before, after }: { before: string; after: string }
   );
 }
 
-/** The commands Rig's checker found in the scripts, in its words. */
+/** Commands Rig's checker found, in its words. */
 export function CommandList({ commands }: { commands: FoundCommand[] }) {
   return (
     <ul className="cc-list" aria-label="Commands Rig found">
-      {uniqueCommands(commands).map((c) => (
+      {commands.map((c) => (
         <li key={`${c.name}|${c.says}`} className={`cc-cmd t${c.tier}`}>
           <code>{c.name}</code>
           <span>{commandSays(c)}</span>
-          <span className="cc-tag">{commandTag(c.tier)}</span>
         </li>
       ))}
     </ul>
+  );
+}
+
+export interface GlanceProps {
+  /** What the command touches, with the value Rig read just now when it has. */
+  touches: { touch: Touch; now?: string | null }[];
+  risk: string;
+  undo: string;
+  /** Nothing can put it back. */
+  noUndo?: boolean;
+}
+
+/** The three things to know first, from Rig's own reads and checks: what changes, how risky it is, and whether it can be undone. */
+export function Glance({ touches, risk, undo, noUndo }: GlanceProps) {
+  return (
+    <dl className="cc-glance">
+      <div>
+        <dt>What changes</dt>
+        <dd>
+          {touches.length ? (
+            <ul className="cc-plain" aria-label="What it changes">
+              {touches.map(({ touch, now }) => (
+                <li key={`${touch.kind}|${touchName(touch)}`}>
+                  {touch.kind !== "other" && <><span className="cc-tag">{touchKind(touch)}</span> </>}<b>{touchShort(touch)}</b>
+                  {now !== undefined && <> <span className="faint">now</span> <b>{value(now)}</b></>}
+                  {touchWhere(touch) && <code className="cc-where">{touchWhere(touch)}</code>}
+                </li>
+              ))}
+            </ul>
+          ) : "Rig can't tell ahead of time"}
+        </dd>
+      </div>
+      <div><dt>How risky</dt><dd>{risk}</dd></div>
+      <div><dt>Can it be undone</dt><dd className={noUndo ? "cc-no" : undefined}>{undo}</dd></div>
+    </dl>
   );
 }
 
@@ -55,7 +89,7 @@ export function TouchList({ rows, label = "What it changes" }: { rows: TouchRow[
     <ul className="cc-list" aria-label={label}>
       {rows.map((r) => (
         <li key={`${r.touch.kind}|${touchName(r.touch)}`} className="cc-touch">
-          <span className="cc-tag">{touchKind(r.touch)}</span>
+          <span className="cc-tag">{r.touch.kind === "other" ? "" : touchKind(r.touch)}</span>
           <code>{touchName(r.touch)}</code>
           {"after" in r
             ? <span className="cc-values"><span className="cc-before">{value(r.before ?? null)}</span><span className="cc-arrow" aria-label="changed to">→</span><b>{value(r.after ?? null)}</b></span>

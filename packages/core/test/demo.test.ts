@@ -83,7 +83,7 @@ describe("the demo's approval cards", () => {
   });
 
   it("brings each card up from its question, and a nonce works once", async () => {
-    const { demoCards } = await import("../src/demo");
+    const { demoCards, demoPreview } = await import("../src/demo");
     const demo = new DemoClient();
     for (const c of demoCards) {
       const events: string[] = [];
@@ -91,8 +91,12 @@ describe("the demo's approval cards", () => {
       expect(events).toEqual([c.title]);
     }
     const meta = { by: "rig" as const };
-    expect((await demo.applyCommand("demo-atlas", "demo-registry", meta)).outcome).toBe("applied");
-    expect((await demo.applyCommand("demo-atlas", "demo-registry", meta)).outcome).toBe("expired");
+    const registry = demoCards.find((c) => c.key === "registry")!;
+    const read = await demo.previewCommand("demo-atlas", registry.cmd);
+    expect(read).toEqual({ ...demoPreview(registry), nonce: expect.stringMatching(/^demo-registry-/), expiresAt: expect.any(String) });
+    const nonce = read.outcome === "ready" ? read.nonce : "";
+    expect((await demo.applyCommand("demo-atlas", nonce, meta)).outcome).toBe("applied");
+    expect((await demo.applyCommand("demo-atlas", nonce, meta)).outcome).toBe("expired");
     expect((await demo.changes("demo-atlas"))[0].title).toBe("Show seconds on the taskbar clock");
     expect((await demo.undoCommand("demo-atlas", "undo-registry")).outcome).toBe("undone");
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
