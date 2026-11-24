@@ -20,7 +20,7 @@ export function describePort(id: string, p: GpuPorts, use: CardUse, pin?: number
   const at = pin !== undefined ? pins[pin] : undefined;
   return {
     title: plug.label, code: plug.kind === "16-pin" ? "12V-2x6" : "PCIe", state: undefined,
-    lines: ["From the power supply. The card won't start without it, and Windows can't see the plug itself."],
+    lines: ["From the power supply. The card won't start without it."],
     pin: at ? (at.number ? `Pin ${at.number}: ${at.name}` : at.name === "Power" ? "Power pin (+12V or ground)" : `${at.name} pin`) : undefined,
   };
 }
@@ -59,10 +59,11 @@ export function GpuView() {
 
   const shape = c?.shape;
   useEffect(() => {
-    if (!shape?.ports) return;
+    if (!shape) return;
     let s: GpuScene;
     try {
-      s = createGpuScene(host.current!, shape, shape.ports, {
+      // A card Rig doesn't know is drawn without outputs or plugs, rather than with a guess at them.
+      s = createGpuScene(host.current!, shape, shape.ports ?? { outputs: [], power: [], from: "", exact: false }, {
         accent,
         onHover: (h: GpuHover | null) => {
           gpuStage.pointed(h?.id ?? null);
@@ -107,7 +108,7 @@ export function GpuView() {
       )}
       <div className="board-top">
         {no3d ? <p className="board-hint faint">This screen can't draw the card in 3D.</p> : <>
-          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom · Click an output or the power plug for a closer look</p>
+          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom{shape?.ports ? " · Click an output or the power plug for a closer look" : ""}</p>
           {Object.keys(marks).length > 0 && <p className="board-key" aria-hidden="true"><i className="is-used" />In use<i className="is-free" />Free{some && <><i className="is-some" />One of these</>}</p>}
         </>}
       </div>

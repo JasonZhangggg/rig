@@ -1,20 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { buildPC, cardUse, plugPinout, resolveBuild, type DisplayLink, type Inventory } from "../src";
+import { buildPC, cardUse, gpuPowerOptions, gpus, plugPinout, resolveBuild, type DisplayLink, type Inventory } from "../src";
 import atlas from "../src/demo/fixtures/atlas.inventory.json";
 
-const typical = resolveBuild({ gpu: { name: "NVIDIA GeForce RTX 4070 SUPER" } }).gpu!.ports!;
+const NAME = "NVIDIA GeForce RTX 4070 SUPER";
+// MSI's Ventus 2X: one HDMI and three DisplayPort outputs.
+const typical = resolveBuild({ gpu: { name: NAME }, picks: { gpu: "msi-ventus2x-4070s-oc" } }).gpu!.ports!;
 const strix = resolveBuild({ gpu: { name: "NVIDIA GeForce RTX 4070 SUPER" }, picks: { gpu: "asus-strix-4070s-oc" } }).gpu!.ports!;
 const screen = (name: string, more: Partial<DisplayLink> = {}): DisplayLink => ({ name, width: 2560, height: 1440, refreshHz: 144, connection: "displayport", onCard: true, ...more });
 const group = (u: ReturnType<typeof cardUse>, kind: string) => u.groups.find((g) => g.kind === kind)!;
 
 describe("the graphics card's plugs", () => {
-  it("lists a known card's own outputs, and what most cards of the chip have otherwise", () => {
+  it("lists a known card's own outputs and plugs, and none for a card it can't name", () => {
     expect(strix.exact).toBe(true);
     expect(strix.outputs.map((o) => o.label)).toEqual(["HDMI 1", "HDMI 2", "DisplayPort 1", "DisplayPort 2", "DisplayPort 3"]);
     expect(strix.power.map((p) => p.label)).toEqual(["16-pin power"]);
-    expect(typical.exact).toBe(false);
-    expect(typical.from).toMatch(/^What most RTX 4070 SUPER cards have/);
-    expect(resolveBuild({ gpu: { name: "Some Card" } }).gpu!.ports!.from).toMatch(/doesn't know this card's own list/);
+    // The chip alone, or a maker with more than one card of the chip, isn't the card: no outputs or plugs.
+    expect(resolveBuild({ gpu: { name: NAME } }).gpu!.ports).toBeUndefined();
+    expect(resolveBuild({ gpu: { name: "AMD Radeon RX 6700 XT", subsysVendor: "1DA2" } }).gpu!.ports).toBeUndefined();
+    expect(resolveBuild({ gpu: { name: NAME, subsysVendor: "1462" } }).gpu!.ports).toBeUndefined();
+  });
+
+  it("names the card from Windows' subsystem ids when Rig knows them", () => {
+    gpus["test-card"] = { ...gpus["msi-ventus2x-4070s-oc"], model: "Test card", subsys: ["5133"] };
+    try {
+      const card = resolveBuild({ gpu: { name: NAME, subsysVendor: "1462", subsysId: "5133" } }).gpu!;
+      expect([card.model, card.source, card.ports?.power.map((p) => p.kind)]).toEqual(["Test card", "detected", ["16-pin"]]);
+    } finally { delete gpus["test-card"]; }
+  });
+
+  it("lists the plug layouts an RX 6700 XT can have, narrowed by its maker", () => {
+    const any = gpuPowerOptions({ name: "AMD Radeon RX 6700 XT" });
+    expect(any.layouts.map((l) => l.power.join(" + "))).toEqual(["8-pin + 6-pin", "8-pin + 8-pin"]);
+    expect(any.layouts[0].models).toContain("AMD's own card");
+    const xfx = gpuPowerOptions({ name: "AMD Radeon RX 6700 XT", subsysVendor: "1682" });
+    expect([xfx.maker, xfx.layouts]).toEqual(["XFX", [{ power: ["8-pin", "8-pin"], models: ["XFX Speedster SWFT 309", "XFX Speedster QICK 319"] }]]);
+    expect(gpuPowerOptions({ name: "AMD Radeon RX 6700 XT", subsysVendor: "1043" }).layouts.length).toBe(2);
+  });
+
+  it("lists each screen and its kind of plug when it can't name the card", () => {
+    expect(cardUse(undefined, [screen("XV275U F5", { connection: "hdmi", refreshHz: 320 })])).toEqual({
+      groups: [], elsewhere: [], screens: [{ name: "XV275U F5", detail: "2560 × 1440 at 320 Hz", plug: "an HDMI" }],
+    });
   });
 
   it("puts a screen on the card's one HDMI output for certain", () => {

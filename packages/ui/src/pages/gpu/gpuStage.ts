@@ -1,7 +1,7 @@
 // The card close-up on My PC and the Ports tab beside it light each other, the way the board view and the
 // Slots tab do: pointing at a row lights its outputs on the card, pointing at an output lights its row.
 import { useMemo, useSyncExternalStore } from "react";
-import { cardUse, resolveBuild, type GpuShape } from "@rig/core";
+import { cardUse, gpuPowerOptions, resolveBuild, type GpuShape } from "@rig/core";
 import type { GpuScene } from "../../gpuScene";
 import { useApp } from "../../state";
 
@@ -27,13 +27,17 @@ export function useGpuPointed() {
 }
 
 /** The on-screen PC's graphics card: its shape and plugs, and which screen is on which kind of output. */
-export function useCard(): { shape: GpuShape; use: ReturnType<typeof cardUse> } | null {
+export function useCard(): { shape: GpuShape; use: ReturnType<typeof cardUse>; options?: ReturnType<typeof gpuPowerOptions> } | null {
   const { pc } = useApp();
   const name = pc.parts?.gpu?.name;
   return useMemo(() => {
     if (!name) return null;
-    const shape = pc.build?.gpu ?? resolveBuild({ gpu: { name } }).gpu;
-    if (!shape?.ports) return null;
-    return { shape, use: cardUse(shape.ports, pc.displays) };
-  }, [name, pc.build, pc.displays]);
+    // Windows' subsystem ids name the exact card where Rig knows it; then its outputs and power plugs come with it.
+    const sub = pc.gpuSubsys;
+    const input = { name, subsysVendor: sub?.vendor, subsysId: sub?.id };
+    const shape = pc.build?.gpu ?? resolveBuild({ gpu: input }).gpu;
+    if (!shape) return null;
+    // Without the exact card, the plug layouts its chip's cards (from its maker, where Windows names it) come with.
+    return { shape, use: cardUse(shape.ports, pc.displays), options: shape.ports ? undefined : gpuPowerOptions(input) };
+  }, [name, pc.build, pc.gpuSubsys, pc.displays]);
 }

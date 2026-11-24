@@ -13,14 +13,16 @@ export function BoardCables() {
   const { pc } = useApp();
   // The card Windows names; none when Windows has read the board and found no card; a typical card before that.
   const gpu = pc.board ? pc.board.gpu ?? null : pc.parts?.gpu?.name;
-  const guide = useMemo(() => cableGuide(board, gpu), [board, gpu]);
+  const sub = pc.gpuSubsys;
+  // The exact card where Windows' ids name one Rig knows, for its own power plugs.
+  const card = useMemo(() => resolveBuild({ gpu: gpu ? { name: gpu, subsysVendor: sub?.vendor, subsysId: sub?.id } : gpu === null ? null : undefined }).gpu, [gpu, sub]);
+  const guide = useMemo(() => cableGuide(board, gpu, card?.ports?.power), [board, gpu, card]);
   const draws = useMemo<CableDraw[]>(() => {
-    const card = resolveBuild({ gpu: gpu ? { name: gpu } : gpu === null ? null : undefined }).gpu;
     return guide.cables.map((c) => ({
       id: c.id, step: c.step, title: c.title, code: c.code ?? c.plug, to: c.to, optional: c.optional,
       ...(c.id === "gpu" && card ? { card: { length: card.length, height: card.height, thick: card.thick } } : {}),
     }));
-  }, [guide, gpu]);
+  }, [guide, card]);
   useEffect(() => {
     boardStage.cables(draws);
     return () => boardStage.cables(null);

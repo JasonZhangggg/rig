@@ -241,6 +241,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
       gpu: inv.gpus.find((g) => !g.integrated)?.name,
       fans: (snap?.sensors ?? []).filter((x) => x.hw === "board" && x.type === "fan").map((x) => ({ id: x.id, name: x.name })),
     },
+    gpuSubsys: dgpu && !dgpu.integrated && dgpu.subsysVendor ? { vendor: dgpu.subsysVendor, id: dgpu.subsysId } : undefined,
     displays: inv.displays.map((d) => ({
       name: d.name, width: d.width, height: d.height, refreshHz: d.refreshHz, connection: d.connection,
       onCard: d.gpu && dgpu && !dgpu.integrated ? d.gpu === dgpu.name : undefined,

@@ -136,6 +136,8 @@ export interface PC {
   board?: BoardFacts;
   /** The screens Windows shows, with how each one connects, for the graphics card's outputs (gpuPorts.ts). */
   displays?: DisplayLink[];
+  /** The graphics card's PCI subsystem vendor and id, which tell its maker and exact model. Missing from older helpers. */
+  gpuSubsys?: { vendor: string; id?: string };
 }
 
 /** One screen and where it's plugged in, as far as Windows can say. */
