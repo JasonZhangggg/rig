@@ -289,7 +289,10 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 .cc-glance dt { margin-bottom: 3px; font: var(--t-label); color: var(--text-3); }
 .cc-glance dd { margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .cc-glance .cc-plain { gap: 6px; }
-.cc-where { display: block; color: var(--text-3); font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
+.cc-claim { font: 12.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
+.cc-glance .cc-claim:not(.cc-where) { font-weight: 600; }
+.cc-where { display: block; color: var(--text-3); font-size: 12px; line-height: 1.4; }
+.cc-untied { color: var(--warn); }
 .cc-no { color: var(--red-text); font-weight: 500; }
 .cc-first { display: grid; gap: 4px; padding: 10px 14px; border-radius: 12px; background: var(--red-bg); color: var(--red-text); }
 .cc-first[role="status"] { display: block; background: var(--surface-2); color: var(--text); }

@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { checkStep, type Allowed, type Command, type PreviewReply, type Refused, type StepOutcome } from "@rig/core";
-import { ClaudeSays, CommandList, Fact, Glance, Printed, Scripts } from "./parts";
+import { checkStep, type Allowed, type Command, type FoundCommand, type PreviewReply, type Refused, type StepOutcome, type Touch } from "@rig/core";
+import { stale } from "./order";
+import { ClaudeSays, CommandList, Fact, Glance, Printed, Scripts, Untied } from "./parts";
 import { ResultView } from "./Result";
-import { headline, redKind, redReasons, redWords, runCommands, undoPlan } from "./words";
+import { headline, redBack, redKind, redReasons, redWords, riskLine, runCommands, touchName, undoPlan } from "./words";
 
 export interface StepCardProps {
   cmd: Command;
@@ -18,6 +19,8 @@ export interface StepCardProps {
   declined?: boolean;
   /** "1 of 2", when the answer has more than one step. */
   place?: string;
+  /** The earlier step this one waits for: steps run in order. `failed` means that step was put back, so this one won't run. */
+  waitsFor?: { label: string; failed: boolean };
   /** Asks the helper to read the current settings and check the step, when there's no preview yet or it got too old to run. */
   onRead: () => Promise<void> | void;
   onApply: () => Promise<void> | void;
@@ -34,9 +37,23 @@ function useBusy(): [boolean, (f: () => Promise<void> | void) => void] {
   return [busy, (f) => { setBusy(true); void (async () => f())().catch(() => {}).finally(() => setBusy(false)); }];
 }
 
-function Frame({ tone, title, chips, place, lead, children }: { tone: "t2" | "t3" | "refused" | "plain"; title: string; chips: ReactNode; place?: string; lead?: ReactNode; children: ReactNode }) {
+/** True once the helper's preview has passed its expiry time. The card redraws when it does. */
+function useStale(expiresAt?: string): boolean {
+  const [, redraw] = useState(0);
+  const old = expiresAt ? stale(expiresAt) : false;
+  useEffect(() => {
+    if (!expiresAt || old) return;
+    const t = setTimeout(() => redraw((n) => n + 1), Math.min(Math.max(Date.parse(expiresAt) - Date.now(), 0) + 50, 2 ** 31 - 1));
+    return () => clearTimeout(t);
+  }, [expiresAt, old]);
+  return old;
+}
+
+function Frame({ tone, title, chips, place, lead, focus, children }: { tone: "t2" | "t3" | "refused" | "plain"; title: string; chips: ReactNode; place?: string; lead?: ReactNode; focus?: boolean; children: ReactNode }) {
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => { if (focus) box.current?.focus({ preventScroll: true }); }, [focus]);
   return (
-    <section className={`proposal step-card ${tone}`} aria-label={title}>
+    <section ref={box} className={`proposal step-card ${tone}`} aria-label={title} tabIndex={focus ? -1 : undefined}>
       {lead}
       <div className="proposal-head">
         <h3>{title}</h3>
@@ -55,22 +72,31 @@ const ElsewhereFoot = ({ pcName }: { pcName: string }) => (
   <div className="proposal-foot"><span className="faint">Changes are made in the Rig app on {pcName}. Open Rig there to apply this.</span></div>
 );
 
-interface TierProps extends StepCardProps { verdict: Allowed; ready?: Ready; expired: boolean }
+function WaitFoot({ waitsFor, onDecline }: { waitsFor: NonNullable<StepCardProps["waitsFor"]>; onDecline: () => void }) {
+  return (
+    <div className="proposal-foot">
+      <span className="faint">{waitsFor.failed ? `${waitsFor.label} didn't go through, so this one won't run.` : `Apply ${waitsFor.label} first.`}</span>
+      <button className="btn ghost sm" type="button" onClick={onDecline}>Not now</button>
+    </div>
+  );
+}
 
-const admin = (v: Allowed) => (v.admin ? " Needs admin, so Windows asks first." : "");
+interface TierProps extends StepCardProps { verdict: Allowed; ready?: Ready; retry?: string; runs: FoundCommand[] }
 
-/** What Rig read and checked about one command: the glance, Claude's sentence, what `read` printed and the commands it found. */
-function Body({ cmd, verdict, ready, tainted, expired, risk, undo, noUndo }: TierProps & { risk: string; undo: string; noUndo: boolean }) {
-  const runs = runCommands(cmd, verdict.commands);
+const key = (t: Touch) => `${t.kind}|${touchName(t)}`.toLowerCase();
+
+/** What Rig read and checked about one command: the glance, Claude's sentence, what the read script printed and the commands Rig found. */
+function Body({ cmd, ready, tainted, retry, runs, pcName, risk, undo, noUndo }: TierProps & { risk: string; undo: ReactNode; noUndo: boolean }) {
+  const read = new Map(ready?.touches.map((t) => [key(t.touch), t.value]));
   return (
     <>
-      <Glance touches={cmd.touches.map((touch, i) => ({ touch, now: ready ? ready.touches[i]?.value ?? null : undefined }))} risk={`${risk}${admin(verdict)}`} undo={undo} noUndo={noUndo} />
+      <Glance touches={cmd.touches.map((touch) => ({ touch, now: !ready ? undefined : read.has(key(touch)) ? read.get(key(touch))! : false }))} risk={risk} undo={undo} noUndo={noUndo} />
       {tainted && <OutsideText />}
       <div className="cc-facts">
         <ClaudeSays text={cmd.does} />
-        {ready && <Fact label="Now" note="read by Rig"><Printed text={ready.read} label="Now" /></Fact>}
+        {ready && <Printed label={`The read script printed (on ${pcName})`} text={ready.read} />}
         {runs.length > 0 && <Fact label="What it runs" note="found by Rig"><CommandList commands={runs} /></Fact>}
-        {expired && <p className="cc-note" role="status">This waited too long to run, so Rig needs to read the settings again. Nothing changed.</p>}
+        {retry && <p className="cc-note" role="status">{retry}</p>}
       </div>
     </>
   );
@@ -86,28 +112,36 @@ function AmberCard(p: TierProps) {
   const [armed, setArmed] = useState(false);
   const [busy, run] = useBusy();
   const foot = useRef<HTMLDivElement>(null);
+  const review = useRef<HTMLButtonElement>(null);
+  const back = useRef(false);
+  useEffect(() => { if (!p.ready) setReviewing(false); }, [p.ready]);
   useEffect(() => {
-    if (!reviewing) { setArmed(false); return; }
+    if (!reviewing) {
+      setArmed(false);
+      if (back.current) review.current?.focus();
+      back.current = false;
+      return;
+    }
     foot.current?.focus({ preventScroll: true });
     const t = setTimeout(() => setArmed(true), 500);
     return () => clearTimeout(t);
   }, [reviewing]);
-  const plan = undoPlan(p.cmd);
+  const plan = undoPlan(p.cmd, p.runs);
   return (
-    <Frame tone="t2" title={headline(p.cmd, p.verdict.commands)} place={p.place} chips={<span className="chip warn">Check before you apply</span>}>
-      <Body {...p} risk="Medium." undo={plan.line} noUndo={plan.kind === "none"} />
+    <Frame tone="t2" title={headline(p.cmd, p.verdict.commands)} place={p.place} chips={<span className="chip warn">Check first</span>}>
+      <Body {...p} risk={riskLine(p.runs, p.verdict.admin)} undo={<>{plan.line}<Untied names={plan.untied} /></>} noUndo={plan.kind === "none"} />
       <Scripts cmd={p.cmd} open={reviewing} />
-      {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : reviewing && p.ready ? (
+      {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : p.waitsFor ? <WaitFoot waitsFor={p.waitsFor} onDecline={p.onDecline} /> : reviewing && p.ready ? (
         <div className="proposal-foot" ref={foot} tabIndex={-1} role="group" aria-label="Apply this change?">
           <span className="faint">These scripts are exactly what runs on {p.pcName}.</span>
-          <button className="btn ghost sm" type="button" disabled={busy} onClick={() => setReviewing(false)}>Back</button>
+          <button className="btn ghost sm" type="button" disabled={busy} onClick={() => { back.current = true; setReviewing(false); }}>Back</button>
           <button className="btn primary sm" type="button" disabled={!armed || busy} onClick={() => run(p.onApply)}>{busy ? "Applying…" : "Apply"}</button>
         </div>
       ) : (
         <div className="proposal-foot">
           <span className="faint">Nothing changes until you apply.</span>
           <button className="btn ghost sm" type="button" disabled={busy} onClick={p.onDecline}>Not now</button>
-          {p.ready ? <button className="btn primary sm" type="button" onClick={() => setReviewing(true)}>Review</button> : <ReadFirst busy={busy} again={p.expired} onRead={() => run(p.onRead)} />}
+          {p.ready ? <button ref={review} className="btn primary sm" type="button" onClick={() => setReviewing(true)}>Review</button> : <ReadFirst busy={busy} again={!!p.retry} onRead={() => run(p.onRead)} />}
         </div>
       )}
     </Frame>
@@ -119,7 +153,9 @@ function RedCard(p: TierProps) {
   const [typed, setTyped] = useState("");
   const [busy, run] = useBusy();
   const id = useId();
-  const words = redWords(redKind(p.cmd, p.verdict));
+  const kind = redKind(p.cmd, p.verdict);
+  const words = redWords(kind);
+  const plan = undoPlan(p.cmd, p.runs);
   const reasons = redReasons(p.verdict);
   const ok = typed.trim().toLowerCase() === words.word;
   const lead = (
@@ -130,25 +166,25 @@ function RedCard(p: TierProps) {
   );
   return (
     <Frame tone="t3" title={headline(p.cmd, p.verdict.commands)} place={p.place} lead={lead} chips={<span className="chip tier-red">{words.chip}</span>}>
-      <Body {...p} risk="High. Read it slowly." undo={words.back} noUndo={words.word === "permanent"} />
+      <Body {...p} risk={`High. Read it slowly.${p.verdict.admin ? " Needs admin, so Windows asks first." : ""}`} undo={<>{redBack(kind, plan)}{kind !== "none" && <Untied names={plan.untied} />}</>} noUndo={words.word === "permanent"} />
       <Scripts cmd={p.cmd} />
-      {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : p.ready ? (
+      {!p.canApply ? <ElsewhereFoot pcName={p.pcName} /> : p.waitsFor ? <WaitFoot waitsFor={p.waitsFor} onDecline={p.onDecline} /> : p.ready ? (
         <>
           <div className="cc-confirm">
-            <label htmlFor={id}>Type <b>{words.word}</b> to turn on Apply.</label>
+            <label id={`${id}-word`} htmlFor={id}>Type <b>{words.word}</b> to turn on Apply.</label>
             <input id={id} className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={busy} />
           </div>
           <div className="proposal-foot">
             <span className="faint">Nothing changes until you apply.</span>
             <button className="btn ghost sm" type="button" disabled={busy} onClick={p.onDecline}>Not now</button>
-            <button className="btn danger sm" type="button" disabled={!ok || busy} onClick={() => run(p.onApply)}>{busy ? "Applying…" : "Apply"}</button>
+            <button className="btn danger sm" type="button" disabled={!ok || busy} aria-describedby={ok ? undefined : `${id}-word`} onClick={() => run(p.onApply)}>{busy ? "Applying…" : "Apply"}</button>
           </div>
         </>
       ) : (
         <div className="proposal-foot">
           <span className="faint">Nothing changes until you apply.</span>
           <button className="btn ghost sm" type="button" disabled={busy} onClick={p.onDecline}>Not now</button>
-          <ReadFirst busy={busy} again={p.expired} onRead={() => run(p.onRead)} />
+          <ReadFirst busy={busy} again={!!p.retry} onRead={() => run(p.onRead)} />
         </div>
       )}
     </Frame>
@@ -178,35 +214,42 @@ function resultChip(o: StepOutcome) {
   return <span className="chip">{a === "rolledBack" ? "Put back" : "Nothing changed"}</span>;
 }
 
-function DoneCard(p: StepCardProps & { outcome: StepOutcome }) {
+function DoneCard(p: StepCardProps & { outcome: StepOutcome; focus: boolean }) {
   const [busy, run] = useBusy();
   const commands = p.preview?.verdict.commands ?? [];
   return (
-    <Frame tone="plain" title={headline(p.cmd, commands)} place={p.place} chips={resultChip(p.outcome)}>
+    <Frame tone="plain" title={headline(p.cmd, commands)} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
       <div className="cc-facts">
         <ClaudeSays text={p.cmd.does} />
-        <ResultView cmd={p.cmd} outcome={p.outcome} pcName={p.pcName} canApply={p.canApply} busy={busy} onUndo={() => run(p.onUndo)} />
+        <ResultView cmd={p.cmd} outcome={p.outcome} runs={runCommands(p.cmd, commands)} pcName={p.pcName} canApply={p.canApply} busy={busy} onUndo={() => run(p.onUndo)} />
       </div>
       <Scripts cmd={p.cmd} />
     </Frame>
   );
 }
 
-/** One command step: the card for its tier, a refusal, or what happened after Apply. */
+const tooOld = "This waited too long to run, so Rig needs to read the settings again. Nothing changed.";
+
+/** One command step: the card for its tier, a refusal, or what happened after Apply. An apply that came back expired or refused goes back to the card, to read again. */
 export function StepCard(p: StepCardProps) {
-  const expired = p.outcome?.apply.outcome === "expired";
-  if (p.outcome && !expired) return <DoneCard {...p} outcome={p.outcome} />;
+  const pressed = useRef(false);
+  const a = p.outcome?.apply;
+  const back = a?.outcome === "expired" || a?.outcome === "refused";
+  const fresh = p.preview?.outcome === "ready" ? p.preview : undefined;
+  const old = useStale(fresh?.expiresAt);
+  if (p.outcome && !back) return <DoneCard {...p} outcome={p.outcome} focus={pressed.current} />;
   const verdict = p.preview?.verdict ?? checkStep({ kind: "command", cmd: p.cmd }, { tainted: !!p.tainted });
   if (verdict.status === "refused") return <RefusedCard cmd={p.cmd} verdict={verdict} place={p.place} onSteps={p.onSteps} />;
   if (p.declined) {
     return (
       <Frame tone="plain" title={headline(p.cmd, verdict.commands)} place={p.place} chips={<span className="chip">Not now</span>}>
-        <div className="cc-facts"><ClaudeSays text={p.cmd.does} /><p className="cc-note">Nothing changed on {p.pcName}.</p></div>
+        <div className="cc-facts"><ClaudeSays text={p.cmd.does} /><p className="cc-note">This step didn't run, so it changed nothing on {p.pcName}.</p></div>
         <Scripts cmd={p.cmd} />
       </Frame>
     );
   }
-  const ready = !expired && p.preview?.outcome === "ready" ? p.preview : undefined;
+  const ready = back || old ? undefined : fresh;
+  const retry = a?.outcome === "refused" ? `Rig didn't run this, so nothing changed. ${a.verdict.refused} Read again to check it fresh.` : back || (fresh && old) ? tooOld : undefined;
   const Card = verdict.tier === 3 ? RedCard : AmberCard;
-  return <Card {...p} verdict={verdict} ready={ready} expired={expired} />;
+  return <Card {...p} verdict={verdict} ready={ready} retry={retry} runs={runCommands(p.cmd, verdict.commands)} onApply={() => { pressed.current = true; return p.onApply(); }} />;
 }

@@ -46,10 +46,10 @@ export const demoCards: DemoCard[] = [
   },
   {
     key: "firewall", ask: "Open a port for my Minecraft server", asks: /firewall|minecraft|game server|open a port/,
-    says: "Friends can't join because Windows' firewall blocks the port Minecraft listens on. This adds one rule that lets that port in, and nothing else.",
+    says: "Friends can't join because Windows' firewall blocks the port Minecraft listens on. This adds one rule that lets that port in, and nothing else. Undo turns the rule off; it stays in the firewall's list.",
     title: "Let Minecraft's port through the firewall",
     cmd: {
-      does: "Adds a firewall rule that lets other devices reach your Minecraft server on port 25565.",
+      does: "Lets other devices reach your Minecraft server on port 25565. Undo only turns the rule off.",
       read: "Get-NetFirewallRule -DisplayName 'Minecraft server' | Select-Object DisplayName, Enabled, Direction, Action",
       run: "New-NetFirewallRule -DisplayName 'Minecraft server' -Direction Inbound -Protocol TCP -LocalPort 25565 -Action Allow",
       undo: "Set-NetFirewallRule -DisplayName 'Minecraft server' -Enabled False",
@@ -105,8 +105,8 @@ let reads = 0;
 const expires = () => new Date(Date.now() + 10 * 60_000).toISOString();
 
 /** What the helper would answer when it previews this card's command. */
-export function demoPreview(c: DemoCard): PreviewReply {
-  const verdict = checkStep(step(c));
+export function demoPreview(c: DemoCard, tainted = false): PreviewReply {
+  const verdict = checkStep(step(c), { tainted });
   if (verdict.status === "refused") return { outcome: "refused", verdict };
   return { outcome: "ready", nonce: `demo-${c.key}-${++reads}`, expiresAt: expires(), verdict, read: c.read, touches: c.cmd.touches.map((touch, i) => ({ touch, value: c.values[i][0] })) };
 }
@@ -140,7 +140,7 @@ export function demoApply(c: DemoCard): ApplyReply {
 }
 
 export function demoUndo(c: DemoCard): UndoReply {
-  return { outcome: "undone", printed: c.read, left: c.alsoChanged?.length ? ["The firewall's own copy of the rule in the registry. The rule itself is off."] : [] };
+  return { outcome: "undone", printed: c.read, left: c.key === "firewall" ? ["The rule itself. The undo script turns it off, and it stays in the firewall's list."] : [] };
 }
 
 export const demoCardFor = (question: string) => demoCards.find((c) => c.asks.test(question.toLowerCase()));

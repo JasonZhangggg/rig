@@ -279,11 +279,11 @@ export class DemoClient implements RigClient {
   }
 
   /** Reads the way the helper would for one of the demo's command cards. */
-  async previewCommand(id: string, cmd: Command): Promise<PreviewReply> {
+  async previewCommand(id: string, cmd: Command, tainted = false): Promise<PreviewReply> {
     const card = demoCards.find((c) => c.cmd.run === cmd.run);
     if (!this.pcs[id] || !card) throw new Error("The demo can only read its own example changes.");
     await sleep(300);
-    return demoPreview(card);
+    return demoPreview(card, tainted);
   }
 
   /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
@@ -291,10 +291,10 @@ export class DemoClient implements RigClient {
     const p = this.pcs[id];
     const card = demoCardByNonce(nonce);
     if (!p || !card || this.used.has(nonce)) return { outcome: "expired" };
+    this.used.add(nonce);
     await sleep(400);
     const reply = demoApply(card);
     if (reply.outcome !== "applied") return reply;
-    this.used.add(nonce);
     const step = { kind: "command" as const, cmd: card.cmd };
     const rows: DiffRow[] = reply.result.touches.map((t) => [touchLabel(t.touch), t.before ?? "Not there", t.after ?? "Not there"]);
     const tier = cardTier([step]);

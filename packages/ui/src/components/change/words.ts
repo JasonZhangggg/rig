@@ -1,4 +1,4 @@
-import { secondLook, type Allowed, type Command, type CommandUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
+import { checkScript, secondLook, type Allowed, type Command, type CommandUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
 
 const kinds: Record<Touch["kind"], [one: string, many: string]> = {
   registry: ["a registry value", "registry values"], file: ["a file", "files"], service: ["a service", "services"],
@@ -27,17 +27,35 @@ export function touchSummary(touches: Touch[]): string {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** The commands that change something and that the change script names. The checker lists the read, change and undo scripts' commands together. */
+/** Model text shortened for the glance: whitespace folded, cut with an ellipsis. The full text goes in a title. */
+export function clip(text: string, max = 48): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+const INVISIBLE = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]/g;
+/** Claude's sentence, or null when it says nothing a person can see. */
+export function saidText(does: unknown, max = 240): string | null {
+  if (typeof does !== "string" || !does.replace(INVISIBLE, "")) return null;
+  return clip(does, max);
+}
+
+const names = (script: string | undefined) => new Set(script ? checkScript(script, "run").commands.map((c) => c.name.toLowerCase()) : []);
+
+/** The commands that change something and that the change script runs, matched by name against Rig's own parse of each script. A command Rig can't place in the read or undo script stays listed. */
 export function runCommands(cmd: Command, commands: FoundCommand[]): FoundCommand[] {
-  const run = cmd.run.toLowerCase();
+  const run = names(cmd.run), other = new Set([...names(cmd.read), ...names(cmd.undo)]);
   const seen = new Set<string>();
   return commands.filter((c) => {
-    const k = `${c.name}|${c.says}`;
-    if (c.tier === 0 || seen.has(k) || !run.includes(c.name.toLowerCase())) return false;
+    const n = c.name.toLowerCase(), k = `${n}|${c.says}`;
+    if (c.tier === 0 || seen.has(k) || (!run.has(n) && other.has(n))) return false;
     seen.add(k);
     return true;
   });
 }
+
+/** The commands the undo script runs that change something, in Rig's words. */
+const undoCommands = (cmd: Command) => (cmd.undo ? checkScript(cmd.undo, "undo").commands.filter((c) => c.tier > 0) : []);
 
 /** The card's heading, from the riskiest command the checker found in the change script: "Adds a firewall rule". */
 export function headline(cmd: Command, commands: FoundCommand[]): string {
@@ -57,34 +75,68 @@ export function commandSays(c: FoundCommand): string {
 export const value = (v: string | null) => (v === null || v === "" ? "Not there" : v);
 export const lines = (text: string) => { const n = text.trim().split("\n").length; return n === 1 ? "1 line" : `${n} lines`; };
 
-/** Whether Rig can put this back, and how, before it runs, from what each touch is. `none` means there is no undo at all. */
-export function undoPlan(cmd: Command): { kind: "saved" | "script" | "none"; line: string } {
+/** What a command writes to, by its name: which kinds of touch it can be tied to, and what it changes in plain words. */
+const families: { name: RegExp; kinds: Touch["kind"][]; what: (admin: boolean) => string }[] = [
+  { name: /^((set|new|remove|clear|rename|copy|move)-itemproperty|reg)$/, kinds: ["registry"], what: (a) => (a ? "a system setting" : "a setting for your account") },
+  { name: /^((new|set|remove|clear|rename|copy|move)-item|(set|add|clear)-content|out-file)$/, kinds: ["registry", "file"], what: (a) => (a ? "system files or settings" : "your files or settings") },
+  { name: /^([a-z]+-service|sc)$/, kinds: ["service"], what: () => "a Windows service" },
+  { name: /^([a-z]+-scheduledtask|schtasks)$/, kinds: ["task"], what: () => "a scheduled task" },
+  { name: /^[a-z]+-netfirewallrule$/, kinds: ["firewall"], what: () => "the firewall" },
+];
+const familyOf = (c: FoundCommand) => families.find((f) => f.name.test(c.name.toLowerCase()));
+
+/** Tier 2's risk in a few words, from the commands Rig found: "Medium: it changes the firewall." */
+export function riskLine(runs: FoundCommand[], admin: boolean): string {
+  const what = [...new Set(runs.map((c) => { const f = familyOf(c); return f ? `changes ${f.what(admin)}` : commandSays(c); }))];
+  return `Medium${what.length ? `: it ${list(what)}` : ""}.${admin ? " Needs admin, so Windows asks first." : ""}`;
+}
+
+/** Commands in the change script that Rig can't tie to anything on the list, so nothing it saves covers them. */
+export function untied(cmd: Command, runs: FoundCommand[]): string[] {
+  const kinds = new Set<Touch["kind"]>(cmd.touches.filter(snapshotted).map((t) => t.kind));
+  return [...new Set(runs.filter((c) => !familyOf(c)?.kinds.some((k) => kinds.has(k))).map((c) => c.name))];
+}
+
+export interface UndoPlan {
+  kind: "saved" | "script" | "none";
+  line: string;
+  /** Commands that may change things off the list. Only set when Rig saves something, since that's the promise they fall outside. */
+  untied: string[];
+}
+
+/** Whether Rig can put this back, and how, before it runs. It promises only what's listed, since the list is Claude's. */
+export function undoPlan(cmd: Command, runs: FoundCommand[]): UndoPlan {
   const saved = cmd.touches.filter(snapshotted);
   const rest = cmd.touches.filter((t) => !snapshotted(t));
-  if (saved.length && !rest.length) {
-    return { kind: "saved", line: `Yes. Rig saves ${saved.length === 1 ? "the current value" : `the ${saved.length} current values`} first${cmd.undo ? " and keeps an undo script" : ""}.` };
-  }
+  const off = saved.length ? untied(cmd, runs) : [];
+  const values = saved.length === 1 ? "the listed value" : "the listed values";
+  if (saved.length && !rest.length) return { kind: "saved", untied: off, line: `Rig saves ${values} first${cmd.undo ? " and keeps an undo script" : ""}.` };
   if (cmd.undo) {
-    return { kind: "script", line: saved.length ? "Yes. Rig saves what it can first, and the undo script puts back the rest." : "Yes, with its undo script. Rig can't save a copy first." };
+    if (saved.length) return { kind: "script", untied: off, line: `Rig saves ${values} first, and runs the undo script for the rest.` };
+    const says = [...new Set(undoCommands(cmd).map(commandSays))];
+    return { kind: "script", untied: [], line: `Rig will run the undo script${says.length ? `, which ${list(says)}` : ""}. It can't save a copy first.` };
   }
-  const what = rest.length ? list(rest.map((t) => t.name)) : "what this changes";
-  return { kind: "none", line: `No. Rig can't save a copy of ${what}, and there's no undo script.` };
+  return { kind: "none", untied: [], line: "No. Rig can't save a copy, and there's no undo script." };
 }
 
 export type RedKind = "none" | "unsure" | "lowers";
 
 /** Why a tier 3 card is red: nothing can be put back, not all of it can, or it lowers a protection. */
 export function redKind(cmd: Command, v: Allowed): RedKind {
-  if (undoPlan(cmd).kind === "none") return "none";
+  if (undoPlan(cmd, []).kind === "none") return "none";
   return v.commands.some((c) => c.tier === 3) ? "unsure" : "lowers";
 }
 
-const red: Record<RedKind, { head: string; chip: string; back: string; word: string }> = {
-  none: { head: "This can't be undone.", chip: "Can't be undone", back: "No.", word: "permanent" },
-  unsure: { head: "Rig can't promise to undo this.", chip: "Can't promise an undo", back: "Not for sure.", word: "permanent" },
-  lowers: { head: "This lowers a protection on this PC.", chip: "Lowers a protection", back: "Yes. Until you undo it, the PC is less protected.", word: "lower" },
+const red: Record<RedKind, { head: string; chip: string; word: string }> = {
+  none: { head: "This can't be undone.", chip: "Can't be undone", word: "permanent" },
+  unsure: { head: "Rig can't promise to undo this.", chip: "Can't promise an undo", word: "permanent" },
+  lowers: { head: "This lowers a protection on this PC.", chip: "Lowers a protection", word: "lower" },
 };
 export const redWords = (k: RedKind) => red[k];
+/** The red card's answer to "Can it be undone". */
+export function redBack(k: RedKind, plan: UndoPlan): string {
+  return k === "none" ? "No." : k === "unsure" ? "Not for sure." : `${plan.line} Until you undo it, the PC is less protected.`;
+}
 
 /** The checker's reasons a red card is red, without the plain second-look one. */
 export const redReasons = (v: Allowed) => [...new Set(v.reasons)].filter((r) => r !== secondLook);
@@ -93,14 +145,15 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "
 export const restoreLine = (r: RestorePoint) => `As a last resort, Windows has a restore point from ${when(r.at)} called "${r.name}".`;
 
 /** What Undo can and can't put back, after the change ran. `can` is false when there's nothing to undo it with. */
-export function undoReach(cmd: Command, undo: CommandUndo): { can: boolean; line: string } {
+export function undoReach(cmd: Command, undo: CommandUndo, runs: FoundCommand[]): { can: boolean; line: string; untied: string[] } {
   const saved = cmd.touches.filter(snapshotted).length;
-  const rest = cmd.touches.filter((t) => !snapshotted(t));
+  const rest = cmd.touches.filter((t) => !snapshotted(t)).length;
   const restore = undo.restorePoint ? ` ${restoreLine(undo.restorePoint)}` : "";
-  if (!saved && !undo.script) return { can: false, line: `Rig can't undo this: it had no copy to save and no undo script.${restore}` };
-  const can = saved ? `Undo puts back ${saved === 1 ? "the value" : `the ${saved} values`} Rig saved${undo.script ? ", then runs the undo script" : ""}.` : "Undo runs the undo script.";
-  const cant = [...(undo.script ? [] : rest.map((t) => t.name)), ...(undo.outside.length ? ["what's under Also changed"] : [])];
-  return { can: true, line: `${can}${cant.length ? ` It can't put back ${list(cant)}.${restore}` : ""}` };
+  if (!saved && !undo.script) return { can: false, untied: [], line: `Rig can't undo this: it had no copy to save and no undo script.${restore}` };
+  const can = saved ? `Undo puts back ${saved === 1 ? "the listed value" : "the listed values"} Rig saved${undo.script ? ", then runs the undo script" : ""}.` : "Undo runs the undo script.";
+  const cant = [...(rest && !undo.script ? ["the listed things Rig had no copy of"] : []), ...(undo.outside.length ? ["what's under Also changed"] : [])];
+  const off = saved ? untied(cmd, runs) : [];
+  return { can: true, untied: off, line: `${can}${cant.length ? ` It can't put back ${list(cant)}.` : ""}${cant.length || off.length ? restore : ""}` };
 }
 
 const sentinels: Record<Sentinel, string> = {

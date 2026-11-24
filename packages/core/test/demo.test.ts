@@ -101,4 +101,23 @@ describe("the demo's approval cards", () => {
     expect((await demo.undoCommand("demo-atlas", "undo-registry")).outcome).toBe("undone");
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
   });
+
+  it("won't take a rolled-back card's nonce twice", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    const rollback = demoCards.find((c) => c.key === "rollback")!;
+    const read = await demo.previewCommand("demo-atlas", rollback.cmd);
+    const nonce = read.outcome === "ready" ? read.nonce : "";
+    expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("rolledBack");
+    expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("expired");
+  });
+
+  it("refuses a tier 3 card when the chat read outside text", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    const uninstall = demoCards.find((c) => c.key === "uninstall")!;
+    const read = await demo.previewCommand("demo-atlas", uninstall.cmd, true);
+    expect(read.outcome === "refused" && read.verdict.why).toBe("tainted");
+    expect((await demo.previewCommand("demo-atlas", uninstall.cmd, false)).outcome).toBe("ready");
+  });
 });
