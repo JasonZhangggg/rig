@@ -52,3 +52,7 @@
   .row-main { flex-wrap: wrap; row-gap: 2px; }
   .row-time { width: 100%; padding: 0; }
 }
+
+/* The card for keeping a protection off, under its change. */
+.rows > .row.ch-keep { display: block; border-top: 0; padding-top: 0; }
+.rows.timeline > .row.ch-keep::before { display: none; }

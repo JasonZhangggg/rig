@@ -81,6 +81,8 @@ export interface Change {
   tier: Tier;
   applied: AppliedStep[];
   from?: Provenance;
+  /** It turned a protection off for a while. `due` is when Rig turns it back on by itself (ISO), or null once the person chose to keep it off. */
+  revert?: { due: string | null };
 }
 
 export interface ApplyMeta { title?: string; why?: string; by: "you" | "rig"; from?: Provenance }
@@ -202,7 +204,7 @@ export interface RigClient {
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];
   /** Has the helper read the current state for a command or native step and check it, so its card can show it. Only where changes can be made. */
-  previewStep?(machineId: string, step: HelperStep, tainted: boolean): Promise<PreviewReply>;
+  previewStep?(machineId: string, step: HelperStep, tainted: boolean, /** From one of Rig's own buttons, not a chat. */ own?: boolean): Promise<PreviewReply>;
   /** Runs a step the helper previewed, by the nonce from its preview. Only where changes can be made. */
   applyStep?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
   /** Puts a step back, by the id in its undo record. With `force`, even when something else changed those places since. */

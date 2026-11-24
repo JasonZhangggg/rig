@@ -76,7 +76,7 @@ describe("registryCommand", () => {
     expect(verdict(reg("HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows", "Load", "string", "C:\\x.exe"))).toMatchObject({ status: "refused", why: "never" });
     expect(verdict(reg("HKLM\\SYSTEM\\Setup", "CmdLine", "string", "C:\\x.exe"))).toMatchObject({ status: "refused", why: "never" });
     expect(verdict(reg("HKLM\\SYSTEM\\CurrentControlSet\\Services\\Spooler", "ObjectName", "string", "LocalSystem"))).toMatchObject({ status: "refused", why: "never" });
-    expect(verdict(reg("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "EnableLUA", "dword", 0))).toMatchObject({ status: "allowed", tier: 3 });
+    expect(verdict(reg("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "EnableLUA", "dword", 0))).toMatchObject({ status: "refused", why: "never" });
     const services = verdict(reg("HKLM\\SYSTEM\\CurrentControlSet\\Services\\disk", "Start", "dword", 4));
     expect(services).toMatchObject({ status: "allowed", tier: 3 });
     expect(services.status === "allowed" && services.reasons.join(" ")).toContain("Set-Service is the safer way");

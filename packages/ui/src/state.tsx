@@ -129,6 +129,8 @@ export interface Ctx {
   approveScript: (messageId: string) => Promise<void>;
   declineScript: (messageId: string) => void;
   toggleChange: (id: string) => Promise<void>;
+  /** Reads the changes log again, after something outside a chat changed it. */
+  reloadChanges: () => Promise<void>;
   pickPC: (id: string) => void;
   /** Starts recording readings on the PC. Nothing changes there, so there's no review. */
   startRecording: (minutes: number, reason: string) => Promise<void>;
@@ -559,6 +561,11 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         }
       }),
       declineScript: (messageId) => { patchScript(messageId, { status: "declined" }); toast("Okay, the script won't run."); },
+
+      reloadChanges: async () => {
+        const changes = await client.changes(pcId).catch(() => null);
+        if (changes) setData((d) => ({ ...d, changes }));
+      },
 
       toggleChange: (id) => once(`change:${id}`, async () => {
         const c = dataNow.current.changes.find((x) => x.id === id);

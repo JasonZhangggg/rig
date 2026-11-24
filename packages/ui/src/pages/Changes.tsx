@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type Issue } from "@rig/core";
+import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type Issue, type NativeStep, type PreviewReply, type StepOutcome } from "@rig/core";
 import { DiffTable, StatusChip } from "../components/common";
-import { recordRuns, StepRecord, undoReach } from "../components/change";
+import { BACK_ON, recordRuns, StepCard, stepHeadline, StepRecord, undoReach } from "../components/change";
 import { DayLabel, Row, Rows } from "../components/Rows";
 import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
@@ -116,23 +116,86 @@ function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow
   );
 }
 
+/** "42 minutes", "1 hour 5 minutes", "20 seconds": how long until `due`. */
+export function timeLeft(due: string, now: number) {
+  const s = Math.max(0, Math.ceil((Date.parse(due) - now) / 1000));
+  if (s < 60) return s === 1 ? "1 second" : `${s} seconds`;
+  const m = Math.ceil(s / 60), h = Math.floor(m / 60);
+  const mins = m % 60 === 1 ? "1 minute" : `${m % 60} minutes`;
+  return h === 0 ? mins : `${h === 1 ? "1 hour" : `${h} hours`}${m % 60 ? ` ${mins}` : ""}`;
+}
+
+/** The time now, by the second while a protection is counting down, and the log read again once its time is up. */
+function useCountdown(due: string | null | undefined) {
+  const { reloadChanges } = useActions();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!due) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [due]);
+  const over = !!due && now > Date.parse(due);
+  // The service looks once a second, so the log is read again every few seconds until it says it's back on.
+  const round = over ? Math.floor((now - Date.parse(due)) / 5000) : -1;
+  useEffect(() => { if (round >= 0) void reloadChanges(); }, [round, reloadChanges]);
+  return now;
+}
+
+/** The second choice: its own card, typed word and Windows prompt, started only by the button on the change. */
+function KeepOff({ id, onClose }: { id: string; onClose: () => void }) {
+  const { client, reloadChanges, toast } = useActions();
+  const pc = useAppSelector((c) => ({ id: c.pc.id, name: c.pc.name }));
+  const [preview, setPreview] = useState<PreviewReply | null>(null);
+  const [outcome, setOutcome] = useState<StepOutcome | null>(null);
+  const step: NativeStep = { kind: "native", op: { name: "keepOff", id } };
+  const run = async (what: string, f: () => Promise<void>) => {
+    try { await f(); } catch (e) { toast(`Rig couldn't ${what}. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim()); }
+  };
+  return (
+    <StepCard step={step} own preview={preview} outcome={outcome} pcName={pc.name} canApply={client.caps.applyChanges}
+      onRead={() => run("read the current settings", async () => { setOutcome(null); setPreview(await client.previewStep!(pc.id, step, false, true)); })}
+      onApply={() => run("make this change", async () => {
+        if (preview?.outcome !== "ready") return;
+        setOutcome({ apply: await client.applyStep!(pc.id, preview.nonce, { title: stepHeadline(step), why: "You chose to keep it off.", by: "you" }) });
+        await reloadChanges();
+      })}
+      onUndo={(force) => run("undo this", async () => {
+        if (outcome?.apply.outcome !== "applied") return;
+        setOutcome({ ...outcome, undo: await client.undoStep!(pc.id, outcome.apply.undo.id, force) });
+        await reloadChanges();
+      })}
+      onDecline={onClose} onSteps={onClose} />
+  );
+}
+
 function Entry({ c }: { c: Change }) {
   const { toggleChange, client } = useActions();
   const [busy, setBusy] = useState(false);
+  const [keeping, setKeeping] = useState(false);
+  const off = c.status === "applied" && c.revert && c.applied[0]?.step.kind === "native" && c.applied[0].step.op.name === "protection" ? { id: c.applied[0].step.op.id, due: c.revert.due } : null;
+  const now = useCountdown(off?.due);
   const toggle = () => { setBusy(true); void toggleChange(c.id).finally(() => setBusy(false)); };
   const commands = c.applied.filter((a): a is CommandApplied => a.step.kind === "command");
-  const word = c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
-  const canToggle = commands.length ? c.status === "applied" && commands.some((a) => undoReach(a.step.cmd, a.undo, recordRuns(a.step.cmd)).can) : true;
+  const word = off ? (busy ? "Turning it back on…" : BACK_ON) : c.status === "applied" ? (busy ? "Undoing…" : "Undo") : busy ? "Redoing…" : "Redo";
+  const helperMade = c.applied.some((a) => a.undo.kind !== "fix");
+  // Only a catalog fix can be made again from here; a step the helper made is asked for again in the chat.
+  const canToggle = commands.length ? c.status === "applied" && commands.some((a) => undoReach(a.step.cmd, a.undo, recordRuns(a.step.cmd)).can) : c.status === "applied" || !helperMade;
   const state = commands.length ? (c.status === "applied" ? "Open it to see what Undo can put back." : "Undone.") : c.status === "applied" ? "Old values saved." : "Old values put back.";
-  const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${state}`;
-  return (
+  const offWords = !off ? null : off.due === null ? "It's off, and it stays off until you turn it back on."
+    : now > Date.parse(off.due) ? "Its time is up. Rig is turning it back on." : `It's off. Rig turns it back on in ${timeLeft(off.due, now)}.`;
+  const meta = `By ${c.by === "you" ? "you" : "Rig, after you said yes"}. ${offWords ?? state}`;
+  return (<>
     <Row name={c.title} title={c.title} meta={meta} time={clock(c.at)} at={c.at}
-      mark={c.status === "undone" ? "hollow" : "dot"} tag={c.status === "undone" && <StatusChip status="undone" />}
-      action={client.caps.applyChanges && canToggle && <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>}
+      mark={c.status === "undone" ? "hollow" : off ? "look" : "dot"} markLabel={off ? "Off for now" : undefined} tag={c.status === "undone" && <StatusChip status="undone" />}
+      action={client.caps.applyChanges && canToggle && <>
+        {off?.due && client.previewStep && !keeping && <button className="btn ghost sm" type="button" onClick={() => setKeeping(true)}>Keep it off</button>}
+        <button className="btn sm" type="button" disabled={busy} onClick={toggle}>{word}</button>
+      </>}
       details={<>
         {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
         {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
         {commands.map((a, i) => <StepRecord key={i} applied={a} />)}
       </>} />
-  );
+    {off && keeping && <li className="row ch-keep"><KeepOff id={off.id} onClose={() => setKeeping(false)} /></li>}
+  </>);
 }

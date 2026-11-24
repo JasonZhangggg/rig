@@ -102,12 +102,19 @@ public sealed class CommandStore
             if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(parent);
             Directory.CreateDirectory(parent);
             Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
-            if (Directory.Exists(Root) && File.GetAttributes(Root).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(Root);
-            if (Directory.Exists(Root) && !OwnedByAdmins(Root)) Directory.Delete(Root, recursive: true);
-            Directory.CreateDirectory(Root);
-            Lock(Root, reader: null);
+            Secure(Root);
         }
         foreach (string sub in new[] { "pending", "records", "work", "scripts" }) Directory.CreateDirectory(Path.Combine(Root, sub));
+    }
+
+    /// Makes `dir` a folder only admins and the system can read or change. One someone else made, or a link in its place,
+    /// is replaced, so nothing planted there is ever read.
+    public static void Secure(string dir)
+    {
+        if (Directory.Exists(dir) && File.GetAttributes(dir).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(dir);
+        if (Directory.Exists(dir) && !OwnedByAdmins(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        Lock(dir, reader: null);
     }
 
     /// Whether only admins could have put anything in the store: it, the folders above it and every folder and file in it
@@ -395,8 +402,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                     tier = 3;
                     reasons.Add($"{lowers}.");
                 }
-                // A native op is made by the worker with the person's own rights, so it never needs admin rights.
-                return new Checked(new Verdict(true, tier, false, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
+                // A native op is made by the worker with the person's own rights, unless it is one the helper makes itself.
+                return new Checked(new Verdict(true, tier, op.Elevated, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
             default:
                 return No(Verdict.Refuse(problem ?? "This change request is missing a part."));
         }
@@ -477,7 +484,9 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     }
 
     NativeWorker.Answer Ask(Person person, string verb, NativeOpStep step, JsonObject? held, JsonObject? back = null) =>
-        NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
+        NativeSteps.Find(step.Name, TestOnlyNativeOps) is { Elevated: true }
+            ? NativeWorker.Here(verb, step, back, held, TestOnlyNativeOps)
+            : NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
 
     static string Moved(string now, string expect) =>
         $"What this changes has moved since Rig looked: it reads \"{now}\" now, not \"{expect}\". Nothing ran. Look again.";

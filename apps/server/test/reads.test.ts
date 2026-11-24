@@ -292,6 +292,28 @@ describe("general command steps", () => {
     expect(lastToolResults(never.seen[1])).toContain("Rig never reads saved passwords");
   });
 
+  it("offers a protection turned off for a while as Rig's own red step, and nothing that keeps it off or touches User Account Control", async () => {
+    const { live } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Firewall off for the LAN test", why: "y", steps: [{ protection: { id: "firewallPrivate", revertAfter: 15, undo: "anything", name: "keepOff" } }] } } },
+      { text: "Review the card." },
+    ]);
+    const p = of(await live(ask("Turn the firewall off while I test the LAN game")), "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 3, steps: [{ kind: "native", op: { name: "protection", id: "firewallPrivate", revertAfter: 15 } }] });
+    expect(p.steps![0]).toEqual({ kind: "native", op: { name: "protection", id: "firewallPrivate", revertAfter: 15 } });
+    expect(p.rows).toEqual([["Windows Firewall on private networks", "As it is now", "Off for 15 minutes"]]);
+
+    for (const [step, says] of [
+      [{ protection: { id: "firewallPrivate", revertAfter: 100000 } }, "Rig turns a protection off for 15 minutes, 1 hour or 4 hours, nothing else."],
+      [{ protection: { id: "uac" } }, "This isn't a protection Rig turns off."],
+      [{ keepOff: { id: "firewallPrivate" } }, "must be exactly one of"],
+      [{ registry: { key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableLUA", type: "dword", value: 0 } }, "Rig never changes User Account Control"],
+    ] as const) {
+      const no = await chatSetup([{ tool: { name: "propose_change", input: { title: "x", why: "y", steps: [step] } } }, { text: "." }]);
+      expect(of(await no.live(ask("Do it")), "proposal"), says).toHaveLength(0);
+      expect(lastToolResults(no.seen[1])).toContain(says);
+    }
+  });
+
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {
     const clean = await chatSetup([{ tool: { name: "propose_change", input: { title: "Delete the old installers", why: "Frees space.", steps: [{ command: deleteFolder }] } } }, { text: "Review it." }]);
     expect(of(await clean.live(ask("Delete C:\\Installers\\old")), "proposal")[0].proposal.tier).toBe(3);

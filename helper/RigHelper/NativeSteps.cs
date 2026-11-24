@@ -13,6 +13,11 @@
 // it can do nothing the person couldn't. What the worker answers is read as
 // data from outside, like a script's output.
 //
+// The one exception is an op marked Elevated (Protections.cs): the person's
+// own rights can't make it, so the helper makes it itself, and only after
+// Windows' own prompt approved that very step, like a command that needs
+// admin rights. Such an op takes nothing but names from Rig's own tables.
+//
 // The gpu read is made by the worker the same way, because it loads the
 // graphics driver's own code.
 //
@@ -121,6 +126,9 @@ public interface INativeStep
     /// The op's name: `name` in its payload.
     string Name { get; }
 
+    /// True for an op the helper makes itself with admin rights, behind Windows' prompt, in place of the worker.
+    bool Elevated => false;
+
     /// Runs in the helper, before the op is stored, again before it runs and again before it is undone. Changes nothing.
     /// Throws a RigException that says in plain words why the op is refused. The tier is this code's own judgment, never
     /// something the payload says. The touches are held to the never list like a command's. Checking what it returned
@@ -130,7 +138,7 @@ public interface INativeStep
     /// The check of a step that was applied, before its undo, with what its check held when it ran.
     NativeCheck Recheck(JsonObject op, JsonObject held) => Check(op);
 
-    // The four below run only in the worker, as the person, with the op exactly as Check returned it, plus `held`.
+    // The four below run only in the worker, as the person (in the helper for an Elevated op), with the op exactly as Check returned it, plus `held`.
 
     /// The state the op changes, as one line that reads the same whenever the state is the same. It is shown on the card,
     /// and compared before an undo to tell whether something else changed the state since.
@@ -149,7 +157,7 @@ public interface INativeStep
 public static class NativeSteps
 {
     /// Every native op the helper makes.
-    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp()];
+    static readonly INativeStep[] All = [new ScreenStep(), new GpuStep(), new FileEditOp(), new ProtectionStep(), new KeepOffStep()];
 
     /// Known only inside --selftest. Nothing that comes over the pipe can ask for these.
     static readonly INativeStep[] SelfTestOnly = [new SelftestOp()];
@@ -174,7 +182,17 @@ public static class NativeWorker
 
     /// Has a worker with the person's own sign-in do one part of a native op, and waits for its answer.
     public static Answer Ask(Person person, CommandStore store, string verb, NativeOpStep step, JsonObject? back, bool selfTest, int timeoutMs = TimeoutMs, JsonObject? held = null) =>
-        Send(person, store, new JsonObject { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone(), ["held"] = held?.DeepClone() }, selfTest, timeoutMs);
+        Send(person, store, Request(verb, step, back, held), selfTest, timeoutMs);
+
+    static JsonObject Request(string verb, NativeOpStep step, JsonObject? back, JsonObject? held) =>
+        new() { ["verb"] = verb, ["name"] = step.Name, ["op"] = step.Op.DeepClone(), ["back"] = back?.DeepClone(), ["held"] = held?.DeepClone() };
+
+    /// Does one part of an Elevated op in the helper itself, with the same request and answer a worker would get and give.
+    public static Answer Here(string verb, NativeOpStep step, JsonObject? back, JsonObject? held, bool selfTest)
+    {
+        try { return new Answer(true, false, Step(Request(verb, step, back, held), selfTest), "", 0, -1); }
+        catch (Exception e) { return Failed(Short(e is RigException ? e.Message : $"Rig's helper hit a problem: {e.Message}")); }
+    }
 
     /// Has a worker with the person's own sign-in make a read that loads a driver's own code, which never loads in the helper.
     public static Answer Read(Person person, CommandStore store, JsonObject read, bool selfTest, int timeoutMs = ReadTimeoutMs) =>

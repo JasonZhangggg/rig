@@ -65,7 +65,13 @@ public static class Program
         }
 
         // The background recorder: run by Windows as a service, installed and removed by Rig's installer and Settings.
-        if (args.Contains("--service")) { System.ServiceProcess.ServiceBase.Run(new RecorderService()); return 0; }
+        // With --selftest-reverts <folder> it is the self-test's own service: it keeps that folder's revert ledger and records nothing.
+        if (args.Contains("--service"))
+        {
+            if (Arg(args, RecorderService.SelfTestFlag) is string ledger) (Reverts.Dir, Protections.SelfTest) = (ledger, true);
+            System.ServiceProcess.ServiceBase.Run(new RecorderService(record: Arg(args, RecorderService.SelfTestFlag) == null));
+            return 0;
+        }
         // The installer also passes --pawnio <PawnIO's setup>, so the same prompt adds or removes PawnIO.
         if (args.Contains("--install-recorder"))
         {
@@ -352,6 +358,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "fix.read" => Steps.Read(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),
+        "protection.state" => Protections.State(),
         "read" => Reads.Read(p?["read"] as JsonObject, owner, commands.Value.WorkerRead),
         "step.check" or "step.preview" or "step.apply" or "step.undo" or "command.check" or "command.preview" or "command.apply" or "command.undo" or "command.read" or "screen.look" => commands.Value.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),

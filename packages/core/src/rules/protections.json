@@ -1,0 +1,32 @@
+{
+  "about": [
+    "Protections Rig can turn off for a while and then turns back on by itself. A step names a row by `id` and a time from `revertAfter` (minutes, `default` when left out); nothing else about it comes from outside Rig. The helper owns how each `kind` is read, turned off and turned back on (Protections.cs): `firewall` is one profile of Windows Firewall, through Windows' own firewall interface; `defender` is Microsoft Defender's real-time protection, through Defender's own settings interface, refused while Tamper Protection is on because Windows would ignore it; `registry` is one text value under HKLM that is `on` or `off`, turned off only when it reads `on` or isn't there, and turned back on by writing `on`.",
+    "`name` finishes the sentence \"Turns off ...\". `says` is what being without it means, for the card. Rig's background service turns a row back on when its time is up (Reverts.cs) and never does anything else with it.",
+    "User Account Control is not here: Rig's own approvals rely on it, so it is on the never list in commands.json."
+  ],
+  "revertAfter": [15, 60, 240],
+  "default": 60,
+  "rows": [
+    {
+      "id": "firewallPrivate", "name": "Windows Firewall on private networks", "kind": "firewall", "profile": "private",
+      "says": "While it's off, other devices on your home or work network can reach every program on this PC that listens for connections."
+    },
+    {
+      "id": "firewallPublic", "name": "Windows Firewall on public networks", "kind": "firewall", "profile": "public",
+      "says": "While it's off, anyone on the same public network, like a cafe's Wi-Fi, can reach every program on this PC that listens for connections."
+    },
+    {
+      "id": "firewallDomain", "name": "Windows Firewall on domain networks", "kind": "firewall", "profile": "domain",
+      "says": "While it's off, other devices on your organization's network can reach every program on this PC that listens for connections."
+    },
+    {
+      "id": "defenderRealtime", "name": "Microsoft Defender's real-time protection", "kind": "defender",
+      "says": "While it's off, Defender doesn't check files as they are opened, downloaded or run. Windows may turn it back on by itself sooner."
+    },
+    {
+      "id": "smartScreenApps", "name": "SmartScreen's check of apps and files", "kind": "registry",
+      "key": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", "value": "SmartScreenEnabled", "on": "Warn", "off": "Off",
+      "says": "While it's off, Windows doesn't warn before it runs an app or file it doesn't recognize from the internet."
+    }
+  ]
+}

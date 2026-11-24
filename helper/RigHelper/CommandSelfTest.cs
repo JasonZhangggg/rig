@@ -105,6 +105,8 @@ public static partial class CommandSelfTest
                 Check("services, tasks and accounts a change made are put back", () => NeverPutBack(ctx));
                 Check("a limited app token", () => LimitedToken(ctx));
                 Check("a native step for an app without admin rights", () => NativeLimited(ctx));
+                var revertStore = new CommandStore(root + "-reverts", secured: true);
+                ProtectionSelfTest.Run(Check, new Commands(revertStore, app, restorePoints: false) { TestOnlyElevatedApp = false }, revertStore, person.Sid, root + "-ledger");
             }
             Check("the daily limit", () => Cap(ctx));
         }
@@ -119,6 +121,7 @@ public static partial class CommandSelfTest
             try { Directory.Delete(root, recursive: true); } catch { }
             try { Directory.Delete(root + "-files", recursive: true); } catch { }
             try { Directory.Delete(root + "-winget", recursive: true); } catch { }
+            try { Directory.Delete(root + "-reverts", recursive: true); } catch { }
             try { string parent = Path.GetDirectoryName(root)!; if (elevated && !Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent); } catch { }
         }
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);

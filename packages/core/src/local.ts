@@ -9,6 +9,7 @@ import { searchPages } from "./manualSearch";
 import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
 import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
+import { backOnWords } from "./protection";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
 import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
 import type { CloudClient } from "./cloud";
@@ -495,7 +496,28 @@ export class LocalClient implements RigClient {
 
   async changes(id: string): Promise<Change[]> {
     if (!(await this.isLocal(id))) return this.cloud?.changes(id) ?? [];
-    return (await this.store.changes()).map(changeOf).sort((a, b) => b.at.localeCompare(a.at));
+    return this.reverts((await this.store.changes()).map(changeOf).sort((a, b) => b.at.localeCompare(a.at)));
+  }
+
+  /** Brings the log's protection changes up to what the helper reads now: back on, or when Rig turns it back on by itself. */
+  private async reverts(list: Change[]): Promise<Change[]> {
+    const row = (c: Change) => {
+      const s = c.applied[0]?.step;
+      return c.status === "applied" && s?.kind === "native" && (s.op.name === "protection" || s.op.name === "keepOff") ? s.op.id : null;
+    };
+    if (!this.link.step || !list.some(row)) return list;
+    const state = await this.link.step("protection.state", {}).catch(() => null);
+    if (!state) return list;
+    const out: Change[] = [];
+    for (const c of list) {
+      const now = state.rows.find((r) => r.id === row(c));
+      let next = c;
+      if (now?.on) next = { ...c, status: "undone", result: backOnWords(now.last, c.at) };
+      else if (now && c.revert && state.ledger && (now.due ?? null) !== c.revert.due) next = { ...c, revert: { due: now.due ?? null } };
+      if (next !== c) await this.store.putChange(next);
+      out.push(next);
+    }
+    return out;
   }
 
   // ----- Logs and recordings -----
@@ -783,12 +805,12 @@ export class LocalClient implements RigClient {
     return this.stepLink()("step.undo", force ? { id: undoId, force: true } : { id: undoId });
   }
 
-  async previewStep(id: string, step: HelperStep, tainted: boolean): Promise<PreviewReply> {
+  async previewStep(id: string, step: HelperStep, tainted: boolean, own?: boolean): Promise<PreviewReply> {
     await this.local(id);
     const helper = this.stepLink();
     const now = this.o.now();
     for (const [k, l] of this.looks) if (!(Date.parse(l.expiresAt) > now)) this.looks.delete(k);
-    const mine = checkStep(step, { tainted, looks: [...this.looks.values()] });
+    const mine = checkStep(step, { tainted, looks: [...this.looks.values()], own });
     if (mine.status === "refused") return { outcome: "refused", verdict: mine };
     const canonical = canonicalStep(step) as HelperStep;
     const reply = await helper("step.preview", { step: canonical });
@@ -836,6 +858,8 @@ export class LocalClient implements RigClient {
     const change: Change = {
       id: uid(), machineId: this.id, at: new Date(this.o.now()).toISOString(), title: meta.title ?? stepsTitle([held.step]),
       by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows, tier: held.verdict.tier, applied: [applied], from: meta.from,
+      // The helper's own time for it replaces this the next time the log is read.
+      ...(held.step.kind === "native" && held.step.op.name === "protection" ? { revert: { due: new Date(this.o.now() + held.step.op.revertAfter * 60_000).toISOString() } } : {}),
     };
     await this.store.putChange(change);
     void this.sync();

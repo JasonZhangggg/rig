@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { APPROVE_DECLINED, STEP_DIFFERS, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcRead, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
+import { APPROVE_DECLINED, KEEP_OFF_CHAT, STEP_DIFFERS, type ProtectionState, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcRead, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -410,7 +410,7 @@ describe("LocalClient", () => {
     const undoRecord = { kind: "command" as const, id: "u1", script: menuDelay.undo!, outside: [], fingerprint: "f1" };
 
     /** A helper that answers command calls the way the runner does, and remembers every call in order. */
-    function commandHelper(o: { admin?: boolean; drifts?: string[]; storedHash?: string } = {}) {
+    function commandHelper(o: { admin?: boolean; drifts?: string[]; storedHash?: string; protections?: () => ProtectionState } = {}) {
       const calls: string[] = [];
       const seen: { method: string; params: unknown }[] = [];
       let drifted = !!o.drifts;
@@ -421,7 +421,7 @@ describe("LocalClient", () => {
         let reply: unknown;
         if (method === "step.preview") {
           previewed = (params as { step: HelperStep }).step;
-          const v = checkStep(previewed) as Allowed;
+          const v = checkStep(previewed, { tainted: false, own: true }) as Allowed;
           reply = { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: { ...v, admin: !!o.admin }, read: run.before, touches: [{ touch: run.touches[0].touch, value: "400" }], hash: o.storedHash ?? (await stepHash(previewed)) } satisfies PreviewReply;
         } else if (method === "step.apply") reply = { outcome: "applied", result: run, undo: previewed?.kind === "native" ? { kind: "native", id: "u1", outside: [], fingerprint: "f1" } : undoRecord } satisfies ApplyReply;
         else if (method === "step.undo") {
@@ -429,12 +429,13 @@ describe("LocalClient", () => {
           reply = (drifted && !force ? { outcome: "drifted", changed: o.drifts! } : { outcome: "undone", printed: run.before, left: [] }) satisfies UndoReply;
           if (force) drifted = false;
         } else if (method === "command.read") reply = { printed: "MenuShowDelay : 400" };
+        else if (method === "protection.state") reply = o.protections?.();
         return reply as StepRpc[K]["reply"];
       };
       return { command, calls, seen };
     }
 
-    function withCommands(o: { admin?: boolean; drifts?: string[]; storedHash?: string; approve?: (nonce: string, hash: string) => Promise<void> } = {}) {
+    function withCommands(o: { admin?: boolean; drifts?: string[]; storedHash?: string; protections?: () => ProtectionState; approve?: (nonce: string, hash: string) => Promise<void> } = {}) {
       const helper = commandHelper(o);
       const sim = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => 0 });
       const link: HelperLink = { hello: () => sim.hello(), inventory: () => sim.inventory(), facts: () => sim.facts(), snapshot: () => sim.snapshot(), apply: (c) => sim.apply(c), step: helper.command };
@@ -525,6 +526,39 @@ describe("LocalClient", () => {
       const unknown = { kind: "native", op: { name: "format-disk" } } as unknown as HelperStep;
       expect(await client.previewStep(client.id, unknown, false)).toMatchObject({ outcome: "refused", verdict: { refused: "This isn't a kind of change Rig makes." } });
       expect(helper.calls).toEqual([]);
+      client.stop();
+    });
+
+    it("logs a protection turned off with when it comes back on, and follows what the helper says became of it", async () => {
+      let state: ProtectionState = { ledger: true, rows: [{ id: "firewallPublic", on: false, due: "2026-11-17T21:14:00.000Z" }] };
+      const { client, helper, approve } = withCommands({ admin: true, protections: () => state });
+      await client.start();
+      const off: HelperStep = { kind: "native", op: { name: "protection", id: "firewallPublic", revertAfter: 15 } };
+      expect((await client.previewStep(client.id, off, false)).outcome).toBe("ready");
+      expect((await client.applyStep(client.id, "n1", { by: "rig" })).outcome).toBe("applied");
+      expect(approve).toHaveBeenCalledTimes(1);
+      const now = async () => (await client.changes(client.id))[0];
+      expect(await now()).toMatchObject({ title: "Turned off Windows Firewall on public networks for 15 minutes", status: "applied", tier: 3, revert: { due: "2026-11-17T21:14:00.000Z" } });
+      // The person chose to keep it off: the service holds nothing for it any more.
+      state = { ledger: true, rows: [{ id: "firewallPublic", on: false }] };
+      expect((await now()).revert).toEqual({ due: null });
+      // A helper without admin rights can't read the service's list, and that changes nothing in the log.
+      state = { ledger: false, rows: [{ id: "firewallPublic", on: false }] };
+      expect((await now()).revert).toEqual({ due: null });
+      state = { ledger: true, rows: [{ id: "firewallPublic", on: true, last: { at: "2026-11-17T21:14:01.000Z", why: "due", was: "off" } }] };
+      expect(await now()).toMatchObject({ status: "undone", result: "Rig turned it back on when its time was up." });
+      expect(helper.calls.filter((c) => c !== "protection.state")).toEqual(["step.preview", "approve", "step.apply"]);
+      client.stop();
+    });
+
+    it("asks the helper to keep a protection off only for Rig's own button", async () => {
+      const { client, helper } = withCommands({ admin: true });
+      await client.start();
+      const keep: HelperStep = { kind: "native", op: { name: "keepOff", id: "firewallPublic" } };
+      expect(await client.previewStep(client.id, keep, false)).toMatchObject({ outcome: "refused", verdict: { refused: KEEP_OFF_CHAT } });
+      expect(helper.calls).toEqual([]);
+      expect((await client.previewStep(client.id, keep, false, true)).outcome).toBe("ready");
+      expect(helper.seen[0].params).toEqual({ step: keep });
       client.stop();
     });
 

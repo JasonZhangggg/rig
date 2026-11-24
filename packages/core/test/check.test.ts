@@ -172,11 +172,17 @@ describe("checking a step", () => {
   });
 
   it("rates a change tier 3 when what it touches lowers one of Windows' protections, and refuses one that hides where it writes", () => {
+    const key = "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments";
+    const zone = command({ run: `Set-ItemProperty -Path 'HKLM:\\${key.slice(5)}' -Name SaveZoneInformation -Value $v`, touches: [{ kind: "registry", key, value: "SaveZoneInformation" }] });
+    expect(checkStep(zone)).toMatchObject({ status: "allowed", tier: 3, admin: true, reasons: expect.arrayContaining([expect.stringContaining("files from the internet")]) });
+    expect(refusal(zone, true)).toMatchObject({ why: "tainted" });
+    expect(refusal(command({ run: "Set-ItemProperty -Path $k -Name $n -Value 0", touches: zone.kind === "command" ? zone.cmd.touches : [] }))?.refused).toContain("worked out while the script runs");
+  });
+
+  it("never changes User Account Control, which its own approvals rely on", () => {
     const key = "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System";
-    const uac = command({ run: `Set-ItemProperty -Path 'HKLM:\\${key.slice(5)}' -Name EnableLUA -Value $v`, touches: [{ kind: "registry", key, value: "EnableLUA" }] });
-    expect(checkStep(uac)).toMatchObject({ status: "allowed", tier: 3, admin: true, reasons: expect.arrayContaining([expect.stringContaining("User Account Control")]) });
-    expect(refusal(uac, true)).toMatchObject({ why: "tainted" });
-    expect(refusal(command({ run: "Set-ItemProperty -Path $k -Name $n -Value 0", touches: uac.kind === "command" ? uac.cmd.touches : [] }))?.refused).toContain("worked out while the script runs");
+    const uac = command({ run: `Set-ItemProperty -Path 'HKLM:\\${key.slice(5)}' -Name ConsentPromptBehaviorAdmin -Value 0`, touches: [{ kind: "registry", key, value: "ConsentPromptBehaviorAdmin" }] });
+    expect(refusal(uac)).toMatchObject({ why: "never", refused: expect.stringContaining("User Account Control") });
   });
 
   it("stores a command the same way however it arrives", () => {

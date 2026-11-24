@@ -113,7 +113,7 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
       {(!outcome.undo || again) && (
         <div className="cc-undo">
           {!again && <p className={reach.can ? "faint" : "cc-undo-line none"}>{reach.line}<Untied names={reach.untied} after />{reach.can && !canApply && <> Undo it in the Rig app on {pcName}.</>}</p>}
-          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? "Undoing…" : again ? "Try undo again" : "Undo"}</button>}
+          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? "Undoing…" : again ? "Try undo again" : (step.kind === "native" && nativeOf(step.op, looks)?.part.undoWord) || "Undo"}</button>}
         </div>
       )}
     </>

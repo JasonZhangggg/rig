@@ -80,6 +80,8 @@ public static class RecorderSetup
                 }
             }
             StopService(TimeSpan.FromSeconds(20));
+            // The service turned back on what it held as it stopped; this covers one that was killed or wasn't running.
+            Reverts.RaiseAll("uninstall", forget: true);
             Scm.Delete(RecorderPaths.ServiceName);
             WaitGone(TimeSpan.FromSeconds(20));
             DeleteFolder(RecorderPaths.Program);
@@ -98,6 +100,7 @@ public static class RecorderSetup
     /// Called by the running service when every Rig install it knew of is gone.
     public static void RemoveSelf()
     {
+        Reverts.RaiseAll("uninstall", forget: true);
         try { Scm.Delete(RecorderPaths.ServiceName); } catch { }
         try { DeleteFolder(RecorderPaths.Data); } catch { }
         // Its own program can't be deleted while it runs: a hidden command does it a few seconds after the service stops.
@@ -234,7 +237,7 @@ public static class RecorderSetup
     }
 
     /// Creating, changing and deleting the service through the Service Control Manager.
-    static class Scm
+    internal static class Scm
     {
         const uint SC_MANAGER_ALL_ACCESS = 0xF003F, SERVICE_ALL_ACCESS = 0xF01FF, SERVICE_NO_CHANGE = 0xFFFFFFFF;
         const uint SERVICE_WIN32_OWN_PROCESS = 0x10, SERVICE_AUTO_START = 2, SERVICE_ERROR_NORMAL = 1;

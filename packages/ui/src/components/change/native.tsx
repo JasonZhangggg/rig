@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
+import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, protectionOf, revertWords, type FileEditOp, type GpuOp, type GpuSetting, type KeepOffOp, type NativeOp, type ProtectionOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
 import { Claim, Printed } from "./parts";
 import { clip, type RedKind } from "./words";
 
@@ -21,6 +21,10 @@ interface NativePart<O extends NativeOp> {
   more?(op: O, read: string | undefined, pcName: string, look?: ScreenLook): ReactNode;
   /** What a tier 3 card leads with, when it isn't that the change lowers a protection. */
   red?: { kind: RedKind; undo: string };
+  /** Rig's own sentence on it, for an op Claude writes no sentence for. */
+  says?(op: O): string;
+  /** The Undo button's words, when undoing it has a plainer name. */
+  undoWord?: string;
   /** What the result says once it ran, in place of the values before and after. */
   done?(op: O, result: RunResult, look?: ScreenLook): ReactNode;
 }
@@ -100,8 +104,35 @@ const screen: NativePart<ScreenOp> = {
   },
 };
 
+const rowsOf = (op: ProtectionOp | KeepOffOp, before?: string, after?: string): NativeChange[] =>
+  (nativeRows(op, before, after) ?? []).map(([place, was, to]) => ({ place, before: was, after: to }));
+
+/** The word on the button that undoes turning a protection off. */
+export const BACK_ON = "Turn it back on now";
+
+const protection: NativePart<ProtectionOp> = {
+  title: (op) => `Turns off ${protectionOf(op.id)?.name} for ${revertWords(op.revertAfter)}`,
+  where: () => [],
+  changes: rowsOf,
+  says: (op) => protectionOf(op.id)?.says ?? "",
+  more: (op) => (
+    <p className="cc-note">Rig turns it back on by itself after {revertWords(op.revertAfter)}, even if the PC restarts in between. You can turn it back on sooner, and only you can choose to keep it off, in Changes.</p>
+  ),
+  red: { kind: "lowers", undo: "Yes. Rig turns it back on by itself when the time is up, and you can turn it back on sooner." },
+  undoWord: BACK_ON,
+  done: (op) => <p className="cc-note" role="status">Rig turns it back on by itself {revertWords(op.revertAfter)} after it was turned off. Changes shows the time left.</p>,
+};
+
+const keepOff: NativePart<KeepOffOp> = {
+  title: (op) => `Keeps ${protectionOf(op.id)?.name} off`,
+  where: () => [],
+  changes: rowsOf,
+  says: () => "Rig stops its timer, so this stays off until you turn it back on yourself, in Changes or in Windows Security.",
+  red: { kind: "lowers", undo: "Yes. Undo starts Rig's timer again, 15 minutes long. Until it's back on, the PC is less protected." },
+};
+
 /** One entry per kind of native op. A new op is one more entry here. */
-export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen };
+export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen, protection, keepOff };
 
 /** The op's kind, when this copy of Rig knows it. A newer Rig may send kinds this one doesn't. */
 export const knownNative = (raw: unknown) => {

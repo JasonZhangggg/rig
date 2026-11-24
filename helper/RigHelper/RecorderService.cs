@@ -5,7 +5,9 @@
 // wrong (heat, a sudden jump, full memory, a crash or hardware error) it
 // writes the last few minutes it held in memory and then every reading for a
 // while. It also writes Windows' crash, error and power events as they
-// happen, and sleep, wake and battery changes. It changes nothing on the PC.
+// happen, and sleep, wake and battery changes. It changes nothing on the PC,
+// with one exception: it turns back on a protection Rig turned off for a
+// while, when its time is up (Reverts.cs).
 
 using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
@@ -20,12 +22,17 @@ namespace Rig.Helper;
 
 public sealed class RecorderService : ServiceBase
 {
-    RecorderCore? core;
-    Thread? thread;
-    readonly CancellationTokenSource cts = new();
+    public const string SelfTestFlag = "--selftest-reverts";
 
-    public RecorderService()
+    RecorderCore? core;
+    Thread? thread, reverts;
+    readonly CancellationTokenSource cts = new();
+    readonly bool record;
+
+    /// `record` false is the self-test's service, which only keeps the revert ledger.
+    public RecorderService(bool record = true)
     {
+        this.record = record;
         ServiceName = RecorderPaths.ServiceName;
         CanStop = true;
         CanShutdown = true;
@@ -35,6 +42,9 @@ public sealed class RecorderService : ServiceBase
 
     protected override void OnStart(string[] args)
     {
+        reverts = new Thread(() => Reverts.Keep(cts.Token)) { IsBackground = true, Name = "Rig reverts" };
+        reverts.Start();
+        if (!record) return;
         core = new RecorderCore(RecorderPaths.Data, onSelfRemove: Stop);
         thread = new Thread(() => core.Run(cts.Token)) { IsBackground = true, Name = "Rig recorder" };
         thread.Start();
@@ -54,6 +64,10 @@ public sealed class RecorderService : ServiceBase
         cts.Cancel();
         // The recorder's own thread stops the service when it removes itself; it can't wait for itself.
         if (thread != null && thread != Thread.CurrentThread) thread.Join(TimeSpan.FromSeconds(15));
+        reverts?.Join(TimeSpan.FromSeconds(15));
+        // A stopped service turns nothing back on later, so it does it now. Shutting the PC down isn't that: the ledger
+        // is on the disk, and what comes due while the PC is off is turned back on when the service next starts.
+        if (why == "stop") Reverts.RaiseAll("stop");
         core?.Close(why);
     }
 }

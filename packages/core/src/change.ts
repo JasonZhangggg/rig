@@ -15,6 +15,7 @@ import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
 import type { DiffRow } from "./model";
 import rulesJson from "./rules/commands.json";
+import { keepOffRule, protectionRule, type KeepOffOp, type ProtectionOp, type ProtectionState } from "./protection";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
 import { recipeCommand, type RecipeStep } from "./shorthand";
 
@@ -40,10 +41,10 @@ export function helperStep(step: HelperStep | RecipeStep): HelperStep | string {
 }
 
 /**
- * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
- * `nativeOps`, and one class in the helper (NativeSteps.cs).
+ * A change the helper's own code makes: as the person and never elevated, unless its rule says `admin`. A new op is one
+ * member here, one entry in `nativeOps`, and one class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp | ProtectionOp | KeepOffOp;
 
 /**
  * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
@@ -72,6 +73,8 @@ export interface NativeRule<O extends NativeOp> {
   /** The op as the helper stores and fingerprints it, with anything Rig doesn't know dropped, or what is wrong with it in plain words. */
   canonical(raw: Record<string, unknown>): O | string;
   tier(op: O): Tier;
+  /** The helper makes it itself with admin rights, behind Windows' prompt, where the person's own rights can't. Only for an op that is all Rig's own list. */
+  admin?: true;
   /** Why this tier. */
   reasons(op: O): string[];
   /** A short past-tense title for the changes log. */
@@ -125,6 +128,8 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
       return [[name ?? "Setting", was ?? before ?? "As it is now", after === undefined ? op.to : lineParts(after)[1] ?? after]];
     },
   },
+  protection: protectionRule,
+  keepOff: keepOffRule,
 };
 
 /** The control's name and value from the helper's one-line read of it, when it is one. */
@@ -206,6 +211,8 @@ export interface CheckContext {
   tainted: boolean;
   /** The looks the helper answered in this chat (`screen.look`). A screen step is checked against the one it names. */
   looks?: ScreenLook[];
+  /** The person asked for this step from one of Rig's own buttons: no chat proposed it. */
+  own?: boolean;
 }
 
 /** Programs that run only as the person, never with admin rights (`person` in the rules). */
@@ -288,8 +295,8 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
         reasons.push(`${lowers}.`);
       }
       if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
-      // The helper's worker makes it with the person's own rights, so it never needs admin rights.
-      return { status: "allowed", tier, admin: false, commands: [], reasons, rulesVersion };
+      // The helper's worker makes it with the person's own rights, unless the op is one the helper makes itself.
+      return { status: "allowed", tier, admin: !!rule.admin, commands: [], reasons, rulesVersion };
     }
   }
 }
@@ -593,6 +600,8 @@ export interface StepRpc {
   "screen.look": { params: { app: string; goal: string[] }; reply: ScreenLookReply };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
+  /** The protections Rig can turn off for a while: each one's state now, and when the background service turns it back on. Changes nothing. */
+  "protection.state": { params: Record<string, never>; reply: ProtectionState };
 }
 
 /** The part of the helper link that carries steps. */
