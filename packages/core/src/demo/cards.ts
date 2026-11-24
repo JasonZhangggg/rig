@@ -23,6 +23,8 @@ export interface DemoCard {
   alsoChanged?: string[];
   /** The demo rolls this one back when it's applied. */
   rollsBack?: boolean;
+  /** Places something else changed after the demo applied this one, so its first undo comes back drifted. */
+  drifts?: string[];
   /** Steps Rig offers when the change is refused. */
   steps?: string[];
 }
@@ -58,6 +60,7 @@ export const demoCards: DemoCard[] = [
     read: "No rule with that name.", values: [[null, "On, inbound, TCP 25565, allow"]],
     after: "DisplayName      Enabled Direction Action\n-----------      ------- --------- ------\nMinecraft server    True   Inbound  Allow",
     alsoChanged: ["A new value under HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules"],
+    drifts: ["The firewall rule Minecraft server"],
   },
   {
     key: "uninstall", ask: "Uninstall NVIDIA Broadcast", asks: /uninstall|remove .*(app|broadcast)/,

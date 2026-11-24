@@ -553,3 +553,121 @@ describe("steps run in order", () => {
     expect(chat[0].proposal!.outcomes![0]!.undo?.outcome).toBe("undone");
   });
 });
+
+describe("when nothing ran", () => {
+  it("says the daily limit was reached, when the next change is allowed, and offers only Not now", () => {
+    const until = new Date(Date.now() + 3 * 3600_000).toISOString();
+    const on = show(demoProposal(card("registry")), { outcomes: [{ apply: { outcome: "limit", until } }] });
+    const said = screen.getByRole("status").textContent!;
+    expect(said).toMatch(/^Nothing changed on Atlas\. Rig makes only a few bigger changes a day on each PC, and Atlas has had today's\. The next one can be made after /);
+    expect(said).toContain(new Date(until).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
+    expect(screen.getByText("Nothing changed")).toBeTruthy();
+    expect(button(/Apply/)).toBeNull();
+    expect(button("Undo")).toBeNull();
+    fireEvent.click(button("Not now")!);
+    expect(on.onDecline).toHaveBeenCalledOnce();
+  });
+
+  it("says Windows didn't get permission without blaming anyone, and offers Apply again or Not now", () => {
+    const on = show(demoProposal(card("firewall")), { outcomes: [{ apply: { outcome: "declined" } }] });
+    const said = screen.getByRole("status").textContent!;
+    expect(said).toBe("Nothing changed on Atlas. Windows asked for permission first, and didn't get it, so Rig didn't run this. To go ahead, choose Apply again, then Yes when Windows asks.");
+    expect(said).not.toMatch(/\byou\b/i);
+    expect(button("Undo")).toBeNull();
+    fireEvent.click(button("Not now")!);
+    expect(on.onDecline).toHaveBeenCalledOnce();
+    fireEvent.click(button("Apply again")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "apply");
+  });
+
+  it("reads again after a No at Windows' prompt once the card got too old to run", () => {
+    const p = demoProposal(card("firewall"));
+    const old = { ...(p.previews![0] as Extract<PreviewReply, { outcome: "ready" }>), expiresAt: new Date(Date.now() - 1000).toISOString() };
+    const on = show(p, { previews: [old], outcomes: [{ apply: { outcome: "declined" } }] });
+    expect(button("Apply again")).toBeNull();
+    fireEvent.click(button("Read again")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "read");
+  });
+
+  it("shows only that the step didn't run once the card was turned down", () => {
+    const p = { ...demoProposal(card("firewall")), status: "declined" as const };
+    show(p, { outcomes: [{ apply: { outcome: "declined" } }] });
+    expect(screen.getByText("This step didn't run, so it changed nothing on Atlas.")).toBeTruthy();
+    expect(button("Apply again")).toBeNull();
+  });
+});
+
+describe("an undo that something else got to first", () => {
+  const drifted = (): StepOutcome => ({ apply: demoApply(card("firewall")), undo: { outcome: "drifted", changed: ["The firewall rule Minecraft server"] } });
+
+  it("lists what changed since and puts it back only when asked to anyway", () => {
+    const on = show(demoProposal(card("firewall")), { outcomes: [drifted()] });
+    expect(screen.getByText("Undo didn't run, so nothing was put back. Something else changed this place since, and undo would overwrite that.")).toBeTruthy();
+    expect(screen.getByText("Changed since").closest(".cc-fact")!.textContent).toContain("The firewall rule Minecraft server");
+    expect(screen.getByText("Applied")).toBeTruthy();
+    expect(button("Undo")).toBeNull();
+    fireEvent.click(button("Put back anyway")!);
+    expect(on.onCommandStep).toHaveBeenCalledWith(0, "forceUndo");
+  });
+
+  it("has no Put back anyway on the website", () => {
+    show(demoProposal(card("firewall")), { outcomes: [drifted()], canApply: false });
+    expect(button("Put back anyway")).toBeNull();
+  });
+});
+
+describe("a command with undo set to null", () => {
+  it("reads as having no undo on the card, after it ran, and in the changes log", () => {
+    const cmd: Command = { ...reinstall, undo: null };
+    show(one(cmd, true));
+    expect(glance("Can it be undone")).toBe("No.");
+    expect(screen.queryByLabelText("Undo script")).toBeNull();
+    cleanup();
+    const apply: ApplyReply = { outcome: "applied", result: { before: "", after: "", output: "", alsoChanged: [], touches: [] }, undo: { kind: "command", id: "u", outside: [], fingerprint: "f" } };
+    show(one(cmd, true), { outcomes: [{ apply }] });
+    expect(screen.getByText(/^Rig can't undo this: it had no copy to save and no undo script\./)).toBeTruthy();
+    expect(button("Undo")).toBeNull();
+    cleanup();
+    render(<StepRecord applied={{ step: { kind: "command", cmd }, undo: apply.undo, rows: [] }} />);
+    expect(screen.queryByLabelText("Undo script")).toBeNull();
+    expect(screen.getByText(/^Rig can't undo this/)).toBeTruthy();
+  });
+});
+
+describe("applying and undoing through the app", () => {
+  const firewallOnly = (): Proposal => demoProposal(card("firewall"), "fw");
+  class OneCard extends DemoClient {
+    no = 1;
+    override conversation(id: string): ChatMessage[] { return id === "demo-atlas" ? [{ id: "m", from: "rig", text: "One step.", proposal: firewallOnly() }] : []; }
+    override async applyCommand(...args: Parameters<DemoClient["applyCommand"]>): Promise<ApplyReply> {
+      if (this.no-- > 0) return { outcome: "declined" };
+      return super.applyCommand(...args);
+    }
+  }
+  let actions!: ReturnType<typeof useActions>;
+  let chat!: ChatMessage[];
+  function Probe() { actions = useActions(); chat = useData("chat").chat; return null; }
+
+  it("applies again after a No at Windows' prompt, then puts a drifted undo back anyway", async () => {
+    const client = new OneCard();
+    const apply = vi.spyOn(client, "applyCommand");
+    const undo = vi.spyOn(client, "undoCommand");
+    render(<AppProvider client={client} fallback={(t) => <p>{t}</p>}><Probe /></AppProvider>);
+    await waitFor(() => expect(chat?.length).toBe(1));
+    const logged = (await client.changes("demo-atlas")).length;
+    await act(() => actions.commandStep("fw", 0, "apply"));
+    expect(chat[0].proposal!.outcomes![0]!.apply.outcome).toBe("declined");
+    expect(await client.changes("demo-atlas")).toHaveLength(logged);
+    await act(() => actions.commandStep("fw", 0, "apply"));
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(chat[0].proposal!.outcomes![0]!.apply.outcome).toBe("applied");
+    await act(() => actions.commandStep("fw", 0, "forceUndo"));
+    expect(undo).not.toHaveBeenCalled();
+    await act(() => actions.commandStep("fw", 0, "undo"));
+    expect(chat[0].proposal!.outcomes![0]!.undo?.outcome).toBe("drifted");
+    await act(() => actions.commandStep("fw", 0, "forceUndo"));
+    expect(undo).toHaveBeenLastCalledWith("demo-atlas", "undo-firewall", true);
+    expect(chat[0].proposal!.outcomes![0]!.undo?.outcome).toBe("undone");
+    expect((await client.changes("demo-atlas"))[0].status).toBe("undone");
+  });
+});

@@ -24,7 +24,8 @@ export interface StepCardProps {
   /** Asks the helper to read the current settings and check the step, when there's no preview yet or it got too old to run. */
   onRead: () => Promise<void> | void;
   onApply: () => Promise<void> | void;
-  onUndo: () => Promise<void> | void;
+  /** `force` puts it back even though something else changed those places since. */
+  onUndo: (force?: boolean) => Promise<void> | void;
   onDecline: () => void;
   /** The person asked for steps to do it themselves. */
   onSteps: () => void;
@@ -217,13 +218,21 @@ function resultChip(o: StepOutcome) {
 function DoneCard(p: StepCardProps & { outcome: StepOutcome; focus: boolean }) {
   const [busy, run] = useBusy();
   const commands = p.preview?.verdict.commands ?? [];
+  const a = p.outcome.apply.outcome;
   return (
     <Frame tone="plain" title={headline(p.cmd, commands)} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
       <div className="cc-facts">
         <ClaudeSays text={p.cmd.does} />
-        <ResultView cmd={p.cmd} outcome={p.outcome} runs={runCommands(p.cmd, commands)} pcName={p.pcName} canApply={p.canApply} busy={busy} onUndo={() => run(p.onUndo)} />
+        <ResultView cmd={p.cmd} outcome={p.outcome} runs={runCommands(p.cmd, commands)} pcName={p.pcName} canApply={p.canApply} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
       </div>
       <Scripts cmd={p.cmd} />
+      {p.canApply && (a === "limit" || a === "declined") && (
+        <div className="proposal-foot">
+          {a === "declined" && <span className="faint">Nothing changes until you apply.</span>}
+          <button className="btn ghost sm" type="button" disabled={busy} onClick={p.onDecline}>Not now</button>
+          {a === "declined" && <button className="btn primary sm" type="button" disabled={busy} onClick={() => run(p.onApply)}>{busy ? "Applying…" : "Apply again"}</button>}
+        </div>
+      )}
     </Frame>
   );
 }
@@ -234,10 +243,11 @@ const tooOld = "This waited too long to run, so Rig needs to read the settings a
 export function StepCard(p: StepCardProps) {
   const pressed = useRef(false);
   const a = p.outcome?.apply;
-  const back = a?.outcome === "expired" || a?.outcome === "refused";
   const fresh = p.preview?.outcome === "ready" ? p.preview : undefined;
   const old = useStale(fresh?.expiresAt);
-  if (p.outcome && !back) return <DoneCard {...p} outcome={p.outcome} focus={pressed.current} />;
+  const back = a?.outcome === "expired" || a?.outcome === "refused" || (a?.outcome === "declined" && (!fresh || old));
+  const nothingRan = a?.outcome === "limit" || a?.outcome === "declined";
+  if (p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} outcome={p.outcome} focus={pressed.current} />;
   const verdict = p.preview?.verdict ?? checkStep({ kind: "command", cmd: p.cmd }, { tainted: !!p.tainted });
   if (verdict.status === "refused") return <RefusedCard cmd={p.cmd} verdict={verdict} place={p.place} onSteps={p.onSteps} />;
   if (p.declined) {

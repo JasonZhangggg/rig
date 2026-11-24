@@ -40,7 +40,7 @@ export function saidText(does: unknown, max = 240): string | null {
   return clip(does, max);
 }
 
-const names = (script: string | undefined) => new Set(script ? checkScript(script, "run").commands.map((c) => c.name.toLowerCase()) : []);
+const names = (script: string | null | undefined) => new Set(script ? checkScript(script, "run").commands.map((c) => c.name.toLowerCase()) : []);
 
 /** The commands that change something and that the change script runs, matched by name against Rig's own parse of each script. A command Rig can't place in the read or undo script stays listed. */
 export function runCommands(cmd: Command, commands: FoundCommand[]): FoundCommand[] {
@@ -168,5 +168,21 @@ export const sentinelWords = (s: Sentinel) => sentinels[s];
 export function undoneLine(u: UndoReply): string {
   if (u.outcome === "undone") return u.left.length ? "Put back, except for what's listed below." : "Put back the way it was.";
   if (u.outcome === "unknown") return "Rig no longer has the saved copy for this change, so it can't undo it from here.";
+  if (u.outcome === "drifted") return `Undo didn't run, so nothing was put back. Something else changed ${u.changed.length === 1 ? "this place" : "these places"} since, and undo would overwrite that.`;
   return `Undo didn't finish: ${u.error.replace(/\.$/, "")}.${u.restorePoint ? ` ${restoreLine(u.restorePoint)}` : ""}`;
 }
+
+const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+/** When the next bigger change is allowed, in the person's own time: "3:00 PM", or with the day when it isn't today. */
+export function nextAllowed(until: string, now = new Date()): string {
+  const t = new Date(until);
+  return sameDay(t, now) ? t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : t.toLocaleString(undefined, { weekday: "long", hour: "numeric", minute: "2-digit" });
+}
+
+/** The daily limit on bigger changes was reached, so nothing ran. */
+export const limitLine = (until: string, pcName: string) =>
+  `Nothing changed on ${pcName}. Rig makes only a few bigger changes a day on each PC, and ${pcName} has had today's. The next one can be made after ${nextAllowed(until)}.`;
+
+/** Windows asked for permission and didn't get it, so nothing ran. */
+export const declinedLine = (pcName: string) =>
+  `Nothing changed on ${pcName}. Windows asked for permission first, and didn't get it, so Rig didn't run this. To go ahead, choose Apply again, then Yes when Windows asks.`;

@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import { scriptHash, type ActionCall, type FixApplied, type FixNow, type PcReadSpec, type UndoCall, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
+import { scriptHash, type ActionCall, type CommandRpc, type FixApplied, type FixNow, type PcReadSpec, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -14,13 +14,17 @@ export const tauriLink: HelperLink = {
   inventory: () => call<Inventory>("inventory"),
   facts: () => call<SystemFacts>("facts"),
   snapshot: () => call<Snapshot>("snapshot"),
-  apply: (c: UndoCall) => call<FixApplied>("apply", { call: c }),
+  apply: (c: ActionCall) => call<FixApplied>("apply", { call: c }),
   readFix: (c: ActionCall) => call<FixNow>("fix.read", { call: c }),
   events: (sinceMs: number) => call<RawEvent[]>("events", { sinceMs }),
   processes: () => call<ProcessUse[]>("processes", { top: 8 }),
   storage: (fresh?: boolean) => call<StorageScan>("storage", { fresh: !!fresh }),
   read: (req: PcReadSpec) => call<{ text: string }>("read", { read: req }).then((r) => r.text),
+  command: <K extends keyof CommandRpc>(method: K, params: CommandRpc[K]["params"]) => call<CommandRpc[K]["reply"]>(method, params),
 };
+
+/** Windows asks for permission to run a command that needs admin rights; the helper approves only the command with this hash. */
+export const approveCommand = (nonce: string, hash: string) => invoke<void>("command_approve", { nonce, hash });
 
 /** SQLite file in the app's data folder. */
 export const tauriStore: LocalStore = {

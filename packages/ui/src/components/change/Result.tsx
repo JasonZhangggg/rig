@@ -1,6 +1,6 @@
 import { checkStep, type AppliedStep, type ApplyReply, type Command, type CommandStep, type FoundCommand, type StepOutcome, type UndoReply } from "@rig/core";
 import { Claim, ClaudeSays, Fact, Printed, ReadCompare, Scripts, TouchList, Untied } from "./parts";
-import { runCommands, sentinelWords, snapshotted, touchName, undoneLine, undoReach } from "./words";
+import { declinedLine, limitLine, runCommands, sentinelWords, snapshotted, touchName, undoneLine, undoReach } from "./words";
 
 type Applied = Extract<ApplyReply, { outcome: "applied" }>;
 type RolledBack = Extract<ApplyReply, { outcome: "rolledBack" }>;
@@ -54,6 +54,7 @@ function Undone({ undo }: { undo: UndoReply }) {
   return (
     <div className="cc-undone" role="status">
       <p><b>{undoneLine(undo)}</b></p>
+      {undo.outcome === "drifted" && undo.changed.length > 0 && <Fact label="Changed since"><ul className="cc-plain">{undo.changed.map((x) => <li key={x}>{x}</li>)}</ul></Fact>}
       {undo.outcome === "undone" && undo.left.length > 0 && <Fact label="Rig couldn't put back"><ul className="cc-plain">{undo.left.map((x) => <li key={x}>{x}</li>)}</ul></Fact>}
       {undo.outcome === "undone" && <Printed label="After undo, the read script printed" text={undo.printed} />}
     </div>
@@ -68,7 +69,8 @@ export interface ResultViewProps {
   pcName: string;
   canApply: boolean;
   busy?: boolean;
-  onUndo: () => void;
+  /** `force` puts it back even though something else changed those places since. */
+  onUndo: (force?: boolean) => void;
 }
 
 /** What happened after Apply: before and after, what else changed, a rollback, and Undo with what it can reach. */
@@ -77,16 +79,25 @@ export function ResultView({ cmd, outcome, runs, pcName, canApply, busy, onUndo 
   if (a.outcome === "expired") return <p className="cc-note">This card was too old to run, so nothing changed on {pcName}. Ask again and Rig will read the settings fresh.</p>;
   if (a.outcome === "refused") return <p className="cc-note"><b>Rig didn't run this, so nothing changed on {pcName}.</b> {a.verdict.refused}</p>;
   if (a.outcome === "rolledBack") return <RolledBackResult reply={a} />;
+  if (a.outcome === "limit") return <p className="cc-note" role="status">{limitLine(a.until, pcName)}</p>;
+  if (a.outcome === "declined") return <p className="cc-note" role="status">{declinedLine(pcName)}</p>;
   const reach = undoReach(cmd, a.undo, runs);
   const again = outcome.undo?.outcome === "failed";
+  const drifted = outcome.undo?.outcome === "drifted";
   return (
     <>
       <AppliedResult reply={a} pcName={pcName} />
       {outcome.undo ? <Undone undo={outcome.undo} /> : null}
+      {drifted && canApply && (
+        <div className="cc-undo">
+          <p className="faint">Putting it back anyway sets these to what Rig saved, over whatever changed them since.</p>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo(true)}>{busy ? "Undoing…" : "Put back anyway"}</button>
+        </div>
+      )}
       {(!outcome.undo || again) && (
         <div className="cc-undo">
           {!again && <p className={reach.can ? "faint" : "cc-undo-line none"}>{reach.line}<Untied names={reach.untied} after />{reach.can && !canApply && <> Undo it in the Rig app on {pcName}.</>}</p>}
-          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={onUndo}>{busy ? "Undoing…" : again ? "Try undo again" : "Undo"}</button>}
+          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? "Undoing…" : again ? "Try undo again" : "Undo"}</button>}
         </div>
       )}
     </>

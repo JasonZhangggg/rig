@@ -202,8 +202,8 @@ export interface RigClient {
   previewCommand?(machineId: string, cmd: Command, tainted: boolean): Promise<PreviewReply>;
   /** Runs a command step the helper previewed, by the nonce from its preview. Only where changes can be made. */
   applyCommand?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
-  /** Puts a command step back, by the id in its undo record. */
-  undoCommand?(machineId: string, undoId: string): Promise<UndoReply>;
+  /** Puts a command step back, by the id in its undo record. With `force`, even when something else changed those places since. */
+  undoCommand?(machineId: string, undoId: string, force?: boolean): Promise<UndoReply>;
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }

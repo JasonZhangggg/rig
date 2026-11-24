@@ -250,6 +250,10 @@ export interface RunResult {
   alsoChanged: string[];
 }
 
+/** A run's touches as rows for the changes log: what, before, after. */
+export const runRows = (r: RunResult): DiffRow[] =>
+  r.touches.map((t) => [t.touch.kind === "registry" ? `${t.touch.key}${t.touch.value ? `\\${t.touch.value}` : ""}` : t.touch.kind === "file" ? t.touch.path : t.touch.name, t.before ?? "Not there", t.after ?? "Not there"]);
+
 export type PreviewReply =
   | { outcome: "refused"; verdict: Refused }
   | {
@@ -282,6 +286,17 @@ export type UndoReply =
   | { outcome: "drifted"; changed: string[] }
   | { outcome: "unknown" }
   | { outcome: "failed"; error: string; /** The last resort, named for the person. */ restorePoint?: RestorePoint };
+
+/** What an approval behind Windows' prompt is of: every part of the command, each with its length in front. The helper works out the same fingerprint from the command it stored and approves only when the two match. */
+export async function commandHash(cmd: Command): Promise<string> {
+  const parts = ["rig-command-1", cmd.does, cmd.read, cmd.run, cmd.undo === undefined ? "-" : `+${cmd.undo}`];
+  for (const t of cmd.touches) {
+    parts.push(t.kind, t.kind === "registry" ? t.key : t.kind === "file" ? t.path : t.name, t.kind === "registry" && t.value !== undefined ? `+${t.value}` : "-");
+  }
+  const bytes = new TextEncoder().encode(parts.map((p) => `${p.length}:${p}`).join("\n"));
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(d, (x) => x.toString(16).padStart(2, "0")).join("");
+}
 
 /**
  * The helper checks everything again itself except taint: it can't see the chat, so a tainted chat's tier 3 card is
