@@ -149,7 +149,7 @@ export function ScriptFold({ label, text, open }: { label: string; text: string;
 }
 
 /** Every script of one command: what reads, what changes and what puts it back. */
-export function Scripts({ cmd, open }: { cmd: { read: string; run: string; undo?: string }; open?: boolean }) {
+export function Scripts({ cmd, open }: { cmd: { read: string; run: string; undo?: string | null }; open?: boolean }) {
   return (
     <div className="cc-folds">
       <ScriptFold label="Change script" text={cmd.run} open={open} />

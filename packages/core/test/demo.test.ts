@@ -112,6 +112,18 @@ describe("the demo's approval cards", () => {
     expect((await demo.applyCommand("demo-atlas", nonce, { by: "rig" })).outcome).toBe("expired");
   });
 
+  it("shows a firewall undo that something else got to first, and puts it back anyway when asked", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    const firewall = demoCards.find((c) => c.key === "firewall")!;
+    const read = await demo.previewCommand("demo-atlas", firewall.cmd);
+    await demo.applyCommand("demo-atlas", read.outcome === "ready" ? read.nonce : "", { by: "rig" });
+    expect(await demo.undoCommand("demo-atlas", "undo-firewall")).toEqual({ outcome: "drifted", changed: ["The firewall rule Minecraft server"] });
+    expect((await demo.changes("demo-atlas"))[0].status).toBe("applied");
+    expect((await demo.undoCommand("demo-atlas", "undo-firewall", true)).outcome).toBe("undone");
+    expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
+  });
+
   it("refuses a tier 3 card when the chat read outside text", async () => {
     const { demoCards } = await import("../src/demo");
     const demo = new DemoClient();

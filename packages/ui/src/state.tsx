@@ -124,7 +124,7 @@ export interface Ctx {
   confirmReview: () => Promise<void>;
   declineProposal: (proposalId: string) => void;
   /** The one way a card reads, applies or undoes a command step. Rig's own fixes go through `review`. */
-  commandStep: (proposalId: string, index: number, act: "read" | "apply" | "undo") => Promise<void>;
+  commandStep: (proposalId: string, index: number, act: "read" | "apply" | "undo" | "forceUndo") => Promise<void>;
   /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
   approveScript: (messageId: string) => Promise<void>;
   declineScript: (messageId: string) => void;
@@ -510,17 +510,19 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         const step = p.steps[index];
         if (step?.kind !== "command") return;
         try {
-          if (act === "read" && p.status !== "declined" && (!was || was.apply.outcome === "expired" || was.apply.outcome === "refused")) {
+          if (act === "read" && p.status !== "declined" && (!was || was.apply.outcome === "expired" || was.apply.outcome === "refused" || was.apply.outcome === "declined")) {
             const fresh = await client.previewCommand(pcId, step.cmd, !!p.tainted);
             patch((q) => ({ previews: at(q.previews, fresh), outcomes: at(q.outcomes, null) }));
             return;
           }
-          if (act === "apply" && preview?.outcome === "ready" && !was && p.status !== "declined" && !waitingOn(p, index)) {
+          if (act === "apply" && preview?.outcome === "ready" && (!was || was.apply.outcome === "declined") && p.status !== "declined" && !waitingOn(p, index)) {
             if (stale(preview.expiresAt)) { patch((q) => ({ previews: at(q.previews, null) })); return; }
             const apply = await client.applyCommand(pcId, preview.nonce, { title: headline(step.cmd, preview.verdict.commands), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
             keep({ apply });
           } else if (act === "undo" && was?.apply.outcome === "applied" && was.undo?.outcome !== "undone") {
             keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id) });
+          } else if (act === "forceUndo" && was?.apply.outcome === "applied" && was.undo?.outcome === "drifted") {
+            keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id, true) });
           } else return;
           const changes = await client.changes(pcId);
           setData((d) => ({ ...d, changes }));

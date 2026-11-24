@@ -1,6 +1,6 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
-import { cardTier, fixSteps, stepsTitle, type AppliedStep, type ApplyReply, type Command, type FixStep, type PreviewReply, type Step, type Touch, type UndoReply } from "../change";
+import { cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type Command, type FixStep, type PreviewReply, type Step, type UndoReply } from "../change";
 import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
@@ -56,10 +56,8 @@ function see(seen: Record<string, [number, number]>, s: Sensor) {
   seen[s.id] = [Math.min(lo, s.value), Math.max(hi, s.value)];
 }
 
-const touchLabel = (t: Touch) => (t.kind === "registry" ? `${t.key}${t.value ? `\\${t.value}` : ""}` : t.kind === "file" ? t.path : t.name);
-
 function fixesOnly(steps: Step[]): FixStep[] {
-  return steps.map((s) => { if (s.kind !== "fix") throw new Error("The demo can't run commands yet."); return s; });
+  return steps.map((s) => { if (s.kind !== "fix") throw new Error("A command step runs from its own card."); return s; });
 }
 
 export class DemoClient implements RigClient {
@@ -296,7 +294,7 @@ export class DemoClient implements RigClient {
     const reply = demoApply(card);
     if (reply.outcome !== "applied") return reply;
     const step = { kind: "command" as const, cmd: card.cmd };
-    const rows: DiffRow[] = reply.result.touches.map((t) => [touchLabel(t.touch), t.before ?? "Not there", t.after ?? "Not there"]);
+    const rows = runRows(reply.result);
     const tier = cardTier([step]);
     p.changes.unshift({
       id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? card.title, by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows,
@@ -306,11 +304,12 @@ export class DemoClient implements RigClient {
     return reply;
   }
 
-  async undoCommand(id: string, undoId: string): Promise<UndoReply> {
+  async undoCommand(id: string, undoId: string, force?: boolean): Promise<UndoReply> {
     const card = demoCardByUndo(undoId);
     const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
     if (!card || !c || c.status === "undone") return { outcome: "unknown" };
     await sleep(300);
+    if (card.drifts && !force) return { outcome: "drifted", changed: card.drifts };
     c.status = "undone";
     this.emit(id);
     return demoUndo(card);
