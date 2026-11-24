@@ -3,7 +3,7 @@
 // the data comes from.
 
 import type { ActionCall } from "./actions";
-import type { AppliedStep, Step, Tier } from "./change";
+import type { AppliedStep, ApplyReply, Command, PreviewReply, Step, Tier, UndoReply } from "./change";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -26,7 +26,16 @@ export interface Proposal {
   rows: DiffRow[];
   status: "waiting" | "applied" | "declined";
   changeId?: string;
+  /** What the helper read and checked for each step when the card was made. A fix step has none. */
+  previews?: (PreviewReply | null)[];
+  /** What happened to each command step once the person applied it. */
+  outcomes?: (StepOutcome | null)[];
+  /** Rig read text from outside this PC earlier in the conversation. */
+  tainted?: boolean;
 }
+
+/** One command step after the person pressed Apply, and after Undo if they pressed that too. */
+export interface StepOutcome { apply: ApplyReply; undo?: UndoReply }
 
 export interface Source { label: string; kind: "Manual" | "Maker" | "Your PC" | "Web"; url?: string }
 
@@ -189,6 +198,12 @@ export interface RigClient {
 
   /** A conversation to open the chat with (the demo's example). */
   conversation?(machineId: string): ChatMessage[];
+  /** Has the helper read the current settings for a command step and check it, so its card can show them. Only where changes can be made. */
+  previewCommand?(machineId: string, cmd: Command, tainted: boolean): Promise<PreviewReply>;
+  /** Runs a command step the helper previewed, by the nonce from its preview. Only where changes can be made. */
+  applyCommand?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
+  /** Puts a command step back, by the id in its undo record. */
+  undoCommand?(machineId: string, undoId: string): Promise<UndoReply>;
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }
