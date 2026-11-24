@@ -98,6 +98,11 @@ export function pinGroups(item: BoardItem): PinGroup[] {
 /** How far from a pin (in scene units, 1 = 100 mm) the pointer still counts as on it. */
 const PIN_REACH = 0.02;
 const reduced = () => { try { return reducedMotion(); } catch { return false; } };
+/**
+ * A close-up taking over from the 3D PC (the board here, the graphics card in gpuScene.ts) starts a little further
+ * out than its resting view and glides in, carrying on the PC's own flight to the part as it fades in over it.
+ */
+export const INTRO_FROM = 1.35, INTRO_DELAY = 0, INTRO_MS = 900;
 
 /** The items worth naming when nothing is picked. */
 const landmarks = ["socket", "dimm-1", "pcie1", "m2-1", "atx24", "eps", "fp"];
@@ -123,8 +128,8 @@ export function createBoardScene(
     onPick?: (id: string | null) => void;
     /** The item (and pin) under the pointer, with the pointer's place in the view, or null when it leaves the board. */
     onHover?: (h: BoardHover | null) => void;
-    /** Drag moves the board around (map style), right-drag turns it. The proto page keeps drag-to-turn. */
-    dragToPan?: boolean;
+    /** Opens zooming in from further out, as the close-up takes over from the 3D PC. */
+    intro?: boolean;
     /** Name a few landmarks (socket, memory, power) while nothing is picked. Off where pointing at a part says what it is. */
     landmarks?: boolean;
   } = {},
@@ -182,15 +187,11 @@ export function createBoardScene(
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.12;
-  // Panning slides the board across the view, the way a map moves under a finger.
+  // The same buttons as the 3D PC: drag turns, right-drag (or Shift-drag) slides the board across the view, scroll zooms.
   controls.enablePan = true;
   controls.screenSpacePanning = true;
   controls.minDistance = 0.12;
   controls.maxDistance = 12;
-  if (opts.dragToPan) {
-    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-  }
 
   // ---------- the board ----------
   const kit: Kit = { M: (c, o) => realMaterial(c, o), spin: () => {}, accent: `#${accent.getHexString()}` };
@@ -233,7 +234,7 @@ export function createBoardScene(
   const target = new THREE.Vector3(), camGoal = new THREE.Vector3();
   // The camera glides to a new view over a fixed time, so a slow computer gets there as soon as a fast one.
   const fromPos = new THREE.Vector3(), fromTarget = new THREE.Vector3();
-  let tweenStart = -1;
+  let tweenStart = -1, tweenMs = 650;
   let offsetFor: "right" | "bottom" | null = null;
 
   function clearFocus() {
@@ -489,7 +490,7 @@ export function createBoardScene(
     hover(was ? was.split("|") : []);
     frame();
     fromPos.copy(camera.position); fromTarget.copy(controls.target);
-    tweenStart = performance.now();
+    tweenStart = performance.now(); tweenMs = 650;
     invalidate();
   }
 
@@ -774,6 +775,17 @@ export function createBoardScene(
   camera.position.copy(camGoal);
   controls.target.copy(target);
   tweenStart = -1;
+  if (opts.intro && !reduced()) zoomIn();
+
+  /** Starts further out and glides in to the whole board, a moment after the close-up starts fading in. */
+  function zoomIn() {
+    fromTarget.copy(target);
+    fromPos.copy(camGoal).sub(target).multiplyScalar(INTRO_FROM).add(target);
+    camera.position.copy(fromPos);
+    tweenStart = performance.now() + INTRO_DELAY;
+    tweenMs = INTRO_MS;
+    invalidate();
+  }
 
   // Move the picture aside for the pin map: left of it on a wide stage, above it on a narrow one.
   function offsetView() {
@@ -828,10 +840,10 @@ export function createBoardScene(
     offsetView();
     let moving = false;
     if (tweenStart >= 0) {
-      const t = Math.min(1, (performance.now() - tweenStart) / (reduced() ? 1 : 650)), e = 1 - Math.pow(1 - t, 3);
+      const t = Math.min(1, Math.max(0, performance.now() - tweenStart) / (reduced() ? 1 : tweenMs)), e = 1 - Math.pow(1 - t, 3);
       camera.position.lerpVectors(fromPos, camGoal, e);
       controls.target.lerpVectors(fromTarget, target, e);
-      if (t >= 1) tweenStart = -1; else moving = true;
+      if (t >= 1) { tweenStart = -1; tweenMs = 650; } else moving = true;
     }
     // While damping eases a drag out, keep drawing until the camera settles. OrbitControls keeps saying it moved
     // while a pan's leftover drifts by far less than a pixel, so the board stops once a frame moves less than a twentieth of a pixel.

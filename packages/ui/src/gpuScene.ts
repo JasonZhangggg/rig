@@ -7,7 +7,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { plugPinout, type GpuOutput, type GpuPlug, type GpuPorts, type GpuShape, type OutputKind, type PlugKind, type PlugPinout } from "@rig/core";
 import { canvasTex, gpuPlugAt, isSharedTexture, makeGpu, mm, realMaterial, type Kit } from "./parts3d";
-import { pinInk, soft } from "./boardScene";
+import { INTRO_DELAY, INTRO_FROM, INTRO_MS, pinInk, soft } from "./boardScene";
 import { reducedMotion } from "./appearance";
 
 /** What the pointer is over: an output or a plug, and the pin when it's over one, with the pointer's place in the view. */
@@ -75,7 +75,7 @@ interface Node {
   plug?: GpuPlug; pinout?: PlugPinout;
 }
 
-export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPorts, opts: { accent?: string; onHover?: (h: GpuHover | null) => void } = {}): GpuScene {
+export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPorts, opts: { accent?: string; onHover?: (h: GpuHover | null) => void; /** Opens zooming in, as the close-up takes over from the 3D PC. */ intro?: boolean } = {}): GpuScene {
   const accent = new THREE.Color(opts.accent ?? "#E6D3A3");
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -109,8 +109,8 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
   controls.screenSpacePanning = true;
   controls.minDistance = 0.08;
   controls.maxDistance = 14;
-  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  // The same buttons as the 3D PC: drag turns, right-drag (or Shift-drag) moves, scroll zooms.
+  controls.enablePan = true;
 
   // ---------- the card ----------
   // makeGpu's frame: X from the bracket along the card, Y from the backplate (0) to the fans (-thickness),
@@ -360,7 +360,7 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
   }
 
   const target = new THREE.Vector3(), camGoal = new THREE.Vector3(), fromPos = new THREE.Vector3(), fromTarget = new THREE.Vector3();
-  let tweenStart = -1;
+  let tweenStart = -1, tweenMs = 650;
   function frame() {
     scene.updateMatrixWorld(true);
     const box = new THREE.Box3();
@@ -392,7 +392,7 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
     const was = hoverKey; hoverKey = "\0"; hover(was ? was.split("|") : []);
     frame();
     fromPos.copy(camera.position); fromTarget.copy(controls.target);
-    tweenStart = performance.now();
+    tweenStart = performance.now(); tweenMs = 650;
     invalidate();
   }
 
@@ -466,6 +466,15 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
   resize();
   camera.position.copy(camGoal);
   controls.target.copy(target);
+  // Taking over from the 3D PC: start further out and glide in to the whole card (INTRO_* in boardScene.ts).
+  if (opts.intro && !reduced()) {
+    fromTarget.copy(target);
+    fromPos.copy(camGoal).sub(target).multiplyScalar(INTRO_FROM).add(target);
+    camera.position.copy(fromPos);
+    tweenStart = performance.now() + INTRO_DELAY;
+    tweenMs = INTRO_MS;
+    invalidate();
+  }
 
   // Move the picture aside for the pin map: left of it on a wide stage, above it on a narrow one.
   function offsetView() {
@@ -484,10 +493,10 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
     offsetView();
     let moving = false;
     if (tweenStart >= 0) {
-      const t = Math.min(1, (performance.now() - tweenStart) / (reduced() ? 1 : 650)), e = 1 - Math.pow(1 - t, 3);
+      const t = Math.min(1, Math.max(0, performance.now() - tweenStart) / (reduced() ? 1 : tweenMs)), e = 1 - Math.pow(1 - t, 3);
       camera.position.lerpVectors(fromPos, camGoal, e);
       controls.target.lerpVectors(fromTarget, target, e);
-      if (t >= 1) tweenStart = -1; else moving = true;
+      if (t >= 1) { tweenStart = -1; tweenMs = 650; } else moving = true;
     }
     // Damping keeps easing a drag out; stop once a frame moves less than a twentieth of a pixel.
     wasT.copy(controls.target); wasP.copy(camera.position);

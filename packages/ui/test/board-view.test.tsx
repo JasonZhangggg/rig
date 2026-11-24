@@ -107,6 +107,22 @@ describe("The motherboard on My PC", () => {
     expect(document.querySelector(".board-key")?.textContent).toBe("In useFree");
   });
 
+  it("turns and moves with the same mouse buttons as the whole PC, and goes back to all parts from inside the 3D view", async () => {
+    await openBoard();
+    expect(screen.getByText(/^Drag to turn · Right-drag to move · Scroll to zoom/)).toBeTruthy();
+    const view = screen.getByRole("region", { name: "3D view" });
+    fireEvent.click(within(view).getByRole("button", { name: "All parts" }));
+    expect(await screen.findByRole("list", { name: "Parts" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "All parts" })).toBeNull();
+  });
+
+  it("shows the board at once, with no fade, when motion is reduced", async () => {
+    localStorage.setItem("rig.appearance.v1", JSON.stringify({ motion: "reduce" }));
+    await openBoard();
+    expect(document.querySelector(".closeup")!.className).toBe("closeup");
+    expect(document.getElementById("pc-stage")).toBeNull();
+  });
+
   it("puts Reset view back to the whole board", async () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
