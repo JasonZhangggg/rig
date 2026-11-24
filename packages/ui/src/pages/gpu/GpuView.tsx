@@ -35,10 +35,11 @@ function outputLine(u: OutputUse | undefined, screens: string[], of: number) {
 }
 
 /**
- * The graphics card close up, in place of the 3D PC while the card is open: drag to move, right-drag to turn,
- * scroll to zoom. Pointing at an output says what's on it; clicking zooms in, with a pin map on a power plug.
+ * The graphics card close up, in place of the 3D PC while the card is open: drag to turn, right-drag to move,
+ * scroll to zoom, as in the 3D PC. Pointing at an output says what's on it; clicking zooms in, with a pin map on a
+ * power plug. With intro, it opens zooming in from further out.
  */
-export function GpuView() {
+export function GpuView({ intro = false }: { intro?: boolean }) {
   const c = useCard();
   const host = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -48,6 +49,7 @@ export function GpuView() {
   const look = useAppearance();
   const accent = useMemo(() => paletteOf(look).colors.good, [look]);
   const sceneRef = useRef<GpuScene | null>(null);
+  const introRef = useRef(intro);
   const marks = useMemo(() => {
     const m: Record<string, "used" | "free" | "some"> = {};
     for (const g of c?.use.groups ?? []) for (const o of g.outputs) if (o.state !== "unknown") m[o.id] = o.state;
@@ -64,6 +66,7 @@ export function GpuView() {
     try {
       s = createGpuScene(host.current!, shape, shape.ports, {
         accent,
+        intro: introRef.current,
         onHover: (h: GpuHover | null) => {
           gpuStage.pointed(h?.id ?? null);
           if (!h) { setTip(null); return; }
@@ -76,6 +79,7 @@ export function GpuView() {
       setNo3d(true);
       return;
     }
+    introRef.current = false;
     s.setUsage(marksRef.current);
     sceneRef.current = s;
     gpuStage.attach(s);
@@ -107,7 +111,7 @@ export function GpuView() {
       )}
       <div className="board-top">
         {no3d ? <p className="board-hint faint">This screen can't draw the card in 3D.</p> : <>
-          <p className="board-hint faint">Drag to move · Right-drag to turn · Scroll to zoom · Click an output or the power plug for a closer look</p>
+          <p className="board-hint faint">Drag to turn · Right-drag to move · Scroll to zoom · Click an output or the power plug for a closer look</p>
           {Object.keys(marks).length > 0 && <p className="board-key" aria-hidden="true"><i className="is-used" />In use<i className="is-free" />Free{some && <><i className="is-some" />One of these</>}</p>}
         </>}
       </div>

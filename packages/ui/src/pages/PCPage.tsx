@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { reducedMotion } from "../appearance";
 import { formatTemp, type Part, type Route, type TempUnit } from "@rig/core";
 import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
@@ -53,6 +54,7 @@ export function PCPage() {
   const picked = view === "pc" && ui.selected && parts[ui.selected] ? ui.selected : null;
   // A tower's graphics card opens close up, like the board; a laptop's is soldered in, so there's nothing to show.
   const closeUp = pc.kind === "tower";
+  const fade = useCloseUpFade(picked === "motherboard" ? "motherboard" : picked === "gpu" && closeUp ? "gpu" : null);
   const list = Object.entries(parts);
   const sub = view === "upgrades" ? `What would help ${pc.name} most, and parts that fit it.`
     : view === "manuals" ? `Manuals for ${pc.name}'s parts, and its drivers and BIOS.`
@@ -73,8 +75,19 @@ export function PCPage() {
       {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : (
       <div className="pc-view" ref={viewRef}>
         <section className="stage-card" aria-label="3D view">
-          {picked === "motherboard" ? <BoardView /> : picked === "gpu" && closeUp ? <GpuView /> : <StageSlot id="pc-stage" />}
+          {fade.pc && <StageSlot id="pc-stage" />}
+          {fade.shown && (
+            <div className={`closeup${fade.state === "in" ? " is-in" : fade.state === "out" ? " is-out" : ""}`}>
+              {fade.shown === "motherboard" ? <BoardView intro={fade.state === "in"} /> : <GpuView intro={fade.state === "in"} />}
+            </div>
+          )}
           {customize && !picked && <Customize onDone={closeCustomize} />}
+          {picked && (
+            <button className="stage-back" type="button" onClick={() => getStage().scene.select(null)}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              All parts
+            </button>
+          )}
           <div className="stage-tools" role="toolbar" aria-label="View">
             {!picked && <button className="btn ghost sm" type="button" aria-pressed={ui.exploded} onClick={() => set({ exploded: !ui.exploded })}>Exploded view</button>}
             <button className="btn ghost sm" type="button" onClick={() => (picked === "motherboard" ? boardStage.reset() : picked === "gpu" && closeUp ? gpuStage.reset() : getStage().scene.resetView())}>Reset view</button>
@@ -85,6 +98,33 @@ export function PCPage() {
       )}
     </div>
   );
+}
+
+type CloseUp = "motherboard" | "gpu";
+/** How long a close-up takes to fade in over the 3D PC flying in to the part (as in pc.css), and to fade back out. */
+const FADE_IN_MS = 680, FADE_OUT_MS = 280;
+
+/**
+ * The board and the graphics card open in close-ups of their own, drawn in place of the 3D PC. Rather than cut
+ * from one to the other, the PC flies in to the part and the close-up fades in over it, zooming in as it comes;
+ * going back, the close-up fades out over the PC flying back out. Says which close-up is on the stage, whether
+ * the 3D PC shows (alone, or under a close-up while it fades), and which way it's fading. A page opened on a
+ * part, or reduced motion, just shows it.
+ */
+function useCloseUpFade(id: CloseUp | null) {
+  const [prev, setPrev] = useState(id);
+  const [fading, setFading] = useState<{ id: CloseUp; state: "in" | "out" } | null>(null);
+  if (id !== prev) {
+    setPrev(id);
+    setFading(reducedMotion() ? null : id ? { id, state: "in" } : prev ? { id: prev, state: "out" } : null);
+  }
+  useEffect(() => {
+    if (!fading) return;
+    const t = setTimeout(() => setFading(null), fading.state === "in" ? FADE_IN_MS : FADE_OUT_MS);
+    return () => clearTimeout(t);
+  }, [fading]);
+  const shown = id ?? (fading?.state === "out" ? fading.id : null);
+  return { shown, pc: !shown || !!fading, state: fading?.id === shown ? fading.state : null };
 }
 
 /** Wide windows only: the 3D view's height is the window's, less what sits above and below it. */
@@ -191,15 +231,11 @@ function PartsList() {
   );
 }
 
-/** The page title while a part is open: back to every part, then what the part is. */
+/** The page title while a part is open: what the part is. The way back to every part sits in the 3D view. */
 function PartHead({ part }: { part: Part }) {
   return (
     <div className="page-head part-head">
       <div>
-        <button className="detail-back" type="button" onClick={() => getStage().scene.select(null)}>
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          All parts
-        </button>
         <p className="part-kind">{part.type}</p>
         <h1>{part.name}</h1>
         {part.sub && <p className="sub">{part.sub}</p>}

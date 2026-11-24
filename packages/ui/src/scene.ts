@@ -126,7 +126,9 @@ export function createScene(
   controls.maxPolarAngle = Math.PI * 0.49;
   controls.minDistance = 4;
   controls.maxDistance = 22;
-  controls.enablePan = false;
+  // The same buttons as every other 3D view in Rig: drag turns, right-drag (or Shift-drag) moves, scroll zooms.
+  controls.enablePan = true;
+  controls.screenSpacePanning = true;
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f99, 0.6);
   scene.add(hemi);
@@ -238,6 +240,11 @@ export function createScene(
     pulses: [] as THREE.Sprite[],
     tempUnit: "c" as TempUnit,
   };
+  // Picking a part flies the camera in to it while the rest of the PC fades away; letting go fades the rest back in.
+  // kept is the part that stays throughout, fadeT how far the others have gone (0 all there, 1 put away).
+  const fade = { kept: null as string | null, t: 0 };
+  /** How much of an entry shows: all of the part that stays, less of the others as they fade. */
+  const shownOf = (partId: string) => (!fade.kept || partId === fade.kept ? 1 : 1 - fade.t);
   const parts = (): Record<string, Part> => state.pc?.parts ?? {};
   const theme = (): SceneTheme => state.theme!;
 
@@ -727,6 +734,7 @@ export function createScene(
     scene.traverse((o) => {
       if (o instanceof THREE.Mesh && !o.material.userData?.outlineParameters) o.material.userData.outlineParameters = { visible: false };
     });
+    keepPart(fade.kept);
     applyHighlights();
     applyExplode(true);
     // What the camera fits to the stage: the PC's box and the turntable. The turntable's sides may run a little
@@ -749,6 +757,7 @@ export function createScene(
       }
     }
     box3.getBoundingSphere(model);
+    panBox.copy(box3).expandByScalar(0.25);
   }
 
   // ---------- framing ----------
@@ -757,6 +766,8 @@ export function createScene(
   // Without it the camera keeps its designed distance.
   const fitPts: { v: THREE.Vector3; x: boolean; y: boolean }[] = [];
   const model = new THREE.Sphere();
+  /** Moving the view stops at the PC's edges, so it can't be slid out of sight. */
+  const panBox = new THREE.Box3();
   const fitCam = new THREE.PerspectiveCamera();
   let fit: { t: number; r: number; b: number; l: number; x: number } | null = null;
   let fitD = 0;
@@ -840,7 +851,8 @@ export function createScene(
     if (instant) { controls.target.copy(framing.target); camera.position.copy(want); camAnim = null; }
     else camAnim = { from: camera.position.clone(), to: want, t: 0, look: { from: controls.target.clone(), to: framing.target.clone() } };
   }
-  let camAnim: { from: THREE.Vector3; to: THREE.Vector3; t: number; look?: { from: THREE.Vector3; to: THREE.Vector3 } } | null = null;
+  /** A camera glide; speed is how much of it a second covers (1.4 unless given). */
+  let camAnim: { from: THREE.Vector3; to: THREE.Vector3; t: number; speed?: number; look?: { from: THREE.Vector3; to: THREE.Vector3 } } | null = null;
 
   // A picked part pulls the camera in until it fills most of the view, from the side you were already looking at.
   const _sphere = new THREE.Sphere();
@@ -851,15 +863,29 @@ export function createScene(
     _box.makeEmpty();
     for (const e of mine) _box.union(_part.setFromObject(e.obj));
     _box.getBoundingSphere(_sphere);
-    const dir = camera.position.clone().sub(controls.target).normalize();
+    let dir = camera.position.clone().sub(controls.target).normalize();
     // Alone, the part fills the stage by its own size, so a small drive shows as large as a graphics card;
     // the camera may come as close as it needs. In the PC, small parts keep a floor so the view doesn't dive in.
     const alone = state.solo === id;
-    const dist = alone ? soloDistance(_sphere.radius, camera.fov, camera.aspect)
+    // A tower's motherboard opens in its own close-up, which shows the board face on and filling the view:
+    // fly to that same view, so the close-up fades in over a picture that already matches it.
+    const board = alone && id === "motherboard" && state.pc?.kind === "tower";
+    if (board) dir = faceOn(_box, dir);
+    const dist = alone ? soloDistance(_sphere.radius, camera.fov, camera.aspect, board ? 0.88 : 1.3)
       : Math.min(Math.max(_sphere.radius, 0.45) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 1.6, camera.position.distanceTo(controls.target));
     controls.minDistance = alone ? Math.min(1, dist * 0.5) : 4;
-    camAnim = { from: camera.position.clone(), to: _sphere.center.clone().addScaledVector(dir, dist), t: 0, look: { from: controls.target.clone(), to: _sphere.center.clone() } };
+    // Flying in to a part shown alone is quicker than other glides: it's the way into the part's page.
+    camAnim = { from: camera.position.clone(), to: _sphere.center.clone().addScaledVector(dir, dist), t: 0, speed: alone ? 2.2 : undefined, look: { from: controls.target.clone(), to: _sphere.center.clone() } };
     wake();
+  }
+
+  /** Straight at a flat part's face, from the side the camera is already on, a little from above. */
+  function faceOn(box: THREE.Box3, dir: THREE.Vector3) {
+    const s = box.getSize(new THREE.Vector3());
+    // The thinnest side of the box is the one the face looks out of; a board lying flat keeps the view it has.
+    if (s.y <= s.x && s.y <= s.z) return dir;
+    const n = s.x <= s.z ? new THREE.Vector3(Math.sign(dir.x) || 1, 0, 0) : new THREE.Vector3(0, 0, Math.sign(dir.z) || 1);
+    return n.setY(0.12).normalize();
   }
 
   function heatColor(t: number) {
@@ -895,8 +921,11 @@ export function createScene(
         // Case panels go see-through in heat view so internals show
         let op = m.userData.baseOpacity;
         if (state.heat && (e.partId === "case" || e.partId === "chassis")) op = Math.min(op, 0.18);
-        m.opacity = op;
-        m.transparent = op < 1 || !!m.userData.cutout;
+        // A material the staying part shares with another keeps its look, so the part itself never fades.
+        const k = keptMats.has(m) ? 1 : shownOf(e.partId);
+        m.opacity = op * k;
+        m.transparent = op < 1 || k < 1 || !!m.userData.cutout;
+        // Fading parts still fill the depth buffer, or the dark outline drawn behind each one would show through it.
         m.depthWrite = op >= 0.5 && !m.userData.cutout;
       });
     }
@@ -908,13 +937,28 @@ export function createScene(
     for (const e of state.entries) {
       const { basePos, offset } = e.obj.userData;
       e.obj.position.copy(basePos).addScaledVector(offset, t);
-      e.obj.visible = (!state.solo || e.partId === state.solo) && !(e.fadeWhenExploded && t >= 0.98);
+      e.obj.visible = shownOf(e.partId) > 0 && !(e.fadeWhenExploded && t >= 0.98);
     }
-    // A part shown alone floats free of the turntable; the case or laptop body still stands on it.
-    const standing = !state.solo || state.solo === "case" || state.solo === "chassis";
-    pedestal.visible = !!theme().pedestal && standing;
-    blob.visible = contact.visible = !!theme().transparent && standing;
-    floor.visible = !theme().transparent && standing;
+    // A part shown alone floats free of the turntable, which fades with the rest; the case or laptop body still stands on it.
+    const standing = !fade.kept || fade.kept === "case" || fade.kept === "chassis" ? 1 : 1 - fade.t;
+    const th = theme();
+    pedestal.visible = !!th.pedestal && standing > 0;
+    blob.visible = contact.visible = !!th.transparent && standing > 0;
+    floor.visible = !th.transparent && standing > 0;
+    pedMat.transparent = standing < 1;
+    pedMat.opacity = standing;
+    rimMat.opacity = (th.pedestalRim ?? 0.8) * standing;
+    (blob.material as THREE.MeshBasicMaterial).opacity = (th.shadow ?? 0.3) * standing;
+    (contact.material as THREE.MeshBasicMaterial).opacity = Math.min(0.9, (th.shadow ?? 0.3) * 1.5) * standing;
+    (floor.material as THREE.MeshStandardMaterial).transparent = standing < 1;
+    (floor.material as THREE.MeshStandardMaterial).opacity = standing;
+  }
+  // Materials of the part that stays, kept whole if another part happens to share one.
+  const keptMats = new Set<THREE.Material>();
+  function keepPart(id: string | null) {
+    fade.kept = id;
+    keptMats.clear();
+    if (id) for (const e of state.entries) if (e.partId === id) e.obj.traverse((o) => { if (o instanceof THREE.Mesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => keptMats.add(m)); });
   }
   const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
 
@@ -984,6 +1028,7 @@ export function createScene(
     const was = state.selected;
     state.selected = id && parts()[id] ? id : null;
     state.solo = state.selected;
+    if (state.solo && state.solo !== fade.kept) keepPart(state.solo);
     if (state.hovered && state.solo) { state.hovered = null; onHover?.(null); }
     applyExplode(false);
     if (state.selected && state.selected !== was) {
@@ -1073,7 +1118,15 @@ export function createScene(
 
   let spin = false, spinT = 0, spinOff = 0, dragging = false;
   controls.addEventListener("start", () => { dragging = true; spin = false; invalidate(); });
-  controls.addEventListener("change", () => invalidate());
+  const _shift = new THREE.Vector3();
+  controls.addEventListener("change", () => {
+    const t = controls.target;
+    if (!panBox.isEmpty() && !panBox.containsPoint(t)) {
+      _shift.copy(t).clamp(panBox.min, panBox.max).sub(t);
+      t.add(_shift); camera.position.add(_shift);
+    }
+    invalidate();
+  });
   controls.addEventListener("end", () => { dragging = false; });
   const clock = new THREE.Clock();
   // Draws only while the stage is on screen and the tab is showing, and then only when something on it changes:
@@ -1133,6 +1186,17 @@ export function createScene(
       state.explodeT = target > state.explodeT ? Math.min(1, state.explodeT + step) : Math.max(0, state.explodeT - step);
       applyExplode(false);
     }
+    // The rest of the PC fades out over the first part of the flight to a picked part, so the part shows well before the
+    // camera gets there, and fades back in as it's let go.
+    const fadeTo = state.solo ? 1 : 0;
+    const fading = fade.t !== fadeTo;
+    if (fading) {
+      const step = still ? 1 : dt * 5;
+      fade.t = fadeTo > fade.t ? Math.min(1, fade.t + step) : Math.max(0, fade.t - step);
+      if (fade.t === 0) keepPart(null);
+      applyExplode(false);
+      applyHighlights();
+    }
     if (spin && !camAnim && !dragging && !reducedMotion() && awake()) {
       spinT += dt;
       const off = Math.sin(spinT * 0.35) * SWAY;
@@ -1143,7 +1207,7 @@ export function createScene(
       camera.position.copy(controls.target).add(v);
     }
     if (camAnim) {
-      camAnim.t = Math.min(1, camAnim.t + (reducedMotion() ? 1 : dt * 1.4));
+      camAnim.t = Math.min(1, camAnim.t + (reducedMotion() ? 1 : dt * (camAnim.speed ?? 1.4)));
       camera.position.lerpVectors(camAnim.from, camAnim.to, easeInOut(camAnim.t));
       if (camAnim.look) controls.target.lerpVectors(camAnim.look.from, camAnim.look.to, easeInOut(camAnim.t));
       if (camAnim.t >= 1) camAnim = null;
@@ -1161,10 +1225,10 @@ export function createScene(
     }
     const moved = controls.update();
     const wasMoving = inMotion;
-    inMotion = !!camAnim || dragging || exploding || moved;
+    inMotion = !!camAnim || dragging || exploding || fading || moved;
     if (wasMoving && !inMotion) settleHover();
     const now = performance.now();
-    if (moved || dragging || exploding || turning) settleUntil = now + SETTLE_MS;
+    if (moved || dragging || exploding || fading || turning) settleUntil = now + SETTLE_MS;
     const settling = now < settleUntil;
     const ambient = !still && awake() && (state.rotors.length > 0 || pulsing || (spin && !dragging));
     if (settling || (ambient && now - lastDraw >= AMBIENT_MS)) {
@@ -1187,6 +1251,7 @@ export function createScene(
     stats: () => ({ triangles: renderer.info.render.triangles, calls: renderer.info.render.calls }),
     setPC(pc, t) {
       state.pc = pc; state.theme = t; state.selected = null; state.solo = null; controls.minDistance = 4;
+      fade.t = 0; fade.kept = null;
       rebuild(); resize(); frame(state.exploded, true);
       built = true;
       invalidate();
@@ -1212,7 +1277,8 @@ export function createScene(
       invalidate();
     },
     resetView() { if (state.solo) focusOn(state.solo); else frame(state.exploded, false); invalidate(); },
-    setZoomable(v) { controls.enableZoom = v; },
+    // A stage that can't zoom (Home's) can't be moved either: it only turns.
+    setZoomable(v) { controls.enableZoom = v; controls.enablePan = v; },
     setSpin(v) { spin = v; spinT = 0; spinOff = 0; invalidate(); },
     setTempUnit(unit) { state.tempUnit = unit; refreshLabels(); invalidate(); },
     dispose() {

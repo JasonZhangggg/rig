@@ -6,6 +6,22 @@
 /* The 3D view is a picture, not a section: one flat tint, no gradient. */
 /* --stage-foot keeps the parts list and labels clear of the view buttons along the bottom. */
 .stage-card { --stage-foot: 60px; position: relative; isolation: isolate; min-height: 420px; height: var(--stage-h); overflow: hidden; border-radius: var(--r); background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
+/* Back to every part, in the 3D view's top left corner while a part is open, in the same pill as the view buttons below. */
+.stage-back {
+  position: absolute; z-index: 3; top: 14px; left: 14px; display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 14px 0 8px;
+  border: 0; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); font: 500 14px var(--font); cursor: pointer;
+}
+.stage-back svg { width: 16px; height: 16px; }
+/* The board's or card's own line of help and key sit under it, lined up with it. */
+.stage-card:has(.stage-back) .board-top { top: 60px; left: 16px; }
+/* The board or card close-up over the 3D PC: it fades in once the PC has flown most of the way in to the part, and
+   back out as the PC flies out again (FADE_IN_MS, FADE_OUT_MS in PCPage.tsx). */
+.closeup { position: absolute; z-index: 1; inset: 0; }
+.closeup.is-in { pointer-events: none; animation: closeup-in .62s linear both; }
+.closeup.is-out { pointer-events: none; animation: closeup-out .26s ease-in both; }
+/* Held clear while the PC flies most of the way in, then eased in: one animation, so no wait before it starts. */
+@keyframes closeup-in { 0%, 40% { opacity: 0; animation-timing-function: ease-in-out; } 100% { opacity: 1; } }
+@keyframes closeup-out { to { opacity: 0; } }
 .stage-tools { position: absolute; z-index: 2; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none; display: flex; gap: 6px; padding: 6px; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 
 .customize { position: absolute; z-index: 5; top: 16px; right: 16px; width: 260px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-lg); }
@@ -32,10 +48,7 @@
 .part-list button.is-lit { background: var(--surface-2); }
 
 /* A picked part: the page title is the part, then its readings, big, then the rest behind tabs. */
-.part-head .detail-back { margin-bottom: 14px; }
 .part-kind { color: var(--text-3); font: var(--t-label); margin-bottom: 4px; }
-.detail-back { display: inline-flex; align-items: center; gap: 4px; margin-left: -6px; padding: 4px 8px 4px 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: 500 14px var(--font); cursor: pointer; }
-.detail-back svg { width: 16px; height: 16px; }
 .part-detail { display: flex; flex-direction: column; gap: 20px; }
 .part-detail .tabs { gap: 20px; margin: 8px 0 0; padding: 0; }
 .part-detail .tabs button { padding: 10px 0; }
@@ -91,7 +104,8 @@
 @media (prefers-reduced-motion: reduce) { .part-temp, .live-tick { animation: none; } .live-meter > i, .live-load i { transition: none; } }
 
 @media (hover: hover) and (pointer: fine) {
-  .part-list button:hover, .detail-back:hover { background: var(--surface-2); color: var(--text); }
+  .part-list button:hover { background: var(--surface-2); color: var(--text); }
+  .stage-back:hover { background: var(--surface-2); }
 }
 
 /* On a wide window the 3D view is as tall as the space left under the title (--fit-h, worked out in PCPage),
