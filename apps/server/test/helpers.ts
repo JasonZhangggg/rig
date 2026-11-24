@@ -11,7 +11,7 @@ import { testDb } from "./pglite";
 
 export const ORIGIN = "http://localhost:8787";
 
-export type FakeRound = { text?: string; tool?: { name: string; input: unknown }; tools?: { name: string; input: unknown }[]; blocks?: unknown[]; stop?: string };
+export type FakeRound = { text?: string; tool?: { name: string; input: unknown }; tools?: { name: string; input: unknown }[]; blocks?: unknown[]; stop?: string; /** Fails after streaming the text, like a dropped connection. */ fail?: boolean };
 
 /** A pretend Claude: each round answers with the next scripted message. `blocks` are server tool blocks, like a web fetch, put before the tool calls. */
 export function fakeClaude(rounds: FakeRound[]) {
@@ -35,7 +35,7 @@ export function fakeClaude(rounds: FakeRound[]) {
           uses.forEach((u, n) => content.push({ type: "tool_use", id: n ? `tu_${i}_${n}` : `tu_${i}`, name: u.name, input: u.input }));
           const message = { content, stop_reason: r.stop ?? (uses.length ? "tool_use" : "end_turn") };
           return {
-            async *[Symbol.asyncIterator]() { yield* events; },
+            async *[Symbol.asyncIterator]() { yield* events; if (r.fail) throw new Error("connection dropped"); },
             finalMessage: async () => message,
           };
         },

@@ -5,6 +5,7 @@
 // fixed parts, never free WQL.
 
 import { checkScript, textOnNeverList } from "./check";
+import rulesJson from "./rules/reads.json";
 
 export interface CimFilter { property: string; value: string | number | boolean }
 
@@ -34,15 +35,75 @@ export const READ_LIMITS = {
   filters: 4,
 } as const;
 
-/** CIM classes whose values are text other programs wrote, like event messages. Reading them counts as outside text. */
-const FREE_TEXT_CLASSES = new Set(["win32_ntlogevent", "win32_reliabilityrecords"]);
+interface CimClass { clean?: boolean; text?: string[]; deny?: string[] }
+interface ReadRules {
+  version: number;
+  cim: Record<string, Record<string, CimClass>>;
+  secretProperty: string[];
+  registryClean: { key: string; values?: string[] }[];
+  registryNever: { says: string; keys: string[] }[];
+  secretValue: string[];
+  keyValue: string[];
+  keyMinBytes: number;
+  keyMinChars: number;
+}
+
+/** The one table of what reads may look at, shared with the helper (rules/reads.json). */
+export const READ_RULES = rulesJson as ReadRules;
+
+const low = (s: string) => s.toLowerCase();
+const CIM = new Map(Object.entries(READ_RULES.cim).map(([ns, classes]) => [low(ns), new Map(Object.entries(classes).map(([c, e]) => [low(c), e]))]));
+const DEFAULT_NS = "root\\cimv2";
+
+/** A CIM class Rig reads, or null when it isn't on the list. */
+function cimClass(ns: string | undefined, cls: string): CimClass | null {
+  return CIM.get(low(ns ?? DEFAULT_NS))?.get(low(cls)) ?? null;
+}
+
+const has = (list: string[] | undefined, name: string) => !!list?.some((x) => low(x) === low(name));
+const secretProperty = (name: string) => READ_RULES.secretProperty.some((s) => low(name).includes(s));
+/** A registry value whose name says it holds a secret. Values named like a key are judged by their data, on the PC. */
+export const secretValue = (name: string) => READ_RULES.secretValue.some((s) => low(name).includes(s));
+
+const parts = (key: string) => low(key).split("\\").filter(Boolean);
+const rooted = (k: string) => /^(hklm|hkcu)$/i.test(k.split("\\")[0]);
+
+/** Whether `key` starts with `prefix`, whole parts at a time. */
+function under(key: string, prefix: string): boolean {
+  const k = parts(key), p = parts(prefix);
+  return p.length <= k.length && p.every((x, i) => k[i] === x);
+}
+
+/** The words of the never-list entry a registry key falls under, or null. */
+export function registryNever(key: string): string | null {
+  const k = parts(key);
+  for (const rule of READ_RULES.registryNever) {
+    for (const entry of rule.keys) {
+      const p = parts(entry);
+      if (rooted(entry) ? under(key, entry) : k.some((_, i) => p.every((x, j) => k[i + j] === x))) return rule.says;
+    }
+  }
+  return null;
+}
 
 /**
- * Whether a read brings back free text someone else could have written (script and command output,
- * event messages, file contents). Registry and CIM values are structured, so they don't count.
+ * Whether a read brings back text someone else could have written. Only the listed CIM classes (and, for those with free-text
+ * properties, reads that name only their other properties) and the listed registry keys count as clean; everything else
+ * read, including every command and script, counts as outside text.
  */
 export function readTaints(r: PcReadSpec): boolean {
-  return r.kind === "cmdlet" || r.kind === "script" || (r.kind === "cim" && FREE_TEXT_CLASSES.has(r.class.toLowerCase()));
+  switch (r.kind) {
+    case "registry":
+      return !READ_RULES.registryClean.some((c) => under(r.key, c.key) && (!c.values || (r.value !== undefined && has(c.values, r.value))));
+    case "cim": {
+      const e = cimClass(r.namespace, r.class);
+      if (!e?.clean) return true;
+      if (!e.text?.length) return false;
+      return !r.properties?.length || r.properties.some((p) => has(e.text, p));
+    }
+    default:
+      return true;
+  }
 }
 
 const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -64,8 +125,9 @@ export function checkRead(raw: unknown): PcReadSpec | string {
       if (!key) return "A registry read needs a full key that starts with HKLM\\ or HKCU\\, like HKCU\\Control Panel\\Desktop.";
       if (r.value !== undefined && (typeof r.value !== "string" || r.value.length > 200)) return "value must be the name of one value in that key.";
       const value = r.value as string | undefined;
-      const never = textOnNeverList(`${key}\\${value ?? ""}`, "read");
+      const never = registryNever(key) ?? textOnNeverList(`${key}\\${value ?? ""}`, "read");
       if (never) return `${never}.`;
+      if (value !== undefined && secretValue(value)) return "Rig never reads a value whose name says it holds a password, key or token.";
       return value === undefined ? { kind: "registry", key } : { kind: "registry", key, value };
     }
     case "cim": {
@@ -86,6 +148,11 @@ export function checkRead(raw: unknown): PcReadSpec | string {
           if (!ok) return "Each filter is a property name and a plain value (text, a number or true/false).";
         }
       }
+      const entry = cimClass(ns, cls);
+      if (!entry) return `Rig doesn't read ${cls}${ns ? ` in ${ns}` : ""}. It reads hardware, Windows, power, display, TPM, services, devices and drivers, network and firewall classes, like Win32_VideoController or MSFT_NetAdapter in root\\StandardCimv2.`;
+      const named = [...(props ?? []), ...((filter ?? []) as CimFilter[]).map((f) => f.property)] as string[];
+      const off = named.find((p) => has(entry.deny, p) || secretProperty(p));
+      if (off) return `Rig never reads ${cls}.${off}.`;
       const never = textOnNeverList(`${ns ?? ""}\\${cls}\\${(props ?? []).join(",")}`, "read");
       if (never) return `${never}.`;
       return {

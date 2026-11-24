@@ -249,10 +249,10 @@ describe("LocalClient", () => {
   });
 
   it("runs the chat's reads through the helper and goes on with what they found", async () => {
-    const asks: { resume?: { resume: string; results: PcReadResult[] }; live?: { reads?: boolean } }[] = [];
+    const asks: { resume?: { resume: string; results: PcReadResult[] }; live?: { reads?: boolean; steps?: boolean } }[] = [];
     const cloud = {
       signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
-      chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: AbortSignal | undefined, live: { reads?: boolean }, resume?: { resume: string; results: PcReadResult[] }) => {
+      chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: AbortSignal | undefined, live: { reads?: boolean; steps?: boolean }, resume?: { resume: string; results: PcReadResult[] }) => {
         asks.push({ resume, live });
         if (!resume) {
           onEvent({ type: "text", text: "Let me look." });
@@ -279,6 +279,8 @@ describe("LocalClient", () => {
 
     expect(asks).toHaveLength(2);
     expect(asks[0].live?.reads).toBe(true);
+    // This app shows command steps, so the server may offer them; older apps don't say so and only get fixes.
+    expect(asks[0].live?.steps).toBe(true);
     expect(asks[1].resume?.resume).toBe("signed-state");
     // The helper only got the reads that check as reads here too, without the server's ids.
     expect(read.mock.calls.map(([r]) => r)).toEqual([{ kind: "registry", key: "HKCU\\Control Panel\\Desktop", value: "WallPaper" }, { kind: "cim", class: "Win32_BIOS" }]);

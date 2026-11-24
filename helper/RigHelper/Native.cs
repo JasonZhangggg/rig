@@ -16,6 +16,27 @@ static partial class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetNamedPipeServerProcessId(IntPtr pipe, out uint processId);
 
+    // ----- Whose process -----
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, TOKEN_QUERY = 0x0008;
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
+
+    /// The SID of the Windows account a process runs as, or null when Windows won't say.
+    public static string? ProcessUserSid(int pid)
+    {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return null;
+        try
+        {
+            if (!OpenProcessToken(p, TOKEN_QUERY, out var t)) return null;
+            try { using var id = new WindowsIdentity(t); return id.User?.Value; }
+            finally { CloseHandle(t); }
+        }
+        catch { return null; }
+        finally { CloseHandle(p); }
+    }
+
     // ----- Windows in front -----
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);

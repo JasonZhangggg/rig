@@ -422,7 +422,9 @@ describe("custom logs", () => {
     // The PC block lists what it already keeps, without anything the chat doesn't need.
     const block = JSON.stringify(seen[0].system);
     expect(block).toContain("customLogs");
-    expect(block).toContain("GPU heat");
+    // By id and kind: the label is text an earlier answer wrote.
+    expect(block).toContain("c-old");
+    expect(block).not.toContain("GPU heat");
     expect(block).not.toContain("S-1-5-21-1");
     expect(block).not.toContain("xxxxxxxx");
     expect(JSON.stringify(seen[1].messages)).toMatch(/path must be a counter path/);

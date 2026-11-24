@@ -270,10 +270,11 @@ export class CloudClient implements RigClient {
   /** Asks Rig. The desktop passes its live view and settings so answers use the latest readings. */
   async chat(
     machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal,
-    live?: { view: PC; facts: SystemFacts; probes?: ProbeStatus[]; reads?: boolean }, resume?: { resume: string; results: PcReadResult[] },
+    live?: { view: PC; facts: SystemFacts; probes?: ProbeStatus[]; reads?: boolean; steps?: boolean }, resume?: { resume: string; results: PcReadResult[] },
   ) {
     const messages = history.map(({ from, text, seal }) => ({ from, text, ...(seal ? { seal } : {}) }));
-    const body: ChatRequest = { machineId, messages, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...live, ...resume };
+    const chatId = history.find((m) => m.from === "you")?.id;
+    const body: ChatRequest = { machineId, messages, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...(chatId ? { chatId } : {}), ...live, ...resume };
     const res = await this.send(paths.chat, { method: "POST", headers: { accept: "text/event-stream" }, body: JSON.stringify(body), signal });
     await readChatStream(res, onEvent);
   }

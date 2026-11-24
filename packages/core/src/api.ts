@@ -53,6 +53,10 @@ export interface ChatRequest {
   probes?: ProbeStatus[];
   /** The desktop can run live reads through its helper (the `reads` event). */
   reads?: boolean;
+  /** The desktop can show and run command steps on proposals. Apps before them read only `calls`. */
+  steps?: boolean;
+  /** Which conversation this is: the id of its first question. The server binds each answer's seal to it. */
+  chatId?: string;
   /** Going on with an answer after its reads: the `resume` from the `reads` event, and what each read found. */
   resume?: string;
   results?: PcReadResult[];

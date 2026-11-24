@@ -137,6 +137,8 @@ describe("CloudClient chat", () => {
     const events: ChatEvent[] = [];
     await client().chat("pc", [{ id: "1", from: "you", text: "Hi" }, { id: "2", from: "rig", text: "Hello.", seal: "s1", sources: [] }, { id: "3", from: "you", text: "Faster?" }], (e) => events.push(e));
     expect((sent[0] as { messages: unknown[] }).messages).toEqual([{ from: "you", text: "Hi" }, { from: "rig", text: "Hello.", seal: "s1" }, { from: "you", text: "Faster?" }]);
+    // The chat's id is its first question's, so the server can bind each answer's seal to this chat.
+    expect((sent[0] as { chatId?: string }).chatId).toBe("1");
     const p = (events[0] as Extract<ChatEvent, { type: "proposal" }>).proposal;
     expect(p.steps).toEqual([{ kind: "fix", call: { kind: "windows.gameMode", enabled: true } }]);
     expect(p.tier).toBe(1);
