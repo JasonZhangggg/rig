@@ -255,3 +255,12 @@ export interface CommandRpc {
 export interface CommandLink {
   command<K extends keyof CommandRpc>(method: K, params: CommandRpc[K]["params"]): Promise<CommandRpc[K]["reply"]>;
 }
+
+/** A command's fingerprint, the same as the helper's: SHA-256 over every part, each with its length in front. Windows' prompt approves this exact command. */
+export async function commandHash(cmd: Command): Promise<string> {
+  const parts = [cmd.does, cmd.read, cmd.run, cmd.undo === undefined ? "-" : "+", cmd.undo ?? ""];
+  for (const t of cmd.touches) parts.push(t.kind, t.kind === "registry" ? t.key : t.kind === "file" ? t.path : t.name, t.kind === "registry" && t.value !== undefined ? `=${t.value}` : "");
+  const bytes = new TextEncoder().encode(parts.map((p) => `${p.length}:${p}`).join("\n"));
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("");
+}

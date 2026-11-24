@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardTier, catalog, checkScript, checkStep, rulesVersion, type Command, type ScriptUse, type Step } from "../src";
+import { cardTier, catalog, checkScript, checkStep, commandHash, rulesVersion, type Command, type ScriptUse, type Step } from "../src";
 import vectors from "../src/rules/vectors.json";
 
 interface Vector { script: string; as: ScriptUse; expect: { refused?: true; tier?: number; commands?: string[] } }
@@ -154,5 +154,13 @@ describe("the card's tier", () => {
   it("is refused when any step is", () => {
     expect(cardTier([gameMode, command({ run: "bcdedit /set testsigning on" })])).toBe("refused");
     expect(cardTier([command({ run: "Stop-Process -Name chrome" })], { tainted: true })).toBe("refused");
+  });
+});
+
+describe("a command's fingerprint", () => {
+  it("is the one the helper works out, so Windows' prompt approves the command the card showed", async () => {
+    expect(await commandHash(menuDelay)).toBe("76e2daca77a2b65316aaaaddc0874f0f65101c3a03e38d2bef3c37a13350e766");
+    expect(await commandHash({ ...menuDelay, undo: undefined })).not.toBe(await commandHash({ ...menuDelay, undo: "" }));
+    expect(await commandHash({ ...menuDelay, run: `${menuDelay.run} ` })).not.toBe(await commandHash(menuDelay));
   });
 });

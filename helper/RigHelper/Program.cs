@@ -38,6 +38,7 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
+            problems.AddRange(CommandSelfTest.Checks());
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -71,6 +72,8 @@ public static class Program
         }
         // RigHelper.exe --approve-script <file>: started behind Windows' permission prompt when the person approves a script in Rig.
         if (Arg(args, "--approve-script") is string approveFile) return ProbeStore.ApproveFromFile(approveFile, Arg(args, "--hash"));
+        // RigHelper.exe --approve-command <file>: the same prompt, for a command that needs admin rights.
+        if (Arg(args, "--approve-command") is string approveCommand) return CommandRunner.ApproveFromFile(approveCommand, Arg(args, "--hash"));
         // RigHelper.exe --record-for 60 --data-dir <folder>: records in this process for a while, for the CI smoke test.
         if (Arg(args, "--record-for") is string secs && int.TryParse(secs, out int recordSecs) && Arg(args, "--data-dir") is string recordDir)
             return RecorderCore.RunFor(recordDir, Math.Clamp(recordSecs, 1, 3600));
@@ -94,7 +97,7 @@ public static class Program
         app.Exited += (_, _) => cts.Cancel();
 
         using var hw = new Sensors();
-        var rig = new Handler(hw);
+        var rig = new Handler(hw, parent);
         var reader = new StreamReader(client, new UTF8Encoding(false));
         var writer = new StreamWriter(client, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
 
@@ -318,8 +321,12 @@ public static class Json
         n is not JsonValue v ? fallback : v.TryGetValue(out double d) ? d : v.TryGetValue(out long l) ? l : v.TryGetValue(out int i) ? i : fallback;
 }
 
-public class Handler(Sensors hw)
+public class Handler(Sensors hw, int? app = null)
 {
+    CommandRunner? commands;
+    /// Commands run for the person at the Rig app that started this helper.
+    CommandRunner Commands => commands ??= new CommandRunner(app is int pid ? Person.OfApp(pid) : Person.Self());
+
     public JsonNode? Handle(string method, JsonNode? p) => method switch
     {
         "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin(), driver = Sensors.Driver() }),
@@ -331,6 +338,7 @@ public class Handler(Sensors hw)
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
         "apply" => new JsonObject { ["undo"] = Actions.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")) },
         "recorder.probes" => ProbeStore.Edit(p, hw),
+        "command.check" or "command.preview" or "command.apply" or "command.undo" => Commands.Handle(method, p),
         _ => throw new RigException($"Rig's helper doesn't know \"{method}\"."),
     };
 }

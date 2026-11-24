@@ -83,6 +83,12 @@ async fn recorder_approve_script(probe: Value, hash: String) -> R<Value> {
     tauri::async_runtime::spawn_blocking(move || recorder::approve_script(&probe, &hash)).await.map_err(|e| e.to_string())?
 }
 
+/// Approves a previewed change that needs admin rights. Windows asks for permission, every time.
+#[tauri::command]
+async fn command_approve(nonce: String, cmd: Value, hash: String) -> R<()> {
+    tauri::async_runtime::spawn_blocking(move || recorder::approve_command(&nonce, &cmd, &hash)).await.map_err(|e| e.to_string())?
+}
+
 /// Turns the background recorder on or off. Windows asks for permission.
 #[tauri::command]
 async fn recorder_set(on: bool) -> R<()> {
@@ -139,7 +145,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             helper_call, kv_get, kv_set, history_add, history_since, changes_list, change_put, token_get, token_set,
-            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script, open_logs, clipboard_text
+            recorder_status, recorder_read, recorder_set, recorder_read_custom, recorder_approve_script, command_approve, open_logs, clipboard_text
         ])
         .run(tauri::generate_context!())
         .expect("Rig couldn't start");

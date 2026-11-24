@@ -339,6 +339,41 @@ pub fn approve_script(_probe: &Value, _hash: &str) -> Result<Value, String> {
     Err("unsupported: scripts run in the background recorder, which is a Windows service.".into())
 }
 
+/// Approves a command that needs admin rights, behind Windows' own permission prompt: the helper checks the command in the
+/// file against the fingerprint the app showed and the one it previewed under this nonce, and only then will command.apply run it.
+#[cfg(windows)]
+pub fn approve_command(nonce: &str, cmd: &Value, hash: &str) -> Result<(), String> {
+    if hash.len() != 64 || !hash.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Rig couldn't read the command's fingerprint.".into());
+    }
+    let owner = current_sid().ok_or("Rig couldn't tell which Windows account this is.")?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let helper = exe.parent().ok_or("Can't tell where Rig is installed.")?.join("RigHelper.exe");
+    if !helper.exists() {
+        return Err(format!("Rig's helper is missing ({}). Reinstall Rig.", helper.display()));
+    }
+    let file = std::env::temp_dir().join(format!("rig-approve-{}-{}.json", std::process::id(), rand::random::<u32>()));
+    let result = PathBuf::from(format!("{}.result", file.display()));
+    std::fs::write(&file, json!({ "nonce": nonce, "cmd": cmd, "owner": owner }).to_string()).map_err(|e| e.to_string())?;
+    let args = format!("--approve-command \"{}\" --hash {hash}", file.display());
+    let code = crate::helper::run_elevated_wait(&helper.to_string_lossy(), &args, std::time::Duration::from_secs(120));
+    let answer: Option<Value> = std::fs::read_to_string(&result).ok().and_then(|s| serde_json::from_str(&s).ok());
+    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_file(&result);
+    match (code, answer) {
+        (None, _) => Err("Windows didn't give permission, so the change isn't approved.".into()),
+        (_, Some(a)) if a["ok"] == true => Ok(()),
+        (_, Some(a)) => Err(a["error"].as_str().unwrap_or("Rig couldn't approve the change.").to_string()),
+        (Some(6), None) => Err("That needs admin rights. Choose Yes when Windows asks.".into()),
+        (Some(code), None) => Err(format!("Rig couldn't approve the change (code {code}).")),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn approve_command(_nonce: &str, _cmd: &Value, _hash: &str) -> Result<(), String> {
+    Err("unsupported: changes are made by Rig's helper, which runs on Windows.".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

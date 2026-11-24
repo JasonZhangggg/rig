@@ -34,6 +34,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\packages\core\src\rules\commands.json" LogicalName="Rig.Rules.commands.json" />
     <EmbeddedResource Include="..\..\packages\core\src\rules\vectors.json" LogicalName="Rig.Rules.vectors.json" />
+    <EmbeddedResource Include="CommandParse.ps1" LogicalName="Rig.Rules.parse.ps1" />
   </ItemGroup>
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
