@@ -15,6 +15,7 @@ import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
 import type { DiffRow } from "./model";
 import rulesJson from "./rules/commands.json";
+import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
 
 /** 0 read, 1 reversible fix, 2 general or disruptive, 3 no undo or lowers a protection. Never is a refusal, not a tier. */
 export type Tier = 0 | 1 | 2 | 3;
@@ -33,7 +34,21 @@ export type HelperStep = CommandStep | NativeStep;
  * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
  * `nativeOps`, and one class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | GpuOp | FileEditOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp;
+
+/**
+ * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
+ * and the value it read under `lookId`; nothing here says where to press.
+ */
+export interface ScreenOp {
+  name: "screen";
+  /** The id `screen.look` answered with. */
+  lookId: string;
+  /** One of the look's options, or a number in its range written as text. */
+  to: string;
+  /** Claude's one sentence, shown labelled as Claude's. */
+  does: string;
+}
 
 /** The helper's self-test op: sets a value under HKCU\Software\RigSelftest. The helper knows it only inside --selftest. */
 export interface SelftestOp {
@@ -52,11 +67,16 @@ export interface NativeRule<O extends NativeOp> {
   reasons(op: O): string[];
   /** A short past-tense title for the changes log. */
   title(op: O): string;
+  /** Why this op is refused in this chat, when it is. */
+  refusal?(op: O, ctx: CheckContext): { why: Refusal; refused: string } | undefined;
   /** The places it changes that Rig snapshots and puts back itself, held to the never list. The helper's check gives the same. */
   touches?(op: O): Touch[];
   /** Rows for the card and the changes log: with the state the helper read before and after, once it has. */
   rows?(op: O, before?: string, after?: string): DiffRow[];
 }
+
+const LOOK_ID = /^[0-9a-f]{32}$/;
+const LINE = /^[\x20-\x7e]{1,80}$/;
 
 export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, { name: N }>> } = {
   selftest: {
@@ -73,6 +93,22 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
     title: gpuTitle,
   },
   fileEdit: fileEditRule,
+  screen: {
+    canonical: (raw) =>
+      typeof raw.lookId !== "string" || !LOOK_ID.test(raw.lookId) || typeof raw.to !== "string" || !LINE.test(raw.to) || typeof raw.does !== "string" || !raw.does.trim() || raw.does.length > 500
+        ? screenWords("op")
+        : { name: "screen", lookId: raw.lookId, to: raw.to, does: raw.does },
+    tier: () => 3,
+    reasons: () => [screenWords("tier")],
+    title: (op) => op.does.trim().replace(/\.$/, ""),
+    refusal: (op, ctx) => {
+      const look = ctx.looks?.find((l) => l.lookId === op.lookId);
+      if (!look) return { why: "refused", refused: screenWords("unknown-look") };
+      if (!lookTakes(look, op.to)) return { why: "refused", refused: screenWords("not-offered") };
+      // The look's own text is outside content unless it was clean, whatever else the chat has read.
+      return look.clean ? undefined : { why: "tainted", refused: screenWords("unclean") };
+    },
+  },
 };
 
 const nativeRule = (name: unknown): NativeRule<NativeOp> | undefined =>
@@ -146,6 +182,8 @@ export type Verdict = Refused | Allowed;
 export interface CheckContext {
   /** The conversation has read free text from outside (web, manuals, recordings, script output). */
   tainted: boolean;
+  /** The looks the helper answered in this chat (`screen.look`). A screen step is checked against the one it names. */
+  looks?: ScreenLook[];
 }
 
 /** Programs that run only as the person, never with admin rights (`person` in the rules). */
@@ -205,6 +243,8 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
       const op = canonicalNative(step.op);
       if (typeof op === "string") return refuse(op);
       const rule = nativeRule(op.name)!;
+      const no = rule.refusal?.(op, ctx);
+      if (no) return refuse(no.refused, no.why);
       const touches = rule.touches?.(op) ?? [];
       for (const t of touches) {
         const never = textOnNeverList(touchText(t), "run");
@@ -484,6 +524,12 @@ export interface StepRpc {
   "step.preview": { params: { step: HelperStep }; reply: PreviewReply };
   "step.apply": { params: { nonce: string }; reply: ApplyReply };
   "step.undo": { params: { id: string; /** Put it back even when something else changed it since. */ force?: boolean }; reply: UndoReply };
+  /**
+   * Walks to a control in an app's window and reads it, pressing nothing but tabs, list rows and tree rows. `app` is a
+   * name Rig knows, `ms-settings:` and a page, or the full path of a program; `goal` is the name of each control on the
+   * way, ending with the one to read.
+   */
+  "screen.look": { params: { app: string; goal: string[] }; reply: ScreenLookReply };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
 }

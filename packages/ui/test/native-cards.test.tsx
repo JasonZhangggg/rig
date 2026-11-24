@@ -79,7 +79,7 @@ describe("a graphics setting card", () => {
 
 describe("a kind of change this Rig doesn't know", () => {
   it("is refused in plain words, never left blank", () => {
-    const on = show(unread({ name: "screen", does: "Sets the screen to 144 Hz.", hz: 144 } as unknown as NativeOp));
+    const on = show(unread({ name: "refreshRate", does: "Sets the screen to 144 Hz.", hz: 144 } as unknown as NativeOp));
     expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
     expect(screen.getByText(/This copy of Rig doesn't know this kind of change, so it won't make it\. Update Rig, then ask again\./)).toBeTruthy();
     expect(screen.getByText("Claude says").parentElement!.textContent).toContain("Sets the screen to 144 Hz.");

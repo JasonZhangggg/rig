@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type SelftestOp } from "@rig/core";
+import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type ScreenOp, type SelftestOp } from "@rig/core";
 import { Claim, Printed } from "./parts";
 import { clip } from "./words";
 
@@ -64,8 +64,14 @@ const selftest: NativePart<SelftestOp> = {
   changes: (op, before, after) => [{ place: "Test value", before: before?.trim() || "As it is now", after: after?.trim() || op.value }],
 };
 
+const screen: NativePart<ScreenOp> = {
+  title: () => "Changes a setting in an app's window",
+  where: () => [],
+  changes: (op, before, after) => [{ place: "Setting", before: before?.trim() || "As it is now", after: after?.trim() || op.to }],
+};
+
 /** One entry per kind of native op. A new op is one more entry here. */
-export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit };
+export const nativeParts: { [N in NativeOp["name"]]: NativePart<Extract<NativeOp, { name: N }>> } = { selftest, gpu, fileEdit, screen };
 
 /** The op's kind, when this copy of Rig knows it. A newer Rig may send kinds this one doesn't. */
 export const knownNative = (raw: unknown) => {

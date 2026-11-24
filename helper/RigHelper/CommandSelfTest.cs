@@ -88,6 +88,7 @@ public static partial class CommandSelfTest
             Check("the native worker runs as the person", () => NativeWorkerRuns(ctx));
             Check("a native step, applied and undone", () => NativeApplied(ctx));
             Check("a native step that writes to the Run key is rolled back", () => NativeRunKey(ctx));
+            foreach (var (name, run) in ScreenSelfTest.Checks(ctx.Rig, ctx.Store)) Check(name, run);
             FileEditSelfTest.Run(Check, new Commands(new CommandStore(root + "-files", secured: elevated), app, restorePoints: false) { TestOnlyElevatedApp = elevated ? false : null, TestOnlyNativeOps = true });
             Check("a native step whose worker dies after its change may have changed it", () => NativeDied(ctx));
             Check("a file that changed after its preview is refused", () => FileChanged(ctx));
@@ -152,7 +153,7 @@ public static partial class CommandSelfTest
         if (Native.IsAdmin()) Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\RigSelftest", throwOnMissingSubKey: false);
     }
 
-    const string Skip = "skipped: ";
+    internal const string Skip = "skipped: ";
 
     static bool Is(JsonNode? n, string outcome) => n?["outcome"]?.ToString() == outcome;
 
