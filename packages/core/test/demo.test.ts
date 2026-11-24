@@ -79,7 +79,7 @@ describe("the demo's approval cards", () => {
   it("has one of each: a registry command, an admin firewall rule, an uninstall and a refusal", async () => {
     const { demoCards, demoPreview } = await import("../src/demo");
     const seen = Object.fromEntries(demoCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}${p.verdict.admin ? " admin" : ""}` : p.verdict.why]; }));
-    expect(seen).toEqual({ registry: "tier 2", firewall: "tier 2 admin", uninstall: "tier 3", refused: "never", rollback: "tier 2" });
+    expect(seen).toEqual({ registry: "tier 2", firewall: "tier 2 admin", uninstall: "tier 3", refused: "never", rollback: "tier 3" });
   });
 
   it("brings each card up from its question, and a nonce works once", async () => {

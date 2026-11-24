@@ -77,6 +77,7 @@
     {"says": "It changes which scripts PowerShell will run", "contains": ["ExecutionPolicy"]},
     {"says": "It changes the list of programs Windows blocks", "contains": ["DisallowRun", "RestrictRun"]},
     {"says": "It changes which program the screen saver runs", "contains": ["SCRNSAVE.EXE"]},
+    {"says": "It changes which program code Windows loads for a COM class, which apps can use to run code in Explorer", "contains": ["\\Classes\\CLSID", "\\Classes\\Wow6432Node\\CLSID"]},
     {"says": "It writes a service's or driver's settings in the registry directly, which can stop Windows from starting; Set-Service is the safer way to change how a service starts", "contains": ["\\CurrentControlSet\\Services", "\\ControlSet001\\Services", "\\ControlSet002\\Services", "\\ControlSet003\\Services"]}
   ],
   "commands": [
