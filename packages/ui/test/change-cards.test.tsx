@@ -146,6 +146,26 @@ describe("the amber card", () => {
   });
 });
 
+describe("one of Rig's recipes", () => {
+  it("shows the recipe's title, Rig's own sentence and when it takes effect, not Claude's words", () => {
+    show(demoProposal(card("recipe")));
+    expect(screen.getByRole("heading", { name: "File extensions" })).toBeTruthy();
+    expect(screen.getByText("Check first")).toBeTruthy();
+    const own = screen.getByText("Rig's own recipe").parentElement!;
+    expect(own.textContent).toContain("Shows file extensions, like .txt, on file names in File Explorer.");
+    expect(own.textContent).toContain("Takes effect once you close File Explorer and open it again.");
+    expect(screen.queryByText("Claude says")).toBeNull();
+    expect(screen.getByLabelText("Change script").textContent).toBe(card("recipe").cmd.run);
+  });
+
+  it("is refused in plain words when this copy of Rig doesn't have it", () => {
+    show({ id: "p", title: "x", steps: [{ kind: "recipe", id: "mouseAcceleration", params: { state: "off" } }], tier: 2, rows: [], status: "waiting" });
+    expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
+    expect(screen.getByText("This isn't one of Rig's recipes.")).toBeTruthy();
+    expect(button("Review")).toBeNull();
+  });
+});
+
 describe("the red card", () => {
   it("says what can't be undone before anything else", () => {
     show(demoProposal(card("uninstall")));
@@ -341,6 +361,19 @@ describe("in the demo", () => {
     await waitFor(() => expect(apply.disabled).toBe(false));
     fireEvent.click(apply);
     expect((await screen.findByRole("region", { name: "After, it printed" }, { timeout: 4000 })).textContent).toContain("Minecraft server");
+  });
+
+  it("reads and applies a recipe as the command it compiles to, and logs Rig's sentence in Changes", async () => {
+    await ask(card("recipe").ask, new Unread());
+    fireEvent.click(await screen.findByRole("button", { name: "Read current settings" }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }, { timeout: 4000 }));
+    const apply = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    await waitFor(() => expect(apply.disabled).toBe(false));
+    fireEvent.click(apply);
+    expect((await screen.findByRole("region", { name: "After, it printed" }, { timeout: 4000 })).textContent).toBe("0");
+    expect(screen.getByText("Rig's own recipe")).toBeTruthy();
+    await act(async () => { location.hash = "changes"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(await screen.findByText("Shows file extensions, like .txt, on file names in File Explorer")).toBeTruthy();
   });
 
   it("answers a refused card's ask for steps", async () => {

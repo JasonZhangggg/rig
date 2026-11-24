@@ -6,6 +6,7 @@
 import { checkStep, nativeOps, type ApplyReply, type Command, type CommandUndo, type HelperStep, type HelperUndo, type NativeOp, type NativeRule, type PreviewReply, type RunResult, type Touch, type UndoReply } from "../change";
 import type { Proposal } from "../client";
 import type { ScreenLook } from "../screen";
+import { recipeCommand, type RecipeStep } from "../shorthand";
 
 interface DemoBase {
   /** A question that brings this card up in the demo chat. */
@@ -28,10 +29,17 @@ interface DemoBase {
   steps?: string[];
 }
 
-export interface DemoCard extends DemoBase { key: "registry" | "firewall" | "uninstall" | "refused" | "rollback"; cmd: Command }
+export interface DemoCard extends DemoBase {
+  key: "registry" | "firewall" | "uninstall" | "refused" | "rollback" | "recipe";
+  cmd: Command;
+  /** The recipe the chat proposes; `cmd` is what it compiles to. */
+  recipe?: RecipeStep;
+}
 /** A native op the demo can show, preview, apply and undo. */
 export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
 export type AnyDemoCard = DemoCard | DemoNativeCard;
+
+const extensions: RecipeStep = { kind: "recipe", id: "fileExtensions", params: { state: "show" } };
 
 const seconds = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
 const secondsPath = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
@@ -105,6 +113,13 @@ export const demoCards: DemoCard[] = [
     },
     read: "The key isn't there.", values: [[null, "(Default) is empty"]], after: "(default) :", rollsBack: true,
   },
+  {
+    key: "recipe", ask: "Show file extensions", asks: /file extension/,
+    says: "File Explorer hides extensions like .txt and .exe by default. This is one of Rig's own recipes: one value in your own settings, and Rig saves the old value first.",
+    title: "Show file extensions",
+    recipe: extensions, cmd: recipeCommand(extensions) as Command,
+    read: "1", values: [["1", "0"]], after: "0",
+  },
 ];
 
 const DEMO_LOOK = "5c0ffee05c0ffee05c0ffee05c0ffee0";
@@ -161,7 +176,7 @@ export function demoPreview(c: AnyDemoCard, tainted = false): PreviewReply {
 export function demoProposal(c: AnyDemoCard, id = `demo-${c.key}`): Proposal {
   const preview = demoPreview(c);
   const looks = looksOf(c);
-  return { id, title: c.title, steps: [stepOf(c)], tier: preview.outcome === "ready" ? preview.verdict.tier : 3, rows: [], status: "waiting", previews: [preview], ...(looks.length ? { looks } : {}) };
+  return { id, title: c.title, steps: ["recipe" in c && c.recipe ? c.recipe : stepOf(c)], tier: preview.outcome === "ready" ? preview.verdict.tier : 3, rows: [], status: "waiting", previews: [preview], ...(looks.length ? { looks } : {}) };
 }
 
 const result = (c: AnyDemoCard): RunResult => ({

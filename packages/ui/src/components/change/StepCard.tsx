@@ -1,14 +1,14 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { checkStep, rulesVersion, type Allowed, type Command, type FoundCommand, type HelperStep, type PreviewReply, type Refused, type ScreenLook, type StepOutcome, type Tier, type Touch, type Verdict } from "@rig/core";
+import { checkStep, helperStep, recipeDoes, recipeOf, rulesVersion, takesEffectWords, type Allowed, type Command, type FoundCommand, type HelperStep, type PreviewReply, type RecipeStep, type Refused, type ScreenLook, type StepOutcome, type Tier, type Touch, type Verdict } from "@rig/core";
 import { knownNative, nativeDoes, nativeOf, NativeWhat } from "./native";
 import { stale } from "./order";
-import { ClaudeSays, CommandList, Fact, GlanceFrame, Printed, Scripts, TouchGlance, Untied } from "./parts";
+import { ClaudeSays, CommandList, Fact, GlanceFrame, Printed, RecipeSays, Scripts, TouchGlance, Untied } from "./parts";
 import { ResultView } from "./Result";
 import { headline, redBack, redKind, redReasons, redWords, riskLine, runCommands, touchName, undoPlan, type RedKind } from "./words";
 
 export interface StepCardProps {
-  /** A command or a native op. */
-  step: HelperStep;
+  /** A command, a native op, or one of Rig's recipes, which the card shows as the command it compiles to. */
+  step: HelperStep | RecipeStep;
   /** What the helper read and checked. Missing until Rig has read the current settings. */
   preview?: PreviewReply | null;
   /** Set once the person has applied it. */
@@ -89,8 +89,10 @@ function WaitFoot({ waitsFor, onDecline }: { waitsFor: NonNullable<StepCardProps
 /** What differs between a command's card and a native op's: the heading, what changes, the risk and undo words, and the scripts. The rest of the card is the same. */
 interface Look {
   title: string;
-  /** Claude's sentence. */
+  /** Claude's sentence, or a recipe's. */
   does: string;
+  /** The sentence as the card shows it: labelled as Claude's, or as Rig's own recipe. */
+  says: ReactNode;
   whatLabel: string;
   /** What changes, with Rig's read of it once it has one. */
   what: (ready?: Ready) => ReactNode;
@@ -107,15 +109,18 @@ interface Look {
 
 const key = (t: Touch) => `${t.kind}|${touchName(t)}`.toLowerCase();
 
-function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string): Look {
+function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string, recipe?: RecipeStep): Look {
   const commands = verdict?.commands ?? [];
   const admin = verdict?.status === "allowed" && verdict.admin;
   const runs = runCommands(cmd, commands);
   const plan = undoPlan(cmd, runs);
   const kind = verdict?.status === "allowed" ? redKind(cmd, verdict) : "none";
   const words = redWords(kind);
+  const own = recipe && recipeOf(recipe.id);
   return {
-    title: headline(cmd, commands), does: cmd.does, whatLabel: "Claude says it changes", runs,
+    title: own ? own.title : headline(cmd, commands), does: cmd.does, runs,
+    says: own ? <RecipeSays does={cmd.does} when={takesEffectWords(own)} /> : <ClaudeSays text={cmd.does} />,
+    whatLabel: own ? "It changes" : "Claude says it changes",
     what: (ready) => {
       const read = new Map(ready?.touches.map((t) => [key(t.touch), t.value]));
       return <TouchGlance touches={cmd.touches.map((touch) => ({ touch, now: !ready ? undefined : read.has(key(touch)) ? read.get(key(touch))! : false }))} />;
@@ -144,7 +149,7 @@ function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: V
   const reasons = verdict?.status === "allowed" ? [...new Set(verdict.reasons)] : [];
   const tier = verdict?.status === "allowed" ? verdict.tier : 2;
   return {
-    title: part.title(op, look), does: nativeDoes(op), whatLabel: "What changes", runs: [],
+    title: part.title(op, look), does: nativeDoes(op), says: <ClaudeSays text={nativeDoes(op)} />, whatLabel: "What changes", runs: [],
     what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} look={look} />,
     facts: (ready) => part.more?.(op, ready?.read, pcName, look),
     folds: () => null,
@@ -155,20 +160,21 @@ function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: V
 }
 
 /** How the card shows this step, or null for a native op this app doesn't know. */
-function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string, looks?: ScreenLook[]): Look | null {
-  if (step.kind === "command") return commandLook(step.cmd, verdict, pcName);
+function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string, looks?: ScreenLook[], recipe?: RecipeStep): Look | null {
+  if (step.kind === "command") return commandLook(step.cmd, verdict, pcName, recipe);
   const native = nativeOf(step.op, looks);
   return native && nativeLook(native, verdict, pcName);
 }
 
 /** A step's heading, as its card shows it and the changes log keeps it. */
-export function stepHeadline(step: HelperStep, commands: FoundCommand[] = [], looks?: ScreenLook[]): string {
+export function stepHeadline(step: HelperStep | RecipeStep, commands: FoundCommand[] = [], looks?: ScreenLook[]): string {
+  if (step.kind === "recipe") return recipeOf(step.id) ? recipeDoes(step).replace(/\.$/, "") : "A change";
   if (step.kind === "command") return headline(step.cmd, commands);
   const native = nativeOf(step.op, looks);
   return native ? native.part.title(native.op, native.look) : "A change";
 }
 
-interface TierProps extends StepCardProps { look: Look; verdict: Allowed; ready?: Ready; retry?: string }
+interface TierProps extends HelperCardProps { look: Look; verdict: Allowed; ready?: Ready; retry?: string }
 
 /** What Rig read and checked about one step: the glance, Claude's sentence and what Rig read. */
 function Body({ look, ready, tainted, retry, risk, undo, noUndo }: TierProps & { risk: ReactNode; undo: ReactNode; noUndo: boolean }) {
@@ -177,7 +183,7 @@ function Body({ look, ready, tainted, retry, risk, undo, noUndo }: TierProps & {
       <GlanceFrame label={look.whatLabel} what={look.what(ready)} risk={risk} undo={undo} noUndo={noUndo} />
       {tainted && <OutsideText />}
       <div className="cc-facts">
-        <ClaudeSays text={look.does} />
+        {look.says}
         {look.facts(ready)}
         {retry && <p className="cc-note" role="status">{retry}</p>}
       </div>
@@ -272,12 +278,12 @@ function RedCard(p: TierProps) {
 }
 
 /** Rig said no. There is nothing to apply; the person can ask for steps to do it themselves. */
-export function RefusedCard({ step, verdict, place, onSteps }: { step: HelperStep; verdict: Refused; place?: string; onSteps: () => void }) {
+export function RefusedCard({ step, verdict, place, onSteps }: { step: HelperStep | RecipeStep; verdict: Refused; place?: string; onSteps: () => void }) {
   return (
     <Frame tone="refused" title="Rig won't make this change" place={place} chips={<span className="chip">Nothing changed</span>}>
       <div className="cc-facts">
         <p className="cc-refused">{verdict.refused}{verdict.why === "never" && " Rig never makes this change, whoever asks."}</p>
-        <ClaudeSays text={step.kind === "command" ? step.cmd.does : nativeDoes(step.op)} />
+        {step.kind !== "recipe" && <ClaudeSays text={step.kind === "command" ? step.cmd.does : nativeDoes(step.op)} />}
       </div>
       {step.kind === "command" && <Scripts cmd={step.cmd} />}
       <div className="proposal-foot">
@@ -298,13 +304,13 @@ function resultChip(o: StepOutcome) {
   return <span className="chip">{a === "rolledBack" ? "Put back" : "Nothing changed"}</span>;
 }
 
-function DoneCard(p: StepCardProps & { look: Look; outcome: StepOutcome; focus: boolean }) {
+function DoneCard(p: HelperCardProps & { look: Look; outcome: StepOutcome; focus: boolean }) {
   const [busy, run] = useBusy();
   const a = p.outcome.apply.outcome;
   return (
     <Frame tone="plain" title={p.look.title} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
       <div className="cc-facts">
-        <ClaudeSays text={p.look.does} />
+        {p.look.says}
         <ResultView step={p.step} outcome={p.outcome} runs={p.look.runs} pcName={p.pcName} canApply={p.canApply} looks={p.looks} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
       </div>
       {p.look.folds()}
@@ -321,8 +327,19 @@ function DoneCard(p: StepCardProps & { look: Look; outcome: StepOutcome; focus: 
 
 const tooOld = "This waited too long to run, so Rig needs to read the settings again. Nothing changed.";
 
-/** One command or native step: the card for its tier, a refusal, or what happened after Apply. An apply that came back expired or refused goes back to the card, to read again. */
+/** The card's props once a recipe is the command it compiles to. */
+interface HelperCardProps extends StepCardProps { step: HelperStep; recipe?: RecipeStep }
+
+/** One command, native or recipe step: the card for its tier, a refusal, or what happened after Apply. A recipe is shown as the command it compiles to, under its own title. */
 export function StepCard(p: StepCardProps) {
+  if (p.step.kind !== "recipe") return <HelperCard {...p} step={p.step} />;
+  const step = helperStep(p.step);
+  if (typeof step === "string") return <RefusedCard step={p.step} verdict={refusal(`${step}.`)} place={p.place} onSteps={p.onSteps} />;
+  return <HelperCard {...p} step={step} recipe={p.step} />;
+}
+
+/** An apply that came back expired or refused goes back to the card, to read again. */
+function HelperCard(p: HelperCardProps) {
   const pressed = useRef(false);
   const a = p.outcome?.apply;
   const fresh = p.preview?.outcome === "ready" ? p.preview : undefined;
@@ -331,13 +348,13 @@ export function StepCard(p: StepCardProps) {
   const nothingRan = a?.outcome === "limit" || a?.outcome === "declined";
   const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted, looks: p.looks });
   if (p.step.kind === "native" && !knownNative(p.step.op)) return <RefusedCard step={p.step} verdict={newerKind} place={p.place} onSteps={p.onSteps} />;
-  const look = lookOf(p.step, verdict, p.pcName, p.looks);
+  const look = lookOf(p.step, verdict, p.pcName, p.looks, p.recipe);
   if (look && p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} look={look} outcome={p.outcome} focus={pressed.current} />;
   if (verdict.status === "refused" || !look) return <RefusedCard step={p.step} verdict={verdict.status === "refused" ? verdict : refusal("This isn't a kind of change Rig makes.")} place={p.place} onSteps={p.onSteps} />;
   if (p.declined) {
     return (
       <Frame tone="plain" title={look.title} place={p.place} chips={<span className="chip">Not now</span>}>
-        <div className="cc-facts"><ClaudeSays text={look.does} /><p className="cc-note">This step didn't run, so it changed nothing on {p.pcName}.</p></div>
+        <div className="cc-facts">{look.says}<p className="cc-note">This step didn't run, so it changed nothing on {p.pcName}.</p></div>
         {look.folds()}
       </Frame>
     );

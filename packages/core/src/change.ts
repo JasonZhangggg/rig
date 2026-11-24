@@ -16,6 +16,7 @@ import { fileEditRule, type FileEditOp } from "./fileEdit";
 import type { DiffRow } from "./model";
 import rulesJson from "./rules/commands.json";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
+import { recipeCommand, type RecipeStep } from "./shorthand";
 
 /** 0 read, 1 reversible fix, 2 general or disruptive, 3 no undo or lowers a protection. Never is a refusal, not a tier. */
 export type Tier = 0 | 1 | 2 | 3;
@@ -23,12 +24,20 @@ export type Tier = 0 | 1 | 2 | 3;
 export type Step =
   | { kind: "fix"; call: ActionCall }
   | { kind: "command"; cmd: Command }
-  | { kind: "native"; op: NativeOp };
+  | { kind: "native"; op: NativeOp }
+  | RecipeStep;
 export type FixStep = Extract<Step, { kind: "fix" }>;
 export type CommandStep = Extract<Step, { kind: "command" }>;
 export type NativeStep = Extract<Step, { kind: "native" }>;
-/** The steps the helper previews, approves and undoes by nonce. Fixes go through the catalog's own call. */
+/** The steps the helper previews, approves and undoes by nonce. Fixes go through the catalog's own call; a recipe reaches the helper as the command it compiles to. */
 export type HelperStep = CommandStep | NativeStep;
+
+/** The step the helper runs for this one: a recipe's command, or the step itself. */
+export function helperStep(step: HelperStep | RecipeStep): HelperStep | string {
+  if (step.kind !== "recipe") return step;
+  const cmd = recipeCommand(step);
+  return typeof cmd === "string" ? cmd : { kind: "command", cmd };
+}
 
 /**
  * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
@@ -252,6 +261,12 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
       return { status: "allowed", tier: actionInfo(step.call.kind).tier, admin: false, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
     }
     case "command": return checkCommand(step.cmd, ctx);
+    case "recipe": {
+      const cmd = recipeCommand(step);
+      if (typeof cmd === "string") return refuse(`${cmd}.`);
+      const v = checkCommand(cmd, ctx);
+      return v.status === "allowed" ? { ...v, reasons: ["One of Rig's own recipes, not a command Claude wrote.", ...v.reasons] } : v;
+    }
     case "native": {
       const op = canonicalNative(step.op);
       if (typeof op === "string") return refuse(op);
@@ -323,6 +338,21 @@ function checkCommand(raw: Command, ctx: CheckContext): Verdict {
   return { status: "allowed", tier, admin, commands, reasons, rulesVersion };
 }
 
+/** The commands.json rows by folded name: the only command names a shape may hold. */
+const rowNames = new Map((rulesJson.commands as unknown as { name: string }[]).map((e) => [e.name.toLowerCase(), e.name]));
+
+/**
+ * What Rig counts of one general command proposal, to see which recipe to add next: the rows of Rig's command list its
+ * change script uses (any other command is "other"), the kinds of place it touches, and the verdict. Only words from
+ * Rig's own lists, so nothing Claude wrote and nothing about the PC or the person. `cmd` null: it couldn't be read.
+ */
+export function commandShape(cmd: Command | null, v: Verdict | null): string {
+  const runs = [...new Set((v?.commands ?? []).filter((c) => c.script === "run").map((c) => rowNames.get(c.name.toLowerCase()) ?? "other"))].sort();
+  const kinds = [...new Set((cmd?.touches ?? []).map((t) => t.kind))].sort();
+  const verdict = !cmd || !v ? "unreadable" : v.status === "allowed" ? `tier ${v.tier}` : `refused ${v.why}`;
+  return `runs ${runs.join(" ") || "-"}; touches ${kinds.join(" ") || "-"}; ${verdict}`;
+}
+
 /** A card takes the tier of its riskiest step. One refused step refuses the card. */
 export function cardTier(steps: Step[], ctx: CheckContext = { tainted: false }): Tier | "refused" {
   let tier: Tier = 0;
@@ -343,6 +373,10 @@ export function stepsTitle(steps: Step[]): string {
   switch (step.kind) {
     case "fix": return titleFor([step.call]);
     case "command": return step.cmd.does.trim().replace(/\.$/, "");
+    case "recipe": {
+      const cmd = recipeCommand(step);
+      return typeof cmd === "string" ? "1 change" : cmd.does.trim().replace(/\.$/, "");
+    }
     case "native": {
       const op = canonicalNative(step.op);
       return typeof op === "string" ? "1 change" : nativeRule(op.name)!.title(op);
@@ -532,6 +566,11 @@ function encoded(v: unknown): string {
 export async function stepHash(step: Step): Promise<string> {
   switch (step.kind) {
     case "command": return commandHash(step.cmd);
+    case "recipe": {
+      // The approval is of what runs: the command the recipe compiles to.
+      const cmd = recipeCommand(step);
+      return typeof cmd === "string" ? sha256(`rig-step-1\n${encoded(step)}`) : commandHash(cmd);
+    }
     case "fix": case "native": return sha256(`rig-step-1\n${encoded(step)}`);
   }
 }

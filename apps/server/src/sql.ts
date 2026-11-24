@@ -33,6 +33,7 @@ export interface RigTables {
     cpu_load: number | null; gpu_load: number | null; mem: number | null; drive: number | null; board: number | null;
   };
   chat_usage: { user_id: string; day: string; count: number };
+  command_shapes: { day: string; shape: string; count: number };
   manual_sources: {
     key: string; url: string | null; title: string | null; host: string | null; bytes: number | null;
     found_at: Time | null; missed_at: Time | null;
