@@ -88,8 +88,11 @@ public static class PowerShellHost
     /// With `winget`, the path the helper found for it, the names winget and winget.exe run that program and nothing else.
     public static string Pinned(string script, bool stopOnError, string? winget = null) =>
         $"$env:PSModulePath = '{Modules}'; Import-Module -Name '{Modules}\\Microsoft.PowerShell.Utility', '{Modules}\\Microsoft.PowerShell.Management'; "
-        + (winget == null ? "" : string.Concat(new[] { "winget", "winget.exe" }.Select(n => $"Set-Alias -Name {n} -Value '{winget.Replace("'", "''")}' -Option Constant; ")))
+        + (winget == null ? "" : string.Concat(new[] { "winget", "winget.exe" }.Select(n => $"Set-Alias -Name {n} -Value '{Quoted(winget)}' -Option Constant; ")))
         + "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }" + (stopOnError ? "; $ErrorActionPreference = 'Stop'" : "") + "\r\n" + script;
+
+    /// Text for inside a single-quoted string: PowerShell ends one at ' and at each of the curly single quotes, so each is doubled.
+    static string Quoted(string text) => string.Concat(text.Select(c => c is '\'' or (>= '\u2018' and <= '\u201B') ? $"{c}{c}" : $"{c}"));
 
     /// Writes a script as UTF-8 with a byte order mark, behind Rig's own first line.
     public static void Write(string file, string script, bool stopOnError, string? winget = null) =>

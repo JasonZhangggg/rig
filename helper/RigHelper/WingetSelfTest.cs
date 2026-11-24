@@ -19,6 +19,7 @@ public static partial class CommandSelfTest
     {
         string? found = Rig.Helper.Winget.Find(ctx.Person);
         check("winget's path", () => WingetPath(ctx, found));
+        check("winget's alias keeps a path with curly quotes in it", () => QuotedPath(ctx));
         check("only an install, update or uninstall may leave what an installer changes", () => Waived(ctx));
         check("an installer's Run value is listed, not put back", () => found == null ? [NoWinget] : Expected(ctx));
         check("a step that only names winget has its Run value put back", () => found == null ? [NoWinget] : NamesOnly(ctx));
@@ -80,6 +81,19 @@ public static partial class CommandSelfTest
         if (!File.Exists(found)) yield return $"it found {found}, which isn't there";
         var r = ctx.Call("command.read", new JsonObject { ["script"] = "winget --version" });
         if (r["printed"]?.ToString().TrimStart().StartsWith('v') != true) yield return $"winget --version as a read didn't print a version: {r.ToJsonString()}";
+    }
+
+    static IEnumerable<string> QuotedPath(Context ctx)
+    {
+        const string path = "C:\\Users\\Rig O\u2019Brien\\Rig\u2018s 'x'\\winget.exe";
+        string file = Path.Combine(Directory.CreateDirectory(ctx.Store.Work).FullName, "rig-alias.ps1");
+        try
+        {
+            PowerShellHost.Write(file, "(Get-Alias -Name winget).Definition", stopOnError: true, path);
+            var ran = PowerShellHost.RunHere(PowerShellHost.Args(file), 60_000, ctx.Store.Empty(), ctx.Store.Work);
+            if (ran.Out.Trim() != path) yield return $"the alias is {ran.Printed}";
+        }
+        finally { try { File.Delete(file); } catch { } }
     }
 
     static JsonNode ApplyWith(Context ctx, string extra, out JsonNode preview, JsonObject? step = null, bool installer = true)
