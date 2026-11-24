@@ -2,7 +2,7 @@
 //
 // The self-test opens a small window of its own with plain Windows controls:
 // three tabs, on the second a checkbox and a drop-down, on the third a list
-// and a multi-line text box holding tabs of its own (UI Automation calls such
+// and a rich text box holding tabs of its own (UI Automation calls such
 // a box a Document, as it does a web page); below them two checkboxes with the
 // same name and an Apply button. The controls only take effect when Apply is
 // pressed, and Apply is on only while a control differs from what it last
@@ -43,6 +43,7 @@ static class ScreenSelfTest
     [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserObjectInformationW(IntPtr handle, int index, StringBuilder info, int size, out int needed);
     [DllImport("user32.dll")] static extern bool EnableWindow(IntPtr hwnd, bool enable);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadLibraryW(string name);
     [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetWindowTextW(IntPtr hwnd, string text);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int size);
@@ -109,7 +110,8 @@ static class ScreenSelfTest
                 modes = Win.Make(0, "LISTBOX", "", child | Win.WS_BORDER, 30, 50, 120, 60, made, 30);
                 foreach (string mode in new[] { "Fast", "Quiet" }) Win.SendMessageW(modes, LB_ADDSTRING, 0, mode);
                 Win.SendMessageW(modes, LB_SETCURSEL, 0, 0);
-                page = Win.Make(0, "EDIT", "", child | Win.WS_BORDER | 0x4, 170, 50, 250, 120, made, 31);
+                LoadLibraryW("msftedit.dll");
+                page = Win.Make(0, "RICHEDIT50W", "", child | Win.WS_BORDER | 0x4, 170, 50, 250, 120, made, 31);
                 pageTabs = Win.Make(0, "SysTabControl32", "", seen, 10, 10, 220, 60, page, 32);
                 Tabs(pageTabs, "Page one", "Page two");
                 twin = Win.Make(0, "BUTTON", "Twin", seen | checkbox, 30, 205, 90, 24, made, 20);
@@ -469,12 +471,12 @@ static class ScreenSelfTest
         yield return $"a look through tabs inside a Document answered {web.ToJsonString()}, and the tabs show page {Page + 1}";
     }
 
-    /// Why the multi-line text box with tabs in it doesn't stand in for web content on this Windows, or null when it does.
+    /// Why the rich text box with tabs in it doesn't stand in for web content on this Windows, or null when it does.
     static string? StandIn()
     {
         var uia = (IUIAutomation)new CUIAutomation();
         if (uia.get_ControlViewCondition(out IntPtr controls) < 0 || uia.ElementFromHandle(page, out var box) < 0 || box == null) return "UI Automation wouldn't describe the text box";
-        if (Uia.Int(box, Uia.ControlType) != Uia.Document) return "this Windows doesn't call a multi-line text box a Document";
+        if (Uia.Int(box, Uia.ControlType) != Uia.Document) return "this Windows doesn't call a rich text box a Document";
         return Uia.ChildrenOf(box, controls).Any(c => Uia.Int(c, Uia.ControlType) == 50018) ? null : "this Windows doesn't show the tabs inside the text box as part of it";
     }
 
