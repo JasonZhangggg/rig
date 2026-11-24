@@ -8,7 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, screenLookReply, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { manualRoutes } from "./routes-manuals";
 import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
@@ -347,13 +347,14 @@ async function historyTainted(secret: string | undefined, user: string, pc: stri
   return false;
 }
 
-/** What the desktop says each read found: only the fields the chat uses, cut to size. */
+/** What the desktop says each read found: only the fields the chat uses, cut to size, and a look only as Rig parses one. */
 function cleanResults(list: unknown): PcReadResult[] {
   if (!Array.isArray(list)) return [];
   return list.slice(0, READ_LIMITS.perRound).filter((r): r is Record<string, unknown> => !!r && typeof r === "object" && typeof r.id === "string").map((r) => {
     const id = (r.id as string).slice(0, 100);
+    const look = r.look === undefined ? null : screenLookReply(r.look);
     return r.ok === true && typeof r.text === "string"
-      ? { id, ok: true as const, text: r.text.slice(0, READ_LIMITS.resultChars) }
+      ? { id, ok: true as const, text: r.text.slice(0, READ_LIMITS.resultChars), ...(look ? { look } : {}) }
       : { id, ok: false as const, error: typeof r.error === "string" ? r.error.slice(0, 500) : "The PC didn't say." };
   });
 }

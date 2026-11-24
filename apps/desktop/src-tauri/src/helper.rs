@@ -42,12 +42,12 @@ const LONGEST_RUN_SECS: u64 = 30 * 60;
 #[cfg_attr(not(windows), allow(dead_code))]
 const APPLY_TIMEOUT: Duration = Duration::from_secs(COMMAND_PARSE_SECS + 2 * LONGEST_RUN_SECS + COMMAND_RESTORE_POINT_SECS + 3 * COMMAND_RUN_SECS + 90);
 
-/// How long the helper may take to answer `method`. A step is a command by another name.
+/// How long the helper may take to answer `method`. A step is a command by another name, and a look walks an app's window like one.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn limit(method: &str) -> Duration {
     match method {
         "step.apply" | "command.apply" | "step.undo" | "command.undo" => APPLY_TIMEOUT,
-        m if m.starts_with("command.") || m.starts_with("step.") => COMMAND_TIMEOUT,
+        m if m.starts_with("command.") || m.starts_with("step.") || m.starts_with("screen.") => COMMAND_TIMEOUT,
         _ => CALL_TIMEOUT,
     }
 }
@@ -377,6 +377,7 @@ mod tests {
         assert_eq!(limit("sensors.read"), CALL_TIMEOUT);
         assert_eq!(limit("step.preview"), COMMAND_TIMEOUT);
         assert_eq!(limit("command.read"), COMMAND_TIMEOUT);
+        assert_eq!(limit("screen.look"), COMMAND_TIMEOUT);
         assert!(limit("step.apply") > Duration::from_secs(2 * 30 * 60));
         assert_eq!(limit("step.undo"), limit("command.apply"));
     }

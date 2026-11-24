@@ -1,4 +1,4 @@
-import { checkStep, type AppliedStep, type ApplyReply, type Command, type CommandStep, type FoundCommand, type HelperStep, type NativeStep, type StepOutcome, type UndoReply } from "@rig/core";
+import { checkStep, type AppliedStep, type ApplyReply, type Command, type CommandStep, type FoundCommand, type HelperStep, type NativeStep, type ScreenLook, type StepOutcome, type UndoReply } from "@rig/core";
 import { ChangeList, nativeOf } from "./native";
 import { Claim, ClaudeSays, Fact, Printed, ReadCompare, Scripts, TouchList, Untied } from "./parts";
 import { declinedLine, limitLine, nativeReach, runCommands, sentinelWords, snapshotted, touchName, undoneLine, undoReach } from "./words";
@@ -28,11 +28,12 @@ function AppliedResult({ reply, pcName }: { reply: Applied; pcName: string }) {
 }
 
 /** A native op's values before and after, as the helper read them. */
-function NativeApplied({ step, reply }: { step: NativeStep; reply: Applied }) {
-  const native = nativeOf(step.op);
+function NativeApplied({ step, reply, looks }: { step: NativeStep; reply: Applied; looks?: ScreenLook[] }) {
+  const native = nativeOf(step.op, looks);
   return (
     <>
-      {native && <Fact label="What changed" note="read by Rig before and after"><ChangeList label="What changed" changes={native.part.changes(native.op, reply.result.before, reply.result.after)} /></Fact>}
+      {native?.part.done?.(native.op, reply.result, native.look)}
+      {native && !reply.result.stopped && <Fact label="What changed" note="read by Rig before and after"><ChangeList label="What changed" changes={native.part.changes(native.op, reply.result.before, reply.result.after, native.look)} /></Fact>}
       <AlsoChanged items={reply.result.alsoChanged} />
     </>
   );
@@ -81,13 +82,15 @@ export interface ResultViewProps {
   runs: FoundCommand[];
   pcName: string;
   canApply: boolean;
+  /** The looks the proposal's screen steps came from. */
+  looks?: ScreenLook[];
   busy?: boolean;
   /** `force` puts it back even though something else changed those places since. */
   onUndo: (force?: boolean) => void;
 }
 
 /** What happened after Apply: before and after, what else changed, a rollback, and Undo with what it can reach. */
-export function ResultView({ step, outcome, runs, pcName, canApply, busy, onUndo }: ResultViewProps) {
+export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy, onUndo }: ResultViewProps) {
   const a = outcome.apply;
   if (a.outcome === "expired") return <p className="cc-note">This card was too old to run, so nothing changed on {pcName}. Ask again and Rig will read the settings fresh.</p>;
   if (a.outcome === "refused") return <p className="cc-note"><b>Rig didn't run this, so nothing changed on {pcName}.</b> {a.verdict.refused}</p>;
@@ -99,7 +102,7 @@ export function ResultView({ step, outcome, runs, pcName, canApply, busy, onUndo
   const drifted = outcome.undo?.outcome === "drifted";
   return (
     <>
-      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} />}
+      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} looks={looks} />}
       {outcome.undo ? <Undone undo={outcome.undo} readLabel={step.kind === "command" ? "After undo, the read script printed" : "After undo, Rig read"} /> : null}
       {drifted && canApply && (
         <div className="cc-undo">

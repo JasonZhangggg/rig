@@ -6,6 +6,7 @@
 
 import { checkScript, textOnNeverList } from "./check";
 import { gpuApp, gpuSetting, GPU_VENDORS, type GpuVendor } from "./gpu";
+import { screenApp, screenNeverName, screenWords, type ScreenLookReply } from "./screen";
 import rulesJson from "./rules/reads.json";
 
 export interface CimFilter { property: string; value: string | number | boolean }
@@ -20,12 +21,15 @@ export type PcReadSpec =
   /** A short PowerShell script that only looks. Must check as a read. */
   | { kind: "script"; script: string }
   /** Graphics driver settings from Rig's table (rules/gpu.json): one game's (by its exe name) or the whole PC's. */
-  | { kind: "gpu"; vendor: GpuVendor; app?: string; settings?: string[] };
+  | { kind: "gpu"; vendor: GpuVendor; app?: string; settings?: string[] }
+  /** A walk to one control in an app's window, read without changing anything: the app by Rig's name for it, and each control's name on the way. */
+  | { kind: "screen"; app: string; goal: string[] };
 
 /** A read the server asks the PC for. `id` ties the answer to the model's tool call. */
 export type PcRead = PcReadSpec & { id: string };
 
-export type PcReadResult = { id: string; ok: true; text: string } | { id: string; ok: false; error: string };
+/** `look`: for a screen read, the helper's answer as Rig parsed it. */
+export type PcReadResult = { id: string; ok: true; text: string; look?: ScreenLookReply } | { id: string; ok: false; error: string };
 
 export const READ_LIMITS = {
   /** Reads in one round. */
@@ -107,6 +111,9 @@ export function readTaints(r: PcReadSpec): boolean {
     // Values come from Rig's own table, and the helper names only NVIDIA's own profiles.
     case "gpu":
       return false;
+    // Whether a look's text is Rig's own depends on the window the helper found, so its answer decides.
+    case "screen":
+      return false;
     default:
       return true;
   }
@@ -186,6 +193,14 @@ export function checkRead(raw: unknown): PcReadSpec | string {
       }
       return { kind: "gpu", vendor: r.vendor as GpuVendor, ...(app ? { app } : {}), ...(settings?.length ? { settings: settings as string[] } : {}) };
     }
+    case "screen": {
+      const app = screenApp(r.app);
+      if (!app) return "Rig looks only in an app on its list or a Settings page on its list, written ms-settings: and the page's name, like ms-settings:display.";
+      const goal = Array.isArray(r.goal) ? r.goal.map((g) => (typeof g === "string" ? g.trim() : "")) : [];
+      if (goal.length < 1 || goal.length > 8 || goal.some((g) => !/^[\x20-\x7e]{1,80}$/.test(g))) return screenWords("goal");
+      if (goal.some(screenNeverName)) return screenWords("never-name");
+      return { kind: "screen", app, goal };
+    }
     default:
       return "A read needs a kind: registry, cim, cmdlet, script or gpu.";
   }
@@ -199,5 +214,6 @@ export function readWhat(r: PcReadSpec): string {
     case "cmdlet": return `command ${r.command.slice(0, 120)}`;
     case "script": return "a read-only script";
     case "gpu": return `${r.vendor} graphics settings${r.app ? ` for ${r.app}` : ""}`;
+    case "screen": return `${r.app}: ${r.goal.join(" › ")}`;
   }
 }

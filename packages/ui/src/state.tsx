@@ -517,7 +517,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           }
           if (act === "apply" && preview?.outcome === "ready" && (!was || was.apply.outcome === "declined") && p.status !== "declined" && !waitingOn(p, index)) {
             if (stale(preview.expiresAt)) { patch((q) => ({ previews: at(q.previews, null) })); return; }
-            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(step, preview.verdict.commands), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
+            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(step, preview.verdict.commands, p.looks), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
             keep({ apply });
           } else if (act === "undo" && was?.apply.outcome === "applied" && was.undo?.outcome !== "undone") {
             keep({ ...was, undo: await client.undoStep(pcId, was.apply.undo.id) });

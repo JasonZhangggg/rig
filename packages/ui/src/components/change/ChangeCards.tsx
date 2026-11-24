@@ -41,7 +41,7 @@ export function ChangeCards({ proposal: p, previews = [], outcomes = [], pcName,
     <div className="step-cards">
       {fixCard}
       {p.steps.map((s, i) => s.kind !== "fix" && (
-        <StepCard key={`${i}|${nonce(i)}`} step={s} preview={previews[i]} outcome={outcomes[i]} pcName={pcName} canApply={canApply} tainted={tainted}
+        <StepCard key={`${i}|${nonce(i)}`} step={s} preview={previews[i]} outcome={outcomes[i]} pcName={pcName} canApply={canApply} tainted={tainted} looks={p.looks}
           declined={p.status === "declined"} place={places[i]} waitsFor={waits(i) ?? undefined}
           onRead={() => onCommandStep(i, "read")} onApply={() => onCommandStep(i, "apply")} onUndo={(force) => onCommandStep(i, force ? "forceUndo" : "undo")} onDecline={onDecline} onSteps={() => onSteps(i)} />
       ))}

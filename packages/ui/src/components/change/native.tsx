@@ -1,21 +1,28 @@
 import type { ReactNode } from "react";
-import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type ScreenOp, type SelftestOp } from "@rig/core";
+import { atLabel, canonicalNative, GPU_SETTINGS, gpuValueSays, lookApp, lookControl, lookSteps, nativeRows, type FileEditOp, type GpuOp, type GpuSetting, type NativeOp, type RunResult, type ScreenLook, type ScreenOp, type SelftestOp } from "@rig/core";
 import { Claim, Printed } from "./parts";
-import { clip } from "./words";
+import { clip, type RedKind } from "./words";
 
 /** One value a native op changes: where, as it is (or was), and as it will be (or came out). */
 export interface NativeChange { place: string; before: string; after: string }
 
-/** What differs between kinds of native op on a card. Everything else (tier, approval, undo) is the same card. */
+/**
+ * What differs between kinds of native op on a card. Everything else (tier, approval, undo) is the same card. `look` is
+ * what the helper found in an app's window, for a screen step whose proposal carries it.
+ */
 interface NativePart<O extends NativeOp> {
   /** The card's heading, like a command card's: "Changes Vertical sync for game.exe". */
-  title(op: O): string;
-  /** What it changes and where, above the values. */
-  where(op: O): { label: string; value: string; full?: string }[];
+  title(op: O, look?: ScreenLook): string;
+  /** What it changes and where, above the values. `note` says whose words the value is. */
+  where(op: O, look?: ScreenLook): { label: string; value: string; full?: string; note?: string }[];
   /** Each value, from the helper's read before and, once it ran, after. */
-  changes(op: O, before?: string, after?: string): NativeChange[];
+  changes(op: O, before?: string, after?: string, look?: ScreenLook): NativeChange[];
   /** What else the person should see from the helper's read. */
-  more?(op: O, read: string | undefined, pcName: string): ReactNode;
+  more?(op: O, read: string | undefined, pcName: string, look?: ScreenLook): ReactNode;
+  /** What a tier 3 card leads with, when it isn't that the change lowers a protection. */
+  red?: { kind: RedKind; undo: string };
+  /** What the result says once it ran, in place of the values before and after. */
+  done?(op: O, result: RunResult, look?: ScreenLook): ReactNode;
 }
 
 const fileName = (path: string) => path.split("\\").filter(Boolean).pop() ?? path;
@@ -64,10 +71,32 @@ const selftest: NativePart<SelftestOp> = {
   changes: (op, before, after) => [{ place: "Test value", before: before?.trim() || "As it is now", after: after?.trim() || op.value }],
 };
 
+const appWords = "names and values in the app's own words";
+const inApp = (look?: ScreenLook) => (look ? lookApp(look) : "the app");
+
 const screen: NativePart<ScreenOp> = {
-  title: () => "Changes a setting in an app's window",
-  where: () => [],
-  changes: (op, before, after) => [{ place: "Setting", before: before?.trim() || "As it is now", after: after?.trim() || op.to }],
+  title: (_op, look) => `Changes a setting in ${look ? lookApp(look) : "an app's window"}`,
+  where: (_op, look) => (look ? [{ label: "App", value: lookApp(look) }, { label: "Path", value: lookSteps(look), note: appWords }] : []),
+  changes: (op, before, after, look) => {
+    const [name, was, to] = (nativeRows(op, before, after) ?? [])[0] ?? [];
+    return [{ place: look ? lookControl(look) : name ?? "Setting", before: before === undefined ? look?.value || "As it is now" : was ?? before, after: to ?? op.to }];
+  },
+  more: (_op, _read, _pcName, look) => (
+    <p className="cc-note">Rig will click through {look ? `${lookApp(look)}'s` : "the app's"} window to set it, the way you would. A Stop bar shows at the top of the screen while it does; press Stop to end it at once.</p>
+  ),
+  red: { kind: "unsure", undo: "Not for sure. Undo walks the same path in the app and sets the old value again, which can miss if the app changed." },
+  done: (op, result, look) => {
+    const control = look ? lookControl(look) : "the setting";
+    if (result.stopped) {
+      return (
+        <>
+          <div className="cc-first" role="status"><b>You pressed Stop, so Rig stopped part way.</b></div>
+          <p className="cc-note">Rig didn't read {control} back, so check it in {inApp(look)}. Undo walks the same path and sets {look?.value ? `it back to ${look.value}` : "it back"}.</p>
+        </>
+      );
+    }
+    return <p className="cc-note" role="status">Rig set {control} to {op.to} in {inApp(look)} and read it back.</p>;
+  },
 };
 
 /** One entry per kind of native op. A new op is one more entry here. */
@@ -79,11 +108,12 @@ export const knownNative = (raw: unknown) => {
   return typeof name === "string" && Object.hasOwn(nativeParts, name);
 };
 
-/** The op as Rig keeps it, with the part that shows it, or null when Rig can't use it. */
-export function nativeOf(raw: unknown): { op: NativeOp; part: NativePart<NativeOp> } | null {
+/** The op as Rig keeps it, with the part that shows it and, for a screen step, the look it came from; or null when Rig can't use it. */
+export function nativeOf(raw: unknown, looks?: ScreenLook[]): { op: NativeOp; part: NativePart<NativeOp>; look?: ScreenLook } | null {
   const op = canonicalNative(raw);
   if (typeof op === "string" || !knownNative(op)) return null;
-  return { op, part: nativeParts[op.name] as NativePart<NativeOp> };
+  const look = op.name === "screen" ? looks?.find((l) => l.lookId === op.lookId) : undefined;
+  return { op, part: nativeParts[op.name] as NativePart<NativeOp>, ...(look ? { look } : {}) };
 }
 
 /** Claude's sentence on a native op, whatever its kind. */
@@ -111,13 +141,16 @@ export function ChangeList({ changes, label = "What changes" }: { changes: Nativ
 }
 
 /** Where a native op changes things, and each value it changes, as the helper read it. */
-export function NativeWhat({ op, part, read }: { op: NativeOp; part: NativePart<NativeOp>; read?: string }) {
+export function NativeWhat({ op, part, read, look }: { op: NativeOp; part: NativePart<NativeOp>; read?: string; look?: ScreenLook }) {
   return (
     <>
-      {part.where(op).map((w) => (
-        <p key={w.label} className="cc-where-line"><span className="cc-tag">{w.label}</span> <b>{w.value}</b>{w.full && w.full !== w.value && <Claim className="cc-where" text={w.full} max={96} />}</p>
+      {part.where(op, look).map((w) => (
+        <p key={w.label} className="cc-where-line">
+          <span className="cc-tag">{w.label}</span> <b>{w.value}</b>{w.note && <span className="faint"> · {w.note}</span>}
+          {w.full && w.full !== w.value && <Claim className="cc-where" text={w.full} max={96} />}
+        </p>
       ))}
-      <ChangeList changes={part.changes(op, read)} />
+      <ChangeList changes={part.changes(op, read, undefined, look)} />
     </>
   );
 }

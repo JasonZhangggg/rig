@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { APPROVE_DECLINED, STEP_DIFFERS, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
+import { APPROVE_DECLINED, STEP_DIFFERS, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcRead, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -604,6 +604,41 @@ describe("LocalClient", () => {
       expect(read).not.toHaveBeenCalled();
       expect(helper.seen.map((c) => c.params)).toEqual([{ script: "Get-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name MenuShowDelay" }, { script: "Get-Service -Name wuauserv" }]);
       expect(asked[0]).toEqual([{ id: "a", ok: true, text: "MenuShowDelay : 400" }, { id: "b", ok: true, text: "MenuShowDelay : 400" }]);
+    });
+
+    it("looks in an app's window through the helper, sends what it parsed, and previews a step only from a look it holds", async () => {
+      const lookId = "0123456789abcdef0123456789abcdef";
+      const look = { lookId, path: ["NVIDIA Control Panel", "Change resolution", "Output dynamic range"], value: "Limited", options: ["Limited", "Full"], clean: true, expiresAt: "2099-01-01T00:00:00.000Z" };
+      const asked: PcReadResult[][] = [];
+      const cloud = {
+        signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null,
+        chat: async (_id: string, _h: ChatMessage[], onEvent: (e: ChatEvent) => void, _s: unknown, _l: unknown, resume?: { results: PcReadResult[] }) => {
+          if (resume) { asked.push(resume.results); onEvent({ type: "done" }); return; }
+          onEvent({ type: "reads", resume: "s", reads: [
+            { id: "a", kind: "screen", app: "NVIDIA Control Panel", goal: ["Change resolution", "Output dynamic range"] },
+            { id: "b", kind: "screen", app: "NVIDIA Control Panel", goal: ["Broken"] },
+            { id: "c", kind: "screen", app: "C:\\Windows\\regedit.exe", goal: ["HKEY_LOCAL_MACHINE"] } as unknown as PcRead,
+          ] });
+        },
+      } as unknown as CloudClient;
+      const seen: { method: string; params: unknown }[] = [];
+      const step: HelperStep = { kind: "native", op: { name: "screen", lookId, to: "Full", does: "Sets the output dynamic range to Full." } };
+      const helper = async <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]): Promise<StepRpc[K]["reply"]> => {
+        seen.push({ method, params });
+        if (method === "screen.look") return ((params as { goal: string[] }).goal[0] === "Broken" ? { lookId: "nope", path: [], extra: true } : { ...look, hops: [{ name: "Change resolution" }] }) as unknown as StepRpc[K]["reply"];
+        return { outcome: "ready", nonce: "n1", expiresAt: "2026-11-17T20:10:00.000Z", verdict: checkStep(step, { tainted: false, looks: [look] }) as Allowed, read: "Output dynamic range: Limited", touches: [], hash: await stepHash(step) } as StepRpc[K]["reply"];
+      };
+      const { client } = setup({ step: helper }, cloud);
+      await client.start();
+      expect(await client.previewStep(client.id, step, false)).toMatchObject({ outcome: "refused", verdict: { refused: expect.stringContaining("hasn't looked") } });
+      await client.chat(client.id, [{ id: "1", from: "you", text: "Blacks look grey" }], () => {});
+      expect(seen.map((c) => c.params)).toEqual([{ app: "NVIDIA Control Panel", goal: ["Change resolution", "Output dynamic range"] }, { app: "NVIDIA Control Panel", goal: ["Broken"] }]);
+      expect(asked[0][0]).toEqual({ id: "a", ok: true, text: expect.stringContaining("Path: Change resolution › Output dynamic range"), look });
+      expect(asked[0][1]).toEqual({ id: "b", ok: false, error: "Rig's helper answered with something that isn't a look." });
+      expect(asked[0][2]).toMatchObject({ id: "c", ok: false });
+      expect(await client.previewStep(client.id, step, false)).toMatchObject({ outcome: "ready", verdict: { tier: 3 } });
+      expect(await client.previewStep(client.id, { kind: "native", op: { ...step.op, to: "Half" } } as HelperStep, false)).toMatchObject({ outcome: "refused", verdict: { refused: expect.stringContaining("offered") } });
+      client.stop();
     });
   });
 });

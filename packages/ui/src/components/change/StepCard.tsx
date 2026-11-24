@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { checkStep, rulesVersion, type Allowed, type Command, type FoundCommand, type HelperStep, type PreviewReply, type Refused, type StepOutcome, type Tier, type Touch, type Verdict } from "@rig/core";
+import { checkStep, rulesVersion, type Allowed, type Command, type FoundCommand, type HelperStep, type PreviewReply, type Refused, type ScreenLook, type StepOutcome, type Tier, type Touch, type Verdict } from "@rig/core";
 import { knownNative, nativeDoes, nativeOf, NativeWhat } from "./native";
 import { stale } from "./order";
 import { ClaudeSays, CommandList, Fact, GlanceFrame, Printed, Scripts, TouchGlance, Untied } from "./parts";
@@ -18,6 +18,8 @@ export interface StepCardProps {
   canApply: boolean;
   /** Rig read text from outside this PC earlier in the conversation. */
   tainted?: boolean;
+  /** The looks the proposal's screen steps came from. */
+  looks?: ScreenLook[];
   declined?: boolean;
   /** "1 of 2", when the answer has more than one step. */
   place?: string;
@@ -138,32 +140,32 @@ const nativeRisk: Record<Tier, string> = { 0: "Low.", 1: "Low.", 2: "Medium.", 3
 const nativeBack = "Yes. Rig keeps how it was, and Undo puts it back.";
 
 function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: Verdict | undefined, pcName: string): Look {
-  const { op, part } = native;
+  const { op, part, look } = native;
   const reasons = verdict?.status === "allowed" ? [...new Set(verdict.reasons)] : [];
   const tier = verdict?.status === "allowed" ? verdict.tier : 2;
   return {
-    title: part.title(op), does: nativeDoes(op), whatLabel: "What changes", runs: [],
-    what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} />,
-    facts: (ready) => part.more?.(op, ready?.read, pcName),
+    title: part.title(op, look), does: nativeDoes(op), whatLabel: "What changes", runs: [],
+    what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} look={look} />,
+    facts: (ready) => part.more?.(op, ready?.read, pcName, look),
     folds: () => null,
     amber: { risk: <>{nativeRisk[tier]}{reasons.length > 0 && <ul className="cc-plain cc-reasons">{reasons.map((r) => <li key={r}>{r}</li>)}</ul>}</>, undo: nativeBack, noUndo: false },
-    red: { kind: "lowers", reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: nativeRisk[3], undo: `${nativeBack} Until you undo it, the PC is less protected.`, noUndo: false },
+    red: { kind: part.red?.kind ?? "lowers", reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: nativeRisk[3], undo: part.red?.undo ?? `${nativeBack} Until you undo it, the PC is less protected.`, noUndo: false },
     exact: `This is exactly what changes on ${pcName}.`,
   };
 }
 
 /** How the card shows this step, or null for a native op this app doesn't know. */
-function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string): Look | null {
+function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string, looks?: ScreenLook[]): Look | null {
   if (step.kind === "command") return commandLook(step.cmd, verdict, pcName);
-  const native = nativeOf(step.op);
+  const native = nativeOf(step.op, looks);
   return native && nativeLook(native, verdict, pcName);
 }
 
 /** A step's heading, as its card shows it and the changes log keeps it. */
-export function stepHeadline(step: HelperStep, commands: FoundCommand[] = []): string {
+export function stepHeadline(step: HelperStep, commands: FoundCommand[] = [], looks?: ScreenLook[]): string {
   if (step.kind === "command") return headline(step.cmd, commands);
-  const native = nativeOf(step.op);
-  return native ? native.part.title(native.op) : "A change";
+  const native = nativeOf(step.op, looks);
+  return native ? native.part.title(native.op, native.look) : "A change";
 }
 
 interface TierProps extends StepCardProps { look: Look; verdict: Allowed; ready?: Ready; retry?: string }
@@ -303,7 +305,7 @@ function DoneCard(p: StepCardProps & { look: Look; outcome: StepOutcome; focus: 
     <Frame tone="plain" title={p.look.title} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
       <div className="cc-facts">
         <ClaudeSays text={p.look.does} />
-        <ResultView step={p.step} outcome={p.outcome} runs={p.look.runs} pcName={p.pcName} canApply={p.canApply} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
+        <ResultView step={p.step} outcome={p.outcome} runs={p.look.runs} pcName={p.pcName} canApply={p.canApply} looks={p.looks} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
       </div>
       {p.look.folds()}
       {p.canApply && (a === "limit" || a === "declined") && (
@@ -327,9 +329,9 @@ export function StepCard(p: StepCardProps) {
   const old = useStale(fresh?.expiresAt);
   const back = a?.outcome === "expired" || a?.outcome === "refused" || (a?.outcome === "declined" && (!fresh || old));
   const nothingRan = a?.outcome === "limit" || a?.outcome === "declined";
-  const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted });
+  const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted, looks: p.looks });
   if (p.step.kind === "native" && !knownNative(p.step.op)) return <RefusedCard step={p.step} verdict={newerKind} place={p.place} onSteps={p.onSteps} />;
-  const look = lookOf(p.step, verdict, p.pcName);
+  const look = lookOf(p.step, verdict, p.pcName, p.looks);
   if (look && p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} look={look} outcome={p.outcome} focus={pressed.current} />;
   if (verdict.status === "refused" || !look) return <RefusedCard step={p.step} verdict={verdict.status === "refused" ? verdict : refusal("This isn't a kind of change Rig makes.")} place={p.place} onSteps={p.onSteps} />;
   if (p.declined) {

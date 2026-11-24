@@ -110,8 +110,19 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
       // The look's own text is outside content unless it was clean, whatever else the chat has read.
       return look.clean ? undefined : { why: "tainted", refused: screenWords("unclean") };
     },
+    // The helper reads the control as one line, "Name: value"; a walk the person stopped says so in place of the value after.
+    rows: (op, before, after) => {
+      const [name, was] = lineParts(before);
+      return [[name ?? "Setting", was ?? before ?? "As it is now", after === undefined ? op.to : lineParts(after)[1] ?? after]];
+    },
   },
 };
+
+/** The control's name and value from the helper's one-line read of it, when it is one. */
+function lineParts(line: string | undefined): [string, string] | [] {
+  const at = line?.indexOf(": ") ?? -1;
+  return line && at > 0 ? [line.slice(0, at), line.slice(at + 2)] : [];
+}
 
 const nativeRule = (name: unknown): NativeRule<NativeOp> | undefined =>
   typeof name === "string" && Object.hasOwn(nativeOps, name) ? (nativeOps[name as NativeOp["name"]] as NativeRule<NativeOp>) : undefined;
@@ -434,6 +445,8 @@ export interface RunResult {
   output: string;
   /** What else changed, when the helper could tell. */
   alsoChanged: string[];
+  /** A screen step the person stopped with the Stop bar part way: the control may be half set, wasn't read back, and undo is offered. */
+  stopped?: true;
 }
 
 /** A run's touches as rows for the changes log: what, before, after. */
