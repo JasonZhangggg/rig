@@ -529,8 +529,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
 
     static string NextMidnight() => new DateTimeOffset(DateTime.Today.AddDays(1)).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
-    /// What making or unmaking a step came to. `Back` is what a native op's Undo needs.
-    sealed record Made(bool Ok, bool TimedOut, string Printed, string? Error, JsonObject? Back = null);
+    /// What making or unmaking a step came to. `Back` is what a native op's Undo needs. `Stopped`: the person pressed Stop.
+    sealed record Made(bool Ok, bool TimedOut, string Printed, string? Error, JsonObject? Back = null, bool Stopped = false);
 
     Made Make(Person person, bool admin, string dir, string id, HelperStep step, JsonObject? held, int timeoutMs = RunTimeoutMs, string? winget = null)
     {
@@ -541,7 +541,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             return new Made(ran.Ok, ran.TimedOut, ran.Printed, error);
         }
         var said = Ask(person, "apply", (NativeOpStep)step, held);
-        return new Made(said.Ok, said.TimedOut, "", said.Ok ? null : $"The change didn't go through. {said.Error}", said.Result["back"] as JsonObject);
+        return new Made(said.Ok, said.TimedOut, "", said.Ok ? null : $"The change didn't go through. {said.Error}", said.Result["back"] as JsonObject, said.Stopped);
     }
 
     JsonObject Apply(string nonce)
@@ -629,15 +629,23 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         hits = hits.Except(expected).ToList();
         var after = touches.Select(t => { try { return states.Read(t); } catch (RigException) { return null; } }).ToList();
         string readAfter;
-        string? error = made.Error;
-        // A walk the person stopped part way is left as it stands, unread, with its undo offered.
-        if (step is NativeOpStep && made.Ok && made.Back?["stopped"] is JsonNode stopped) readAfter = stopped.ToString();
+        string? error = made.Error, meant = null;
+        bool stopped = made.Stopped;
+        // A change the person stopped once it had begun, or the app left half done, stands as it is, unread, with its undo
+        // offered; `meant` is what it should read. After Stop nothing walks or reads the app's window again.
+        if (step is NativeOpStep && made.Ok && made.Back?["unfinished"] is JsonNode unfinished) (readAfter, meant) = (unfinished.ToString(), made.Back["after"]?.ToString());
+        else if (stopped) readAfter = "";
         else if (step is NativeOpStep native && made.Ok)
         {
             // A native op reads its own change back; one that didn't hold is put back like one that failed.
             var said = Ask(person, "verify", native, check.Held);
             readAfter = said.Result["now"]?.ToString() ?? "";
-            if (!said.Ok) error = $"Rig couldn't read the change back, so it put it back. {said.Error}";
+            if (said.Stopped)
+            {
+                stopped = true;
+                (readAfter, meant) = ($"{StopBar.Stopped} Rig didn't finish reading the change back, so check it in the app, or undo it.", made.Back?["after"]?.ToString());
+            }
+            else if (!said.Ok) error = $"Rig couldn't read the change back, so it put it back. {said.Error}";
             else if (said.Result["problem"] is JsonNode problem) error = $"The change didn't hold when Rig read it back. {problem}";
         }
         else readAfter = Look(person, step, check.Held, winget).Text;
@@ -656,8 +664,10 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             {
                 // What a native op changed outside its touches only its own Undo knows, so that runs first, and the
                 // never-list places are read again after it.
-                // With no way back, what the state reads now is all Rig has to tell whether the worker changed it before it stopped.
-                if (made.Back == null) { if (made.TimedOut || readAfter != readBefore) left.Add(MayHaveChanged(readAfter)); }
+                // With no way back, what the state reads now is all Rig has to tell whether the worker changed it before it stopped,
+                // unless the person pressed Stop: a worker stopped before it began says so, and after Stop nothing is read again.
+                if (made.Back == null) { if (!stopped && (made.TimedOut || readAfter != readBefore)) left.Add(MayHaveChanged(readAfter)); }
+                else if (stopped) left.Add("what Rig set in the app: you pressed Stop, so Rig left its window alone. Check it there");
                 else if (Ask(person, "undo", undoing, check.Held, made.Back) is { Ok: false } stuck) left.Add($"Rig's own way back didn't finish ({stuck.Error.TrimEnd('.')})");
                 guardedAfter = watch.Read();
                 hits = Sentinels.Differences(guarded, guardedAfter, touches, moving);
@@ -699,14 +709,14 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         {
             record["back"] = made.Back?.DeepClone();
             record["held"] = check.Held?.DeepClone();
-            record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = made.Back?["stopped"] != null ? made.Back["after"]?.ToString() : readAfter };
+            record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = meant ?? readAfter };
         }
         store.SaveRecord(id, record);
         var undo = new JsonObject { ["kind"] = step.Kind, ["id"] = id };
         if (step is CommandStep { Cmd.Undo: string script }) undo["script"] = script;
         if (point != null) undo["restorePoint"] = point;
         undo["outside"] = new JsonArray();
-        undo["fingerprint"] = Fingerprint(after, step is NativeOpStep ? readAfter : null);
+        undo["fingerprint"] = Fingerprint(after, step is NativeOpStep ? meant ?? readAfter : null);
         return new JsonObject { ["outcome"] = "applied", ["result"] = result, ["undo"] = undo };
     }
 
@@ -833,6 +843,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         var left = new List<string>();
         string? backProblem = null;
         Func<Made>? back = null;
+        bool stopped = false;
         var check = step is CommandStep { Cmd.Undo: null } ? null : recheck;
         switch (check?.Step)
         {
@@ -854,7 +865,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                 else back = () =>
                 {
                     var said = Ask(person, "undo", native, held, kept);
-                    return new Made(said.Ok, said.TimedOut, "", said.Ok ? null : $"Rig's own way back didn't finish ({said.Error.TrimEnd('.')})");
+                    return new Made(said.Ok, said.TimedOut, "", said.Ok ? null : $"Rig's own way back didn't finish ({said.Error.TrimEnd('.')})", Stopped: said.Stopped);
                 };
                 break;
         }
@@ -863,6 +874,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             var watch = new Sentinels(person, store.Work);
             var (guarded, moving) = watch.Baseline();
             var ran = back();
+            stopped = ran.Stopped;
             var guardedAfter = watch.Read();
             // What an uninstall is expected to take away with the app (the rules' `expects`) stays as it left it.
             var expects = RunRules.Expects(check?.Verdict.Commands ?? [], "undo");
@@ -882,7 +894,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         failed.AddRange(NotBack(states, touches, before));
         // Without a snapshot of everything, the step's own way back was the only one for the rest.
         if (backProblem != null && (step is NativeOpStep || touches.Any(t => !t.Snapshotted))) failed.Add(backProblem);
-        var (printed, unreadNow) = Look(person, step, held, winget);
+        // After Stop nothing reads the app's window again.
+        var (printed, unreadNow) = stopped ? ("", null) : Look(person, step, held, winget);
         if (step is NativeOpStep && failed.Count == 0 && (unreadNow != null || printed != lookBefore)) failed.Add("what this changed isn't back to how it was");
         if (failed.Count > 0) return Failed($"Rig couldn't put everything back: {string.Join("; ", failed.Distinct())}.");
         rec["undone"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

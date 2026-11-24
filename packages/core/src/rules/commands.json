@@ -1,5 +1,5 @@
 {
-  "version": 11,
+  "version": 12,
   "about": [
     "One table for the server, the app and the helper. The helper reads scripts with PowerShell's own parser; everything else here says how Rig's TypeScript reader sees a script, so the helper can match it. The vectors file holds examples of each rule, for scripts (`script`, `as`) and for whole steps (`cmd`).",
     "Text: a script is refused when it is empty or only spaces, longer than `maxLength` characters (UTF-16 code units), or holds any character in `disguised` (hex ranges, inclusive). Case is folded for ASCII A-Z only, and only space, tab, CR and LF count as spaces; `disguised` holds the letters that fold into ASCII in .NET (U+017F, U+0130, U+0131, U+212A), so ASCII folding can't be tricked. CR LF and lone CR read as LF.",
@@ -89,14 +89,19 @@
   ],
   "screen": {
     "about": [
-      "Screen steps: setting one control in an app's window. `screen.look` names the app as a name in `apps` (started by its `aumid` when it has no window), as ms-settings: and one of `settings.pages` (always opened at that page), or as the full path of an .exe under `roots`, which is only used when it is already open and never started, since a look is a read and starting a program can be a change; folded like a command's name. Rig starts nothing else. Anything else is refused with `words.app`. An image whose file name is in a `refuse` entry, or starts with one of `refuseStarts.starts`, is refused with that entry's `says`, by the app's name before anything is started and again by the window's own image before anything in it is read or pressed. `examples` holds one line per rule for the app's and the helper's tests.",
-      "A look is clean when the window's image is under `roots`, validly signed and not in `contentHosts`, the control it reads and its choices are a Button, CheckBox, ComboBox, ListItem, RadioButton or Slider, and nothing on the way is under a Document control. A screen step is always tier 3, is refused when its look isn't clean, and its `to` must be one of the look's choices or a number in its range.",
-      "In Settings nothing is selected, so a walk stays on the page it was opened at. A walk never selects a row inside a ComboBox: in many apps that sets the drop-down, which only an approved change may do. A control whose name holds one of `neverNames` (folded) is never walked through, set or pressed, and no step may set a value named like one. `commit` holds the button names an approved change may press after setting the control: an Apply button, or OK when the window also has a Cancel."
+      "Screen steps: setting one control in an app's window. `screen.look` names the app as a name in `apps` (started by its `aumid` when it has no window), as ms-settings: and one of `settings.pages` (always opened at that page), or as the full path of an .exe under `roots` and not under `notRoots` (folders inside Windows that any user can write to and run from), which is only used when it is already open and never started, since a look is a read and starting a program can be a change; folded like a command's name. Rig starts nothing else. Anything else is refused with `words.app`. An image whose file name is in a `refuse` entry, or starts with one of `refuseStarts.starts`, is refused with that entry's `says`, by the app's name before anything is started and again by the window's own image before anything in it is read or pressed. `examples` holds one line per rule for the app's and the helper's tests.",
+      "A window's program is a listed app (`apps`, `settings`) only when its file name is the app's `image`, its full path starts with one of the app's `folders`, and it runs as one of the app's packages (`families`, which name the publisher) or, outside C:\\Program Files\\WindowsApps, unpackaged; its signer counts only when it is that package or one of the app's `signers`. A program named by its path counts by that path, and its signer only when it is validly signed and, under C:\\Windows, by one of `windowsSigners`. `imageExamples` holds a line per rule for the helper's tests.",
+      "A look is clean when the window's program counts as above, its signer counts, it isn't in `contentHosts`, the control it reads and its choices are a Button, CheckBox, ComboBox, ListItem, RadioButton or Slider, and nothing on the way is under a Document control. A screen step is always tier 3, is refused when its look isn't clean, and its `to` must be one of the look's choices or a number in its range.",
+      "In Settings nothing is selected, so a walk stays on the page it was opened at. A walk selects only tabs and tree rows, which change what the window shows; it never picks a row of a list or grid, since in some apps that row is the setting itself, nor a row inside a ComboBox. Nothing under a Document control (web content) is ever selected, expanded or pressed. A control whose name holds one of `neverNames` (folded) is never walked through, set or pressed, and no step may set a value named like one. `commit` holds the button names an approved change may press after setting the control: an Apply button, or OK when the window also has a Cancel. Before setting anything the change stops when an Apply button is already enabled (changes are waiting that the card didn't show), and before pressing one it stops when any other control Rig can read has moved. When a button not on these lists became enabled and none on them can be pressed, the change isn't finished and is put back, except in an app marked `appliesOnChange`."
     ],
     "lookMinutes": 30,
     "roots": ["c:\\program files\\", "c:\\program files (x86)\\", "c:\\windows\\"],
-    "apps": [{"name": "NVIDIA Control Panel", "aumid": "NVIDIACorp.NVIDIAControlPanel_56jybvy8sckqj!NVIDIACorp.NVIDIAControlPanel", "image": "nvcplui.exe"}],
-    "settings": {"name": "Settings", "image": "systemsettings.exe", "pages": ["display", "nightlight", "display-advanced", "display-advancedgraphics", "sound", "sound-devices", "apps-volume", "notifications", "quiethours", "powersleep", "batterysaver", "multitasking", "mousetouchpad", "devices-touchpad", "typing", "autoplay", "personalization", "personalization-background", "personalization-colors", "colors", "themes", "taskbar", "personalization-start", "gaming-gamebar", "gaming-gamedvr", "gaming-gamemode", "easeofaccess-display", "easeofaccess-mouse", "easeofaccess-cursor", "easeofaccess-visualeffects", "easeofaccess-keyboard", "easeofaccess-audio", "dateandtime", "regionformatting", "storagesense"]},
+    "notRoots": ["c:\\windows\\temp\\", "c:\\windows\\tasks\\", "c:\\windows\\tracing\\", "c:\\windows\\debug\\", "c:\\windows\\pla\\", "c:\\windows\\registration\\crmlog\\", "c:\\windows\\servicing\\sessions\\", "c:\\windows\\system32\\tasks\\", "c:\\windows\\system32\\tasks_migrated\\", "c:\\windows\\system32\\spool\\", "c:\\windows\\system32\\com\\dmp\\", "c:\\windows\\system32\\fxstmp\\", "c:\\windows\\system32\\microsoft\\crypto\\rsa\\machinekeys\\", "c:\\windows\\system32\\logfiles\\", "c:\\windows\\syswow64\\tasks\\", "c:\\windows\\syswow64\\com\\dmp\\", "c:\\windows\\syswow64\\fxstmp\\", "c:\\windows\\syswow64\\microsoft\\crypto\\rsa\\machinekeys\\"],
+    "windowsSigners": ["Microsoft Windows", "Microsoft Corporation", "Microsoft Windows Publisher"],
+    "apps": [{"name": "NVIDIA Control Panel", "aumid": "NVIDIACorp.NVIDIAControlPanel_56jybvy8sckqj!NVIDIACorp.NVIDIAControlPanel", "image": "nvcplui.exe",
+      "folders": ["c:\\program files\\windowsapps\\nvidiacorp.nvidiacontrolpanel_", "c:\\program files\\nvidia corporation\\control panel client\\"],
+      "families": ["nvidiacorp.nvidiacontrolpanel_56jybvy8sckqj"], "signers": ["NVIDIA Corporation"]}],
+    "settings": {"name": "Settings", "image": "systemsettings.exe", "folders": ["c:\\windows\\immersivecontrolpanel\\"], "families": ["windows.immersivecontrolpanel_cw5n1h2txyewy"], "signers": ["Microsoft Windows"], "appliesOnChange": true, "pages": ["display", "nightlight", "display-advanced", "display-advancedgraphics", "sound", "sound-devices", "apps-volume", "notifications", "quiethours", "powersleep", "batterysaver", "multitasking", "mousetouchpad", "devices-touchpad", "typing", "autoplay", "personalization", "personalization-background", "personalization-colors", "colors", "themes", "taskbar", "personalization-start", "gaming-gamebar", "gaming-gamedvr", "gaming-gamemode", "easeofaccess-display", "easeofaccess-mouse", "easeofaccess-cursor", "easeofaccess-visualeffects", "easeofaccess-keyboard", "easeofaccess-audio", "dateandtime", "regionformatting", "storagesense"]},
     "refuse": [
       {"says": "Rig doesn't drive web browsers", "images": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe", "iexplore.exe", "arc.exe", "msedgewebview2.exe"]},
       {"says": "Rig doesn't drive mail or chat apps", "images": ["outlook.exe", "olk.exe", "hxoutlook.exe", "hxmail.exe", "thunderbird.exe", "teams.exe", "ms-teams.exe", "slack.exe", "discord.exe", "whatsapp.exe", "telegram.exe", "signal.exe", "zoom.exe", "skype.exe"]},
@@ -104,11 +109,16 @@
       {"says": "Rig doesn't drive Windows' own admin tools", "images": ["regedit.exe", "mmc.exe", "explorer.exe", "taskmgr.exe", "sechealthui.exe", "consent.exe", "credentialuibroker.exe", "netplwiz.exe", "control.exe", "msconfig.exe", "mstsc.exe", "msra.exe", "quickassist.exe", "rstrui.exe", "logonui.exe", "slidetoshutdown.exe"]},
       {"says": "Rig doesn't drive password managers", "images": ["1password.exe", "keepass.exe", "keepassxc.exe", "bitwarden.exe", "lastpass.exe", "dashlane.exe", "protonpass.exe", "nordpass.exe", "keeper.exe", "keeperpasswordmanager.exe", "roboform.exe"]},
       {"says": "Rig doesn't drive itself", "images": ["rig.exe", "righelper.exe"]},
+      {"says": "Rig doesn't drive remote control tools", "images": ["teamviewer.exe", "teamviewer_service.exe", "anydesk.exe", "rustdesk.exe", "parsecd.exe", "splashtop.exe", "srmanager.exe", "chrome_remote_desktop_host.exe", "remoting_host.exe", "logmein.exe", "screenconnect.windowsclient.exe", "vncviewer.exe", "tvnserver.exe", "winvnc.exe"]},
       {"says": "Rig only opens Settings at a page on its list, written ms-settings: and the page's name", "images": ["systemsettings.exe", "applicationframehost.exe"]}
     ],
     "refuseStarts": {"says": "Rig doesn't drive installers or uninstallers", "starts": ["unins", "setup", "install", "update"]},
     "contentHosts": ["notepad.exe", "wordpad.exe", "write.exe", "hh.exe", "wwahost.exe", "winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe", "acrobat.exe", "acrord32.exe"],
-    "commit": {"apply": ["Apply"], "ok": ["OK"], "cancel": ["Cancel"]},
+    "commit": {
+      "apply": ["Apply", "Apply changes", "Save", "Save changes", "Übernehmen", "Anwenden", "Appliquer", "Aplicar", "Applica", "Toepassen", "Zastosuj", "Použít", "Alkalmaz", "Uygula", "Verkställ", "Bruk", "Anvend", "Käytä", "Применить", "Застосувати", "適用", "应用", "套用", "적용"],
+      "ok": ["OK"],
+      "cancel": ["Cancel", "Abbrechen", "Annuler", "Cancelar", "Annulla", "Annuleren", "Anuluj", "Zrušit", "Mégse", "İptal", "Avbryt", "Annuller", "Peruuta", "Отмена", "Скасувати", "キャンセル", "取消", "취소"]
+    },
     "neverNames": ["password", "passcode", "passphrase", "pin code", "sign in", "sign-in", "signin", "sign out", "log in", "login", "log out", "sign up", "account", "payment", "credit card", "card number", "purchase", "buy now", "subscribe", "i agree", "i accept", "accept", "terms", "license", "licence", "eula", "consent", "delete", "erase", "wipe", "reset", "restore defaults", "factory", "uninstall", "run as", "administrator"],
     "words": {
       "app": "Rig can drive an app it knows by name, a Settings page on its list written ms-settings: and the page's name, or a program named by its full path under C:\\Program Files or C:\\Windows that is already open",
@@ -120,7 +130,12 @@
       "not-offered": "That isn't one of the values the control offered when Rig looked",
       "unclean": "The window Rig looked at shows text from outside, or isn't a signed program in Program Files or Windows, so Rig won't change it from this chat",
       "op": "A screen change needs the look it came from, the new value and one sentence that says what it does",
-      "tier": "Rig presses the app's own controls and can't see what the app writes, so putting it back means walking the same path again and can miss"
+      "tier": "Rig presses the app's own controls and can't see what the app writes, so putting it back means walking the same path again and can miss",
+      "not-maker": "This window's program isn't the one Rig knows for this app, or isn't signed by its maker, so Rig won't drive it",
+      "web-content": "That part of the app is web content, and Rig only reads it, never presses anything there",
+      "list-row": "That is a row in a list, and in some apps picking a row is the setting itself, so Rig doesn't pick one. Pick it yourself, then ask again",
+      "waiting": "has changes waiting that Rig didn't make. Apply or cancel them there, then ask again",
+      "minimised": "is minimised. Restore its window, then ask again"
     },
     "examples": [
       {"app": "NVIDIA Control Panel", "refused": false},
@@ -131,6 +146,12 @@
       {"app": "C:\\Program Files\\MSI\\MSI Center\\MSI Center.exe", "refused": false},
       {"app": "C:\\Windows\\System32\\charmap.exe", "refused": false},
       {"app": "C:\\Windows\\regedit.exe", "refused": true},
+      {"app": "C:\\Windows\\Temp\\nvcplui.exe", "refused": true},
+      {"app": "C:\\Windows\\Tasks\\tool.exe", "refused": true},
+      {"app": "C:\\Windows\\System32\\spool\\drivers\\color\\tool.exe", "refused": true},
+      {"app": "C:\\Windows\\System32\\Tasks\\tool.exe", "refused": true},
+      {"app": "C:\\Windows\\tracing\\tool.exe", "refused": true},
+      {"app": "C:\\Program Files\\TeamViewer\\TeamViewer.exe", "refused": true},
       {"app": "C:\\Windows\\System32\\mmc.exe", "refused": true},
       {"app": "C:\\Windows\\explorer.exe", "refused": true},
       {"app": "C:\\Windows\\System32\\Taskmgr.exe", "refused": true},
@@ -149,6 +170,26 @@
       {"app": "\\\\server\\share\\app.exe", "refused": true},
       {"app": "regedit", "refused": true},
       {"app": "", "refused": true}
+    ],
+    "imageExamples": [
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\nvidia corporation\\control panel client\\nvcplui.exe", "family": "", "signer": "NVIDIA Corporation", "is": true, "trusted": true},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\nvidia corporation\\control panel client\\nvcplui.exe", "family": "", "signer": "Someone Else", "is": true, "trusted": false},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\nvidia corporation\\control panel client\\nvcplui.exe", "family": "", "signer": null, "is": true, "trusted": false},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\windowsapps\\nvidiacorp.nvidiacontrolpanel_8.1.967.0_x64__56jybvy8sckqj\\nvcplui.exe", "family": "nvidiacorp.nvidiacontrolpanel_56jybvy8sckqj", "signer": null, "is": true, "trusted": true},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\windowsapps\\nvidiacorp.nvidiacontrolpanel_8.1.967.0_x64__56jybvy8sckqj\\nvcplui.exe", "family": "", "signer": null, "is": false, "trusted": false},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\windowsapps\\nvidiacorp.nvidiacontrolpanel_8.1.967.0_x64__56jybvy8sckqj\\nvcplui.exe", "family": "nvidiacorp.nvidiacontrolpanel_0000000000000", "signer": "NVIDIA Corporation", "is": false, "trusted": false},
+      {"app": "NVIDIA Control Panel", "image": "c:\\windows\\temp\\nvcplui.exe", "family": "", "signer": "NVIDIA Corporation", "is": false, "trusted": false},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\other\\nvcplui.exe", "family": "", "signer": "NVIDIA Corporation", "is": false, "trusted": false},
+      {"app": "NVIDIA Control Panel", "image": "c:\\program files\\nvidia corporation\\control panel client\\other.exe", "family": "", "signer": "NVIDIA Corporation", "is": false, "trusted": false},
+      {"app": "ms-settings:display", "image": "c:\\windows\\immersivecontrolpanel\\systemsettings.exe", "family": "windows.immersivecontrolpanel_cw5n1h2txyewy", "signer": "Microsoft Windows", "is": true, "trusted": true},
+      {"app": "ms-settings:display", "image": "c:\\windows\\immersivecontrolpanel\\systemsettings.exe", "family": "", "signer": "Microsoft Windows", "is": true, "trusted": true},
+      {"app": "ms-settings:display", "image": "c:\\windows\\immersivecontrolpanel\\systemsettings.exe", "family": "someone.else_0000000000000", "signer": "Microsoft Windows", "is": false, "trusted": false},
+      {"app": "ms-settings:display", "image": "c:\\windows\\temp\\systemsettings.exe", "family": "", "signer": "Microsoft Windows", "is": false, "trusted": false},
+      {"app": "C:\\Windows\\System32\\charmap.exe", "image": "c:\\windows\\system32\\charmap.exe", "family": "", "signer": "Microsoft Windows", "is": true, "trusted": true},
+      {"app": "C:\\Windows\\System32\\charmap.exe", "image": "c:\\windows\\system32\\charmap.exe", "family": "", "signer": "Someone Else", "is": true, "trusted": false},
+      {"app": "C:\\Windows\\System32\\charmap.exe", "image": "c:\\windows\\temp\\charmap.exe", "family": "", "signer": "Microsoft Windows", "is": false, "trusted": false},
+      {"app": "C:\\Program Files\\MSI\\MSI Center\\MSI Center.exe", "image": "c:\\program files\\msi\\msi center\\msi center.exe", "family": "", "signer": "Micro-Star International CO., LTD.", "is": true, "trusted": true},
+      {"app": "C:\\Program Files\\MSI\\MSI Center\\MSI Center.exe", "image": "c:\\program files\\msi\\msi center\\msi center.exe", "family": "", "signer": null, "is": true, "trusted": false}
     ]
   },
   "commands": [

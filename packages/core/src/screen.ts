@@ -8,6 +8,7 @@ import rulesJson from "./rules/commands.json";
 
 interface ScreenRules {
   roots: string[];
+  notRoots: string[];
   apps: { name: string; aumid: string; image: string }[];
   settings: { name: string; image: string; pages: string[] };
   refuse: { says: string; images: string[] }[];
@@ -29,7 +30,7 @@ export function screenAppRefusal(app: unknown): string | null {
   const name = fold(app);
   if (S.apps.some((a) => fold(a.name) === name)) return null;
   if (name.startsWith("ms-settings:")) return S.settings.pages.includes(name.slice("ms-settings:".length)) ? null : settingsSays();
-  if (!S.roots.some((r) => name.startsWith(r)) || !name.endsWith(".exe") || /(^|\\)\.\.(\\|$)/.test(name) || /[a-z0-9]~\d/.test(name) || /[/*?"<>|]/.test(name) || name.includes("\\\\")) return screenWords("app");
+  if (!S.roots.some((r) => name.startsWith(r)) || S.notRoots.some((r) => name.startsWith(r)) || !name.endsWith(".exe") || /(^|\\)\.\.(\\|$)/.test(name) || /[a-z0-9]~\d/.test(name) || /[/*?"<>|]/.test(name) || name.includes("\\\\")) return screenWords("app");
   const image = name.slice(name.lastIndexOf("\\") + 1);
   const refused = S.refuse.find((r) => r.images.includes(image));
   if (refused) return `${refused.says}.`;

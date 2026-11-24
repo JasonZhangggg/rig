@@ -4,7 +4,8 @@
 // types, moves the mouse or presses a place on the screen. The only calls that
 // act are SelectionItem.Select, ExpandCollapse.Expand and Collapse,
 // Toggle.Toggle, RangeValue.SetValue and Invoke, and Invoke is only ever made
-// on the app's own Apply or OK button at the end of an approved change. A
+// on the app's own Apply or OK button at the end of an approved change. None
+// is ever made on a control inside web content (under a Document). A
 // classic Windows drop-down list, which UI Automation can't set, takes the
 // approved entry inside an approved change by three messages to its own
 // window, the ones its list sends when a person picks an entry. Each call goes
@@ -16,7 +17,8 @@
 // process; the walk waits a few seconds for one to appear, then stops and says
 // so. It also stops when the person presses Stop on the bar this file shows,
 // when another program's window opens, or when Windows asks for permission.
-// After Stop nothing in the window is touched again, not even to put it back.
+// After Stop nothing in the window is touched or read again, not even to put
+// it back, and the worker starts no other walk.
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -167,6 +169,7 @@ static class Win
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder name, int size);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr hwnd);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint ms, out IntPtr result);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, string l, uint flags, uint ms, out IntPtr result);
@@ -259,10 +262,16 @@ sealed class StopBar : IDisposable
     public const int StopId = 1;
     const int HardStopMs = 5000;
 
+    static volatile bool pressedAny;
     volatile bool stopped;
+    volatile JsonObject? started;
     IntPtr hwnd;
 
     public bool Pressed => stopped;
+    /// Whether Stop was pressed on any bar of this worker: once it was, the worker starts no other walk.
+    public static bool AnyPressed => pressedAny;
+    /// What the worker answers when the hard stop ends it after the change began: set by the walk as it begins.
+    public JsonObject? Started { set => started = value; }
 
     public StopBar(string text)
     {
@@ -271,7 +280,7 @@ sealed class StopBar : IDisposable
         {
             const int w = 520, h = 40;
             Win.Class(Class, Proc);
-            hwnd = Win.Make(Win.WS_EX_TOPMOST | Win.WS_EX_TOOLWINDOW | Win.WS_EX_NOACTIVATE, Class, "Rig", Win.WS_POPUP | Win.WS_BORDER | Win.WS_VISIBLE, Math.Max(0, (Win.GetSystemMetrics(0) - w) / 2), 8, w, h);
+            hwnd = Win.Make(Win.WS_EX_TOPMOST | Win.WS_EX_TOOLWINDOW | Win.WS_EX_NOACTIVATE, Class, text, Win.WS_POPUP | Win.WS_BORDER | Win.WS_VISIBLE, Math.Max(0, (Win.GetSystemMetrics(0) - w) / 2), 8, w, h);
             Win.Make(0, "STATIC", text, Win.WS_CHILD | Win.WS_VISIBLE | 0x4000 | 0x200, 10, 4, w - 104, h - 10, hwnd);
             Win.Make(0, "BUTTON", "Stop", Win.WS_CHILD | Win.WS_VISIBLE, w - 86, 6, 74, h - 14, hwnd, StopId);
             Win.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | 0x40);
@@ -292,12 +301,14 @@ sealed class StopBar : IDisposable
     void Stop()
     {
         if (stopped) return;
-        stopped = true;
+        stopped = pressedAny = true;
         // A walk checks before every call. One stuck inside a call to an app that doesn't answer is ended from here.
         new Thread(() =>
         {
             Thread.Sleep(HardStopMs);
-            NativeWorker.Say(new JsonObject { ["ok"] = false, ["error"] = Stopped });
+            NativeWorker.Say(started is JsonObject begun
+                ? new JsonObject { ["ok"] = true, ["result"] = begun.DeepClone(), ["stopped"] = true }
+                : new JsonObject { ["ok"] = false, ["error"] = Stopped, ["stopped"] = true });
             Environment.Exit(1);
         }) { IsBackground = true }.Start();
     }
@@ -366,10 +377,12 @@ sealed class ScreenWalk : IDisposable
     int pid;
     string image = "";
     HashSet<IntPtr> before = [];
-    bool first;
+    bool first, armed, committed;
+    JsonObject? started;
 
     public ScreenWalk(ScreenApp app, bool changing, string setting)
     {
+        if (StopBar.AnyPressed) throw new RigException(StopBar.Stopped);
         this.app = app;
         bar = new StopBar($"Rig is {(changing ? "changing" : "reading")} {setting} in {app.Name}.");
         try
@@ -391,14 +404,17 @@ sealed class ScreenWalk : IDisposable
     /// The worker drives only windows at its own level or below. A window Windows won't describe counts as higher.
     public static bool TooHigh(int window, int mine) => window == 0 || window > mine;
 
-    List<(IntPtr Hwnd, int Pid, string Image)> Windows()
+    List<(IntPtr Hwnd, int Pid, string Image)> Windows(out bool minimised)
     {
         var found = new List<(IntPtr, int, string)>();
+        minimised = false;
         foreach (IntPtr top in Win.Tops())
         {
-            if (Win.Owned(top) || Win.Passing(top) || Win.IsIconic(top)) continue;
+            if (Win.Owned(top) || Win.Passing(top)) continue;
             var (content, owner) = Win.Content(top);
-            if (owner != Environment.ProcessId && Native.ProcessImage(owner) is string path && ScreenRules.Is(app, path)) found.Add((content, owner, path));
+            if (owner == Environment.ProcessId || Native.ProcessImage(owner) is not string path || !ScreenRules.Is(app, path, Native.PackageFamily(owner))) continue;
+            if (Win.IsIconic(top)) minimised = true;
+            else found.Add((content, owner, path));
         }
         return found;
     }
@@ -415,7 +431,8 @@ sealed class ScreenWalk : IDisposable
     /// Finds the app's one window, starting an app from Rig's list when it has none to show. Settings is always opened at its page.
     void Open()
     {
-        var found = Windows();
+        var found = Windows(out bool minimised);
+        if (found.Count == 0 && minimised && !app.Settings) throw new RigException($"{app.Name} {ScreenRules.Words("minimised")}");
         if (found.Count == 0 || app.Settings)
         {
             Start();
@@ -424,9 +441,10 @@ sealed class ScreenWalk : IDisposable
             {
                 bar.Check();
                 Thread.Sleep(app.Settings ? 1500 : 250);
-                found = Windows();
+                found = Windows(out minimised);
             } while (found.Count == 0 && clock.ElapsedMilliseconds < OpenMs);
         }
+        if (found.Count == 0 && minimised) throw new RigException($"{app.Name} {ScreenRules.Words("minimised")}");
         if (found.Count == 0) throw new RigException($"{app.Name} didn't open a window Rig could find.");
         if (found.Count > 1) throw new RigException($"{app.Name} has more than one window open. Close the extra ones and ask again.");
         (hwnd, pid, image) = found[0];
@@ -530,11 +548,12 @@ sealed class ScreenWalk : IDisposable
     // ----- The closed set of calls that act -----
 
     /// Before every call that acts: the person hasn't pressed Stop, the control is still the app's own with the name and
-    /// kind it was found by, it is switched on, isn't a password box or named like something Rig never presses, and
-    /// nothing else has opened.
+    /// kind it was found by, it is switched on, isn't in web content, isn't a password box or named like something Rig
+    /// never presses, and nothing else has opened.
     void Guard(Node node)
     {
         bar.Check();
+        if (node.InDocument()) throw new RigException(ScreenRules.Words("web-content"));
         if (Uia.Int(node.El, Uia.ProcessId) != pid) throw new RigException($"{node.Says} belongs to another program than {app.Name}, so Rig stopped.");
         if (Uia.Int(node.El, Uia.ControlType) != node.Type || Uia.Text(node.El, Uia.Name) != node.Name) throw new RigException($"{app.Name}'s window changed while Rig was working, so it stopped.");
         if (Uia.Bool(node.El, Uia.IsPassword)) throw new RigException("Rig never touches a password box.");
@@ -543,12 +562,20 @@ sealed class ScreenWalk : IDisposable
         Unexpected();
     }
 
+    /// Guard for a call that sets the control: from here on the change has begun.
+    void Arm(Node node)
+    {
+        Guard(node);
+        armed = true;
+        if (started != null) bar.Started = started;
+    }
+
     void Did(int hr, Node node)
     {
         if (hr < 0) throw new RigException($"{app.Name} didn't take that ({node.Says}, Windows error 0x{hr:x8}).");
     }
 
-    /// Opens a stop on the way: selects a tab, a list row or a tree row, and expands a row or a group that is folded.
+    /// Opens a stop on the way: selects a tab or a tree row, and expands a row or a group that is folded.
     void Enter(Node node)
     {
         if (!node.Enabled) throw new RigException($"{node.Says} is greyed out in {app.Name}.");
@@ -556,6 +583,9 @@ sealed class ScreenWalk : IDisposable
         if (node.Type is Uia.TabItem or Uia.TreeItem or Uia.ListItem or Uia.DataItem && !app.Settings
             && Uia.Pattern<IUIAutomationSelectionItemPattern>(node.El, Uia.SelectionItem) is { } item && !Uia.Bool(node.El, Uia.IsSelected))
         {
+            // Tabs and tree rows choose what the window shows. A row of a list or grid can be the setting itself (an
+            // option picker), and from outside Rig can't tell which, so a walk never picks one, only passes one already picked.
+            if (node.Type is Uia.ListItem or Uia.DataItem) throw new RigException(ScreenRules.Words("list-row"));
             Guard(node);
             Did(item.Select(), node);
         }
@@ -672,7 +702,8 @@ sealed class ScreenWalk : IDisposable
     {
         Open();
         string? signer = Signature.Signer(image);
-        bool trusted = ScreenRules.Trusted(app, image, signer), document = false;
+        bool trusted = ScreenRules.Trusted(app, image, signer, Native.PackageFamily(pid)), document = false;
+        if (app.Listed && !trusted) throw new RigException(ScreenRules.Words("not-maker"));
         JsonObject Missing(string word, int count, List<Node> all) => new()
         {
             ["refused"] = count == 0 ? $"Rig didn't find {word} in {app.Name}." : $"{app.Name} shows {count} controls named {word}, so Rig can't tell which one you mean.",
@@ -705,7 +736,7 @@ sealed class ScreenWalk : IDisposable
             double min = spot.Kind == "range" ? Uia.Number(spot.Control.El, Uia.RangeMin) : 0, max = spot.Kind == "range" ? Uia.Number(spot.Control.El, Uia.RangeMax) : 0;
             if (double.IsNaN(min) || double.IsNaN(max)) throw new RigException($"Rig couldn't read how far {spot.Named.Says} goes in {app.Name}.");
             bool clean = trusted && !document && !spot.Named.InDocument() && !spot.Control.InDocument();
-            return new JsonObject { ["look"] = new ScreenLook(asked, app.Name, image, signer ?? "", hops, spot.Named.Hop(), spot.Kind, says, options, min, max, clean).ToJson() };
+            return new JsonObject { ["look"] = new ScreenLook(asked, app.Name, image, signer ?? "", hops, spot.Named.Hop(), spot.Kind, says, options, min, max, clean, pid).ToJson() };
         }
         finally { Close(spot); }
     }
@@ -717,7 +748,7 @@ sealed class ScreenWalk : IDisposable
     {
         Open();
         string? signer = Signature.Signer(image);
-        if (!ScreenRules.Trusted(app, image, signer) || (signer ?? "") != look.Signer || !string.Equals(Path.GetFileName(image), Path.GetFileName(look.Image), StringComparison.OrdinalIgnoreCase))
+        if (!ScreenRules.Trusted(app, image, signer, Native.PackageFamily(pid)) || (signer ?? "") != look.Signer || !string.Equals(Path.GetFileName(image), Path.GetFileName(look.Image), StringComparison.OrdinalIgnoreCase))
             throw new RigException($"{app.Name} isn't the program Rig looked at any more, so Rig stopped.");
         Hop? previous = null;
         foreach (var hop in look.Hops)
@@ -743,26 +774,71 @@ sealed class ScreenWalk : IDisposable
     }
 
     /// Sets the control to `to` and presses the app's Apply. `from` is the value it must still have; null sets it whatever
-    /// it reads. A change that fails part way is put back before the walk says so. One the person stopped part way is
-    /// left as it stands, and the answer says so; it is null when the walk ran to the end.
-    public string? Set(ScreenLook look, string? from, string to)
+    /// it reads. A change that fails once it has begun is put back before the walk says so. One the person stopped once it
+    /// had begun, or one that couldn't be put back, is left as it stands, unread: the answer says so, and is null when the
+    /// walk ran to the end. `back` is what the worker answers when the hard stop ends it after the change began.
+    public string? Set(ScreenLook look, string? from, string to, JsonObject? back = null)
     {
-        var spot = Walk(look);
+        string begun = $"{StopBar.Stopped} It had started setting {look.Target.Says} to {to} and didn't read it back, so check it in {app.Name}, or undo it.";
+        started = back == null ? null : new JsonObject { ["back"] = new JsonObject { ["was"] = back["was"]?.DeepClone(), ["after"] = back["after"]?.DeepClone(), ["unfinished"] = begun } };
         try
         {
-            string was = Says(look, Settled(spot));
-            if (from != null && !look.Same(was, from)) throw new RigException($"{look.Target.Says} reads {was} now, not {from} as when Rig looked, so Rig changed nothing.");
-            if (look.Same(was, to)) return null;
+            var spot = Walk(look);
             try
             {
-                Put(look, spot, to);
-                Commit();
+                string was = Says(look, Settled(spot));
+                if (from != null && !look.Same(was, from)) throw new RigException($"{look.Target.Says} reads {was} now, not {from} as when Rig looked, so Rig changed nothing.");
+                if (look.Same(was, to)) return null;
+                var before = Baseline(spot);
+                if (before.Waiting) throw new RigException($"{app.Name} {ScreenRules.Words("waiting")}");
+                try
+                {
+                    Put(look, spot, to);
+                    Commit(before, spot.Control, demand: true);
+                }
+                catch (RigException e) when (armed)
+                {
+                    if (bar.Pressed) return begun;
+                    var (done, said) = Back(look, was);
+                    if (bar.Pressed) return begun;
+                    if (!done) return $"{e.Message} {said}";
+                    throw new RigException($"{e.Message} {said}");
+                }
+                return bar.Pressed ? begun : null;
             }
-            catch (RigException) when (bar.Pressed) { }
-            catch (RigException e) { throw new RigException($"{e.Message} {Back(look, was)}"); }
-            return bar.Pressed ? $"{StopBar.Stopped} It had started setting {look.Target.Says} to {to} and didn't read it back, so check it in {app.Name}." : null;
+            finally { Close(spot); }
         }
-        finally { Close(spot); }
+        catch (RigException) when (bar.Pressed && !armed) { throw new RigException($"{StopBar.Stopped} It hadn't changed {look.Target.Says} yet."); }
+    }
+
+    /// What the window shows before Rig sets anything: the buttons a person could press, what every other control Rig
+    /// can read holds, and whether one of the app's Apply buttons is already on (changes are waiting that Rig didn't make).
+    sealed record Shown(HashSet<string> Buttons, Dictionary<string, (string Says, string Value)> States, bool Waiting);
+
+    Shown Baseline(Spot spot)
+    {
+        var all = Snapshot();
+        var buttons = Buttons(all);
+        return new Shown(buttons.Select(Key).ToHashSet(), States(all, spot.Control), buttons.Any(b => Commits(b, ScreenRules.Commit.Apply)));
+    }
+
+    static string Key(Node n) => $"{n.Type}|{n.Name}|{n.Id}|{n.Cls}";
+    static List<Node> Buttons(List<Node> all) => all.Where(n => n.Type == Uia.Button && n.Enabled && !n.InDocument()).ToList();
+    static bool Commits(Node button, string[] names) => names.Any(n => string.Equals(button.Name.Trim(), n, StringComparison.OrdinalIgnoreCase));
+
+    /// Each control Rig could set, other than this one and outside web content, with what it holds now.
+    static Dictionary<string, (string Says, string Value)> States(List<Node> all, Node control)
+    {
+        var states = new Dictionary<string, (string, string)>();
+        string skip = Key(control);
+        foreach (var n in all)
+        {
+            if (n.InDocument() || Key(n) == skip || KindOf(n) == null) continue;
+            string key = Key(n);
+            for (int i = 2; states.ContainsKey(key); i++) key = $"{Key(n)}#{i}";
+            states[key] = (n.Says.Length > 0 ? n.Says : "another control", $"{Uia.Int(n.El, Uia.ToggleState)} {Uia.Number(n.El, Uia.RangeValue)} {Uia.Text(n.El, Uia.ValueValue)}");
+        }
+        return states;
     }
 
     void Put(ScreenLook look, Spot spot, string to)
@@ -773,16 +849,18 @@ sealed class ScreenWalk : IDisposable
         {
             case "toggle":
                 var toggle = Uia.Pattern<IUIAutomationTogglePattern>(c.El, Uia.Toggle) ?? throw Gone();
-                for (int i = 0; i < 2 && Now(spot) != to; i++)
+                Arm(c);
+                Did(toggle.Toggle(), c);
+                // A switch can take a while to show its new state. Only one with three states is pressed again.
+                if (!Took(look, spot, to, SettleMs) && Now(spot) == "Mixed")
                 {
-                    Guard(c);
+                    Arm(c);
                     Did(toggle.Toggle(), c);
-                    Thread.Sleep(200);
                 }
                 break;
             case "range":
                 var range = Uia.Pattern<IUIAutomationRangeValuePattern>(c.El, Uia.Range) ?? throw Gone();
-                Guard(c);
+                Arm(c);
                 Did(range.SetValue(double.Parse(to, CultureInfo.InvariantCulture)), c);
                 break;
             default:
@@ -799,13 +877,13 @@ sealed class ScreenWalk : IDisposable
                 Close(spot);
                 if (Took(look, spot, to, 1000) || spot.Opened || Uia.Pattern<IUIAutomationExpandCollapsePattern>(c.El, Uia.ExpandCollapse) is not { } fold) break;
                 // Some drop-downs take a row only while they are open, and some only once they have closed again.
-                Guard(c);
+                Arm(c);
                 Did(fold.Expand(), c);
                 Thread.Sleep(300);
                 Pick(ItemsOf(c, Snapshot(), byElement: true), name);
                 if (Uia.Int(c.El, Uia.ExpandState) != 0)
                 {
-                    Guard(c);
+                    Arm(c);
                     Did(fold.Collapse(), c);
                 }
                 if (!Took(look, spot, to, 1000)) Pick(spot.Items, name);
@@ -830,11 +908,13 @@ sealed class ScreenWalk : IDisposable
     /// becomes the drop-down's, and the window that holds it is told. The read-back after it decides whether it took.
     void Choose(Node control, IntPtr box, string name, string to)
     {
+        if (!Win.IsChild(hwnd, box)) throw new RigException($"{control.Says} isn't part of {app.Name}'s window, so Rig changed nothing.");
         Guard(control);
         int at = (int)Win.Send(box, CB_FINDSTRINGEXACT, -1, name);
         if (at < 0 || (int)Win.Send(box, CB_FINDSTRINGEXACT, at, name) != at) throw new RigException($"{control.Says} in {app.Name} doesn't hold {to} exactly once, so Rig changed nothing.");
         IntPtr parent = Win.GetParent(box);
         if (parent == IntPtr.Zero || Win.Pid(parent) != pid) throw new RigException($"{control.Says} in {app.Name} isn't where a drop-down's list tells its choice, so Rig changed nothing.");
+        Arm(control);
         Win.Send(box, CB_SETCURSEL, at, 0);
         Win.Send(parent, Win.WM_COMMAND, (Win.GetDlgCtrlID(box) & 0xffff) | (int)(CBN_SELCHANGE << 16), box);
     }
@@ -842,7 +922,7 @@ sealed class ScreenWalk : IDisposable
     void Pick(List<Node> rows, string name)
     {
         if (rows.Where(i => i.Name == name).ToList() is not [var row] || Uia.Pattern<IUIAutomationSelectionItemPattern>(row.El, Uia.SelectionItem) is not { } select) return;
-        Guard(row);
+        Arm(row);
         Did(select.Select(), row);
     }
 
@@ -857,25 +937,38 @@ sealed class ScreenWalk : IDisposable
         return true;
     }
 
-    /// Presses the app's own Apply button, or OK in a window that also has Cancel. No other button is ever pressed.
-    void Commit()
+    /// Presses the app's own Apply button, or OK in a window that also has Cancel, never one in web content, and only when
+    /// no other control Rig can read has moved since `before`. With `demand`, a button the change switched on that isn't on
+    /// Rig's lists, with none on them to press, means the app wants it pressed to keep the change, so the change isn't finished.
+    void Commit(Shown before, Node control, bool demand)
     {
         Thread.Sleep(300);
-        var buttons = Snapshot().Where(n => n.Type == Uia.Button && n.Enabled).ToList();
-        List<Node> Named(string[] names) => buttons.Where(b => names.Contains(b.Says, StringComparer.OrdinalIgnoreCase)).ToList();
-        var apply = Named(ScreenRules.Commit.Apply);
+        var all = Snapshot();
+        var buttons = Buttons(all);
+        var apply = buttons.Where(b => Commits(b, ScreenRules.Commit.Apply)).ToList();
         if (apply.Count > 1) throw new RigException($"{app.Name} shows more than one Apply button, so Rig pressed none.");
-        Node? press = apply is [var one] ? one : Named(ScreenRules.Commit.Ok) is [var ok] && Named(ScreenRules.Commit.Cancel).Count > 0 ? ok : null;
-        if (press == null) return;
+        Node? press = apply is [var one] ? one
+            : buttons.Where(b => Commits(b, ScreenRules.Commit.Ok)).ToList() is [var ok] && buttons.Any(b => Commits(b, ScreenRules.Commit.Cancel)) ? ok : null;
+        if (press == null)
+        {
+            if (demand && !app.AppliesOnChange && buttons.FirstOrDefault(b => !before.Buttons.Contains(Key(b)) && !Commits(b, ScreenRules.Commit.Cancel)) is Node wants)
+                throw new RigException($"{app.Name} wants {(wants.Says.Length > 0 ? wants.Says : "a button")} pressed to keep this, and Rig only presses the buttons on its own list, so the change isn't finished.");
+            return;
+        }
+        var now = States(all, control);
+        if (before.States.FirstOrDefault(s => now.TryGetValue(s.Key, out var n) && n.Value != s.Value.Value) is { Key: not null } moved)
+            throw new RigException($"Setting this also changed {moved.Value.Says} in {app.Name}, which the card didn't show, so Rig didn't press {press.Says}.");
         var invoke = Uia.Pattern<IUIAutomationInvokePattern>(press.El, Uia.Invoke) ?? throw new RigException($"Rig couldn't press {press.Says} in {app.Name}.");
         Guard(press);
+        committed = true;
         Did(invoke.Invoke(), press);
         Thread.Sleep(400);
         Unexpected(asking: true);
     }
 
-    /// Puts a half-made change back, and says in one sentence whether that worked.
-    string Back(ScreenLook look, string was)
+    /// Puts a half-made change back: whether that worked, and one sentence that says so. The app's Apply is pressed again
+    /// only when this change pressed it.
+    (bool Done, string Says) Back(ScreenLook look, string was)
     {
         try
         {
@@ -884,13 +977,14 @@ sealed class ScreenWalk : IDisposable
             {
                 if (!look.Same(Says(look, Settled(spot)), was))
                 {
+                    var before = Baseline(spot);
                     Put(look, spot, was);
-                    Commit();
+                    if (committed) Commit(before, spot.Control, demand: false);
                 }
             }
             finally { Close(spot); }
-            return $"Rig put {look.Target.Says} back to {was}.";
+            return (true, $"Rig put {look.Target.Says} back to {was}.");
         }
-        catch (RigException) { return $"Rig couldn't put {look.Target.Says} back to {was}, so check it in {app.Name}."; }
+        catch (RigException) { return (false, $"Rig couldn't put {look.Target.Says} back to {was}, so check it in {app.Name}."); }
     }
 }
