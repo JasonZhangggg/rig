@@ -2,7 +2,7 @@
 // demo fixtures. The desktop app uses it when it isn't running on Windows,
 // and the tests use it to drive LocalClient.
 
-import { validateCall, type ActionCall, type FixApplied, type FixNow, type UndoCall } from "../actions";
+import { validateCall, type ActionCall, type FixApplied, type FixNow } from "../actions";
 import type { HelperLink } from "../local";
 import type { Inventory, Snapshot, SystemFacts } from "../telemetry";
 import { applyToFacts, demoNow } from "./apply";
@@ -25,9 +25,9 @@ export class SimulatedLink implements HelperLink {
   async processes() { return demoProcesses(this.inv, (this.opts.now ?? Date.now)()); }
   /** The folder scan: finished an hour ago, or just now when asked for a fresh one. */
   async storage(fresh?: boolean) { const now = (this.opts.now ?? Date.now)(); return demoScan(this.inv, fresh ? now : now - 36e5); }
-  /** Catalog calls are checked as the server checks them; a registry restore only comes from an undo, as on the real helper. */
-  async apply(call: UndoCall): Promise<FixApplied> {
-    const bad = call.kind === "registry.restore" ? null : validateCall(call);
+  /** Calls are checked as the server checks them, undo calls included. */
+  async apply(call: ActionCall): Promise<FixApplied> {
+    const bad = validateCall(call);
     if (bad) throw new Error(bad);
     return { undo: applyToFacts(this.inv, this.f, call), verify: { ok: true } };
   }

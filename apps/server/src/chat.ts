@@ -16,7 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROBE_LIMITS, RECORD_DEFAULT_MINUTES, RECORD_MAX_MINUTES, RECORD_MIN_MINUTES, captureKinds, captures, catalog, checkProbe, checkRequest, describeCall,
   describeProbes, describeRecording, isActive, limitsOf, manualLink, probeKinds, probeMetrics, probeWhat, probeWhen, summarise, toRequest, validateCall,
-  cardTier, checkRead, checkStep, readTaints, readWhat, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
+  cardTier, checkRead, checkStep, readTaints, readWhat, registryCommand, serviceCommand, stopCode, stepsTitle, READ_LIMITS, type ActionCall, type Command, type PcRead, type PcReadResult, type Step, type Tier, type Touch,
   type Manual, type ChatEvent, type ChatRequest, type DiffRow, type Inventory, type PC, type PCEvent, type Proposal, type Recording, type RecordingInfo,
   type ProbeStatus, type Reading, type RecordingRequest, type Source, type SystemFacts,
 } from "@rig/core";
@@ -135,7 +135,8 @@ Looking at the PC:
 Changes:
 - You can change this PC only with the propose_change tool. The person sees a card and decides. Nothing changes until they approve in the app on that PC.
 - Prefer a catalog fix (a fix step) when one fits; they show the value now and after and always undo. Use the exact GUIDs, app names and display names from the PC block.
-- Command steps work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
+- Command steps, and the registry and service steps below, work only when the PC block says commandSteps: true (the Rig app on that PC, new enough to show them). Otherwise use a catalog fix, or give the steps with show_steps.
+- For one registry value, use a registry step ({registry: {key, name, type, value}}); for how a service starts, a service step ({service: {name, startType}}). Rig writes the PowerShell for them, so prefer these to writing it yourself.
 - For any other Windows setting, use a command step: does (one plain sentence), read (a PowerShell script that prints the current state; it must only look, like a read_pc script), run (the PowerShell that makes the change), undo (the PowerShell that puts it back, whenever one exists) and touches (every registry key, file, service, task or firewall rule it changes, with full paths). Look with read_pc first so the script fits this PC.
 - Rig checks every step in code and sets the card's risk itself. A step it refuses comes back as an error with the reason: don't try to get around it; give the steps with show_steps instead if the person can do it themselves.
 - Never ask for anything on Rig's never list: reading passwords, saved sign-ins, Wi-Fi keys or BitLocker keys; new accounts or admin rights; turning on Remote Desktop, WinRM or an SSH server; root certificates, the hosts file or a proxy; Run keys, new services, Image File Execution Options, Winlogon or Defender exclusions; flashing firmware, boot entries, partitioning or formatting the system drive, or BitLocker on or off; downloading and running code; Rig's own files.
@@ -170,8 +171,7 @@ const callSchema = {
     kind: { type: "string", enum: catalog.map((a) => a.kind) },
     guid: { type: "string" }, name: { type: "string" }, enabled: { type: "boolean" },
     mode: { type: "string", enum: ["auto", "appearance", "performance"] },
-    ac: { type: "integer" }, dc: { type: "integer" }, display: { type: "string" }, hz: { type: "integer" },
-    key: { type: "string" }, type: { type: "string" }, value: { anyOf: [{ type: "integer" }, { type: "string" }, { type: "array", items: { type: "string" } }] }, start: { type: "string" }, subgroup: { type: "string" }, setting: { type: "string" },
+    ac: { type: "integer" }, dc: { type: "integer" }, display: { type: "string" }, hz: { type: "integer" }, subgroup: { type: "string" }, setting: { type: "string" },
   },
   required: ["kind"],
 };
@@ -198,10 +198,32 @@ const commandSchema = {
   required: ["does", "read", "run", "touches"],
 };
 
+const registrySchema = {
+  type: "object",
+  description: "One registry value. Rig writes the command, reads the value first and snapshots it, so undo puts it back.",
+  properties: {
+    key: { type: "string", description: "Full key, starting HKCU\\ (this person's settings) or HKLM\\ (the whole PC), like HKCU\\Control Panel\\Desktop. Plain ASCII, no wildcards." },
+    name: { type: "string", description: "The value's name; \"\" for the key's default value." },
+    type: { type: "string", enum: ["dword", "qword", "string", "expandString", "multiString"] },
+    value: { anyOf: [{ type: "integer" }, { type: "string" }, { type: "array", items: { type: "string" } }], description: "A whole number for dword (0 to 4294967295) and qword, text for string and expandString, a list of text for multiString." },
+  },
+  required: ["key", "name", "type", "value"],
+};
+
+const serviceSchema = {
+  type: "object",
+  description: "How a service starts. It doesn't start or stop the service now; undo puts back how it started.",
+  properties: {
+    name: { type: "string", description: "The service's name (like Spooler), not its display name." },
+    startType: { type: "string", enum: ["automatic", "automaticDelayed", "manual", "disabled"] },
+  },
+  required: ["name", "startType"],
+};
+
 export const tools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "propose_change",
-    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is either {fix} or {command}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
+    description: `Show the person a card proposing changes to their PC. They review and approve it in the Rig app; nothing changes before that. Each step is one of {fix}, {registry}, {service} or {command}. Prefer a fix when one fits; these are the fixes:\n${catalogText}\nFor one registry value use {registry}, and for how a service starts use {service}: Rig writes and checks the PowerShell for them, so prefer them to a hand-written command. For anything else use a command: look with read_pc first, write read as a script that only looks, list everything it touches, and give an undo when one exists. Rig sets the card's risk from the steps and refuses what it can't allow, with the reason.`,
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -210,7 +232,7 @@ export const tools: Anthropic.Beta.BetaToolUnion[] = [
         why: { type: "string", description: "One sentence on why this helps with what they asked." },
         steps: {
           type: "array", minItems: 1, maxItems: 8,
-          items: { type: "object", properties: { fix: callSchema, command: commandSchema } },
+          items: { type: "object", properties: { fix: callSchema, registry: registrySchema, service: serviceSchema, command: commandSchema } },
         },
       },
       required: ["title", "why", "steps"],
@@ -468,35 +490,38 @@ function rowsFor(steps: Step[], ctx: ChatContext): DiffRow[] {
 
 /**
  * Checks a proposal: fixes against the catalog and what's on this PC, commands with the shared checker and the chat's taint.
- * Takes `steps` ([{fix} | {command}]) or, from before commands, `calls`. Errors are plain words for the model.
+ * Takes `steps` ([{fix} | {registry} | {service} | {command}]) or, from before commands, `calls`. A registry or service step
+ * becomes the command Rig writes for it, checked like any other. Errors are plain words for the model.
  */
 export function checkProposal(input: ProposeInput, ctx: ChatContext, tainted = false): { steps: Step[]; tier: Tier; title: string; why: string } | string {
   const raws: unknown[] | null = Array.isArray(input.steps) && input.steps.length
     ? input.steps
     : Array.isArray(input.calls) && input.calls.length ? input.calls.map((fix) => ({ fix })) : null;
-  if (!raws) return "steps must be a non-empty list of {fix} or {command}";
+  if (!raws) return "steps must be a non-empty list of {fix}, {registry}, {service} or {command}";
   if (raws.length > 8) return "At most 8 steps on one card";
   const steps: Step[] = [];
   for (const [i, raw] of raws.entries()) {
-    const r = (raw ?? {}) as { fix?: unknown; command?: unknown };
-    if (r.fix !== undefined && r.command === undefined) {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const given = ["fix", "registry", "service", "command"].filter((k) => r[k] !== undefined);
+    if (given.length !== 1) return `Step ${i + 1} must be exactly one of {fix}, {registry}, {service} or {command}`;
+    if (given[0] === "fix") {
       const call = checkFix(r.fix, ctx);
       if (typeof call === "string") return call;
       steps.push({ kind: "fix", call });
-    } else if (r.command !== undefined && r.fix === undefined) {
+    } else {
       // Apps from before command steps would show a card they can't read; the website can't run anything.
       if (!ctx.commandSteps) {
         return ctx.live
           ? `Step ${i + 1}: command steps need the newer Rig app on ${ctx.view.name}, and this one is older. Use a catalog fix, or give the steps with show_steps and suggest updating Rig.`
           : `Step ${i + 1}: command steps need the newer Rig app on ${ctx.view.name}; they can't be offered from the website. Use a catalog fix, or give the steps with show_steps and say they can ask in the Rig app on that PC.`;
       }
-      const cmd = commandOf(r.command);
-      if (typeof cmd === "string") return `Step ${i + 1}: ${cmd}`;
+      const cmd = given[0] === "registry" ? registryCommand(r.registry) : given[0] === "service" ? serviceCommand(r.service) : commandOf(r.command);
+      if (typeof cmd === "string") return `Step ${i + 1}: ${given[0] === "command" ? "" : `${given[0]}: `}${cmd}`;
       const step: Step = { kind: "command", cmd };
       const v = checkStep(step, { tainted });
       if (v.status === "refused") return `Step ${i + 1} was refused: ${v.refused} Don't ask for it another way. If the person can do it themselves, give the steps with show_steps.`;
       steps.push(step);
-    } else return `Step ${i + 1} must be either {fix} or {command}`;
+    }
   }
   const tier = cardTier(steps, { tainted });
   if (tier === "refused") return "One of these changes isn't allowed";

@@ -169,6 +169,39 @@ describe("general command steps", () => {
     expect(sent).toContain("show_steps");
   });
 
+  it("builds registry and service steps from their shorthands, and checks what they build", async () => {
+    const menu = { key: "HKCU:\\Control Panel\\Desktop", name: "MenuShowDelay", type: "string", value: "100" };
+    const { live, seen } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Set up autostart", why: "y", steps: [{ registry: { key: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", name: "x", type: "string", value: "C:\\x.exe" } }] } } },
+      { tool: { name: "propose_change", input: { title: "Faster menus", why: "y", steps: [{ registry: { ...menu, value: 100 } }] } } },
+      { text: "Menus open after a delay.", tool: { name: "propose_change", input: { title: "Faster menus", why: "Menus open at once.", steps: [{ registry: menu }] } } },
+      { text: "Review the card." },
+    ]);
+    const p = of(await live(ask("Make menus faster")), "proposal")[0].proposal;
+    expect(lastToolResults(seen[1])).toContain("Run keys");
+    expect(lastToolResults(seen[2])).toContain("registry: ");
+    expect(p.tier).toBe(2);
+    expect(p.steps).toHaveLength(1);
+    const step = p.steps![0];
+    expect(step.kind === "command" && step.cmd.run).toContain("Set-ItemProperty -LiteralPath 'HKCU:\\Control Panel\\Desktop' -Name 'MenuShowDelay' -Type String -Value '100'");
+
+    const machine = await chatSetup([{ tool: { name: "propose_change", input: { title: "No Game DVR", why: "y", steps: [{ registry: { key: "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR", name: "AllowGameDVR", type: "dword", value: 0 } }] } } }, { text: "Done." }]);
+    expect(of(await machine.live(ask("Turn off Game DVR for everyone")), "proposal")[0].proposal).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { touches: [{ kind: "registry", key: "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR", value: "AllowGameDVR" }] } }] });
+
+    const service = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Remote Registry on", why: "y", steps: [{ service: { name: "RemoteRegistry", startType: "automatic" } }] } } },
+      { tool: { name: "propose_change", input: { title: "No print spooler", why: "y", steps: [{ service: { name: "Spooler", startType: "disabled" } }] } } },
+      { text: "." },
+    ]);
+    const q = of(await service.live(ask("Turn off the print spooler")), "proposal")[0].proposal;
+    expect(lastToolResults(service.seen[1])).toContain("Remote Registry");
+    expect(q).toMatchObject({ tier: 2, steps: [{ kind: "command", cmd: { run: "Set-Service -Name 'Spooler' -StartupType Disabled" } }] });
+
+    const site = await chatSetup([{ tool: { name: "propose_change", input: { title: "Faster menus", why: "x", steps: [{ registry: menu }] } } }, { text: "." }]);
+    expect(of(await site.web(ask("Make menus faster"), { steps: true }), "proposal")).toHaveLength(0);
+    expect(lastToolResults(site.seen[1])).toContain("can't be offered from the website");
+  });
+
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {
     const clean = await chatSetup([{ tool: { name: "propose_change", input: { title: "Delete the old installers", why: "Frees space.", steps: [{ command: deleteFolder }] } } }, { text: "Review it." }]);
     expect(of(await clean.live(ask("Delete C:\\Installers\\old")), "proposal")[0].proposal.tier).toBe(3);

@@ -229,26 +229,6 @@ describe("chat", () => {
     expect(JSON.stringify(seen[2].messages)).toContain("Unknown change");
   });
 
-  it("proposes a registry value, tiered by whose settings it changes, and sends a never-list key back", async () => {
-    const menu = { kind: "registry.set", key: "HKCU:\\Control Panel\\Desktop", name: "MenuShowDelay", type: "string", value: "100", extra: "dropped" };
-    const { ask, seen } = await chatSetup([
-      { tool: { name: "propose_change", input: { title: "Set up autostart", why: "y", calls: [{ kind: "registry.set", key: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", name: "x", type: "string", value: "C:\\x.exe" }] } } },
-      { text: "Menus open after a delay.", tool: { name: "propose_change", input: { title: "Faster menus", why: "Menus open at once.", calls: [menu] } } },
-      { text: "Review the card." },
-    ]);
-    const events = await readEvents(await ask("Make menus faster"));
-    expect(JSON.stringify(seen[1].messages)).toContain("Run keys");
-    const p = events.find((e) => e.type === "proposal") as Extract<ChatEvent, { type: "proposal" }>;
-    expect(p.proposal.steps).toEqual([{ kind: "fix", call: { kind: "registry.set", key: "HKCU:\\Control Panel\\Desktop", name: "MenuShowDelay", type: "string", value: "100" } }]);
-    expect(p.proposal.tier).toBe(1);
-    // The server can't see the registry; the app reads the value when the person reviews the card.
-    expect(p.proposal.rows).toEqual([["HKCU\\Control Panel\\Desktop\\MenuShowDelay", "Not read yet", "\"100\""]]);
-
-    const machine = await chatSetup([{ tool: { name: "propose_change", input: { title: "No Game DVR", why: "y", calls: [{ kind: "registry.set", key: "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR", name: "AllowGameDVR", type: "dword", value: 0 }] } } }, { text: "Done." }]);
-    const q = (await readEvents(await machine.ask("Turn off Game DVR for everyone"))).find((e) => e.type === "proposal") as Extract<ChatEvent, { type: "proposal" }>;
-    expect(q.proposal.tier).toBe(2);
-  });
-
   it("shows steps for things the person does themselves", async () => {
     const { ask } = await chatSetup([{ tool: { name: "show_steps", input: { steps: ["Shut down.", "Blow out the dust."] } } }, { text: "That's it." }]);
     const events = await readEvents(await ask("How do I clean it?"));
