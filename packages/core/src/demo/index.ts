@@ -1,6 +1,7 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
-import { cardTier, fixSteps, stepsTitle, type AppliedStep, type FixStep, type Step } from "../change";
+import { cardTier, fixSteps, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type Step, type Touch, type UndoReply } from "../change";
+import { demoApply, demoCards, demoCardByNonce, demoCardByUndo, demoCardFor, demoProposal, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
@@ -33,6 +34,7 @@ export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export { DemoManuals } from "./manualShelf";
 export { demoScan } from "./storage";
+export { demoApply, demoCards, demoPreview, demoProposal, demoUndo, demoUndoRecord, type DemoCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
@@ -54,6 +56,8 @@ function see(seen: Record<string, [number, number]>, s: Sensor) {
   seen[s.id] = [Math.min(lo, s.value), Math.max(hi, s.value)];
 }
 
+const touchLabel = (t: Touch) => (t.kind === "registry" ? `${t.key}${t.value ? `\\${t.value}` : ""}` : t.kind === "file" ? t.path : t.name);
+
 function fixesOnly(steps: Step[]): FixStep[] {
   return steps.map((s) => { if (s.kind !== "fix") throw new Error("The demo can't run commands yet."); return s; });
 }
@@ -68,6 +72,8 @@ export class DemoClient implements RigClient {
   private readonly born = Date.now();
   /** Manuals per PC, in memory. Atlas starts with its board manual found and read. */
   readonly shelf = new DemoManuals();
+  /** Nonces work once, as they do in the helper. */
+  private used = new Set<string>();
 
   constructor() {
     const mk = (inv: Inventory, facts: SystemFacts, id: Identity, dust: number): DemoPC => {
@@ -272,6 +278,37 @@ export class DemoClient implements RigClient {
     return change;
   }
 
+  /** Answers the way the helper would for one of the demo's command cards. Nothing on the demo PC changes. */
+  async applyCommand(id: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply> {
+    const p = this.pcs[id];
+    const card = demoCardByNonce(nonce);
+    if (!p || !card || this.used.has(nonce)) return { outcome: "expired" };
+    await sleep(400);
+    const reply = demoApply(card);
+    if (reply.outcome !== "applied") return reply;
+    this.used.add(nonce);
+    const step = { kind: "command" as const, cmd: card.cmd };
+    const rows: DiffRow[] = reply.result.touches.map((t) => [touchLabel(t.touch), t.before ?? "Not there", t.after ?? "Not there"]);
+    const tier = cardTier([step]);
+    p.changes.unshift({
+      id: uid(), machineId: id, at: new Date().toISOString(), title: meta.title ?? card.title, by: meta.by, status: "applied", why: meta.why ?? "", result: "", diff: rows,
+      tier: tier === "refused" ? 3 : tier, applied: [{ step, undo: reply.undo, rows, verify: { before: reply.result.before, after: reply.result.after } }], from: meta.from,
+    });
+    this.emit(id);
+    return reply;
+  }
+
+  async undoCommand(id: string, undoId: string): Promise<UndoReply> {
+    const card = demoCardByUndo(undoId);
+    const c = this.pcs[id]?.changes.find((x) => x.applied.some((a) => a.undo.kind === "command" && a.undo.id === undoId));
+    if (!card || !c || c.status === "undone") return { outcome: "unknown" };
+    await sleep(300);
+    c.status = "undone";
+    this.used.delete(`demo-${card.key}`);
+    this.emit(id);
+    return demoUndo(card);
+  }
+
   async undo(id: string, changeId: string) {
     const p = this.pcs[id];
     const c = p.changes.find((x) => x.id === changeId)!;
@@ -308,7 +345,15 @@ export class DemoClient implements RigClient {
       for (const w of text.split(/(?<= )/)) { if (signal?.aborted) return; onEvent({ type: "text", text: w }); await sleep(18); }
     };
     const display = p.inv.displays.find((d) => d.refreshHz < d.maxRefreshHz);
-    if (/recording|what did (it|rig) find/.test(q)) {
+    const card = demoCardFor(q);
+    const refused = /steps to do this myself/.test(q) && demoCards.find((c) => c.steps);
+    if (refused) {
+      await say("Here's how to do it yourself in Windows Security. Rig doesn't change anything.");
+      onEvent({ type: "steps", steps: refused.steps! });
+    } else if (card) {
+      await say(card.says);
+      onEvent({ type: "proposal", proposal: demoProposal(card, uid()) });
+    } else if (/recording|what did (it|rig) find/.test(q)) {
       await p.recorder.load();
       const done = p.recorder.list().find((r) => r.state === "done" || r.state === "cancelled");
       if (done?.id === DEMO_RECORDING_ID) {

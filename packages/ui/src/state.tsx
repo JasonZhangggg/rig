@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
-import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step } from "@rig/core";
+import { alertRules, formatTemp, liveSpec, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
 
@@ -122,6 +122,8 @@ export interface Ctx {
   review: (steps: Step[], meta: { title?: string; body?: string; cta?: string; by: "you" | "rig"; why?: string; proposalId?: string }) => Promise<void>;
   confirmReview: () => Promise<void>;
   declineProposal: (proposalId: string) => void;
+  /** The one way a card applies or undoes a command step. Rig's own fixes go through `review`. */
+  commandStep: (proposalId: string, index: number, act: "apply" | "undo") => Promise<void>;
   /** The person approved a script Rig proposed. Runs as admin only after Windows' own prompt. Never called by the chat. */
   approveScript: (messageId: string) => Promise<void>;
   declineScript: (messageId: string) => void;
@@ -491,6 +493,29 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         if (back) requestAnimationFrame(() => window.scrollTo(0, logsScroll.current));
         else window.scrollTo(0, 0);
       },
+
+      commandStep: (proposalId, index, act) => once(`command:${proposalId}:${index}`, async () => {
+        const message = dataNow.current.chat.find((m) => m.proposal?.id === proposalId);
+        const p = message?.proposal;
+        const preview = p?.previews?.[index];
+        const was = p?.outcomes?.[index];
+        if (!p) return;
+        if (!client.caps.applyChanges || !client.applyCommand || !client.undoCommand) { toast(`Changes can only be made in the Rig app on ${pcOf().name}.`); return; }
+        const keep = (o: StepOutcome) => setData((d) => ({ ...d, chat: d.chat.map((m) => (m.proposal?.id === proposalId
+          ? { ...m, proposal: { ...m.proposal, outcomes: m.proposal.steps.map((_, i) => (i === index ? o : m.proposal!.outcomes?.[i] ?? null)) } } : m)) }));
+        try {
+          if (act === "apply" && preview?.outcome === "ready" && !was) {
+            const apply = await client.applyCommand(pcId, preview.nonce, { title: p.title, why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
+            keep({ apply });
+          } else if (act === "undo" && was?.apply.outcome === "applied") {
+            keep({ ...was, undo: await client.undoCommand(pcId, was.apply.undo.id) });
+          } else return;
+          const changes = await client.changes(pcId);
+          setData((d) => ({ ...d, changes }));
+        } catch (e) {
+          toast(`Rig couldn't ${act === "apply" ? "make this change" : "undo this"}. ${e instanceof Error ? e.message : ""} Try again, and if it keeps happening, restart Rig.`.replace(/\s+/g, " ").trim());
+        }
+      }),
 
       declineProposal: (proposalId) => { patchProposal(proposalId, { status: "declined" }); toast("Okay, nothing was changed."); },
 

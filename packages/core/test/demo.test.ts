@@ -74,3 +74,27 @@ describe("demo alerts", () => {
     expect(laptop.alerts).toBeUndefined();
   });
 });
+
+describe("the demo's approval cards", () => {
+  it("has one of each: a registry command, an admin firewall rule, an uninstall and a refusal", async () => {
+    const { demoCards, demoPreview } = await import("../src/demo");
+    const seen = Object.fromEntries(demoCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}${p.verdict.admin ? " admin" : ""}` : p.verdict.why]; }));
+    expect(seen).toEqual({ registry: "tier 2", firewall: "tier 2 admin", uninstall: "tier 3", refused: "never", rollback: "tier 2" });
+  });
+
+  it("brings each card up from its question, and a nonce works once", async () => {
+    const { demoCards } = await import("../src/demo");
+    const demo = new DemoClient();
+    for (const c of demoCards) {
+      const events: string[] = [];
+      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => { if (e.type === "proposal") events.push(e.proposal.title); });
+      expect(events).toEqual([c.title]);
+    }
+    const meta = { by: "rig" as const };
+    expect((await demo.applyCommand("demo-atlas", "demo-registry", meta)).outcome).toBe("applied");
+    expect((await demo.applyCommand("demo-atlas", "demo-registry", meta)).outcome).toBe("expired");
+    expect((await demo.changes("demo-atlas"))[0].title).toBe("Show seconds on the taskbar clock");
+    expect((await demo.undoCommand("demo-atlas", "undo-registry")).outcome).toBe("undone");
+    expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
+  });
+});

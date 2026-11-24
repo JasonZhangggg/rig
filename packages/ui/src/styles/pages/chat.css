@@ -76,6 +76,19 @@
 .proposal-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 0 8px; }
 .proposal-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 0 2px; border-top: 1px solid var(--line); }
 .proposal-foot .faint { margin-right: auto; font-size: 12.5px; }
+/* A command's card takes its rule from how careful the change needs the person to be. */
+.step-cards { display: grid; gap: 22px; }
+.step-card.t2 { border-left-color: var(--amber); }
+.step-card.t3 { border-left-color: var(--red); }
+.step-card.refused { border-left-style: dashed; }
+.step-card .proposal-head h3 { min-width: 0; overflow-wrap: anywhere; }
+.step-card .cc-first { margin-bottom: 14px; }
+.cc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cc-place { font-size: 12.5px; }
+@media (max-width: 760px) {
+  .step-card .proposal-foot .faint { flex-basis: 100%; }
+  .step-card .proposal-foot .btn { flex: 1; }
+}
 
 /* ---------- Composer, pinned to the bottom once there's a conversation ---------- */
 .chat-dock { display: flex; flex-direction: column; gap: 10px; }

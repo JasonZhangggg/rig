@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { fixSteps, type Change, type DiffRow, type Issue } from "@rig/core";
+import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type Issue } from "@rig/core";
 import { DiffTable, StatusChip } from "../components/common";
+import { StepRecord } from "../components/change";
 import { DayLabel, Row, Rows } from "../components/Rows";
 import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
+
+type CommandApplied = Extract<AppliedStep, { step: CommandStep }>;
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -126,6 +129,7 @@ function Entry({ c }: { c: Change }) {
       details={<>
         {(c.why || c.result) && <p className="muted">{[c.why, c.result].filter(Boolean).join(" ")}</p>}
         {c.diff.length > 0 && <div className="diff-wrap"><DiffTable rows={c.diff} /></div>}
+        {c.applied.map((a, i) => a.step.kind === "command" && <StepRecord key={i} applied={a as CommandApplied} />)}
       </>} />
   );
 }
