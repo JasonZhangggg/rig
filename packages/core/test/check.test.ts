@@ -87,7 +87,8 @@ describe("what a refusal says", () => {
   it("names the command and why, in plain words", () => {
     expect(checkScript("New-LocalUser -Name helper", "run")).toMatchObject({ status: "refused", why: "never", refused: "Rig won't run New-LocalUser: it adds a Windows account, which could let someone else in." });
     expect(checkScript("cmd /c del C:\\x", "run")).toMatchObject({ why: "refused", refused: "Rig won't run cmd: it starts another shell, and Rig can't check what runs inside it." });
-    expect(checkScript("Get-Service -ComputerName srv", "read")).toMatchObject({ refused: expect.stringContaining("Get-Service with -computername") });
+    expect(checkScript("Get-Service -ComputerName srv", "read")).toMatchObject({ why: "refused", refused: "Rig won't run Get-Service: it would act on another computer or as another account." });
+    expect(checkScript("Get-Service -RequiredServices", "read")).toMatchObject({ refused: expect.stringContaining("Get-Service with -requiredservices") });
     expect(checkScript("Get-Service | % { $_.Stop() }", "run")).toMatchObject({ refused: expect.stringContaining("calls a method on an object") });
     expect(checkScript("", "run")).toMatchObject({ status: "refused" });
   });

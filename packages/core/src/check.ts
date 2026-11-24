@@ -26,6 +26,7 @@ interface Rules {
   readParams: string[];
   roots: { known: string[]; unknown: string[] };
   paths: { literal: string[]; literalPrefix: string; values: string[]; constants: string[]; wildcards: string[]; programs: string[]; readKinds: string[]; readRoots: ReadRoot[]; system: string };
+  remote: { params: string[]; refused: string };
   writerVerbs: string[];
   adminText: string[];
   safeTypes: string[];
@@ -273,9 +274,13 @@ function judge(call: Call, use: ScriptUse): Judged {
   const pass = (o: Outcome, tier: Tier, write: Write = NONE): Judged =>
     ({ found: found(`${name}: ${o.says ?? entry?.says ?? ""}`, tier), admin: use !== "read" && (o.admin ?? entry?.admin ?? false), ...(tier > 0 ? { write } : {}) });
 
+  const remote = !pathed && !exe && !entry?.exe && shownOf(call.args).some((a) => isParam(a) && R.remote.params.some((p) => abbreviates(headOf(a), p)))
+    ? stop(`Rig won't run ${name}: it ${R.remote.refused}.`) : null;
+
   if (base.includes(".")) return construct("script-file");
   if (pathed && (raw.includes("..") || !R.roots.known.some((r) => raw.startsWith(r)))) return construct("path");
   if (!entry) {
+    if (remote) return remote;
     if (use === "read") return construct("not-read", name, "notRead");
     if (pathed) return R.roots.unknown.some((r) => raw.startsWith(r)) ? pass({ says: R.constructs["unknown-program"], admin: true }, 2) : construct("unknown", name);
     const dash = base.indexOf("-"), tier = dash > 0 && !exe ? R.verbs[base.slice(0, dash)] : undefined;
@@ -288,6 +293,7 @@ function judge(call: Call, use: ScriptUse): Judged {
   const rule = entry.when?.find((w) => matches(w, call, !!(w.never || w.refused || w.tier === 3), !!entry.exe));
   const block = (o: Outcome) => (o.never ? stop(`Rig won't run ${name}: it ${o.never}.`, "never") : o.refused ? stop(`Rig won't run ${name}: it ${o.refused}.`) : null);
   if (rule && (rule.never || rule.refused)) return block(rule)!;
+  if (remote) return remote;
 
   let write = NONE, joined: string[] = [];
   if (entry.targets) {

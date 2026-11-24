@@ -89,6 +89,8 @@ public static class CommandSelfTest
             {
                 Check("the command store is admins' only", () => StoreLocked(ctx));
                 Check("a link planted in the store is refused and the store rebuilt", () => PlantedStore(ctx));
+                Check("a store file the person's own account owns is refused and the store rebuilt", () => OwnedStore(ctx));
+                Check("a store made under the object-creator owner policy is admins' own", () => CreatorOwnerStore(ctx));
                 Check("a change that needs admin rights", () => NeedsApproval(ctx));
                 Check("services, tasks and accounts a change made are put back", () => NeverPutBack(ctx));
                 Check("a limited app token", () => LimitedToken(ctx));
@@ -615,6 +617,73 @@ public static class CommandSelfTest
         if (!ctx.Store.Sound()) yield return "the rebuilt store isn't sound";
         if (!Is(ctx.Apply(ctx.Preview(Harmless())), "applied")) yield return "a change couldn't run once the store was rebuilt";
         Clean(ctx.Person);
+    }
+
+    static readonly SecurityIdentifier Admins = new(WellKnownSidType.BuiltinAdministratorsSid, null);
+
+    static SecurityIdentifier? OwnerOf(FileSystemInfo item) =>
+        (item is DirectoryInfo d ? d.GetAccessControl(AccessControlSections.Owner) : (FileSystemSecurity)((FileInfo)item).GetAccessControl(AccessControlSections.Owner)).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+
+    /// The account this runs as, when it isn't one the store trusts as an owner.
+    static SecurityIdentifier? Untrusted()
+    {
+        using var id = WindowsIdentity.GetCurrent();
+        return id.User is SecurityIdentifier me && !me.IsWellKnown(WellKnownSidType.LocalSystemSid) ? me : null;
+    }
+
+    static IEnumerable<string> OwnedStore(Context ctx)
+    {
+        if (Untrusted() is not SecurityIdentifier me) { yield return Skip + "this runs as the system, which the store trusts as an owner"; yield break; }
+        Clean(ctx.Person);
+        var p = ctx.Preview(Harmless());
+        if (!Is(p, "ready")) { yield return $"the test command was refused before it ran: {p.ToJsonString()}"; yield break; }
+        var file = new FileInfo(Path.Combine(ctx.Root, "records", "owned.json"));
+        File.WriteAllText(file.FullName, "{}");
+        var sec = file.GetAccessControl(AccessControlSections.Owner);
+        sec.SetOwner(me);
+        file.SetAccessControl(sec);
+        if (!Equals(OwnerOf(file), me)) { yield return Skip + "Windows wouldn't make this runner's own account the owner of a file in the store"; yield break; }
+        var a = ctx.Apply(p);
+        if (!Is(a, "refused") || a["verdict"]?["refused"]?.ToString() != Commands.StoreRebuilt) yield return $"it wasn't refused in the store's words: {a.ToJsonString()}";
+        if (Exists(ctx.Person, Key)) yield return "the change ran";
+        if (File.Exists(file.FullName)) yield return "the file the person's account owns was left in the store";
+        if (!ctx.Store.Sound()) yield return "the rebuilt store isn't sound";
+        if (!Is(ctx.Apply(ctx.Preview(Harmless())), "applied")) yield return "a change couldn't run once the store was rebuilt";
+        Clean(ctx.Person);
+    }
+
+    /// Stands in for a PC whose policy makes an admin's new files the admin's own: the self-test's token is told to make
+    /// them its own account's, and a new store is set up and used under it.
+    static IEnumerable<string> CreatorOwnerStore(Context ctx)
+    {
+        if (Untrusted() is not SecurityIdentifier me) { yield return Skip + "this runs as the system, which the store trusts as an owner"; yield break; }
+        if (Native.DefaultOwner() is not SecurityIdentifier was) { yield return Skip + "Windows wouldn't say who owns what this process makes"; yield break; }
+        string root = CommandStore.AdminRoot + "-selftest-owner-" + CommandStore.NewId(), probe = Path.Combine(Path.GetTempPath(), "rig-selftest-owner-" + CommandStore.NewId());
+        try
+        {
+            if (!Native.SetDefaultOwner(me)) { yield return Skip + "Windows wouldn't make this runner's own account the owner of what it makes"; yield break; }
+            var made = Directory.CreateDirectory(probe);
+            if (!Equals(OwnerOf(made), me)) { yield return Skip + "this runner's new folders aren't its own account's even when told so"; yield break; }
+            var store = new CommandStore(root, secured: true);
+            if (!Equals(Native.DefaultOwner(), Admins)) yield return "setting up the store didn't make Administrators the owner of what the helper makes";
+            if (!store.Sound()) yield return "the new store has something in it that isn't admins' own";
+            Clean(ctx.Person);
+            var rig = new Commands(store, Environment.ProcessId, restorePoints: false) { TestOnlyElevatedApp = false };
+            var p = rig.Handle("command.preview", new JsonObject { ["cmd"] = Harmless() });
+            if (!Is(p, "ready")) { yield return $"the preview wasn't ready: {p.ToJsonString()}"; yield break; }
+            var a = rig.Handle("command.apply", new JsonObject { ["nonce"] = p["nonce"]?.ToString() });
+            if (!Is(a, "applied")) { yield return $"it wasn't applied: {a.ToJsonString()}"; yield break; }
+            if (!store.Sound()) yield return "the store has something in it that isn't admins' own after a change";
+            var u = rig.Handle("command.undo", new JsonObject { ["id"] = a["undo"]?["id"]?.ToString() });
+            if (!Is(u, "undone")) yield return $"it wasn't undone: {u.ToJsonString()}";
+        }
+        finally
+        {
+            Native.SetDefaultOwner(was);
+            Clean(ctx.Person);
+            try { Directory.Delete(probe, recursive: true); } catch { }
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
     }
 
     static IEnumerable<string> NeedsApproval(Context ctx)

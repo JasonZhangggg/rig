@@ -135,6 +135,7 @@ public static class CommandCheck
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
     sealed class ReadRoot { public string Root { get; set; } = ""; public string[]? Ends { get; set; } }
+    sealed class RemoteRule { public string[] Params { get; set; } = []; public string Refused { get; set; } = ""; }
     sealed class RootList { public string[] Known { get; set; } = []; public string[] Unknown { get; set; } = []; }
     sealed class PathRules
     {
@@ -158,6 +159,7 @@ public static class CommandCheck
         public string[] ReadParams { get; set; } = [];
         public RootList Roots { get; set; } = new();
         public PathRules Paths { get; set; } = new();
+        public RemoteRule Remote { get; set; } = new();
         public string[] WriterVerbs { get; set; } = [];
         public string[] AdminText { get; set; } = [];
         public string[] SafeTypes { get; set; } = [];
@@ -450,10 +452,14 @@ public static class CommandCheck
             new(Found($"{name}: {o.Says ?? entry?.Says ?? ""}", tier), use != "read" && (o.Admin ?? entry?.Admin ?? false), tier > 0 ? write ?? Write.None : null);
         Judged? Block(Outcome o) => o.Never != null ? Stop($"Rig won't run {name}: it {o.Never}.", "never") : o.Refused != null ? Stop($"Rig won't run {name}: it {o.Refused}.") : null;
 
+        Judged? remote = !pathed && !exe && entry?.Exe != true && Shown(call.Args).Any(a => IsParam(a) && R.Remote.Params.Any(p => Abbreviates(HeadOf(a), p)))
+            ? Stop($"Rig won't run {name}: it {R.Remote.Refused}.") : null;
+
         if (b.Contains('.')) return Construct("script-file");
         if (pathed && (raw.Contains("..") || !R.Roots.Known.Any(r => raw.StartsWith(r, StringComparison.Ordinal)))) return Construct("path");
         if (entry == null)
         {
+            if (remote != null) return remote;
             if (use == "read") return Construct("not-read", name, "notRead");
             if (pathed) return R.Roots.Unknown.Any(r => raw.StartsWith(r, StringComparison.Ordinal)) ? Pass(new Outcome { Says = R.Constructs["unknown-program"], Admin = true }, 2) : Construct("unknown", name);
             int dash = b.IndexOf('-');
@@ -464,6 +470,7 @@ public static class CommandCheck
         if (entry.Blocks && call.Args.Any(a => a.Kind is "word" or "hidden")) return Construct("member-by-name", name);
         var rule = entry.When?.FirstOrDefault(w => Matches(w, call, w.Never != null || w.Refused != null || w.Tier == 3, entry.Exe));
         if (rule != null && (rule.Never != null || rule.Refused != null)) return Block(rule)!;
+        if (remote != null) return remote;
 
         var write = Write.None;
         List<string> joined = [];
