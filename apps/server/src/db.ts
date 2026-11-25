@@ -375,6 +375,17 @@ export class Store {
     return (r?.count ?? 1) <= limit;
   }
 
+  /** Counts each general command proposal by its shape, words from Rig's own lists only. No user or PC. */
+  async countShapes(shapes: string[], now = new Date()): Promise<void> {
+    if (!shapes.length) return;
+    const day = now.toISOString().slice(0, 10);
+    const counts = new Map<string, number>();
+    for (const s of shapes) counts.set(s, (counts.get(s) ?? 0) + 1);
+    await this.db.insertInto("command_shapes").values([...counts].map(([shape, count]) => ({ day, shape, count })))
+      .onConflict((oc) => oc.columns(["day", "shape"]).doUpdateSet({ count: sql<number>`command_shapes.count + excluded.count` }))
+      .execute();
+  }
+
   /** Everything kept for the account: its PCs, all their history, Windows events, recordings and manuals (not their page text), and chat use. */
   async exportAccount(userId: string, now = new Date()): Promise<DataExport | null> {
     const user = await this.db.selectFrom("user").select(["id", "name", "email", "createdAt"]).where("id", "=", userId).executeTakeFirst();

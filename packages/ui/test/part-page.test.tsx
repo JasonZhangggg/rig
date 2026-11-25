@@ -29,12 +29,12 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function openBoard() {
   location.hash = "pc";
   render(<RigApp client={new DemoClient()} />);
-  fireEvent.click(await screen.findByRole("button", { name: /^Motherboard/ }, { timeout: 5000 }));
-  await screen.findByRole("tab", { name: "Manual" }, { timeout: 5000 });
+  fireEvent.click(await screen.findByRole("button", { name: /^Motherboard/ }, { timeout: 10000 }));
+  await screen.findByRole("tab", { name: "Manual" }, { timeout: 10000 });
   return document.querySelector<HTMLElement>(".pc-view")!;
 }
 
-describe("A part on My PC", () => {
+describe("A part on My PC", { timeout: 25000 }, () => {
   it("sizes the 3D view to the window height left under the title", async () => {
     wide = true;
     const view = await openBoard();

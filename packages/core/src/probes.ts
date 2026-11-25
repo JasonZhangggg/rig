@@ -9,6 +9,7 @@
 // as admin also needs Windows' own permission prompt.
 
 import type { RawEvent, Recording } from "./recordings";
+import { checkScript, textOnNeverList } from "./check";
 
 export const probeKinds = ["sensor", "counter", "events", "wmi", "process", "file", "folder", "registry", "script"] as const;
 export type ProbeKind = (typeof probeKinds)[number];
@@ -132,11 +133,22 @@ function source(kind: ProbeKind, s: Record<string, unknown>): ProbeSource | stri
       if (shell !== "powershell" && shell !== "cmd") return "shell must be powershell or cmd";
       const text = typeof s.text === "string" && s.text.trim() && s.text.length <= PROBE_LIMITS.maxScriptChars ? s.text : null;
       if (!text) return `text must be the script, at most ${PROBE_LIMITS.maxScriptChars} characters`;
+      const never = scriptNever(shell, text);
+      if (never) return `Rig won't keep this script: ${never}`;
       const timeout = s.timeout == null ? PROBE_LIMITS.defaultScriptTimeout : Number(s.timeout);
       if (!Number.isInteger(timeout) || timeout < 1 || timeout > PROBE_LIMITS.maxScriptTimeout) return `timeout must be 1 to ${PROBE_LIMITS.maxScriptTimeout} seconds`;
       return { kind, shell, text, admin: s.admin === true, timeout };
     }
   }
+}
+
+/** Why Rig won't keep a script log with this text, or null: the never list holds it as it holds a change, and a PowerShell script is checked in full, so the places it changes count too. */
+export function scriptNever(shell: "powershell" | "cmd", text: string): string | null {
+  const words = textOnNeverList(text, "run");
+  if (words) return `${words}.`;
+  if (shell !== "powershell") return null;
+  const v = checkScript(text, "run");
+  return v.status === "refused" && v.why === "never" ? v.refused : null;
 }
 
 /** Checks a custom log that came from the chat or the app, with the same rules the recorder applies. Returns it cleaned, or what's wrong. */

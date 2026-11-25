@@ -89,25 +89,28 @@ public sealed class CommandStore
 
     void Setup()
     {
-        if (secured)
-        {
-            // Under the "object creator" owner policy, what an admin makes is owned by the admin's own account, which the
-            // store's owner check refuses. From here on this process and the programs it starts make everything owned by
-            // Administrators, so the store is admins' own whatever the policy.
-            Native.SetDefaultOwner(Admins);
-            // ProgramData lets anyone make folders. The parent is always taken over and locked, so no one else can add or
-            // swap anything beside the store; a store someone else made, or a link in its place, is replaced, so nothing
-            // planted there is ever read.
-            string parent = Path.GetDirectoryName(Root)!;
-            if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(parent);
-            Directory.CreateDirectory(parent);
-            Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
-            if (Directory.Exists(Root) && File.GetAttributes(Root).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(Root);
-            if (Directory.Exists(Root) && !OwnedByAdmins(Root)) Directory.Delete(Root, recursive: true);
-            Directory.CreateDirectory(Root);
-            Lock(Root, reader: null);
-        }
+        if (secured) Secure(Root);
         foreach (string sub in new[] { "pending", "records", "work", "scripts" }) Directory.CreateDirectory(Path.Combine(Root, sub));
+    }
+
+    /// Makes `dir` a folder only admins and the system can read or change, under a parent no one else can add to.
+    internal static void Secure(string dir)
+    {
+        // Under the "object creator" owner policy, what an admin makes is owned by the admin's own account, which the
+        // store's owner check refuses. From here on this process and the programs it starts make everything owned by
+        // Administrators, so the store is admins' own whatever the policy.
+        Native.SetDefaultOwner(Admins);
+        // ProgramData lets anyone make folders. The parent is always taken over and locked, so no one else can add or
+        // swap anything beside the store; a store someone else made, or a link in its place, is replaced, so nothing
+        // planted there is ever read.
+        string parent = Path.GetDirectoryName(dir)!;
+        if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(parent);
+        Directory.CreateDirectory(parent);
+        Lock(parent, new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null));
+        if (Directory.Exists(dir) && File.GetAttributes(dir).HasFlag(FileAttributes.ReparsePoint)) Directory.Delete(dir);
+        if (Directory.Exists(dir) && !OwnedByAdmins(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        Lock(dir, reader: null);
     }
 
     /// Whether only admins could have put anything in the store: it, the folders above it and every folder and file in it
@@ -280,7 +283,7 @@ static class RestorePoints
 public sealed class Commands(CommandStore store, int? appPid, bool restorePoints = true)
 {
     public const int NonceMinutes = 10, DailyCap = 12;
-    public const int Expired = 10, Changed = 11;
+    public const int Expired = 10, Changed = 11, PromptLowered = 12;
     public const int ParseTimeoutMs = 30_000, ReadTimeoutMs = 20_000, RunTimeoutMs = 120_000;
 
     /// What preview gave out in this run of the helper: each nonce and the fingerprint of the step it stands for. A nonce
@@ -301,6 +304,33 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
 
     /// The self-test's way to reach the native op only it uses. Only code in this process can set it.
     internal bool TestOnlyNativeOps { get; set; }
+
+    /// The self-test's stand-in for User Account Control's values, by name (null: not set, -1: not a number). Only code in
+    /// this process can set it.
+    internal static Func<string, int?>? TestOnlyUac { get; set; }
+
+    /// Whether User Account Control is turned down so far that Windows' prompt no longer shows the person said yes: off
+    /// (EnableLUA 0), admin rights without asking (ConsentPromptBehaviorAdmin 0), the prompt on the ordinary desktop, where
+    /// other programs can answer it (PromptOnSecureDesktop 0), or UIAccess apps allowed to move it there (EnableUIADesktopToggle 1).
+    /// A value that isn't set counts as Windows' documented default (ConsentPromptBehaviorAdmin 5, PromptOnSecureDesktop 1,
+    /// EnableUIADesktopToggle 0), except EnableLUA: Windows writes it on every install, so a missing one means it was removed,
+    /// and counts as turned down. A value Rig can't read counts as turned down too.
+    public static bool UacLowered()
+    {
+        int? Read(string name)
+        {
+            if (TestOnlyUac != null) return TestOnlyUac(name);
+            using var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System");
+            object? v = k?.GetValue(name);
+            return v == null ? null : v is int i ? i : -1;
+        }
+        try
+        {
+            int? lua = Read("EnableLUA"), consent = Read("ConsentPromptBehaviorAdmin"), secure = Read("PromptOnSecureDesktop"), toggle = Read("EnableUIADesktopToggle");
+            return lua is null or 0 or -1 || consent is 0 or -1 || secure is 0 or -1 || toggle is not (null or 0);
+        }
+        catch { return true; }
+    }
 
     public const string AppElevated = "Rig is running as administrator, so it can't keep changes to what you approved. Open Rig normally and ask again.";
     public const string StoreRebuilt = "Rig found something in its own store of changes that it didn't put there, so it cleared the store and nothing ran. Ask again.";
@@ -326,6 +356,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             case "step.apply" or "command.apply": return Apply(Str(p?["nonce"]) ?? "");
             case "step.undo" or "command.undo": return Undo(Str(p?["id"]) ?? "", p?["force"]?.GetValueKind() == System.Text.Json.JsonValueKind.True);
             case "command.read": return ReadOnly(Str(p?["script"]) ?? "");
+            case "firmware.after": return AfterRestart.Report(store);
             case "screen.look":
                 return ScreenStep.LookFor(p, TestOnlyNativeOps, op =>
                 {
@@ -396,8 +427,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
                     tier = 3;
                     reasons.Add($"{lowers}.");
                 }
-                // A native op is made by the worker with the person's own rights, so it never needs admin rights.
-                return new Checked(new Verdict(true, tier, false, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
+                // A native op is made by the worker with the person's own rights, unless Windows allows it only with admin rights.
+                return new Checked(new Verdict(true, tier, op.Admin, "", "", [], reasons), new NativeOpStep(n.Name, found.Op), [], found.Touches, found.Held, found.Expect);
             default:
                 return No(Verdict.Refuse(problem ?? "This change request is missing a part."));
         }
@@ -478,7 +509,9 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     }
 
     NativeWorker.Answer Ask(Person person, string verb, NativeOpStep step, JsonObject? held, JsonObject? back = null) =>
-        NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
+        NativeSteps.Find(step.Name, TestOnlyNativeOps) is { Admin: true } op
+            ? NativeWorker.Here(op, verb, step.Op, held, back)
+            : NativeWorker.Ask(person, store, verb, step, back, TestOnlyNativeOps, held: held);
 
     static string Moved(string now, string expect) =>
         $"What this changes has moved since Rig looked: it reads \"{now}\" now, not \"{expect}\". Nothing ran. Look again.";
@@ -532,11 +565,14 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// RigHelper.exe --approve-step <file> --hash <h>: started behind Windows' permission prompt when the person approves
     /// a step that needs admin rights. The file holds {nonce, owner}; the step itself is the one preview stored, and
     /// --hash is its fingerprint as the app showed it. Answers with its exit code only, so it writes nothing where the caller says.
+    /// Refuses while User Account Control is turned down (UacLowered).
     public static int ApproveFromFile(string file, string? hash, CommandStore? store = null)
     {
         try
         {
             if (!Native.IsAdmin()) return RecorderSetup.NotAdmin;
+            // Rig's approval of an admin change is Windows' own prompt; with it turned down, a Yes there proves nothing.
+            if (UacLowered()) return PromptLowered;
             var req = JsonNode.Parse(File.ReadAllText(file)) as JsonObject;
             if ((store ?? CommandStore.Open()) is not CommandStore s || s.Peek(Str(req?["nonce"]) ?? "") is not Pending pending) return Expired;
             if (pending.Person != Str(req?["owner"]) || string.IsNullOrEmpty(hash) || !string.Equals(pending.Hash, hash, StringComparison.OrdinalIgnoreCase)
@@ -682,6 +718,8 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             ["output"] = made.Printed, ["alsoChanged"] = new JsonArray(),
         };
         if (step is NativeOpStep && meant != null) result["stopped"] = true;
+        // A protection turned off for a while: when Rig's service turns it back on.
+        if (step is NativeOpStep && made.Back?["revert"] is JsonObject revert) result["revert"] = revert.DeepClone();
 
         if (hits.Count > 0 || error != null)
         {
@@ -750,6 +788,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             record["look"] = new JsonObject { ["before"] = readBefore, ["after"] = meant ?? readAfter };
         }
         store.SaveRecord(id, record);
+        if (step is NativeOpStep later && NativeSteps.Find(later.Name, TestOnlyNativeOps) is IAfterRestart noted) AfterRestart.Note(store, id, noted.Note(later.Op, made.Back));
         var undo = new JsonObject { ["kind"] = step.Kind, ["id"] = id };
         if (step is CommandStep { Cmd.Undo: string script }) undo["script"] = script;
         if (point != null) undo["restorePoint"] = point;
@@ -835,6 +874,11 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         {
             store.Rebuild();
             return Failed("Rig found something in its own store of changes that it didn't put there, so it cleared the store, and this change's snapshot with it. Nothing ran.");
+        }
+        // The restart waits only a minute, so Cancel stops it before anything is read; the undo below checks that it stopped.
+        if (step is NativeOpStep { Name: RestartToFirmwareStep.OpName })
+        {
+            try { Firmware.Shutdown("/a"); } catch (RigException) { }
         }
 
         var states = new TouchStates(person, admin);
@@ -941,6 +985,7 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
         if (failed.Count > 0) return Failed($"Rig couldn't put everything back: {string.Join("; ", failed.Distinct())}.");
         rec["undone"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         store.SaveRecord(id, rec);
+        AfterRestart.Drop(store, id);
         return new JsonObject { ["outcome"] = "undone", ["printed"] = printed, ["left"] = new JsonArray(left.Select(d => (JsonNode)d).ToArray()) };
     }
 }

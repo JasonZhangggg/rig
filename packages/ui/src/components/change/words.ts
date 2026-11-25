@@ -161,10 +161,12 @@ export function undoReach(cmd: Command, undo: HelperUndo, runs: FoundCommand[]):
 }
 
 /**
- * What Undo can put back after a native op ran. Its way back was approved with it, so there is always one. `back` is the
- * op's own words for it when it isn't exact, like a screen step's, which walks the same path again.
+ * What Undo can put back after a native op ran. Its way back was approved with it, so there is always one. `own` is an
+ * op's own undo words when it brings them, like firmware's; `back` is the op's words when undo isn't exact, like a screen
+ * step's, which walks the same path again.
  */
-export function nativeReach(undo: HelperUndo, back?: string): { can: true; line: string; untied: string[] } {
+export function nativeReach(undo: HelperUndo, own?: { undo: string; noUndo: boolean }, back?: string): { can: boolean; line: string; untied: string[] } {
+  if (own) return { can: !own.noUndo, untied: [], line: own.undo.replace(/^(Yes|No)\. /, "") };
   const restore = undo.restorePoint ? ` ${restoreLine(undo.restorePoint)}` : "";
   return { can: true, untied: [], line: `${back ?? "Undo puts it back the way Rig read it before."}${undo.outside.length ? ` It can't put back what's under Also changed.${restore}` : ""}` };
 }

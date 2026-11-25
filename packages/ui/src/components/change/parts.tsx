@@ -22,6 +22,30 @@ export function ClaudeSays({ text }: { text: string }) {
   );
 }
 
+/** What a change does in Rig's own words, made from Rig's own list, never Claude's. */
+export function RigSays({ text }: { text: string }) {
+  return (
+    <Fact label="What it does" note="Rig's own words">
+      <p className="cc-quote">{text}</p>
+    </Fact>
+  );
+}
+
+/** Claude's sentence on a native op, or Rig's own when the op's kind makes one. */
+export function NativeSays({ own, said }: { own: string | null; said: string }) {
+  return own ? <RigSays text={own} /> : <ClaudeSays text={said} />;
+}
+
+/** A recipe's sentence: Rig's own words, with when the change is seen. */
+export function RecipeSays({ does, when }: { does: string; when: string }) {
+  return (
+    <Fact label="Rig's own recipe">
+      <p className="cc-quote">{does}</p>
+      <p className="faint">{when}</p>
+    </Fact>
+  );
+}
+
 /** Text from the PC or a script, in a box that scrolls. It takes focus so a keyboard can scroll it, and is named by its visible label. */
 export function Pre({ text, labelledBy, className = "" }: { text: string; labelledBy: string; className?: string }) {
   return <pre className={`cc-pre ${className}`.trim()} tabIndex={0} role="region" aria-labelledby={labelledBy}>{text}</pre>;

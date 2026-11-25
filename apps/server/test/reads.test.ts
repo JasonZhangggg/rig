@@ -271,6 +271,29 @@ describe("general command steps", () => {
     expect(p.rows![0]).toEqual(["Set Vertical sync to Off for game.exe", "As it is now", "Changed by Rig"]);
   });
 
+  it("offers a protection only for a while, as a red card, and never User Account Control or keeping one off", async () => {
+    const { live } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Turn the firewall off", why: "y", steps: [{ protection: { id: "firewall-public", revertAfter: 15, script: "Set-NetFirewallProfile -Enabled False", keep: true } }] } } },
+      { text: "Review the card." },
+    ]);
+    const p = of(await live(ask("Turn off my firewall for a bit")), "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 3, steps: [{ kind: "native", op: { name: "protection", id: "firewall-public", revertAfter: 15 } }] });
+    expect(Object.keys((p.steps![0] as { op: object }).op).sort()).toEqual(["id", "name", "revertAfter"]);
+    expect(p.rows![0]).toEqual(["Windows Firewall on public networks", "On", "Off for 15 minutes"]);
+
+    for (const [step, says] of [
+      [{ protection: { id: "uac" } }, "Rig never lowers User Account Control"],
+      [{ protection: { id: "firewall-public", revertAfter: 100000 } }, "15 minutes, 1 hour or 4 hours"],
+      [{ protectionKeep: { id: "firewall-public" } }, ""],
+      [{ protection: { name: "protectionKeep", id: "firewall-public" } }, "ok"],
+    ] as const) {
+      const no = await chatSetup([{ tool: { name: "propose_change", input: { title: "x", why: "y", steps: [step] } } }, { text: "." }]);
+      const cards = of(await no.live(ask("Do it")), "proposal");
+      if (says === "ok") expect(cards[0].proposal.steps![0]).toMatchObject({ op: { name: "protection", revertAfter: 60 } });
+      else { expect(cards).toHaveLength(0); expect(lastToolResults(no.seen[1])).toContain(says); }
+    }
+  });
+
   it("builds a file edit as Rig's own step, with a row for each value, and refuses a never-list file", async () => {
     const path = "C:\\Users\\Lee\\AppData\\Local\\Game\\GameUserSettings.ini";
     const { live } = await chatSetup([
@@ -290,6 +313,37 @@ describe("general command steps", () => {
     ]);
     expect(of(await never.live(ask("Change it")), "proposal")).toHaveLength(0);
     expect(lastToolResults(never.seen[1])).toContain("Rig never edits sign-in, key or browser profile files");
+  });
+
+  it("reads firmware settings without tainting, proposes one from Rig's list at tier 3, and never turns protection off", async () => {
+    const vt = { setting: "virtualization", value: "on", does: "Turns on virtualization so WSL 2 can run." };
+    const { live, seen } = await chatSetup([
+      { tool: { name: "read_pc", input: { kind: "firmware", namespace: "root\\HP\\InstrumentedBIOS" } } },
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ firmware: { setting: "secureBoot", value: "off", does: "Turns Secure Boot off." } }] } } },
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ firmware: { setting: "SATA Operation", value: "ahci", does: "Switches to AHCI." } }] } } },
+      { tool: { name: "propose_change", input: { title: "Turn on virtualization", why: "WSL 2 needs it.", steps: [{ firmware: vt }] } } },
+      { text: "Review the card. It applies at the next restart." },
+    ]);
+    const stop = of(await live(ask("Turn on virtualization")), "reads")[0];
+    expect(stop.reads).toEqual([{ id: "tu_1", kind: "firmware" }]);
+    const text = JSON.stringify({ maker: "Dell", makerTools: true, settings: [{ setting: "virtualization", name: "Virtualization (Intel VT-x or AMD-V)", now: "off", canSet: true }] });
+    const rest = await live(ask("Turn on virtualization"), { resume: stop.resume, results: [{ id: "tu_1", ok: true, text }] });
+    expect(lastToolResults(seen[2])).toContain("Rig never turns Secure Boot off");
+    expect(lastToolResults(seen[3])).toContain("Rig never changes the storage controller's mode");
+    const p = of(rest, "proposal")[0].proposal;
+    expect(p).toMatchObject({ tier: 3, title: "Turn on virtualization", steps: [{ kind: "native", op: { name: "firmware", ...vt } }] });
+    expect(p.rows).toEqual([["Virtualization (Intel VT-x or AMD-V)", "As it is now", "On"]]);
+  });
+
+  it("won't offer a firmware change after a web page, and offers the restart into firmware setup only in the app on the PC", async () => {
+    const vt = { setting: "virtualization", value: "on", does: "Turns on virtualization." };
+    const after = await chatSetup([{ blocks: [webFetch], tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ firmware: vt }] } } }, { tool: { name: "show_steps", input: { steps: ["Press F2 while the PC starts.", "Turn on Intel Virtualization Technology."], firmwareSetup: true } } }, { text: "." }]);
+    const events = await after.live(ask("Turn on virtualization"));
+    expect(of(events, "proposal")).toHaveLength(0);
+    expect(of(events, "steps")).toEqual([{ type: "steps", steps: ["Press F2 while the PC starts.", "Turn on Intel Virtualization Technology."], firmwareSetup: true }]);
+
+    const web = await chatSetup([{ tool: { name: "show_steps", input: { steps: ["Press F2 while the PC starts."], firmwareSetup: true } } }, { text: "." }]);
+    expect(of(await web.web(ask("Turn on virtualization")), "steps")).toEqual([{ type: "steps", steps: ["Press F2 while the PC starts."] }]);
   });
 
   it("refuses a change that can't be undone after a web page in the same answer, but not before", async () => {
@@ -453,5 +507,88 @@ describe("advisor round: seals", () => {
     const dn = (await open<{ text: string; turn: number; chat: string }>(SECRET, of(d, "seal")[0].seal))!;
     expect(dn.text).toBe(await sha256("Half an answer"));
     expect(dn).toMatchObject({ turn: 1, chat: "c1" });
+  });
+});
+
+describe("Rig's recipes", () => {
+  const extensions = { id: "fileExtensions", params: { state: "show" } };
+  const card = (step: Record<string, unknown>): FakeRound[] => [{ tool: { name: "propose_change", input: { title: "Show file extensions", why: "You asked.", steps: [step] } } }, { text: "Review the card." }];
+
+  it("are listed for Claude with their ids, params and when they take effect", async () => {
+    const { live, seen } = await chatSetup([{ text: "Hi." }]);
+    await live(ask("Hi"));
+    const tool = (seen[0].tools as { name: string; description?: string; input_schema?: { properties: { steps: { items: { properties: { recipe: { properties: { id: { enum: string[] } } } } } } } } }[]).find((t) => t.name === "propose_change")!;
+    expect(tool.input_schema!.properties.steps.items.properties.recipe.properties.id.enum).toContain("fileExtensions");
+    expect(tool.description).toContain("- fileExtensions (File extensions): show or hide extensions like .txt on file names in File Explorer. params: state (show, hide). Takes effect after you sign out and back in.");
+    expect(tool.description).toContain("menuDelay (How fast menus open)");
+    expect(tool.description).toContain("ms (0 to 4000)");
+  });
+
+  it("go to an app that shows them as the recipe step, with Rig's tier and sentence", async () => {
+    const { live } = await chatSetup(card({ recipe: extensions }));
+    const p = of(await live(ask("Show file extensions"), { recipes: true }), "proposal")[0].proposal;
+    expect(p.steps).toEqual([{ kind: "recipe", ...extensions }]);
+    expect(p.tier).toBe(2);
+    expect(p.rows).toEqual([["Shows file extensions, like .txt, on file names in File Explorer.", "As it is now", "Changed by Rig's recipe"]]);
+  });
+
+  it("go to an older app as the command they compile to", async () => {
+    const { live } = await chatSetup(card({ recipe: extensions }));
+    const p = of(await live(ask("Show file extensions")), "proposal")[0].proposal;
+    const step = p.steps![0];
+    expect(step.kind).toBe("command");
+    expect(step.kind === "command" && step.cmd.run).toContain("-Name 'HideFileExt' -Type DWord -Value 0");
+  });
+
+  it("refuse a recipe Rig doesn't have or a value off its list, with plain words for Claude", async () => {
+    const { live, seen } = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ recipe: { id: "mouseAcceleration", params: { state: "off" } } }] } } },
+      { tool: { name: "propose_change", input: { title: "x", why: "y", steps: [{ recipe: { id: "menuDelay", params: { ms: 99999 } } }] } } },
+      { text: "." },
+    ]);
+    expect(of(await live(ask("Faster menus"), { recipes: true }), "proposal")).toHaveLength(0);
+    expect(lastToolResults(seen[1])).toContain("Step 1: recipe: This isn't one of Rig's recipes");
+    expect(lastToolResults(seen[2])).toContain("Step 1: recipe: ms must be a whole number from 0 to 4000");
+  });
+
+  it("can't be offered from the website, like any command step", async () => {
+    const site = await chatSetup(card({ recipe: extensions }));
+    expect(of(await site.web(ask("Show file extensions"), { steps: true, recipes: true }), "proposal")).toHaveLength(0);
+    expect(lastToolResults(site.seen[1])).toContain("can't be offered from the website");
+  });
+});
+
+describe("the no-speed-up log", () => {
+  it("counts each general command proposal by a shape of Rig's own words, and keeps nothing else", async () => {
+    const secretPath = "C:\\Users\\Lee\\Private\\taxes-2026.txt";
+    const leaky = {
+      does: "Copies lee@example.com's tax file for Sam Rivera.",
+      read: `Test-Path -LiteralPath '${secretPath}'`,
+      run: `Copy-Item -LiteralPath '${secretPath}' -Destination 'C:\\Users\\Lee\\Private\\taxes-copy.txt'\nInvoke-LeeSync -Token 'hunter2'`,
+      touches: [{ kind: "file", path: "C:\\Users\\Lee\\Private\\taxes-copy.txt" }],
+    };
+    const run = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    const t = await chatSetup([
+      { tool: { name: "propose_change", input: { title: "Dark mode", why: "y", steps: [{ command: darkMode }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Copy it", why: "y", steps: [{ command: leaky }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Autostart", why: "y", steps: [{ command: { does: "Starts it.", read: `Get-ItemProperty -Path '${run}'`, run: `Set-ItemProperty -Path '${run}' -Name Helper -Value 'C:\\Tools\\helper.exe'`, touches: [{ kind: "registry", key: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" }] } }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Dark mode", why: "y", steps: [{ command: darkMode }] } } }, { text: "." },
+      { tool: { name: "propose_change", input: { title: "Broken", why: "y", steps: [{ command: { does: "x" } }] } } }, { text: "." },
+      // Rig's own steps aren't general commands, so they aren't counted.
+      { tool: { name: "propose_change", input: { title: "Menus", why: "y", steps: [{ registry: { key: "HKCU\\Control Panel\\Desktop", name: "MenuShowDelay", type: "string", value: "100" } }, { recipe: { id: "hiddenFiles", params: { state: "show" } } }] } } }, { text: "." },
+    ]);
+    for (let n = 0; n < 6; n++) await t.live(ask(`Change ${n}`), { recipes: true });
+    const rows = await t.db.selectFrom("command_shapes").selectAll().orderBy("shape").execute();
+    expect(rows.map((r) => [r.shape, r.count])).toEqual([
+      ["runs -; touches -; unreadable", 1],
+      ["runs -; touches registry; refused never", 1],
+      ["runs Copy-Item other; touches file; refused refused", 1],
+      ["runs Set-ItemProperty; touches registry; tier 2", 2],
+    ]);
+    const cols = await t.db.selectFrom("information_schema.columns" as never).select("column_name" as never).where("table_name" as never, "=", "command_shapes" as never).execute();
+    expect((cols as { column_name: string }[]).map((c) => c.column_name).sort()).toEqual(["count", "day", "shape"]);
+    const kept = JSON.stringify(rows);
+    for (const leak of ["Lee", "lee@", "Sam", "taxes", "Private", "hunter2", "Invoke-LeeSync", "Tools", "helper.exe", "Dark mode", t.machineId]) expect(kept).not.toContain(leak);
+    expect(rows.every((r) => /^runs [A-Za-z-]+( [A-Za-z-]+)*; touches [a-z-]+( [a-z]+)*; (tier [0-3]|refused [a-zA-Z]+|unreadable)$/.test(r.shape))).toBe(true);
   });
 });

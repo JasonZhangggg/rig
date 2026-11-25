@@ -5,6 +5,8 @@
 // it back.
 
 import type { Command, Touch } from "./change";
+import recipesJson from "./rules/recipes.json";
+import { policyCommand } from "./shorthands/policy";
 import { plain, quote } from "./shorthands/text";
 
 export * from "./shorthands/firewall";
@@ -110,3 +112,97 @@ export function serviceCommand(raw: unknown): Command | string {
     touches: [{ kind: "service", name: s.name }],
   };
 }
+
+// Rig's recipes: common requests as a typed step, { kind: "recipe", id, params }. Each one compiles to the shorthands
+// above from Rig's own table, so the model only picks a recipe and a value from its list.
+
+/** When a recipe's change is seen: at once, once the person signs out and in, after a restart, or once they open `app` again. */
+export type TakesEffect = "now" | "sign out" | "restart" | "app restart";
+export type RecipeParams = Record<string, string | number>;
+export interface RecipeStep { kind: "recipe"; id: string; params: RecipeParams }
+export type RecipeParam = { values: string[] } | { min: number; max: number };
+
+type Written = Record<string, number | string>;
+interface RecipeValue { key: string; name: string; type: RegistryType; value?: Written; from?: string }
+export interface Recipe {
+  id: string;
+  title: string;
+  /** What it's for, for the model. */
+  when: string;
+  params: Record<string, RecipeParam>;
+  /** Rig's sentence for the card, by the value of the recipe's one param, or one sentence. */
+  does: string | Record<string, string>;
+  takesEffect: TakesEffect;
+  app?: string;
+  registry?: RecipeValue[];
+  policy?: (Omit<RecipeValue, "key"> & { scope: "machine" | "user"; key: string })[];
+  service?: { name: string; startType: Record<string, ServiceStart> };
+}
+
+export const RECIPES = recipesJson.recipes as unknown as Recipe[];
+
+export const recipeOf = (id: unknown): Recipe | undefined => (typeof id === "string" ? RECIPES.find((r) => r.id === id) : undefined);
+
+export const paramWords = (name: string, p: RecipeParam) =>
+  "values" in p ? `${name} must be ${p.values.slice(0, -1).join(", ")}${p.values.length > 1 ? " or " : ""}${p.values.at(-1)}` : `${name} must be a whole number from ${p.min} to ${p.max}`;
+
+/** The recipe step with only the params its recipe takes, or what is wrong with it. */
+export function canonicalRecipe(raw: unknown): RecipeStep | string {
+  const r = (raw ?? {}) as { id?: unknown; params?: unknown };
+  const recipe = recipeOf(r.id);
+  if (!recipe) return "This isn't one of Rig's recipes";
+  const given = r.params && typeof r.params === "object" && !Array.isArray(r.params) ? (r.params as Record<string, unknown>) : {};
+  const params: RecipeParams = {};
+  for (const [name, p] of Object.entries(recipe.params)) {
+    const v = given[name];
+    const ok = "values" in p ? typeof v === "string" && p.values.includes(v) : typeof v === "number" && Number.isSafeInteger(v) && v >= p.min && v <= p.max;
+    if (!ok) return paramWords(name, p);
+    params[name] = v as string | number;
+  }
+  const extra = Object.keys(given).find((k) => !Object.hasOwn(recipe.params, k));
+  if (extra !== undefined) return `${recipe.id} takes only ${Object.keys(recipe.params).join(" and ")}`;
+  return { kind: "recipe", id: recipe.id, params };
+}
+
+const pick = <T>(params: RecipeParams, map: Record<string, T> | undefined, from: string | undefined): T | number | undefined => {
+  if (from !== undefined) return params[from] as number;
+  const [word] = Object.values(params);
+  return map && typeof word === "string" && Object.hasOwn(map, word) ? map[word] : undefined;
+};
+
+/** Rig's sentence for this recipe step. */
+export function recipeDoes(step: RecipeStep): string {
+  const recipe = recipeOf(step.id)!;
+  if (typeof recipe.does === "string") return recipe.does;
+  return pick(step.params, recipe.does, undefined) as string;
+}
+
+/** When the change is seen, in plain words. */
+export function takesEffectWords(recipe: Recipe): string {
+  switch (recipe.takesEffect) {
+    case "now": return "Takes effect now.";
+    case "sign out": return "Takes effect after you sign out and back in.";
+    case "restart": return "Takes effect after you restart the PC.";
+    case "app restart": return `Takes effect once you close ${recipe.app ?? "the app"} and open it again.`;
+  }
+}
+
+/** The one command a recipe step compiles to, built by the shorthands from Rig's table, or what is wrong with the step. */
+export function recipeCommand(raw: unknown): Command | string {
+  const step = canonicalRecipe(raw);
+  if (typeof step === "string") return step;
+  const recipe = recipeOf(step.id)!;
+  const parts: (Command | string)[] = [
+    ...(recipe.registry ?? []).map((v) => registryCommand({ key: v.key, name: v.name, type: v.type, value: written(v.type, pick(step.params, v.value, v.from)) })),
+    ...(recipe.policy ?? []).map((v) => policyCommand({ scope: v.scope, key: v.key, name: v.name, type: v.type, value: written(v.type, pick(step.params, v.value, v.from)) })),
+    ...(recipe.service ? [serviceCommand({ name: recipe.service.name, startType: pick(step.params, recipe.service.startType, undefined) })] : []),
+  ];
+  const bad = parts.find((p): p is string => typeof p === "string");
+  if (bad !== undefined || parts.length === 0) return `Rig's recipe ${recipe.id} can't be built: ${bad ?? "it changes nothing"}`;
+  const made = parts as Command[];
+  const lines = (f: (c: Command) => string) => [...new Set(made.flatMap((c) => f(c).split("\n")))].join("\n");
+  return { does: recipeDoes(step), read: lines((c) => c.read), run: lines((c) => c.run), touches: made.flatMap((c) => c.touches) };
+}
+
+/** A number written to a string value is its digits. */
+const written = (type: RegistryType, v: number | string | undefined) => (typeof v === "number" && (type === "string" || type === "expandString") ? String(v) : v);

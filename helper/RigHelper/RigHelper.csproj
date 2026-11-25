@@ -36,6 +36,8 @@
     <EmbeddedResource Include="..\..\packages\core\src\rules\vectors.json" LogicalName="Rig.Rules.vectors.json" />
     <EmbeddedResource Include="..\..\packages\core\src\rules\reads.json" LogicalName="Rig.Rules.reads.json" />
     <EmbeddedResource Include="..\..\packages\core\src\rules\gpu.json" LogicalName="Rig.Rules.gpu.json" />
+    <EmbeddedResource Include="..\..\packages\core\src\rules\firmware.json" LogicalName="Rig.Rules.firmware.json" />
+    <EmbeddedResource Include="..\..\packages\core\src\rules\protections.json" LogicalName="Rig.Rules.protections.json" />
     <EmbeddedResource Include="CommandAst.ps1" LogicalName="Rig.Commands.CommandAst.ps1" />
   </ItemGroup>
   <ItemGroup>

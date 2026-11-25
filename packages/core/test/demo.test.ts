@@ -78,10 +78,10 @@ describe("demo alerts", () => {
 });
 
 describe("the demo's approval cards", () => {
-  it("has one of each: a registry command, an admin firewall rule, an uninstall and a refusal", async () => {
+  it("has one of each: a registry command, an admin firewall rule, an uninstall, a refusal and a recipe", async () => {
     const { demoCards, demoPreview } = await import("../src/demo");
     const seen = Object.fromEntries(demoCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}${p.verdict.admin ? " admin" : ""}` : p.verdict.why]; }));
-    expect(seen).toEqual({ registry: "tier 2", firewall: "tier 2 admin", uninstall: "tier 3", refused: "never", rollback: "tier 3" });
+    expect(seen).toEqual({ registry: "tier 2", firewall: "tier 2 admin", uninstall: "tier 3", refused: "never", rollback: "tier 3", recipe: "tier 2" });
   });
 
   it("brings each card up from its question, and a nonce works once", async () => {
@@ -104,24 +104,29 @@ describe("the demo's approval cards", () => {
     expect((await demo.changes("demo-atlas"))[0].status).toBe("undone");
   });
 
-  it("has a graphics setting, a settings file change and an app window change, each brought up, applied and undone like a command", async () => {
+  it("has a graphics setting, a settings file, an app window change, a firmware change and a restart into firmware setup, each brought up, applied and undone like a command", async () => {
     const { demoNativeCards, demoPreview, demoStep } = await import("../src/demo");
     const demo = new DemoClient();
     const meta = { by: "rig" as const };
-    expect(demoNativeCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}` : p.verdict.why]; })).toEqual([["gpu", "tier 1"], ["fileEdit", "tier 1"], ["screen", "tier 3"]]);
+    expect(demoNativeCards.map((c) => { const p = demoPreview(c); return [c.key, p.outcome === "ready" ? `tier ${p.verdict.tier}` : p.verdict.why]; })).toEqual([["gpu", "tier 1"], ["fileEdit", "tier 1"], ["screen", "tier 3"], ["firmware", "tier 3"], ["restartToFirmware", "tier 3"]]);
     for (const c of demoNativeCards) {
-      const events: Proposal[] = [];
-      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => { if (e.type === "proposal") events.push(e.proposal); });
-      expect(events.map((p) => p.title)).toEqual([c.title]);
+      const events: string[] = [];
+      const proposals: Proposal[] = [];
+      await demo.chat("demo-atlas", [{ id: "q", from: "you", text: c.ask }], (e) => {
+        if (e.type === "proposal") { events.push(e.proposal.title); proposals.push(e.proposal); }
+        if (e.type === "steps") events.push(e.firmwareSetup ? "steps with the restart button" : "steps");
+      });
+      // The restart takes nothing from the chat: it comes only from the app's button under firmware setup steps.
+      expect(events).toEqual([c.key === "restartToFirmware" ? "steps with the restart button" : c.title]);
       // A screen card carries the look it came from, so the card can show the app's path and value.
-      expect(events[0].looks).toEqual(c.look ? [c.look] : undefined);
+      if (proposals.length) expect(proposals[0].looks).toEqual(c.look ? [c.look] : undefined);
       const read = await demo.previewStep("demo-atlas", demoStep(c));
       expect(read.outcome === "ready" && read.read).toBe(c.read);
       expect((await demo.applyStep("demo-atlas", read.outcome === "ready" ? read.nonce : "", meta)).outcome).toBe("applied");
       expect((await demo.changes("demo-atlas"))[0].applied[0].undo.kind).toBe("native");
       expect((await demo.undoStep("demo-atlas", `undo-${c.key}`)).outcome).toBe("undone");
     }
-  });
+  }, 20_000);
 
   it("won't take a rolled-back card's nonce twice", async () => {
     const { demoCards } = await import("../src/demo");

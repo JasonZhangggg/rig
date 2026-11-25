@@ -28,11 +28,11 @@ function AppliedResult({ reply, pcName }: { reply: Applied; pcName: string }) {
 }
 
 /** A native op's values before and after, as the helper read them. */
-function NativeApplied({ step, reply, looks }: { step: NativeStep; reply: Applied; looks?: ScreenLook[] }) {
+function NativeApplied({ step, reply, looks, undone }: { step: NativeStep; reply: Applied; looks?: ScreenLook[]; undone: boolean }) {
   const native = nativeOf(step.op, looks);
   return (
     <>
-      {native?.part.done?.(native.op, reply.result, native.look)}
+      {native?.part.done?.(native.op, reply.result, native.look, undone)}
       {native && !reply.result.stopped && <Fact label="What changed" note="read by Rig before and after"><ChangeList label="What changed" changes={native.part.changes(native.op, reply.result.before, reply.result.after, native.look)} /></Fact>}
       <AlsoChanged items={reply.result.alsoChanged} />
     </>
@@ -98,12 +98,14 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
   if (a.outcome === "limit") return <p className="cc-note" role="status">{limitLine(a.until, pcName)}</p>;
   if (a.outcome === "declined") return <p className="cc-note" role="status">{declinedLine(pcName)}</p>;
   const native = step.kind === "native" ? nativeOf(step.op, looks) : null;
-  const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo, native?.part.back?.(native.op, native.look));
+  const own = native?.part.red?.(native.op);
+  const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo, own?.words ? own : undefined, native?.part.back?.(native.op, native.look));
+  const button = native?.part.button;
   const again = outcome.undo?.outcome === "failed";
   const drifted = outcome.undo?.outcome === "drifted";
   return (
     <>
-      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} looks={looks} />}
+      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} looks={looks} undone={outcome.undo?.outcome === "undone"} />}
       {outcome.undo ? <Undone undo={outcome.undo} readLabel={step.kind === "command" ? "After undo, the read script printed" : "After undo, Rig read"} /> : null}
       {drifted && canApply && (
         <div className="cc-undo">
@@ -111,10 +113,10 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
           <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo(true)}>{busy ? "Undoing…" : "Put back anyway"}</button>
         </div>
       )}
-      {(!outcome.undo || again) && (
+      {(!outcome.undo || again) && button !== "none" && (
         <div className="cc-undo">
           {!again && <p className={reach.can ? "faint" : "cc-undo-line none"}>{reach.line}<Untied names={reach.untied} after />{reach.can && !canApply && <> Undo it in the Rig app on {pcName}.</>}</p>}
-          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? "Undoing…" : again ? "Try undo again" : "Undo"}</button>}
+          {reach.can && canApply && <button className="btn sm" type="button" disabled={busy} onClick={() => onUndo()}>{busy ? (button ? "Turning it back on…" : "Undoing…") : again ? (button ? "Try again" : "Try undo again") : button ?? "Undo"}</button>}
         </div>
       )}
     </>

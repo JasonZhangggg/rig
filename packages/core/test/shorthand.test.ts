@@ -76,7 +76,9 @@ describe("registryCommand", () => {
     expect(verdict(reg("HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows", "Load", "string", "C:\\x.exe"))).toMatchObject({ status: "refused", why: "never" });
     expect(verdict(reg("HKLM\\SYSTEM\\Setup", "CmdLine", "string", "C:\\x.exe"))).toMatchObject({ status: "refused", why: "never" });
     expect(verdict(reg("HKLM\\SYSTEM\\CurrentControlSet\\Services\\Spooler", "ObjectName", "string", "LocalSystem"))).toMatchObject({ status: "refused", why: "never" });
-    expect(verdict(reg("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "EnableLUA", "dword", 0))).toMatchObject({ status: "allowed", tier: 3 });
+    expect(verdict(reg("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "EnableLUA", "dword", 0))).toMatchObject({ status: "refused", why: "never" });
+    expect(verdict(reg("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "FilterAdministratorToken", "dword", 0))).toMatchObject({ status: "refused", why: "never" });
+    expect(verdict(reg("HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender", "DisableAntiSpyware", "dword", 1))).toMatchObject({ status: "allowed", tier: 3 });
     const services = verdict(reg("HKLM\\SYSTEM\\CurrentControlSet\\Services\\disk", "Start", "dword", 4));
     expect(services).toMatchObject({ status: "allowed", tier: 3 });
     expect(services.status === "allowed" && services.reasons.join(" ")).toContain("Set-Service is the safer way");
@@ -95,6 +97,12 @@ describe("serviceCommand", () => {
     expect(built(serviceCommand({ name: "WSearch", startType: "automaticDelayed" })).run).toBe("sc.exe config 'WSearch' start= delayed-auto");
     expect(built(serviceCommand({ name: "MSSQL$SQLEXPRESS", startType: "manual" })).run).toBe("Set-Service -Name 'MSSQL$SQLEXPRESS' -StartupType Manual");
     expect(verdict(serviceCommand({ name: "Spooler", startType: "automatic" }))).toMatchObject({ status: "allowed", tier: 2, admin: true });
+  });
+
+  it("never changes how Rig's own service starts, since it turns protections back on", () => {
+    for (const startType of ["disabled", "manual", "automatic", "automaticDelayed"]) {
+      expect(verdict(serviceCommand({ name: "RigRecorder", startType }))).toMatchObject({ status: "refused", why: "never" });
+    }
   });
 
   it("refuses names it can't pass as plain text, and odd start types", () => {

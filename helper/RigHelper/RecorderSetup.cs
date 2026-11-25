@@ -21,8 +21,9 @@ namespace Rig.Helper;
 
 public static class RecorderSetup
 {
-    /// Exit codes the app and the installer can tell apart.
-    public const int Ok = 0, NotAdmin = 6, Failed = 7;
+    /// Exit codes the app and the installer can tell apart. StillOff: removed, but a protection Rig turned off for a
+    /// while didn't come back on.
+    public const int Ok = 0, NotAdmin = 6, Failed = 7, StillOff = 8;
 
     public static int Install(string? appDir)
     {
@@ -42,8 +43,8 @@ public static class RecorderSetup
             SecureDataFolder(data);
             if (appDir != null) SetInstallDirs(data, InstallDirs(data).Append(Path.GetFullPath(appDir)));
 
-            Scm.CreateOrUpdate(RecorderPaths.ServiceName, "Rig background recorder", $"\"{exe}\" --service",
-                "Keeps a log of temperatures, load, crashes and power events for Rig, even while the Rig app is closed. It reads only and changes nothing.");
+            Scm.CreateOrUpdate(RecorderPaths.ServiceName, RecorderPaths.SelfTest ? "Rig self-test recorder" : "Rig background recorder", $"\"{exe}\" {RecorderPaths.ServiceArgs}",
+                "Keeps a log of temperatures, load, crashes and power events for Rig, even while the Rig app is closed. It also turns back on a Windows protection that Rig turned off for a while. It makes no other change.");
             using var sc = new ServiceController(RecorderPaths.ServiceName);
             if (sc.Status != ServiceControllerStatus.Running)
             {
@@ -80,13 +81,14 @@ public static class RecorderSetup
                 }
             }
             StopService(TimeSpan.FromSeconds(20));
+            bool stillOff = RaiseProtections("uninstall");
             Scm.Delete(RecorderPaths.ServiceName);
             WaitGone(TimeSpan.FromSeconds(20));
             DeleteFolder(RecorderPaths.Program);
             DeleteFolder(data);
             DeleteIfEmpty(Path.GetDirectoryName(RecorderPaths.Program));
             DeleteIfEmpty(Path.GetDirectoryName(data));
-            return Ok;
+            return stillOff ? StillOff : Ok;
         }
         catch (Exception e)
         {
@@ -98,6 +100,7 @@ public static class RecorderSetup
     /// Called by the running service when every Rig install it knew of is gone.
     public static void RemoveSelf()
     {
+        RaiseProtections("uninstall");
         try { Scm.Delete(RecorderPaths.ServiceName); } catch { }
         try { DeleteFolder(RecorderPaths.Data); } catch { }
         // Its own program can't be deleted while it runs: a hidden command does it a few seconds after the service stops.
@@ -109,6 +112,30 @@ public static class RecorderSetup
         }
         catch { }
     }
+
+    /// Nothing is left to turn a protection back on once the service is gone, so every one Rig turned off for a while
+    /// is turned on first, and only then is the ledger removed. The service does the same as it stops; this covers one
+    /// that was killed or never ran. One that won't come back on is said in Windows' own event log, which outlives
+    /// Rig's folders, and the answer is true.
+    static bool RaiseProtections(string why)
+    {
+        List<string> stuck;
+        try
+        {
+            if (!Directory.Exists(RecorderPaths.Reverts)) return false;
+            var ledger = Ledger.Open();
+            stuck = ledger.RaiseAll(Protections.Finder(RecorderPaths.SelfTest), why);
+            ledger.Drop();
+        }
+        catch (Exception e) { stuck = [e.Message]; }
+        if (stuck.Count == 0) return false;
+        string line = $"{StillOffWords} {string.Join("; ", stuck)}";
+        Log(RecorderPaths.Data, line);
+        try { EventLog.WriteEntry(RecorderPaths.ServiceName, line, EventLogEntryType.Warning); } catch { }
+        return true;
+    }
+
+    public const string StillOffWords = "Rig removed its background service, but couldn't turn these protections back on. Turn them on in Windows Security:";
 
     /// Rig installs other than appDir that are still on this PC.
     public static IEnumerable<string> OtherInstalls(string? appDir)
@@ -283,7 +310,8 @@ public static class RecorderSetup
             finally { CloseServiceHandle(scm); }
         }
 
-        /// Its description, a delayed start so it doesn't slow down booting, and a restart a minute after it fails.
+        /// Its description, a plain automatic start (not delayed: it turns protections back on, so it starts with Windows), and a
+        /// restart a minute after it fails.
         static void Configure(IntPtr svc, string description)
         {
             var text = Marshal.StringToHGlobalUni(description);
@@ -295,7 +323,7 @@ public static class RecorderSetup
             {
                 Marshal.WriteIntPtr(desc, text);
                 ChangeServiceConfig2W(svc, CONFIG_DESCRIPTION, desc);
-                Marshal.WriteInt32(delayed, 1);
+                Marshal.WriteInt32(delayed, 0);
                 ChangeServiceConfig2W(svc, CONFIG_DELAYED_AUTO_START, delayed);
                 for (int i = 0; i < 3; i++) Marshal.StructureToPtr(new SC_ACTION { Type = 1, Delay = 60_000 }, actions + i * Marshal.SizeOf<SC_ACTION>(), false);
                 Marshal.StructureToPtr(new FAILURE_ACTIONS { ResetPeriod = 86_400, Count = 3, Actions = actions }, failure, false);

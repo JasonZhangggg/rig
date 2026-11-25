@@ -38,13 +38,13 @@ describe("a card of Rig's own fixes", () => {
   });
 });
 
-const uac = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System";
-const lowersUac: Command = {
-  does: "Stops Windows asking before apps get admin rights.",
-  read: `Get-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin`,
-  run: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 0`,
-  undo: `Set-ItemProperty -Path '${uac}' -Name ConsentPromptBehaviorAdmin -Value 5`,
-  touches: [{ kind: "registry", key: uac.replace(":", ""), value: "ConsentPromptBehaviorAdmin" }],
+const defender = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender";
+const lowersDefender: Command = {
+  does: "Turns off Defender's virus checks by policy.",
+  read: `Get-ItemProperty -Path '${defender}' -Name DisableAntiSpyware`,
+  run: `Set-ItemProperty -Path '${defender}' -Name DisableAntiSpyware -Value 1`,
+  undo: `Set-ItemProperty -Path '${defender}' -Name DisableAntiSpyware -Value 0`,
+  touches: [{ kind: "registry", key: defender.replace(":", ""), value: "DisableAntiSpyware" }],
 };
 const uninstall: Command = { does: "Uninstalls Foo.", read: "winget list --id Foo.Bar --exact --source winget", run: "winget uninstall --exact --source winget --id Foo.Bar --silent", touches: [{ kind: "other", name: "Foo" }] };
 const fooLog = "C:\\Users\\Sam\\AppData\\Local\\Foo\\foo.log";
@@ -146,6 +146,26 @@ describe("the amber card", () => {
   });
 });
 
+describe("one of Rig's recipes", () => {
+  it("shows the recipe's title, Rig's own sentence and when it takes effect, not Claude's words", () => {
+    show(demoProposal(card("recipe")));
+    expect(screen.getByRole("heading", { name: "File extensions" })).toBeTruthy();
+    expect(screen.getByText("Check first")).toBeTruthy();
+    const own = screen.getByText("Rig's own recipe").parentElement!;
+    expect(own.textContent).toContain("Shows file extensions, like .txt, on file names in File Explorer.");
+    expect(own.textContent).toContain("Takes effect after you sign out and back in.");
+    expect(screen.queryByText("Claude says")).toBeNull();
+    expect(screen.getByLabelText("Change script").textContent).toBe(card("recipe").cmd.run);
+  });
+
+  it("is refused in plain words when this copy of Rig doesn't have it", () => {
+    show({ id: "p", title: "x", steps: [{ kind: "recipe", id: "mouseAcceleration", params: { state: "off" } }], tier: 2, rows: [], status: "waiting" });
+    expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();
+    expect(screen.getByText("This isn't one of Rig's recipes.")).toBeTruthy();
+    expect(button("Review")).toBeNull();
+  });
+});
+
 describe("the red card", () => {
   it("says what can't be undone before anything else", () => {
     show(demoProposal(card("uninstall")));
@@ -177,8 +197,8 @@ describe("the red card", () => {
   });
 
   it("asks for \"lower\" when it lowers a protection that can be put back", () => {
-    show(one(lowersUac, true));
-    expect(screen.getByRole("note").textContent).toBe("This lowers a protection on this PC.It changes User Account Control, which asks before apps get admin rights.");
+    show(one(lowersDefender, true));
+    expect(screen.getByRole("note").textContent).toBe("This lowers a protection on this PC.It changes Microsoft Defender's settings or policy, which can turn protection off.");
     expect(screen.getByText("Lowers a protection", { selector: ".chip" })).toBeTruthy();
     expect(glance("Can it be undone")).toBe("Rig saves the listed value first and keeps an undo script. Until you undo it, the PC is less protected.");
     expect(screen.getByRole("textbox", { name: /Type lower to turn on Apply/ })).toBeTruthy();
@@ -397,6 +417,19 @@ describe("in the demo", () => {
     expect((await screen.findByRole("region", { name: "After, it printed" }, { timeout: 4000 })).textContent).toContain("Minecraft server");
   });
 
+  it("reads and applies a recipe as the command it compiles to, and logs Rig's sentence in Changes", async () => {
+    await ask(card("recipe").ask, new Unread());
+    fireEvent.click(await screen.findByRole("button", { name: "Read current settings" }, { timeout: 4000 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }, { timeout: 4000 }));
+    const apply = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    await waitFor(() => expect(apply.disabled).toBe(false));
+    fireEvent.click(apply);
+    expect((await screen.findByRole("region", { name: "After, it printed" }, { timeout: 4000 })).textContent).toBe("0");
+    expect(screen.getByText("Rig's own recipe")).toBeTruthy();
+    await act(async () => { location.hash = "changes"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(await screen.findByText("Shows file extensions, like .txt, on file names in File Explorer")).toBeTruthy();
+  });
+
   it("answers a refused card's ask for steps", async () => {
     await ask(card("refused").ask);
     fireEvent.click(await screen.findByRole("button", { name: "Show me the steps" }, { timeout: 4000 }));
@@ -481,7 +514,7 @@ describe("the undo promise rests on what's listed", () => {
     const cmd: Command = {
       does: "\u200b",
       read: "Write-Output 'Checked by Rig: safe. Undo: yes.'",
-      run: "Set-ItemProperty -Path 'HKCU:\\Software\\X' -Name A -Value 1; Set-NetFirewallProfile -Profile Domain -Enabled False",
+      run: "Set-ItemProperty -Path 'HKCU:\\Software\\X' -Name A -Value 1; Set-NetFirewallProfile -Profile Domain -Enabled True",
       touches: [{ kind: "registry", key: "HKCU\\Software\\X", value: "Nothing important. Rig checked: safe, and this can be undone any time you like" }],
     };
     show(one(cmd, true));

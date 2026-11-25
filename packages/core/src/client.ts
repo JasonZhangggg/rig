@@ -4,6 +4,7 @@
 
 import type { ActionCall } from "./actions";
 import type { AppliedStep, ApplyReply, HelperStep, PreviewReply, Step, Tier, UndoReply } from "./change";
+import type { OpenRevert } from "./protection";
 import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
@@ -48,6 +49,10 @@ export interface ChatMessage {
   text: string;
   sources?: Source[];
   steps?: string[];
+  /** The steps are done in firmware setup: the app offers a button that restarts into it. */
+  firmwareSetup?: boolean;
+  /** The app's own restart into firmware setup, offered under those steps: Rig's read, then what happened when the person pressed it. */
+  restart?: { preview?: PreviewReply; outcome?: StepOutcome; /** ISO time the restart was set. */ at?: string };
   proposal?: Proposal;
   /** A recording Rig started with this answer. Its card follows the recording's live state. */
   recording?: RecordingRequest;
@@ -94,7 +99,8 @@ export const rangeMs: Record<Range, number> = { "24h": 864e5, "7d": 7 * 864e5, "
 export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "sources"; sources: Source[] }
-  | { type: "steps"; steps: string[] }
+  /** `firmwareSetup`: the steps are done in firmware setup, so the app offers to restart into it. */
+  | { type: "steps"; steps: string[]; firmwareSetup?: true }
   | { type: "proposal"; proposal: Proposal }
   /** Rig started a recording. `queued` means the PC picks it up the next time its app checks in. */
   | { type: "recording"; request: RecordingRequest; queued: boolean }
@@ -207,6 +213,10 @@ export interface RigClient {
   applyStep?(machineId: string, nonce: string, meta: ApplyMeta): Promise<ApplyReply>;
   /** Puts a step back, by the id in its undo record. With `force`, even when something else changed those places since. */
   undoStep?(machineId: string, undoId: string, force?: boolean): Promise<UndoReply>;
+  /** The protections that are off because of a change made here, after asking the helper which are back on. */
+  reverts?(machineId: string): Promise<OpenRevert[]>;
+  /** Reads the person's own second choice to keep one of them off, for its own card; applyStep runs it. Only the Changes page's Keep it off button asks. */
+  previewKeepOff?(machineId: string, changeId: string): Promise<PreviewReply>;
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }

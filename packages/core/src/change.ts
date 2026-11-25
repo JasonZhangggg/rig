@@ -13,9 +13,12 @@ import { checkScript, covers, inspectScript, localFile, placeOf, rulesVersion, r
 import type { Change } from "./client";
 import { canonicalGpu, gpuTitle, GPU_SETTINGS, type GpuOp } from "./gpu";
 import { fileEditRule, type FileEditOp } from "./fileEdit";
+import { canonicalFirmware, firmwareReasons, firmwareRefused, firmwareRows, firmwareTitle, RESTART_WORDS, type FirmwareOp, type RestartFirmwareOp } from "./firmware";
 import type { DiffRow } from "./model";
+import { protectionKeepRule, protectionRule, type ProtectionKeepOp, type ProtectionOp, type RevertNote, type RevertsReply } from "./protection";
 import rulesJson from "./rules/commands.json";
 import { lookTakes, screenWords, type ScreenLook, type ScreenLookReply } from "./screen";
+import { recipeCommand, type RecipeStep } from "./shorthand";
 
 /** 0 read, 1 reversible fix, 2 general or disruptive, 3 no undo or lowers a protection. Never is a refusal, not a tier. */
 export type Tier = 0 | 1 | 2 | 3;
@@ -23,18 +26,27 @@ export type Tier = 0 | 1 | 2 | 3;
 export type Step =
   | { kind: "fix"; call: ActionCall }
   | { kind: "command"; cmd: Command }
-  | { kind: "native"; op: NativeOp };
+  | { kind: "native"; op: NativeOp }
+  | RecipeStep;
 export type FixStep = Extract<Step, { kind: "fix" }>;
 export type CommandStep = Extract<Step, { kind: "command" }>;
 export type NativeStep = Extract<Step, { kind: "native" }>;
-/** The steps the helper previews, approves and undoes by nonce. Fixes go through the catalog's own call. */
+/** The steps the helper previews, approves and undoes by nonce. Fixes go through the catalog's own call; a recipe reaches the helper as the command it compiles to. */
 export type HelperStep = CommandStep | NativeStep;
 
+/** The step the helper runs for this one: a recipe's command, or the step itself. */
+export function helperStep(step: HelperStep | RecipeStep): HelperStep | string {
+  if (step.kind !== "recipe") return step;
+  const cmd = recipeCommand(step);
+  return typeof cmd === "string" ? cmd : { kind: "command", cmd };
+}
+
 /**
- * A change the helper's own code makes, as the person and never elevated. A new op is one member here, one entry in
- * `nativeOps`, and one class in the helper (NativeSteps.cs).
+ * A change the helper's own code makes: as the person and never elevated, or, for the few ops whose rule says `admin`,
+ * in the helper itself after Windows' permission prompt (firmware, and the protection ops). A new op is one member here, one entry in `nativeOps`, and one
+ * class in the helper (NativeSteps.cs).
  */
-export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp;
+export type NativeOp = SelftestOp | GpuOp | FileEditOp | ScreenOp | FirmwareOp | RestartFirmwareOp | ProtectionOp | ProtectionKeepOp;
 
 /**
  * Sets one control in an app's window to a value the control offered when Rig looked. The helper kept the walk, the app
@@ -63,6 +75,8 @@ export interface NativeRule<O extends NativeOp> {
   /** The op as the helper stores and fingerprints it, with anything Rig doesn't know dropped, or what is wrong with it in plain words. */
   canonical(raw: Record<string, unknown>): O | string;
   tier(op: O): Tier;
+  /** It runs in the helper with admin rights, behind Windows' permission prompt, because Windows allows it no other way. */
+  admin?: true;
   /** Why this tier. */
   reasons(op: O): string[];
   /** A short past-tense title for the changes log. */
@@ -116,6 +130,25 @@ export const nativeOps: { [N in NativeOp["name"]]: NativeRule<Extract<NativeOp, 
       return [[name ?? "Setting", was ?? before ?? "As it is now", after === undefined ? op.to : lineParts(after)[1] ?? after]];
     },
   },
+  firmware: {
+    canonical: canonicalFirmware,
+    tier: () => 3,
+    admin: true,
+    reasons: firmwareReasons,
+    title: firmwareTitle,
+    never: firmwareRefused,
+    rows: firmwareRows,
+  },
+  restartToFirmware: {
+    canonical: () => ({ name: "restartToFirmware" }),
+    tier: () => 3,
+    admin: true,
+    reasons: () => [RESTART_WORDS.tier],
+    title: () => RESTART_WORDS.title,
+    rows: () => [RESTART_WORDS.row],
+  },
+  protection: protectionRule,
+  protectionKeep: protectionKeepRule,
 };
 
 /** The control's name and value from the helper's one-line read of it, when it is one. */
@@ -199,6 +232,8 @@ export interface CheckContext {
   tainted: boolean;
   /** The looks the helper answered in this chat (`screen.look`). A screen step is checked against the one it names. */
   looks?: ScreenLook[];
+  /** The step comes from a button the person pressed in the Rig app, not from Claude. Only the app's own code sets it. */
+  byPerson?: boolean;
 }
 
 /** Programs that run only as the person, never with admin rights (`person` in the rules). */
@@ -267,6 +302,12 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
       return { status: "allowed", tier: actionInfo(step.call.kind).tier, admin: false, commands: [], reasons: ["One of Rig's own fixes, which stores its own undo."], rulesVersion };
     }
     case "command": return checkCommand(step.cmd, ctx);
+    case "recipe": {
+      const cmd = recipeCommand(step);
+      if (typeof cmd === "string") return refuse(`${cmd}.`);
+      const v = checkCommand(cmd, ctx);
+      return v.status === "allowed" ? { ...v, reasons: ["One of Rig's own recipes, not a command Claude wrote.", ...v.reasons] } : v;
+    }
     case "native": {
       const op = canonicalNative(step.op);
       if (typeof op === "string") return refuse(op);
@@ -289,8 +330,8 @@ export function checkStep(step: Step, ctx: CheckContext = { tainted: false }): V
         reasons.push(`${lowers}.`);
       }
       if (tier === 3 && ctx.tainted) return refuse(`${ruleWords("tainted")}.`, "tainted");
-      // The helper's worker makes it with the person's own rights, so it never needs admin rights.
-      return { status: "allowed", tier, admin: false, commands: [], reasons, rulesVersion };
+      // The helper's worker makes it with the person's own rights, unless Windows allows it only with admin rights.
+      return { status: "allowed", tier, admin: rule.admin === true, commands: [], reasons, rulesVersion };
     }
   }
 }
@@ -339,6 +380,21 @@ function checkCommand(raw: Command, ctx: CheckContext): Verdict {
   return { status: "allowed", tier, admin, commands, reasons, rulesVersion };
 }
 
+/** The commands.json rows by folded name: the only command names a shape may hold. */
+const rowNames = new Map((rulesJson.commands as unknown as { name: string }[]).map((e) => [e.name.toLowerCase(), e.name]));
+
+/**
+ * What Rig counts of one general command proposal, to see which recipe to add next: the rows of Rig's command list its
+ * change script uses (any other command is "other"), the kinds of place it touches, and the verdict. Only words from
+ * Rig's own lists, so nothing Claude wrote and nothing about the PC or the person. `cmd` null: it couldn't be read.
+ */
+export function commandShape(cmd: Command | null, v: Verdict | null): string {
+  const runs = [...new Set((v?.commands ?? []).filter((c) => c.script === "run").map((c) => rowNames.get(c.name.toLowerCase()) ?? "other"))].sort();
+  const kinds = [...new Set((cmd?.touches ?? []).map((t) => t.kind))].sort();
+  const verdict = !cmd || !v ? "unreadable" : v.status === "allowed" ? `tier ${v.tier}` : `refused ${v.why}`;
+  return `runs ${runs.join(" ") || "-"}; touches ${kinds.join(" ") || "-"}; ${verdict}`;
+}
+
 /** A card takes the tier of its riskiest step. One refused step refuses the card. */
 export function cardTier(steps: Step[], ctx: CheckContext = { tainted: false }): Tier | "refused" {
   let tier: Tier = 0;
@@ -359,6 +415,10 @@ export function stepsTitle(steps: Step[]): string {
   switch (step.kind) {
     case "fix": return titleFor([step.call]);
     case "command": return step.cmd.does.trim().replace(/\.$/, "");
+    case "recipe": {
+      const cmd = recipeCommand(step);
+      return typeof cmd === "string" ? "1 change" : cmd.does.trim().replace(/\.$/, "");
+    }
     case "native": {
       const op = canonicalNative(step.op);
       return typeof op === "string" ? "1 change" : nativeRule(op.name)!.title(op);
@@ -415,13 +475,14 @@ export type AppliedStep =
   /** `unverified`: what the helper saw when it read the fix back and the change wasn't there, in plain words. */
   | { step: FixStep; undo: FixUndo; rows: DiffRow[]; unverified?: string }
   | { step: CommandStep; undo: CommandUndo; rows: DiffRow[]; verify?: VerifyResult }
-  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult };
+  /** `revert`: a protection turned off for a while, and when it comes back on. */
+  | { step: NativeStep; undo: NativeUndo; rows: DiffRow[]; verify?: VerifyResult; revert?: RevertNote };
 
 /** A helper step as the changes log keeps it once applied: the undo record is filed under the step's own kind. */
-export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult): AppliedStep {
+export function appliedHelperStep(step: HelperStep, undo: HelperUndo, rows: DiffRow[], verify: VerifyResult, revert?: RevertNote): AppliedStep {
   switch (step.kind) {
     case "command": return { step, undo: { ...undo, kind: "command" }, rows, verify };
-    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify };
+    case "native": return { step, undo: { ...undo, kind: "native" }, rows, verify, ...(revert ? { revert } : {}) };
   }
 }
 
@@ -463,6 +524,8 @@ export interface RunResult {
   alsoChanged: string[];
   /** A screen step that stopped part way, by the Stop bar or the app: the control may be half set, wasn't read back, `after` says why, and undo is offered. */
   stopped?: true;
+  /** A protection turned off for a while: the ledger's id for it and when Rig's service turns it back on (ISO time). */
+  revert?: { id: string; dueAt: string };
 }
 
 /** A run's touches as rows for the changes log: what, before, after. */
@@ -548,6 +611,11 @@ function encoded(v: unknown): string {
 export async function stepHash(step: Step): Promise<string> {
   switch (step.kind) {
     case "command": return commandHash(step.cmd);
+    case "recipe": {
+      // The approval is of what runs: the command the recipe compiles to.
+      const cmd = recipeCommand(step);
+      return typeof cmd === "string" ? sha256(`rig-step-1\n${encoded(step)}`) : commandHash(cmd);
+    }
     case "fix": case "native": return sha256(`rig-step-1\n${encoded(step)}`);
   }
 }
@@ -568,8 +636,12 @@ export interface StepRpc {
    * way, ending with the one to read.
    */
   "screen.look": { params: { app: string; goal: string[] }; reply: ScreenLookReply };
+  /** What is due since this PC last restarted after a firmware change: the id of each change and what Windows reads now. Each is answered once. */
+  "firmware.after": { params: Record<string, never>; reply: { found: { id: string; says: string }[] } };
   /** A read on its own, for a live look: it must check as tier 0, and runs as the person. */
   "command.read": { params: { script: string }; reply: { verdict: Refused } | { printed: string } };
+  /** The protections that are off for now and how the last ones ended. Missing on helpers from before them. */
+  "protection.reverts": { params: Record<string, never>; reply: RevertsReply };
 }
 
 /** The part of the helper link that carries steps. */
