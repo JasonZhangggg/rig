@@ -25,7 +25,7 @@ public static class Program
         {
             // CI's runner may have User Account Control off. The self-test stands in Windows' usual values, and checks that
             // approval refuses the turned-down ones (CommandSelfTest).
-            Commands.TestOnlyUac = _ => null;
+            Commands.TestOnlyUac = n => n switch { "EnableLUA" => 1, "ConsentPromptBehaviorAdmin" => 5, "PromptOnSecureDesktop" => 1, _ => null };
             using var hw0 = new Sensors();
             var h = new Handler(hw0);
             var all = new JsonObject();

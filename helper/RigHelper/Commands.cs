@@ -305,13 +305,16 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// The self-test's way to reach the native op only it uses. Only code in this process can set it.
     internal bool TestOnlyNativeOps { get; set; }
 
-    /// The self-test's stand-in for User Account Control's values, by name (null: as Windows has it when not set). Only
-    /// code in this process can set it.
+    /// The self-test's stand-in for User Account Control's values, by name (null: not set, -1: not a number). Only code in
+    /// this process can set it.
     internal static Func<string, int?>? TestOnlyUac { get; set; }
 
     /// Whether User Account Control is turned down so far that Windows' prompt no longer shows the person said yes: off
-    /// (EnableLUA 0), admin rights without asking (ConsentPromptBehaviorAdmin 0), or the prompt on the ordinary desktop,
-    /// where other programs can answer it (PromptOnSecureDesktop 0). A value Rig can't read counts as turned down.
+    /// (EnableLUA 0), admin rights without asking (ConsentPromptBehaviorAdmin 0), the prompt on the ordinary desktop, where
+    /// other programs can answer it (PromptOnSecureDesktop 0), or UIAccess apps allowed to move it there (EnableUIADesktopToggle 1).
+    /// A value that isn't set counts as Windows' documented default (ConsentPromptBehaviorAdmin 5, PromptOnSecureDesktop 1,
+    /// EnableUIADesktopToggle 0), except EnableLUA: Windows writes it on every install, so a missing one means it was removed,
+    /// and counts as turned down. A value Rig can't read counts as turned down too.
     public static bool UacLowered()
     {
         int? Read(string name)
@@ -319,9 +322,13 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
             if (TestOnlyUac != null) return TestOnlyUac(name);
             using var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System");
             object? v = k?.GetValue(name);
-            return v == null ? null : v is int i ? i : 0;
+            return v == null ? null : v is int i ? i : -1;
         }
-        try { return Read("EnableLUA") == 0 || Read("ConsentPromptBehaviorAdmin") == 0 || Read("PromptOnSecureDesktop") == 0; }
+        try
+        {
+            int? lua = Read("EnableLUA"), consent = Read("ConsentPromptBehaviorAdmin"), secure = Read("PromptOnSecureDesktop"), toggle = Read("EnableUIADesktopToggle");
+            return lua is null or 0 or -1 || consent is 0 or -1 || secure is 0 or -1 || toggle is not (null or 0);
+        }
         catch { return true; }
     }
 

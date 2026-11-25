@@ -739,10 +739,18 @@ public static partial class CommandSelfTest
         if (Commands.ApproveFromFile(request, hash, ctx.Store) != Commands.Changed) yield return "an approval for another account was accepted";
         File.WriteAllText(request, new JsonObject { ["nonce"] = p["nonce"]?.ToString(), ["owner"] = ctx.Person.Sid }.ToJsonString());
         var usual = Commands.TestOnlyUac;
-        foreach (var (name, value) in new[] { ("EnableLUA", 0), ("ConsentPromptBehaviorAdmin", 0), ("PromptOnSecureDesktop", 0) })
+        var windows = new Dictionary<string, int?> { ["EnableLUA"] = 1, ["ConsentPromptBehaviorAdmin"] = 5, ["PromptOnSecureDesktop"] = 1, ["EnableUIADesktopToggle"] = 0 };
+        Func<string, int?> As(string name, int? value) => n => n == name ? value : windows.GetValueOrDefault(n);
+        foreach (var (name, value) in new (string, int?)[] { ("EnableLUA", 0), ("EnableLUA", null), ("EnableLUA", -1), ("ConsentPromptBehaviorAdmin", 0), ("PromptOnSecureDesktop", 0), ("EnableUIADesktopToggle", 1) })
         {
-            Commands.TestOnlyUac = n => n == name ? value : null;
-            try { if (Commands.ApproveFromFile(request, hash, ctx.Store) != Commands.PromptLowered) yield return $"an approval was accepted with User Account Control's {name} at {value}"; }
+            Commands.TestOnlyUac = As(name, value);
+            try { if (Commands.ApproveFromFile(request, hash, ctx.Store) != Commands.PromptLowered) yield return $"an approval was accepted with User Account Control's {name} {(value == null ? "not set" : $"at {value}")}"; }
+            finally { Commands.TestOnlyUac = usual; }
+        }
+        foreach (var (name, value) in new (string, int?)[] { ("EnableLUA", 1), ("ConsentPromptBehaviorAdmin", null), ("PromptOnSecureDesktop", null), ("EnableUIADesktopToggle", null), ("ConsentPromptBehaviorAdmin", 2) })
+        {
+            Commands.TestOnlyUac = As(name, value);
+            try { if (Commands.UacLowered()) yield return $"User Account Control read as turned down with {name} {(value == null ? "not set" : $"at {value}")}, as Windows has it by default"; }
             finally { Commands.TestOnlyUac = usual; }
         }
         if (!Is(ctx.Apply(p), "declined") || There()) yield return "a change ran after its approval was refused with User Account Control turned down";
