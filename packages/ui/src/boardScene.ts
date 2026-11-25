@@ -194,7 +194,7 @@ export function createBoardScene(
   controls.maxDistance = 12;
 
   // ---------- the board ----------
-  const kit: Kit = { M: (c, o) => realMaterial(c, o), spin: () => {}, accent: `#${accent.getHexString()}` };
+  const kit: Kit = { M: (c, o) => realMaterial(c, o), accent: `#${accent.getHexString()}` };
   const built = makeBoard(kit, board, { pins: true, ppm: 8 });
   const BW = board.w / 100, BH = board.h / 100;
   const root = new THREE.Group();
