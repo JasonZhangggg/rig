@@ -116,7 +116,7 @@ public static class RevertSelfTest
         string[] states = [Revert.Asked, Revert.Armed, Revert.Lowered, Revert.Raised, Revert.Left, Revert.Kept, Revert.Unused, Revert.Broken];
         var allowed = new HashSet<(string, string)>
         {
-            (Revert.Asked, Revert.Armed), (Revert.Asked, Revert.Unused),
+            (Revert.Asked, Revert.Armed), (Revert.Asked, Revert.Unused), (Revert.Asked, Revert.Raised),
             (Revert.Armed, Revert.Lowered), (Revert.Armed, Revert.Raised), (Revert.Armed, Revert.Unused),
             (Revert.Lowered, Revert.Raised), (Revert.Lowered, Revert.Left), (Revert.Lowered, Revert.Kept), (Revert.Lowered, Revert.Unused),
             (Revert.Broken, Revert.Raised), (Revert.Broken, Revert.Left),
@@ -150,9 +150,9 @@ public static class RevertSelfTest
         foreach (var (what, entry, raw) in left)
             foreach (bool on in new[] { true, false })
             {
-                // A row that was never lowered can't be off, and one already raised can't be either.
+                // One already raised can't be off. An ask can be: a power cut can lose the moves after it.
                 var made = entry();
-                if (!on && made is { State: Revert.Asked or Revert.Raised or Revert.Left or Revert.Unused }) continue;
+                if (!on && made is { State: Revert.Raised or Revert.Left or Revert.Unused }) continue;
                 string? problem = WithLedger(ledger =>
                 {
                     var fake = new Fake(on);
@@ -261,6 +261,20 @@ public static class RevertSelfTest
         var late = r with { Id = CommandStore.NewId() };
         if (keeper.Due(late, now: 1_000_000 - 3_600_000, mono: 70_000)) problems.Add("due at once after a restart with the clock set back");
         if (!keeper.Due(late, now: 1_000_000 - 3_600_000 + 5_000, mono: 75_000)) problems.Add("a clock set back before a restart stretched the revert past its time");
+        // An hour approved, seen waiting 50 minutes in, then a restart with the clock set back an hour: ten minutes are left.
+        const long t = 10_000_000_000;
+        var hour = new Revert(CommandStore.NewId(), "fake", Revert.Lowered, 3600, t, t + 3_600_000, LoweredAt: t, SeenAt: t + 3_000_000);
+        if (keeper.Due(hour, now: t - 3_600_000, mono: 100_000)) problems.Add("due at once after a restart 50 minutes into an hour");
+        if (keeper.Due(hour, now: t - 3_600_000 + 590_000, mono: 690_000)) problems.Add("due before the ten minutes left after a restart");
+        if (!keeper.Due(hour, now: t - 3_600_000 + 600_000, mono: 700_000)) problems.Add("a restart 50 minutes into an hour, with the clock set back, gave it more than the hour");
+        // The service notes the time on an entry it waits on, so the next start knows how far in it was.
+        WithLedger(ledger =>
+        {
+            ledger.TestOnlyPut(new Revert(CommandStore.NewId(), "fake", Revert.Lowered, 600, Now, Now + 600_000, LoweredAt: Now));
+            ledger.Settle(_ => new Fake(false), arms: true, _ => false, "due");
+            if (ledger.Read("fake") is not { SeenAt: > 0 } seen || Now - seen.SeenAt > 5_000) problems.Add("the service didn't note when it saw the entry waiting");
+            return 0;
+        });
         return problems;
     }
 

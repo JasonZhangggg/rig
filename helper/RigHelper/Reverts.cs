@@ -41,8 +41,10 @@ using System.Text.RegularExpressions;
 namespace Rig.Helper;
 
 /// One row's entry in the ledger. `Was` is the row's own name for how it was on, from the row's fixed list. `By` is the
-/// service's process id, set when it armed the entry. Times are Unix milliseconds.
-public sealed record Revert(string Id, string Row, string State, int Seconds, long AskedAt, long DueAt = 0, string? Was = null, int By = 0, long EndedAt = 0, string? Why = null)
+/// service's process id, set when it armed the entry. `LoweredAt` is when the helper lowered it, and `SeenAt` the latest
+/// time on the PC's clock the service saw it still waiting, so a clock set back before a restart can't stretch it. Times
+/// are Unix milliseconds.
+public sealed record Revert(string Id, string Row, string State, int Seconds, long AskedAt, long DueAt = 0, string? Was = null, int By = 0, long EndedAt = 0, string? Why = null, long LoweredAt = 0, long SeenAt = 0)
 {
     public const string Asked = "asked", Armed = "armed", Lowered = "lowered", Raised = "raised", Left = "left", Kept = "kept", Unused = "unused";
     /// What Settle makes of a file it can't read: lowered and due.
@@ -53,7 +55,7 @@ public sealed record Revert(string Id, string Row, string State, int Seconds, lo
     /// The state machine: every move there is.
     public static bool Can(string from, string to) => (from, to) switch
     {
-        (Asked, Armed) or (Asked, Unused) => true,
+        (Asked, Armed) or (Asked, Unused) or (Asked, Raised) => true,
         (Armed, Lowered) or (Armed, Raised) or (Armed, Unused) => true,
         (Lowered, Raised) or (Lowered, Left) or (Lowered, Kept) or (Lowered, Unused) => true,
         (Broken, Raised) or (Broken, Left) => true,
@@ -63,7 +65,7 @@ public sealed record Revert(string Id, string Row, string State, int Seconds, lo
     public JsonObject ToJson() => new()
     {
         ["id"] = Id, ["row"] = Row, ["state"] = State, ["seconds"] = Seconds, ["askedAt"] = AskedAt, ["dueAt"] = DueAt,
-        ["was"] = Was, ["by"] = By, ["endedAt"] = EndedAt, ["why"] = Why,
+        ["was"] = Was, ["by"] = By, ["endedAt"] = EndedAt, ["why"] = Why, ["loweredAt"] = LoweredAt, ["seenAt"] = SeenAt,
     };
 
     public static Revert? From(JsonNode? n, string row)
@@ -72,7 +74,7 @@ public sealed record Revert(string Id, string Row, string State, int Seconds, lo
         string state = o["state"]?.ToString() ?? "";
         if (state is not (Asked or Armed or Lowered or Raised or Left or Kept or Unused)) return null;
         return new Revert(id, row, state, (int)Json.Num(o["seconds"], 0), (long)Json.Num(o["askedAt"], 0), (long)Json.Num(o["dueAt"], 0),
-            o["was"]?.ToString(), (int)Json.Num(o["by"], 0), (long)Json.Num(o["endedAt"], 0), o["why"]?.ToString());
+            o["was"]?.ToString(), (int)Json.Num(o["by"], 0), (long)Json.Num(o["endedAt"], 0), o["why"]?.ToString(), (long)Json.Num(o["loweredAt"], 0), (long)Json.Num(o["seenAt"], 0));
     }
 }
 
@@ -82,6 +84,8 @@ public sealed class Ledger
     public const int AckWaitMs = 20_000, AskFreshMs = 60_000;
     /// The service looks at least this often, and this soon again when a row wouldn't come back on.
     public const int IdleMs = 15_000, RetryMs = 5_000;
+    /// How often the service notes the time on a waiting entry (SeenAt).
+    public const int SeenEveryMs = 60_000;
     const int KeepLogLines = 300;
 
     public const string NoService = "Rig's background service didn't answer, so Rig can't promise to turn this back on by itself. Nothing was changed. Turn on the background recorder in Rig's Settings (or update Rig), then ask again.";
@@ -151,16 +155,24 @@ public sealed class Ledger
     }
 
     /// Writes an entry whole and renames it into place, so a reader sees the old state or the new one and never half of either.
-    void Write(Revert r)
+    void Write(Revert r) => Replace(FileOf(r.Row), r.ToJson().ToJsonString());
+
+    /// Writes the text to disk under a new name, then renames it over `file` and waits until the rename is on disk too,
+    /// so a power cut can't keep the new text and lose the rename.
+    static void Replace(string file, string text)
     {
-        string file = FileOf(r.Row), tmp = file + ".tmp";
+        string tmp = file + ".tmp";
         using (var f = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            f.Write(Encoding.UTF8.GetBytes(r.ToJson().ToJsonString()));
+            f.Write(Encoding.UTF8.GetBytes(text));
             f.Flush(flushToDisk: true);
         }
-        File.Move(tmp, file, overwrite: true);
+        if (!MoveFileExW(tmp, file, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) throw new IOException($"Rig couldn't save {Path.GetFileName(file)}", new System.ComponentModel.Win32Exception());
     }
+
+    const uint MOVEFILE_REPLACE_EXISTING = 0x1, MOVEFILE_WRITE_THROUGH = 0x8;
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern bool MoveFileExW(string from, string to, uint flags);
 
     Revert Move(Revert r, string to, Func<Revert, Revert>? with = null)
     {
@@ -179,13 +191,7 @@ public sealed class Ledger
         {
             var lines = Log().TakeLast(KeepLogLines - 1).Select(l => l.ToJsonString()).ToList();
             lines.Add(new JsonObject { ["id"] = ended.Id, ["row"] = ended.Row, ["how"] = ended.State, ["why"] = ended.Why, ["at"] = ended.EndedAt, ["dueAt"] = ended.DueAt }.ToJsonString());
-            string tmp = LogFile + ".tmp";
-            using (var f = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
-            {
-                f.Write(Encoding.UTF8.GetBytes(string.Join("\n", lines) + "\n"));
-                f.Flush(flushToDisk: true);
-            }
-            File.Move(tmp, LogFile, overwrite: true);
+            Replace(LogFile, string.Join("\n", lines) + "\n");
         }
         File.Delete(FileOf(ended.Row));
     }
@@ -237,7 +243,7 @@ public sealed class Ledger
     public Revert Lower(Revert armed, IProtection row) => Locked(() =>
     {
         if (Read(armed.Row) is not Revert r || r.Id != armed.Id || r.State != Revert.Armed) throw new RigException(Gone);
-        var lowered = Move(r, Revert.Lowered);
+        var lowered = Move(r, Revert.Lowered, x => x with { LoweredAt = Now });
         try { row.Lower(); }
         catch
         {
@@ -293,12 +299,29 @@ public sealed class Ledger
         long now = Now;
         if (r.State == Revert.Asked)
         {
-            // Nothing was lowered for an ask nobody armed.
-            if (all || now - r.AskedAt > AskFreshMs || now < r.AskedAt - AskFreshMs || p == null || !p.Allows(r.Seconds)) End(r, Revert.Unused, all ? why : "not armed");
+            // The helper lowers nothing for an ask nobody armed. The row is still read first: a power cut can lose the moves after
+            // the ask, and then an off row has only this entry to bring it back.
+            if (all || now - r.AskedAt > AskFreshMs || now < r.AskedAt - AskFreshMs || p == null || !p.Allows(r.Seconds))
+            {
+                string end = all ? why : "not armed";
+                try
+                {
+                    if (p == null || p.On()) { End(r, Revert.Unused, end); return IdleMs; }
+                    p.Raise(r.Was);
+                    if (p.On()) { End(r, Revert.Raised, end); return IdleMs; }
+                    stuck.Add($"{row}: it still reads off");
+                }
+                catch (Exception e) { stuck.Add($"{row}: {e.Message}"); }
+                return RetryMs;
+            }
             else if (arms) { r = Move(r, Revert.Armed, x => x with { DueAt = now + x.Seconds * 1000L, By = Environment.ProcessId }); return (int)Math.Min(IdleMs, r.Seconds * 1000L); }
             return IdleMs;
         }
-        if (!(all || r.State == Revert.Broken || due(r))) return (int)Math.Clamp(r.DueAt - now, 200, IdleMs);
+        if (!(all || r.State == Revert.Broken || due(r)))
+        {
+            if (arms && now - r.SeenAt >= SeenEveryMs) Write(r with { SeenAt = now });
+            return (int)Math.Clamp(r.DueAt - now, 200, IdleMs);
+        }
         if (p == null) { stuck.Add($"{row}: this copy of Rig doesn't know it"); return IdleMs; }
         try
         {
@@ -410,8 +433,11 @@ public sealed class RevertKeeper(Func<string, IProtection?> rows, Action<string>
         if (!seen.TryGetValue(r.Id, out var first))
         {
             if (seen.Count > 64) seen.Clear();
-            // Never more than the time the person approved, so a clock set back before this start can't stretch it.
-            seen[r.Id] = first = (mono, Math.Min(r.DueAt - now, r.Seconds * 1000L));
+            // Never more than what is left of the time the person approved, counted from when it was lowered (or armed) to the
+            // latest time a service saw it waiting: a clock set back before this start can't stretch it.
+            long from = r.LoweredAt > 0 ? r.LoweredAt : r.DueAt - r.Seconds * 1000L;
+            long gone = Math.Max(0, Math.Max(r.SeenAt, from) - from);
+            seen[r.Id] = first = (mono, Math.Min(r.DueAt - now, r.Seconds * 1000L - gone));
         }
         return now >= r.DueAt || mono - first.At >= first.Left;
     }

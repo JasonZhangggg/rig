@@ -310,7 +310,8 @@ public static class RecorderSetup
             finally { CloseServiceHandle(scm); }
         }
 
-        /// Its description, a delayed start so it doesn't slow down booting, and a restart a minute after it fails.
+        /// Its description, a plain automatic start (not delayed: it turns protections back on, so it starts with Windows), and a
+        /// restart a minute after it fails.
         static void Configure(IntPtr svc, string description)
         {
             var text = Marshal.StringToHGlobalUni(description);
@@ -322,7 +323,7 @@ public static class RecorderSetup
             {
                 Marshal.WriteIntPtr(desc, text);
                 ChangeServiceConfig2W(svc, CONFIG_DESCRIPTION, desc);
-                Marshal.WriteInt32(delayed, 1);
+                Marshal.WriteInt32(delayed, 0);
                 ChangeServiceConfig2W(svc, CONFIG_DELAYED_AUTO_START, delayed);
                 for (int i = 0; i < 3; i++) Marshal.StructureToPtr(new SC_ACTION { Type = 1, Delay = 60_000 }, actions + i * Marshal.SizeOf<SC_ACTION>(), false);
                 Marshal.StructureToPtr(new FAILURE_ACTIONS { ResetPeriod = 86_400, Count = 3, Actions = actions }, failure, false);
