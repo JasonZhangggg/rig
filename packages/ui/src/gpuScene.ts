@@ -115,7 +115,7 @@ export function createGpuScene(container: HTMLElement, shape: GpuShape, p: GpuPo
   // ---------- the card ----------
   // makeGpu's frame: X from the bracket along the card, Y from the backplate (0) to the fans (-thickness),
   // Z from the slot edge up to the top edge. Turned so the top edge is up and the fans face you.
-  const kit: Kit = { M: (c, o) => realMaterial(c, o), spin: () => {}, accent: `#${accent.getHexString()}` };
+  const kit: Kit = { M: (c, o) => realMaterial(c, o), accent: `#${accent.getHexString()}` };
   const L = mm(shape.length), T = mm(shape.thick), Hc = mm(shape.height);
   const body = makeGpu(kit, shape, { power: false });
   const root = new THREE.Group();
