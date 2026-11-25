@@ -18,6 +18,8 @@ export interface StepCardProps {
   canApply: boolean;
   /** Rig read text from outside this PC earlier in the conversation. */
   tainted?: boolean;
+  /** The person's own choice from a button of the app's, never from the chat: only the Changes page's Keep it off sets it. */
+  byPerson?: boolean;
   /** The looks the proposal's screen steps came from. */
   looks?: ScreenLook[];
   declined?: boolean;
@@ -357,7 +359,7 @@ function HelperCard(p: HelperCardProps) {
   const old = useStale(fresh?.expiresAt);
   const back = a?.outcome === "expired" || a?.outcome === "refused" || (a?.outcome === "declined" && (!fresh || old));
   const nothingRan = a?.outcome === "limit" || a?.outcome === "declined";
-  const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted, looks: p.looks });
+  const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted, looks: p.looks, byPerson: p.byPerson });
   if (p.step.kind === "native" && !knownNative(p.step.op)) return <RefusedCard step={p.step} verdict={newerKind} place={p.place} onSteps={p.onSteps} />;
   const look = lookOf(p.step, verdict, p.pcName, p.looks, p.recipe);
   if (look && p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} look={look} outcome={p.outcome} focus={pressed.current} />;

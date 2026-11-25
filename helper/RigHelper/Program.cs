@@ -23,6 +23,9 @@ public static class Program
         // Used by CI on a Windows runner, and handy for checking a PC by hand.
         if (Arg(args, "--selftest") is string outFile)
         {
+            // CI's runner may have User Account Control off. The self-test stands in Windows' usual values, and checks that
+            // approval refuses the turned-down ones (CommandSelfTest).
+            Commands.TestOnlyUac = _ => null;
             using var hw0 = new Sensors();
             var h = new Handler(hw0);
             var all = new JsonObject();

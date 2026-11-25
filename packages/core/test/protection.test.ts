@@ -120,9 +120,11 @@ describe("a protection that is off for now, in the Rig app", () => {
     await turnOff();
     const [first] = await client.changes(client.id);
     calls.length = 0;
-    const reply = await client.keepOff(client.id, first.id);
-    expect(reply.outcome).toBe("applied");
-    expect(calls).toEqual(["protection.reverts", "step.preview", "approve", "step.apply", "protection.reverts"]);
+    const seen = await client.previewKeepOff(client.id, first.id);
+    if (seen.outcome !== "ready") throw new Error("no card");
+    expect(seen.verdict).toMatchObject({ tier: 3, admin: true });
+    expect((await client.applyStep(client.id, seen.nonce, { by: "you" })).outcome).toBe("applied");
+    expect(calls).toEqual(["protection.reverts", "step.preview", "approve", "step.apply"]);
     expect(approve).toHaveBeenCalledTimes(2);
     state.reverts = { readable: true, waiting: [], ended: [{ id: "r1", row: "firewall-public", how: "kept", why: "you", at: dueAt }] };
     expect(await client.reverts(client.id)).toMatchObject([{ changeId: first.id, kept: true }]);
@@ -131,7 +133,7 @@ describe("a protection that is off for now, in the Rig app", () => {
     expect(all).toHaveLength(2);
     expect(kept).toMatchObject({ title: "Kept Windows Firewall on public networks off", by: "you", tier: 3, status: "applied" });
     expect(lowered.status).toBe("applied");
-    expect(await client.keepOff(client.id, first.id)).toEqual({ outcome: "expired" });
+    expect(await client.previewKeepOff(client.id, first.id)).toMatchObject({ outcome: "refused", verdict: { refused: expect.stringContaining("already back on") } });
     client.stop();
   });
 
@@ -140,7 +142,9 @@ describe("a protection that is off for now, in the Rig app", () => {
     await turnOff();
     approve.mockRejectedValueOnce(new Error("declined"));
     const [first] = await client.changes(client.id);
-    const reply = await client.keepOff(client.id, first.id).catch((e: Error) => e.message);
+    const seen = await client.previewKeepOff(client.id, first.id);
+    if (seen.outcome !== "ready") throw new Error("no card");
+    const reply = await client.applyStep(client.id, seen.nonce, { by: "you" }).catch((e: Error) => e.message);
     expect(reply === "declined" || (typeof reply === "object" && reply.outcome === "declined")).toBe(true);
     expect(await client.reverts(client.id)).toMatchObject([{ kept: false }]);
     client.stop();

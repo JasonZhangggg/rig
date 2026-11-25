@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type Issue, type OpenRevert } from "@rig/core";
+import { fixSteps, type AppliedStep, type Change, type CommandStep, type DiffRow, type HelperStep, type Issue, type OpenRevert, type PreviewReply, type StepOutcome } from "@rig/core";
 import { DiffTable, StatusChip } from "../components/common";
-import { nativeNoUndo, recordRuns, StepRecord, undoReach } from "../components/change";
+import { nativeNoUndo, recordRuns, StepCard, StepRecord, undoReach } from "../components/change";
 import { TURN_BACK_ON } from "../components/change/native";
 import { Countdown } from "../components/change/Revert";
 import { DayLabel, Row, Rows } from "../components/Rows";
@@ -120,14 +120,14 @@ function Waiting({ fixes, rows }: { fixes: Issue[]; rows: Record<string, DiffRow
 }
 
 /**
- * Protections that are off because of a change made here, until each is back on. Keeping one off is asked twice:
- * here, and then at Windows' own prompt.
+ * Protections that are off because of a change made here, until each is back on. Keeping one off is a card of its own:
+ * read, the typed word, then Windows' own prompt.
  */
 function OffForNow() {
-  const { openReverts, toggleChange, keepOff } = useActions();
+  const { openReverts, toggleChange } = useActions();
   const applied = useAppSelector((c) => c.data.changes.filter((x) => x.status === "applied").length);
   const [open, setOpen] = useState<OpenRevert[]>([]);
-  const [asking, setAsking] = useState<string | null>(null);
+  const [keeping, setKeeping] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -137,7 +137,8 @@ function OffForNow() {
     return () => { live = false; clearInterval(t); };
   }, [openReverts, applied]);
   if (!open.length) return null;
-  const run = (id: string, act: () => Promise<void>) => { setBusy(id); setAsking(null); void act().then(openReverts).then(setOpen).finally(() => setBusy(null)); };
+  const refresh = () => openReverts().then(setOpen);
+  const on = (id: string) => { setBusy(id); setKeeping(null); void toggleChange(id).then(refresh).finally(() => setBusy(null)); };
   return (
     <section className="card ch-next" aria-labelledby="ch-off-h">
       <div className="card-head"><h2 id="ch-off-h">Off for now <span className="faint num">{open.length}</span></h2></div>
@@ -145,19 +146,38 @@ function OffForNow() {
         {open.map((r) => (
           <Row key={r.changeId} name={r.row.name} title={`${r.row.name} is off`} meta={<Countdown dueAt={r.dueAt} kept={r.kept} />}
             action={<>
-              {!r.kept && asking !== r.changeId && <button className="btn ghost sm" type="button" disabled={busy === r.changeId} onClick={() => setAsking(r.changeId)}>Keep it off…</button>}
-              <button className="btn sm" type="button" disabled={busy === r.changeId} onClick={() => run(r.changeId, () => toggleChange(r.changeId))}>{busy === r.changeId ? "Working…" : TURN_BACK_ON}</button>
+              {!r.kept && keeping !== r.changeId && <button className="btn ghost sm" type="button" disabled={busy === r.changeId} onClick={() => setKeeping(r.changeId)}>Keep it off…</button>}
+              <button className="btn sm" type="button" disabled={busy === r.changeId} onClick={() => on(r.changeId)}>{busy === r.changeId ? "Working…" : TURN_BACK_ON}</button>
             </>} />
         ))}
       </Rows>
-      {open.filter((r) => r.changeId === asking).map((r) => (
-        <div key={r.changeId} className="ch-keep" role="group" aria-label={`Keep ${r.row.name} off?`}>
-          <p className="muted"><b>Keep {r.row.name} off?</b> {r.row.risk} Rig won't turn it back on by itself. Windows will ask for permission.</p>
-          <button className="btn sm danger" type="button" onClick={() => run(r.changeId, () => keepOff(r.changeId))}>Yes, keep it off</button>
-          <button className="btn ghost sm" type="button" onClick={() => setAsking(null)}>No, let Rig turn it back on</button>
-        </div>
-      ))}
+      {open.filter((r) => r.changeId === keeping).map((r) => <KeepOff key={r.changeId} revert={r} onClose={() => setKeeping(null)} onDone={refresh} />)}
     </section>
+  );
+}
+
+/** The person's second choice, as its own step card. Nothing from the chat can ask for it. */
+function KeepOff({ revert, onClose, onDone }: { revert: OpenRevert; onClose: () => void; onDone: () => Promise<unknown> }) {
+  const { client, toast } = useActions();
+  const pc = useAppSelector((c) => ({ id: c.pc.id, name: c.pc.name }));
+  const [preview, setPreview] = useState<PreviewReply | null>(null);
+  const [outcome, setOutcome] = useState<StepOutcome | null>(null);
+  if (!client.previewKeepOff || !client.applyStep) return null;
+  const step: HelperStep = { kind: "native", op: { name: "protectionKeep", id: revert.row.id } };
+  const run = async (what: string, f: () => Promise<void>) => {
+    try { await f(); } catch (e) { toast(`Rig couldn't ${what}, so it still comes back on by itself. ${e instanceof Error ? e.message : ""}`.replace(/\s+/g, " ").trim()); }
+  };
+  return (
+    <div className="ch-keep">
+      <StepCard step={step} byPerson preview={preview} outcome={outcome} pcName={pc.name} canApply={client.caps.applyChanges}
+        onRead={() => run("read it", async () => { setOutcome(null); setPreview(await client.previewKeepOff!(pc.id, revert.changeId)); })}
+        onApply={() => run("keep it off", async () => {
+          if (preview?.outcome !== "ready") return;
+          setOutcome({ apply: await client.applyStep!(pc.id, preview.nonce, { by: "you", why: "You chose to keep it off after Rig turned it off for a while." }) });
+          await onDone();
+        })}
+        onUndo={() => undefined} onDecline={onClose} onSteps={onClose} />
+    </div>
   );
 }
 

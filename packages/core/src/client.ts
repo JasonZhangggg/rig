@@ -215,8 +215,8 @@ export interface RigClient {
   undoStep?(machineId: string, undoId: string, force?: boolean): Promise<UndoReply>;
   /** The protections that are off because of a change made here, after asking the helper which are back on. */
   reverts?(machineId: string): Promise<OpenRevert[]>;
-  /** The person's own second choice to keep one of them off. Asks Windows for permission like any admin change. */
-  keepOff?(machineId: string, changeId: string): Promise<ApplyReply>;
+  /** Reads the person's own second choice to keep one of them off, for its own card; applyStep runs it. Only the Changes page's Keep it off button asks. */
+  previewKeepOff?(machineId: string, changeId: string): Promise<PreviewReply>;
   /** Ask Rig. History is the conversation so far, newest last. */
   chat(machineId: string, history: ChatMessage[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
 }

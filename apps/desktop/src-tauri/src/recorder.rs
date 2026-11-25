@@ -291,6 +291,7 @@ pub fn set(on: bool) -> Result<(), String> {
         None => Err("Windows didn't give permission, so nothing changed.".into()),
         Some(0) => Ok(()),
         Some(6) => Err("That needs admin rights. Choose Yes when Windows asks.".into()),
+        Some(8) if !on => Err("The background recorder is off, but a protection Rig had turned off for a while didn't come back on. Turn it on in Windows Security. Windows' event log (Application) says which.".into()),
         Some(code) => Err(format!(
             "Rig couldn't {} its recorder (code {code}). Details are in {}.",
             if on { "set up" } else { "remove" },
@@ -365,6 +366,7 @@ pub fn approve_command(nonce: &str, hash: &str) -> Result<(), String> {
         Some(6) => Err("That needs admin rights. Choose Yes when Windows asks.".into()),
         Some(10) => Err("This change waited too long for approval. Look at it again in Rig.".into()),
         Some(11) => Err("The command changed after you chose Approve, so Rig didn't approve it.".into()),
+        Some(12) => Err("User Account Control is turned down on this PC, so Windows' prompt can't show it was you who said yes. Rig won't make changes that need admin rights until it's back to its usual setting.".into()),
         Some(code) => Err(format!("Rig couldn't approve the change (code {code}).")),
     }
 }

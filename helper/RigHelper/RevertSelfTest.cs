@@ -7,6 +7,7 @@
 // uninstalled. Nothing here touches a real protection or an installed Rig.
 
 using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.ServiceProcess;
 using System.Text.Json.Nodes;
 using Microsoft.Win32;
@@ -83,6 +84,7 @@ public static class RevertSelfTest
             Check("the service stopping turns it back on first", () => RaisedOnStop(t));
             Check("due while the service was off: raised at its start, also from a file it can't read", () => RaisedAtStart(t));
             Check("uninstall turns it back on first, with the service dead, then removes the ledger", () => RaisedOnUninstall(t));
+            Check("uninstall with one that won't come back on says so, and Windows' event log says which", StillOffOnUninstall);
         }
         catch (Exception e) { Check("setting up", () => [$"{e.GetType().Name}: {e.Message}"]); }
         finally
@@ -254,6 +256,10 @@ public static class RevertSelfTest
         if (keeper.Due(r, now: 900_000, mono: 52_000)) problems.Add("due two seconds in, with the clock set back");
         if (!keeper.Due(r, now: 900_000, mono: 55_000)) problems.Add("a clock set back put the revert off");
         if (!keeper.Due(r with { Id = CommandStore.NewId() }, now: 1_005_000, mono: 0)) problems.Add("not due when the clock says so");
+        // First seen after a restart with the clock set back an hour: still no more than the five seconds approved.
+        var late = r with { Id = CommandStore.NewId() };
+        if (keeper.Due(late, now: 1_000_000 - 3_600_000, mono: 70_000)) problems.Add("due at once after a restart with the clock set back");
+        if (!keeper.Due(late, now: 1_000_000 - 3_600_000 + 5_000, mono: 75_000)) problems.Add("a clock set back before a restart stretched the revert past its time");
         return problems;
     }
 
@@ -310,6 +316,15 @@ public static class RevertSelfTest
         if (Try(new JsonObject { ["name"] = "protection", ["id"] = "firewall-public", ["revertAfter"] = 100000 }, out _) != null) yield return "a far longer time was taken";
         if (Protections.Finder(false)("selftest-1") != null || Protections.Finder(true)("selftest-1") == null) yield return "the test rows aren't kept to the self-test";
         if (!real.Admin || !new ProtectionKeepStep().Admin) yield return "a protection step doesn't wait for Windows' prompt";
+        foreach (var (script, what) in new[]
+        {
+            (@"Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name EnableLUA -Value 0", "turns off User Account Control"),
+            ("Set-Service -Name RigRecorder -StartupType Disabled", "turns off Rig's service"),
+            ("sc.exe stop RigRecorder", "stops Rig's service"),
+            ("taskkill /F /IM RigRecorder.exe", "kills Rig's service"),
+            (@"Remove-Item -LiteralPath 'C:\ProgramData\Rig\Reverts' -Recurse -Force", "removes the revert ledger"),
+        })
+            if (CommandCheck.OnNeverList(script, "run") == null) yield return $"a command that {what} isn't on the never list";
     }
 
     // ----- The real service -----
@@ -486,5 +501,20 @@ public static class RevertSelfTest
         if (!Rows[0].On()) yield return "the uninstall left it off";
         if (Directory.Exists(RecorderPaths.Reverts)) yield return "the ledger is still there";
         if (RecorderSetup.IsInstalled()) yield return "the service is still installed";
+    }
+
+    static IEnumerable<string> StillOffOnUninstall()
+    {
+        var since = DateTime.UtcNow.AddSeconds(-5);
+        string row = "selftest-9";
+        Ledger.Open().TestOnlyPut(new Revert(CommandStore.NewId(), row, Revert.Lowered, 60, Now - 120_000, Now - 60_000));
+        int code = RecorderSetup.Uninstall(null);
+        if (code != RecorderSetup.StillOff) yield return $"the uninstall answered {code}, not that a protection is still off";
+        var query = new EventLogQuery("Application", PathType.LogName, $"*[System[Provider[@Name='{RecorderPaths.ServiceName}'] and TimeCreated[@SystemTime>='{since:yyyy-MM-dd'T'HH:mm:ss.fff'Z'}']]]");
+        bool said = false;
+        using (var reader = new EventLogReader(query))
+            for (var e = reader.ReadEvent(); e != null && !said; e = reader.ReadEvent())
+                using (e) said = e.ToXml().Contains(row, StringComparison.Ordinal);
+        if (!said) yield return "Windows' event log doesn't say which protection is still off";
     }
 }

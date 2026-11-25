@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
 import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
-import { limitLine } from "./components/change/words";
 import { alertRules, formatTemp, helperStep, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply, type OpenRevert } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
@@ -134,8 +133,6 @@ export interface Ctx {
   toggleChange: (id: string) => Promise<void>;
   /** The protections that are off for now because of a change here, after asking the helper which are back on. */
   openReverts: () => Promise<OpenRevert[]>;
-  /** The person's second choice, from the Changes page only: keep a protection off past its time. */
-  keepOff: (changeId: string) => Promise<void>;
   pickPC: (id: string) => void;
   /** Starts recording readings on the PC. Nothing changes there, so there's no review. */
   startRecording: (minutes: number, reason: string) => Promise<void>;
@@ -635,22 +632,6 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         if (changes.some((c, i) => c.status !== before[i]?.status) || changes.length !== before.length) setData((d) => ({ ...d, changes }));
         return open;
       },
-
-      keepOff: (changeId) => once(`keep:${changeId}`, async () => {
-        if (!client.keepOff) return;
-        try {
-          const reply = await client.keepOff(pcId, changeId);
-          const changes = await client.changes(pcId);
-          setData((d) => ({ ...d, changes }));
-          toast(reply.outcome === "applied" ? "Okay, it stays off until you turn it back on."
-            : reply.outcome === "declined" ? "Okay. Rig still turns it back on by itself."
-            : reply.outcome === "refused" ? `Rig didn't change anything. ${reply.verdict.refused}`
-            : reply.outcome === "limit" ? limitLine(reply.until, pcOf().name)
-            : "Nothing changed. Rig still turns it back on by itself.");
-        } catch (e) {
-          toast(`Rig couldn't keep it off, so it still comes back on by itself. ${e instanceof Error ? e.message : ""}`.trim());
-        }
-      }),
     };
     return ctx;
   }, [client, host, pcId, set, toast, once]);

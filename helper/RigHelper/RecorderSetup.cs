@@ -21,8 +21,9 @@ namespace Rig.Helper;
 
 public static class RecorderSetup
 {
-    /// Exit codes the app and the installer can tell apart.
-    public const int Ok = 0, NotAdmin = 6, Failed = 7;
+    /// Exit codes the app and the installer can tell apart. StillOff: removed, but a protection Rig turned off for a
+    /// while didn't come back on.
+    public const int Ok = 0, NotAdmin = 6, Failed = 7, StillOff = 8;
 
     public static int Install(string? appDir)
     {
@@ -80,14 +81,14 @@ public static class RecorderSetup
                 }
             }
             StopService(TimeSpan.FromSeconds(20));
-            RaiseProtections("uninstall");
+            bool stillOff = RaiseProtections("uninstall");
             Scm.Delete(RecorderPaths.ServiceName);
             WaitGone(TimeSpan.FromSeconds(20));
             DeleteFolder(RecorderPaths.Program);
             DeleteFolder(data);
             DeleteIfEmpty(Path.GetDirectoryName(RecorderPaths.Program));
             DeleteIfEmpty(Path.GetDirectoryName(data));
-            return Ok;
+            return stillOff ? StillOff : Ok;
         }
         catch (Exception e)
         {
@@ -114,19 +115,27 @@ public static class RecorderSetup
 
     /// Nothing is left to turn a protection back on once the service is gone, so every one Rig turned off for a while
     /// is turned on first, and only then is the ledger removed. The service does the same as it stops; this covers one
-    /// that was killed or never ran.
-    static void RaiseProtections(string why)
+    /// that was killed or never ran. One that won't come back on is said in Windows' own event log, which outlives
+    /// Rig's folders, and the answer is true.
+    static bool RaiseProtections(string why)
     {
+        List<string> stuck;
         try
         {
-            if (!Directory.Exists(RecorderPaths.Reverts)) return;
+            if (!Directory.Exists(RecorderPaths.Reverts)) return false;
             var ledger = Ledger.Open();
-            var stuck = ledger.RaiseAll(Protections.Finder(RecorderPaths.SelfTest), why);
-            if (stuck.Count > 0) Log(RecorderPaths.Data, $"a protection didn't come back on before the recorder was removed: {string.Join("; ", stuck)}");
+            stuck = ledger.RaiseAll(Protections.Finder(RecorderPaths.SelfTest), why);
             ledger.Drop();
         }
-        catch (Exception e) { Log(RecorderPaths.Data, $"turning protections back on failed: {e.Message}"); }
+        catch (Exception e) { stuck = [e.Message]; }
+        if (stuck.Count == 0) return false;
+        string line = $"{StillOffWords} {string.Join("; ", stuck)}";
+        Log(RecorderPaths.Data, line);
+        try { EventLog.WriteEntry(RecorderPaths.ServiceName, line, EventLogEntryType.Warning); } catch { }
+        return true;
     }
+
+    public const string StillOffWords = "Rig removed its background service, but couldn't turn these protections back on. Turn them on in Windows Security:";
 
     /// Rig installs other than appDir that are still on this PC.
     public static IEnumerable<string> OtherInstalls(string? appDir)

@@ -917,18 +917,13 @@ export class LocalClient implements RigClient {
   }
 
   /**
-   * The person's second choice: keep a protection off past its time. It is a step of its own, checked as theirs,
-   * previewed and approved at Windows' prompt like any other, and kept in the changes log.
+   * Reads the person's second choice, keeping a protection off past its time, for its own card. It is a step of its
+   * own, checked as theirs, and then applied, approved at Windows' prompt and logged like any other.
    */
-  async keepOff(id: string, changeId: string): Promise<ApplyReply> {
+  async previewKeepOff(id: string, changeId: string): Promise<PreviewReply> {
     const was = (await this.reverts(id)).find((r) => r.changeId === changeId && !r.kept);
-    if (!was) return { outcome: "expired" };
-    const step: HelperStep = { kind: "native", op: { name: "protectionKeep", id: was.row.id } };
-    const seen = await this.previewAs(id, step, false, true);
-    if (seen.outcome !== "ready") return seen;
-    const reply = await this.applyStep(id, seen.nonce, { by: "you", why: `You chose to keep it off after Rig turned it off for a while.` });
-    if (reply.outcome === "applied") await this.reverts(id);
-    return reply;
+    if (!was) return { outcome: "refused", verdict: { status: "refused", why: "refused", refused: "It is already back on, so there is nothing to keep off.", commands: [], rulesVersion } };
+    return this.previewAs(id, { kind: "native", op: { name: "protectionKeep", id: was.row.id } }, false, true);
   }
 
   // ----- Manuals -----

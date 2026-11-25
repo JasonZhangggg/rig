@@ -283,7 +283,7 @@ static class RestorePoints
 public sealed class Commands(CommandStore store, int? appPid, bool restorePoints = true)
 {
     public const int NonceMinutes = 10, DailyCap = 12;
-    public const int Expired = 10, Changed = 11;
+    public const int Expired = 10, Changed = 11, PromptLowered = 12;
     public const int ParseTimeoutMs = 30_000, ReadTimeoutMs = 20_000, RunTimeoutMs = 120_000;
 
     /// What preview gave out in this run of the helper: each nonce and the fingerprint of the step it stands for. A nonce
@@ -304,6 +304,26 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
 
     /// The self-test's way to reach the native op only it uses. Only code in this process can set it.
     internal bool TestOnlyNativeOps { get; set; }
+
+    /// The self-test's stand-in for User Account Control's values, by name (null: as Windows has it when not set). Only
+    /// code in this process can set it.
+    internal static Func<string, int?>? TestOnlyUac { get; set; }
+
+    /// Whether User Account Control is turned down so far that Windows' prompt no longer shows the person said yes: off
+    /// (EnableLUA 0), admin rights without asking (ConsentPromptBehaviorAdmin 0), or the prompt on the ordinary desktop,
+    /// where other programs can answer it (PromptOnSecureDesktop 0). A value Rig can't read counts as turned down.
+    public static bool UacLowered()
+    {
+        int? Read(string name)
+        {
+            if (TestOnlyUac != null) return TestOnlyUac(name);
+            using var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System");
+            object? v = k?.GetValue(name);
+            return v == null ? null : v is int i ? i : 0;
+        }
+        try { return Read("EnableLUA") == 0 || Read("ConsentPromptBehaviorAdmin") == 0 || Read("PromptOnSecureDesktop") == 0; }
+        catch { return true; }
+    }
 
     public const string AppElevated = "Rig is running as administrator, so it can't keep changes to what you approved. Open Rig normally and ask again.";
     public const string StoreRebuilt = "Rig found something in its own store of changes that it didn't put there, so it cleared the store and nothing ran. Ask again.";
@@ -538,11 +558,14 @@ public sealed class Commands(CommandStore store, int? appPid, bool restorePoints
     /// RigHelper.exe --approve-step <file> --hash <h>: started behind Windows' permission prompt when the person approves
     /// a step that needs admin rights. The file holds {nonce, owner}; the step itself is the one preview stored, and
     /// --hash is its fingerprint as the app showed it. Answers with its exit code only, so it writes nothing where the caller says.
+    /// Refuses while User Account Control is turned down (UacLowered).
     public static int ApproveFromFile(string file, string? hash, CommandStore? store = null)
     {
         try
         {
             if (!Native.IsAdmin()) return RecorderSetup.NotAdmin;
+            // Rig's approval of an admin change is Windows' own prompt; with it turned down, a Yes there proves nothing.
+            if (UacLowered()) return PromptLowered;
             var req = JsonNode.Parse(File.ReadAllText(file)) as JsonObject;
             if ((store ?? CommandStore.Open()) is not CommandStore s || s.Peek(Str(req?["nonce"]) ?? "") is not Pending pending) return Expired;
             if (pending.Person != Str(req?["owner"]) || string.IsNullOrEmpty(hash) || !string.Equals(pending.Hash, hash, StringComparison.OrdinalIgnoreCase)

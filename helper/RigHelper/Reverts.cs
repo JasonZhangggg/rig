@@ -27,7 +27,13 @@
 //
 // Nothing here lowers a protection, and nothing here holds or runs script
 // text. Raising is the row's own code (Protection.cs), found by the row's id.
+//
+// The service raises. So does the admin helper, as a fallback while the app
+// is open: a row 90 seconds past its time (RevertKeeper.AppGraceMs) is raised
+// when the app asks how things stand (Protections.Reverts). That, too, only
+// ever raises.
 
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -89,6 +95,9 @@ public sealed class Ledger
     readonly string dir;
     readonly bool secured;
 
+    /// The folders this process has made admins' own: once is enough, since every file is still checked as it is read.
+    static readonly ConcurrentDictionary<string, bool> Made = new(StringComparer.OrdinalIgnoreCase);
+
     /// The PC's ledger. Only a process with admin rights can open it.
     public static Ledger Open() => new(RecorderPaths.Reverts, secured: true);
 
@@ -96,8 +105,12 @@ public sealed class Ledger
     {
         this.dir = dir;
         this.secured = secured;
-        if (secured) CommandStore.Secure(dir);
-        else Directory.CreateDirectory(dir);
+        if (!secured) Directory.CreateDirectory(dir);
+        else if (!Made.ContainsKey(dir) || !Directory.Exists(dir))
+        {
+            CommandStore.Secure(dir);
+            Made[dir] = true;
+        }
     }
 
     string FileOf(string row) => Path.Combine(dir, row + ".json");
@@ -397,7 +410,8 @@ public sealed class RevertKeeper(Func<string, IProtection?> rows, Action<string>
         if (!seen.TryGetValue(r.Id, out var first))
         {
             if (seen.Count > 64) seen.Clear();
-            seen[r.Id] = first = (mono, r.DueAt - now);
+            // Never more than the time the person approved, so a clock set back before this start can't stretch it.
+            seen[r.Id] = first = (mono, Math.Min(r.DueAt - now, r.Seconds * 1000L));
         }
         return now >= r.DueAt || mono - first.At >= first.Left;
     }
