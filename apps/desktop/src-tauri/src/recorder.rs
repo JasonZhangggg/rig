@@ -305,6 +305,10 @@ pub fn set(_on: bool) -> Result<(), String> {
     Err("unsupported: the background recorder is a Windows service.".into())
 }
 
+/// The helper's answer (exit code 12) when User Account Control is turned down, for steps and scripts alike.
+#[cfg(windows)]
+const PROMPT_LOWERED: &str = "User Account Control is turned down on this PC, so Windows' prompt can't show it was you who said yes. Rig won't make changes that need admin rights until it's back to its usual setting.";
+
 /// Approves a script behind Windows' own permission prompt: the helper reads the script from a file only this
 /// account can write, checks it against the hash the app showed, and pins it. Returns the helper's answer.
 #[cfg(windows)]
@@ -328,6 +332,7 @@ pub fn approve_script(probe: &Value, hash: &str) -> Result<Value, String> {
     let _ = std::fs::remove_file(&result);
     match (code, answer) {
         (None, _) => Err("Windows didn't give permission, so the script isn't approved.".into()),
+        (Some(12), _) => Err(PROMPT_LOWERED.into()),
         (_, Some(a)) if a["ok"] == true => Ok(a["probes"].clone()),
         (_, Some(a)) => Err(a["error"].as_str().unwrap_or("Rig couldn't approve the script.").to_string()),
         (Some(6), None) => Err("That needs admin rights. Choose Yes when Windows asks.".into()),
@@ -366,7 +371,7 @@ pub fn approve_command(nonce: &str, hash: &str) -> Result<(), String> {
         Some(6) => Err("That needs admin rights. Choose Yes when Windows asks.".into()),
         Some(10) => Err("This change waited too long for approval. Look at it again in Rig.".into()),
         Some(11) => Err("The command changed after you chose Approve, so Rig didn't approve it.".into()),
-        Some(12) => Err("User Account Control is turned down on this PC, so Windows' prompt can't show it was you who said yes. Rig won't make changes that need admin rights until it's back to its usual setting.".into()),
+        Some(12) => Err(PROMPT_LOWERED.into()),
         Some(code) => Err(format!("Rig couldn't approve the change (code {code}).")),
     }
 }

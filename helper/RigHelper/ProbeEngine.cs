@@ -676,11 +676,20 @@ public static class Scripts
 {
     public record Result(int Exit, long Ms, string Out, string Err, bool TimedOut);
 
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> Checked = new();
+    /// The never check before each run, once per approved text while the service runs ("" is allowed).
+    static string? Never(string hash, string shell, string text)
+    {
+        string words = Checked.GetOrAdd(hash, _ => ProbeRules.Never(shell, text, ProbeRules.ParseHere) ?? "");
+        return words.Length > 0 ? words : null;
+    }
+
     public static Result Run(ProbeSpec spec, string data)
     {
         // Only the exact text that was approved runs: Parse refuses a script whose hash doesn't match.
         string shell = spec.Source["shell"]!.GetValue<string>(), text = spec.Source["text"]!.GetValue<string>();
         if (spec.Hash != ProbeRules.ScriptHash(shell, spec.Admin, text)) throw new RigException("This script changed since it was approved, so it doesn't run.");
+        if (Never(spec.Hash!, shell, text) is string never) throw new RigException($"Rig won't run this script: {never}");
         string dir = Path.Combine(data, "scripts");
         Directory.CreateDirectory(dir);
         string file = Path.Combine(dir, spec.Id + (shell == "cmd" ? ".cmd" : ".ps1"));

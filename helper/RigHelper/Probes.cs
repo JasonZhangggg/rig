@@ -112,6 +112,19 @@ public static class ProbeRules
     public static string ScriptHash(string shell, bool admin, string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{shell}\n{(admin ? "admin" : "user")}\n{text}"))).ToLowerInvariant();
 
+    /// Why Rig won't keep or run a script with this text, or null: the never list holds it as it holds a change. With `parse`
+    /// (PowerShell's parser, as the checker reads it), a PowerShell script is checked in full, so the places it changes count too.
+    public static string? Never(string shell, string text, Func<string, JsonNode?>? parse)
+    {
+        if (CommandCheck.OnNeverList(text, "run") is string words) return $"{words}.";
+        if (shell != "powershell" || parse == null || CommandCheck.Precheck(text) != null) return null;
+        var v = CommandCheck.CheckScript(text, "run", parse(text));
+        return !v.Allowed && v.Why == "never" ? v.Refused : null;
+    }
+
+    /// PowerShell's parser, run with this process's rights from Rig's own command store.
+    public static JsonNode? ParseHere(string text) => new Commands(CommandStore.Open(), null, restorePoints: false).Parse([text]).FirstOrDefault();
+
     /// Checks a custom log. Scripts must carry the hash of an approval, which must match their text.
     public static (ProbeSpec? Probe, string? Error) Parse(JsonNode? node, long now, string owner)
     {
@@ -316,6 +329,8 @@ public static class ProbeStore
             // The person approving is signed in to Windows as the account the script is for, or is approving for it as admin.
             if (!Regex.IsMatch(owner, @"^S-1-[0-9-]+$")) throw new RigException("Rig couldn't tell which Windows account the script is for.");
             if (!RecorderSetup.IsInstalled()) throw new RigException("Turn on \"Keep a log while Rig is closed\" in Settings first.");
+            // Windows' prompt is the approval; with User Account Control turned down, a Yes there proves nothing.
+            if (Commands.UacLowered()) return Commands.PromptLowered;
             var so = req["probe"]?["source"] as JsonObject;
             string got = ProbeRules.ScriptHash(so?["shell"]?.ToString() ?? "powershell", so?["admin"]?.GetValueKind() == System.Text.Json.JsonValueKind.True, so?["text"]?.ToString() ?? "");
             if (string.IsNullOrEmpty(hash) || !string.Equals(got, hash, StringComparison.OrdinalIgnoreCase))
@@ -334,6 +349,8 @@ public static class ProbeStore
     static JsonNode Change(string data, string owner, string op, JsonObject? probe, string? id, Sensors? hw)
     {
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (op == "approve" && probe?["source"] is JsonObject src && ProbeRules.Never(src["shell"]?.ToString() ?? "powershell", src["text"]?.ToString() ?? "", ProbeRules.ParseHere) is string never)
+            throw new RigException($"Rig won't keep this script: {never}");
         lock (gate)
         {
             var list = Load(data, now);

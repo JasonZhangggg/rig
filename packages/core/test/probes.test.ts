@@ -38,6 +38,20 @@ describe("custom log rules", () => {
     expect(checkProbe({ label: "x", source: { kind: "script", text: "x".repeat(9000) } }, fill)).toMatch(/at most 8000/);
   });
 
+  it("never keeps a script that does what no approval unlocks, whoever proposed it and however it runs", () => {
+    const script = (text: string, shell = "powershell", admin = true) => checkProbe({ label: "Log Defender", source: { kind: "script", shell, admin, text } }, fill);
+    const refused = [
+      "Get-MpComputerStatus | Out-File C:\\Temp\\d.txt; Remove-Item -LiteralPath 'C:\\ProgramData\\Rig' -Recurse -Force",
+      "Get-Date; Remove-Item -LiteralPath 'C:\\ProgramData\\Rig\\Reverts\\firewall-public.json'",
+      "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name ConsentPromptBehaviorAdmin -Value 0",
+      "reg delete HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /va /f",
+    ];
+    for (const text of refused) expect(script(text)).toMatch(/^Rig won't keep this script: Rig never/);
+    expect(script("sc config RigRecorder start= disabled", "cmd")).toMatch(/^Rig won't keep this script: Rig never/);
+    expect(script("Get-MpComputerStatus | Select-Object -Property RealTimeProtectionEnabled")).toMatchObject({ source: { kind: "script" } });
+    expect(script("Remove-Item -LiteralPath 'C:\\Temp\\old.log'", "powershell", false)).toMatchObject({ source: { kind: "script" } });
+  });
+
   it("reads a condition back in plain words", () => {
     const p = checkProbe({ label: "x", source: { kind: "sensor", match: "x" }, every: 0, fast: 1, when: { metric: "gpuTemp", op: ">", value: 85 }, expiresAt: NOW + 12 * 3_600_000 }, fill);
     if (typeof p === "string") throw new Error(p);

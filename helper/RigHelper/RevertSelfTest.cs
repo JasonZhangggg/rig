@@ -76,6 +76,7 @@ public static class RevertSelfTest
             person = Person.Find(Environment.ProcessId);
             var t = new Service(new Commands(store, Environment.ProcessId, restorePoints: false) { TestOnlyElevatedApp = false, TestOnlyNativeOps = true }, store, person);
             Check("with no service running, nothing is lowered", () => NoService(t));
+            Check("a script log's text is held to the never list, by text and by place", () => ScriptNever(t));
             Check("the test service installs and runs", () => RecorderSetup.Install(null) == RecorderSetup.Ok && ServicePid() != 0 ? [] : ["the self-test's service didn't install or start"]);
             Check("lowered through the service, raised by it when the time is up, and logged", () => RaisedWhenDue(t));
             Check("kept off only by a second approved choice, and turned back on by hand", () => KeptOff(t));
@@ -325,6 +326,20 @@ public static class RevertSelfTest
             (@"Remove-Item -LiteralPath 'C:\ProgramData\Rig\Reverts' -Recurse -Force", "removes the revert ledger"),
         })
             if (CommandCheck.OnNeverList(script, "run") == null) yield return $"a command that {what} isn't on the never list";
+    }
+
+    static IEnumerable<string> ScriptNever(Service t)
+    {
+        JsonNode? Parse(string text) => t.Rig.Parse([text]).FirstOrDefault();
+        foreach (var (shell, text) in new[]
+        {
+            ("powershell", "Get-Date; Remove-Item -LiteralPath 'C:\\ProgramData\\Rig' -Recurse -Force"),
+            ("powershell", "Get-Service Rig* | Out-Null; reg delete HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /va /f"),
+            ("cmd", "sc config RigRecorder start= disabled"),
+            ("powershell", "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name ConsentPromptBehaviorAdmin -Value 0"),
+        })
+            if (ProbeRules.Never(shell, text, Parse) == null) yield return $"a {shell} script log that does this wasn't refused: {text}";
+        if (ProbeRules.Never("powershell", "Get-MpComputerStatus | Select-Object -Property RealTimeProtectionEnabled", Parse) is string wrong) yield return $"a script log that only reads was refused: {wrong}";
     }
 
     // ----- The real service -----
