@@ -10,8 +10,8 @@ import type { Allowed, FoundCommand, Refusal, Refused, Tier, Verdict } from "./c
 
 export type ScriptUse = "read" | "run" | "undo";
 
-interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[]; single?: boolean; fit?: Record<string, string>; use?: ScriptUse[] }
-interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string; undoes?: string[] }
+interface Match { starts?: string[]; has?: string[]; prefix?: string[]; contains?: string[]; piped?: boolean; after?: string[]; params?: string[]; single?: boolean; positional?: boolean; fit?: Record<string, string>; use?: ScriptUse[] }
+interface Outcome { says?: string; tier?: Tier; admin?: boolean; never?: string; refused?: string; undoes?: string[]; item?: boolean }
 interface Form { starts?: string[]; has?: string[]; params?: string[]; prefix?: string[]; free?: boolean; bare?: boolean }
 interface Targets { kind: "path" | "service"; values?: string[]; names?: string[]; renames?: string[]; leaves?: boolean; at?: number[]; write?: boolean; places?: boolean; content?: boolean }
 interface Entry extends Outcome { name: string; exe?: boolean; literal?: boolean; blocks?: boolean; read?: Form[]; when?: (Match & Outcome)[]; targets?: Targets }
@@ -39,6 +39,7 @@ interface Rules {
   verbSays: string[];
   aliases: Record<string, string>;
   neverText: (TextRule & { applies: "any" | "change" })[];
+  neverPlaces: { says: string; places: string[]; inside?: boolean }[];
   protectText: TextRule[];
   fileEdit: { formats: Record<string, string[]>; never: TextRule[]; tier3: TextRule[]; at: string[]; iniValue: string[]; hidden: string[] };
   commands: Entry[];
@@ -145,6 +146,7 @@ function matches(m: Match, call: Call, use: ScriptUse, strict: boolean, exe: boo
   if (contains && !unseen && !t.some((x) => contains.some((p) => x.includes(p)))) return false;
   if (m.params && !fitsParams(m.params, call.args, starts?.length ?? 0)) return false;
   if (m.single && !single(shownOf(call.args), starts?.length ?? 0)) return false;
+  if (m.positional && single(shownOf(call.args), starts?.length ?? 0)) return false;
   if (m.fit && !fitsValues(m.fit, shownOf(call.args))) return false;
   return true;
 }
@@ -248,7 +250,8 @@ export interface Undoes { name: string; verbs: string[]; key: string[] }
 export interface Used { name: string; args: string[] }
 
 /** `joined`: the places a command's plain names make, held to the text rules like the script itself. */
-interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; undoes?: Undoes; stop?: { words: string; why: Refusal } }
+/** `item`: it acts on a whole file, folder or key (deletes, moves, renames, empties or makes it), not on a value in it. `loose`: places a cmdlet Rig doesn't know by name was given. */
+interface Judged { found: FoundCommand; admin: boolean; write?: Write; joined?: string[]; undoes?: Undoes; stop?: { words: string; why: Refusal }; item?: boolean; loose?: string[] }
 const NONE: Write = { kind: "none", places: [] };
 
 /** Refuses what the targets of a file, registry or service command can't be, and says what it writes to. */
@@ -285,6 +288,25 @@ function checkTargets(t: Targets, entry: Entry, call: Call, use: ScriptUse, name
     ...(t.leaves ? places.flatMap((p) => places.filter((q) => q !== p).map((q) => `${p}\\${leaf(q)}`)) : [])];
   if (shown.some((x) => x.kind === "drive")) return { write: NONE, joined };
   return { write: { kind: "path", places: [...places, ...joined] }, joined };
+}
+
+/** The written-out values of a call whose place is a file or registry key. */
+function fullPlaces(call: Call): string[] {
+  const shown = shownOf(call.args);
+  return shown.flatMap((a) => (!isParam(a) ? [a.text] : inlineOf(a) ? [inlineOf(a)!] : [])).map(placeOf).filter((p) => ["file", "registry"].includes(kindOf(p)));
+}
+
+/** A file place the way Windows opens it: no `.` parts, no dots or spaces at the end of a part, and no stream after a part's colon. */
+function opened(place: string): string {
+  if (kindOf(place) !== "file") return place;
+  const [drive, ...rest] = place.split("\\");
+  return [drive, ...rest.map((p) => p.split(":")[0].replace(/[. ]+$/, "")).filter((p) => p !== "" && p !== ".")].join("\\");
+}
+
+/** The never-list words for a change that acts on one of `neverPlaces` or a place that holds it, or (for one with `inside`) a place inside it. */
+function onNeverPlace(j: Judged): string | null {
+  const places = [...(j.write?.kind === "path" ? j.write.places : []), ...(j.loose ?? [])].map(opened);
+  return R.neverPlaces.find((g) => g.places.some((own) => places.some((p) => (covers(p, own) && (g.inside || j.item)) || (g.inside && covers(own, p)))))?.says ?? null;
 }
 
 /** Refuses what a cmdlet Rig doesn't know by name can't be given in a change: anything hidden, a place with `..`, a wildcard in a full path, and for a writer a program file. */
@@ -331,7 +353,7 @@ function judge(call: Call, use: ScriptUse): Judged {
     if (tier === undefined) return construct("unknown", name);
     const odd = checkUnlisted(call, base.slice(0, dash), name);
     if (odd) return construct(...odd);
-    return { found: found(`${name}: ${R.verbSays[tier]}`, tier), admin: tier >= 2, ...(tier > 0 ? { write: NONE } : {}) };
+    return { found: found(`${name}: ${R.verbSays[tier]}`, tier), admin: tier >= 2, ...(tier > 0 ? { write: NONE } : {}), item: true, loose: fullPlaces(call) };
   }
   if (entry.blocks && call.args.some((a) => a.kind === "word" || a.kind === "hidden")) return construct("member-by-name", name);
   const rule = entry.when?.find((w) => matches(w, call, use, !!(w.never || w.refused || w.tier === 3), !!entry.exe));
@@ -345,7 +367,8 @@ function judge(call: Call, use: ScriptUse): Judged {
     if ("stop" in t) return construct(...t.stop);
     ({ write, joined } = t);
   }
-  const done = (j: Judged): Judged => (joined.length ? { ...j, joined } : j);
+  const item = !!(rule?.item ?? entry.item);
+  const done = (j: Judged): Judged => ({ ...j, ...(joined.length ? { joined } : {}), ...(item ? { item } : {}) });
 
   const off = entry.read ? entry.read.map((f) => offForm(f, call.args)) : ["anything"];
   const reads = off.includes(null);
@@ -430,7 +453,8 @@ export function inspectScript(script: string, use: ScriptUse): { verdict: Verdic
   const judged = parsed.calls.map((c) => judge(c, use));
   const commands = judged.map((j) => j.found);
   const joined = judged.flatMap((j) => j.joined ?? []);
-  const never = [script, ...joined].map((x) => textOnNeverList(x, use)).find((x) => x) ?? judged.find((j) => j.stop?.why === "never")?.stop!.words;
+  const never = [script, ...joined].map((x) => textOnNeverList(x, use)).find((x) => x) ?? judged.find((j) => j.stop?.why === "never")?.stop!.words
+    ?? (use === "read" ? null : judged.map(onNeverPlace).find((x) => x));
   if (never) return refuse(never.endsWith(".") ? never : `${never}.`, "never", commands);
 
   const assigned = parsed.finds.filter((f) => f.what === "assigns").map((f) => f.detail);

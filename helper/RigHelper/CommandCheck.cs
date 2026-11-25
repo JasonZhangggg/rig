@@ -148,11 +148,12 @@ public sealed record Write(string Kind, IReadOnlyList<string> Places)
 
 public static class CommandCheck
 {
-    class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } }
-    sealed class When : Outcome { public string[]? Use { get; set; } public string[]? Undoes { get; set; } public string[]? Expects { get; set; } public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } public bool Single { get; set; } public Dictionary<string, string>? Fit { get; set; } }
+    class Outcome { public string? Says { get; set; } public int? Tier { get; set; } public bool? Admin { get; set; } public string? Never { get; set; } public string? Refused { get; set; } public bool? Item { get; set; } }
+    sealed class When : Outcome { public string[]? Use { get; set; } public string[]? Undoes { get; set; } public string[]? Expects { get; set; } public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Prefix { get; set; } public string[]? Contains { get; set; } public bool Piped { get; set; } public string[]? After { get; set; } public string[]? Params { get; set; } public bool Single { get; set; } public bool Positional { get; set; } public Dictionary<string, string>? Fit { get; set; } }
     sealed class Form { public string[]? Starts { get; set; } public string[]? Has { get; set; } public string[]? Params { get; set; } public string[]? Prefix { get; set; } public bool Free { get; set; } public bool Bare { get; set; } }
     sealed class Targets { public string Kind { get; set; } = "path"; public string[]? Values { get; set; } public string[]? Names { get; set; } public string[]? Renames { get; set; } public bool Leaves { get; set; } public int[]? At { get; set; } public bool Write { get; set; } public bool Places { get; set; } public bool Content { get; set; } }
     sealed class Entry : Outcome { public string Name { get; set; } = ""; public bool Exe { get; set; } public bool Literal { get; set; } public bool Blocks { get; set; } public Form[]? Read { get; set; } public When[]? When { get; set; } public Targets? Targets { get; set; } }
+    sealed class PlaceRule { public string Says { get; set; } = ""; public string[] Places { get; set; } = []; public bool Inside { get; set; } }
     sealed class TextRule { public string Says { get; set; } = ""; public string[] Contains { get; set; } = []; public string Applies { get; set; } = "change"; }
     sealed class ReadRoot { public string Root { get; set; } = ""; public string[]? Ends { get; set; } }
     sealed class FileEditRules
@@ -201,6 +202,7 @@ public static class CommandCheck
         public string[] VerbSays { get; set; } = [];
         public Dictionary<string, string> Aliases { get; set; } = [];
         public TextRule[] NeverText { get; set; } = [];
+        public PlaceRule[] NeverPlaces { get; set; } = [];
         public TextRule[] ProtectText { get; set; } = [];
         public FileEditRules FileEdit { get; set; } = new();
         public Entry[] Commands { get; set; } = [];
@@ -211,8 +213,9 @@ public static class CommandCheck
     sealed record Call(string Name, List<Arg> Args, bool Piped);
     sealed record Find(string What, string Detail, bool Hidden = false);
     sealed record Target(string Text, string Place, string Kind, bool Hidden, bool Literal);
-    /// `Joined`: the places a command's plain names make, held to the text rules like the script itself.
-    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null, Undoes? Undoes = null);
+    /// `Joined`: the places a command's plain names make, held to the text rules like the script itself. `Item`: it acts on a whole
+    /// file, folder or key (deletes, moves, renames, empties or makes it), not on a value in it. `Loose`: places a cmdlet Rig doesn't know by name was given.
+    sealed record Judged(FoundCommand Found, bool Admin, Write? Write = null, string? Stop = null, string StopWhy = "refused", IReadOnlyList<string>? Joined = null, Undoes? Undoes = null, bool Item = false, IReadOnlyList<string>? Loose = null);
     /// A plain name a command gives what it makes or renames, which Rig joins to the place it is in.
     sealed record Named(string Text, bool Rename);
 
@@ -361,6 +364,7 @@ public static class CommandCheck
         if (contains != null && !unseen && !t.Any(x => contains.Any(p => x.Contains(p, StringComparison.Ordinal)))) return false;
         if (m.Params != null && !FitsParams(m.Params, call.Args, starts?.Length ?? 0)) return false;
         if (m.Single && !Single(Shown(call.Args), starts?.Length ?? 0)) return false;
+        if (m.Positional && Single(Shown(call.Args), starts?.Length ?? 0)) return false;
         if (m.Fit != null && !FitsValues(m.Fit, Shown(call.Args))) return false;
         return true;
     }
@@ -508,6 +512,25 @@ public static class CommandCheck
         return null;
     }
 
+    /// The written-out values of a call whose place is a file or registry key.
+    static List<string> FullPlaces(Call call) =>
+        Shown(call.Args).SelectMany(a => !IsParam(a) ? [a.Text] : InlineOf(a) is string inline && inline.Length > 0 ? new[] { inline } : []).Select(PlaceOf).Where(p => KindOf(p) is "file" or "registry").ToList();
+
+    /// A file place the way Windows opens it: no `.` parts, no dots or spaces at the end of a part, and no stream after a part's colon.
+    static string Opened(string place)
+    {
+        if (KindOf(place) != "file") return place;
+        var parts = place.Split('\\');
+        return string.Join('\\', parts.Skip(1).Select(p => p.Split(':')[0].TrimEnd('.', ' ')).Where(p => p is not ("" or ".")).Prepend(parts[0]));
+    }
+
+    /// The never-list words for a change that acts on one of `neverPlaces` or a place that holds it, or (for one with `Inside`) a place inside it.
+    static string? OnNeverPlace(Judged j)
+    {
+        var places = (j.Write?.Kind == "path" ? j.Write.Places : []).Concat(j.Loose ?? []).Select(Opened).ToList();
+        return R.NeverPlaces.FirstOrDefault(g => g.Places.Any(own => places.Any(p => (Covers(p, own) && (g.Inside || j.Item)) || (g.Inside && Covers(own, p)))))?.Says;
+    }
+
     /// Refuses what a cmdlet Rig doesn't know by name can't be given in a change: anything hidden, a place with `..`, a wildcard in a full path, and for a writer a program file.
     static (string Key, string Detail)? CheckUnlisted(Call call, string verb, string name)
     {
@@ -554,7 +577,7 @@ public static class CommandCheck
             int dash = b.IndexOf('-');
             if (dash <= 0 || exe || !R.Verbs.TryGetValue(b[..dash], out int verbTier)) return Construct("unknown", name);
             if (CheckUnlisted(call, b[..dash], name) is var (oddKey, oddDetail)) return Construct(oddKey, oddDetail);
-            return new Judged(Found($"{name}: {R.VerbSays[verbTier]}", verbTier), verbTier >= 2, verbTier > 0 ? Write.None : null);
+            return new Judged(Found($"{name}: {R.VerbSays[verbTier]}", verbTier), verbTier >= 2, verbTier > 0 ? Write.None : null, Item: true, Loose: FullPlaces(call));
         }
         if (entry.Blocks && call.Args.Any(a => a.Kind is "word" or "hidden")) return Construct("member-by-name", name);
         var rule = entry.When?.FirstOrDefault(w => Matches(w, call, use, w.Never != null || w.Refused != null || w.Tier == 3, entry.Exe));
@@ -567,7 +590,8 @@ public static class CommandCheck
         {
             if (CheckTargets(entry.Targets, entry, call, use, name, out write, out joined) is var (key, detail, why)) return Construct(key, detail, why);
         }
-        Judged Done(Judged j) => joined.Count > 0 ? j with { Joined = joined } : j;
+        bool item = (rule?.Item ?? entry.Item) == true;
+        Judged Done(Judged j) => (joined.Count > 0 ? j with { Joined = joined } : j) with { Item = item };
 
         var off = entry.Read != null ? entry.Read.Select(f => OffForm(f, call.Args)).ToList() : ["anything"];
         bool reads = off.Contains(null);
@@ -708,7 +732,8 @@ public static class CommandCheck
         var judged = calls.Select(c => Judge(c, use)).ToList();
         var commands = judged.Select(j => j.Found).ToList();
         var texts = judged.SelectMany(j => j.Joined ?? []).Prepend(script).ToList();
-        string? never = texts.Select(x => OnNeverList(x, use)).FirstOrDefault(x => x != null) ?? judged.FirstOrDefault(j => j.StopWhy == "never")?.Stop;
+        string? never = texts.Select(x => OnNeverList(x, use)).FirstOrDefault(x => x != null) ?? judged.FirstOrDefault(j => j.StopWhy == "never")?.Stop
+            ?? (use == "read" ? null : judged.Select(OnNeverPlace).FirstOrDefault(x => x != null));
         if (never != null) return Refuse(never.EndsWith('.') ? never : $"{never}.", "never", commands);
 
         var assigned = finds.Where(f => f.What == "assigns").Select(f => f.Detail);
