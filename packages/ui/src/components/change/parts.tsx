@@ -22,6 +22,20 @@ export function ClaudeSays({ text }: { text: string }) {
   );
 }
 
+/** What a change does in Rig's own words, made from Rig's own list, never Claude's. */
+export function RigSays({ text }: { text: string }) {
+  return (
+    <Fact label="What it does" note="Rig's own words">
+      <p className="cc-quote">{text}</p>
+    </Fact>
+  );
+}
+
+/** Claude's sentence on a native op, or Rig's own when the op's kind makes one. */
+export function NativeSays({ own, said }: { own: string | null; said: string }) {
+  return own ? <RigSays text={own} /> : <ClaudeSays text={said} />;
+}
+
 /** A recipe's sentence: Rig's own words, with when the change is seen. */
 export function RecipeSays({ does, when }: { does: string; when: string }) {
   return (

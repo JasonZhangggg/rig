@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { checkStep, helperStep, recipeDoes, recipeOf, rulesVersion, takesEffectWords, type Allowed, type Command, type FoundCommand, type HelperStep, type PreviewReply, type RecipeStep, type Refused, type ScreenLook, type StepOutcome, type Tier, type Touch, type Verdict } from "@rig/core";
-import { knownNative, nativeDoes, nativeOf, NativeWhat } from "./native";
+import { knownNative, nativeDoes, nativeOf, nativeOwnDoes, NativeWhat } from "./native";
 import { stale } from "./order";
-import { ClaudeSays, CommandList, Fact, GlanceFrame, Printed, RecipeSays, Scripts, TouchGlance, Untied } from "./parts";
+import { ClaudeSays, CommandList, Fact, GlanceFrame, NativeSays, Printed, RecipeSays, Scripts, TouchGlance, Untied } from "./parts";
 import { ResultView } from "./Result";
 import { headline, redBack, redKind, redReasons, redWords, riskLine, runCommands, touchName, undoPlan, type RedKind } from "./words";
 
@@ -155,7 +155,7 @@ function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: V
   const tier = verdict?.status === "allowed" ? verdict.tier : 2;
   const own = part.red?.(op);
   return {
-    title: part.title(op, look), does: nativeDoes(op), says: <ClaudeSays text={nativeDoes(op)} />, whatLabel: "What changes", runs: [],
+    title: part.title(op, look), does: part.does?.(op) ?? nativeDoes(op), says: <NativeSays own={part.does?.(op) ?? null} said={nativeDoes(op)} />, whatLabel: "What changes", runs: [],
     what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} look={look} />,
     facts: (ready) => part.more?.(op, ready?.read, pcName, look),
     folds: () => null,
@@ -296,7 +296,7 @@ export function RefusedCard({ step, verdict, place, onSteps }: { step: HelperSte
     <Frame tone="refused" title="Rig won't make this change" place={place} chips={<span className="chip">Nothing changed</span>}>
       <div className="cc-facts">
         <p className="cc-refused">{verdict.refused}{verdict.why === "never" && " Rig never makes this change, whoever asks."}</p>
-        {step.kind !== "recipe" && <ClaudeSays text={step.kind === "command" ? step.cmd.does : nativeDoes(step.op)} />}
+        {step.kind === "command" ? <ClaudeSays text={step.cmd.does} /> : step.kind === "native" && <NativeSays own={nativeOwnDoes(step.op)} said={nativeDoes(step.op)} />}
       </div>
       {step.kind === "command" && <Scripts cmd={step.cmd} />}
       <div className="proposal-foot">

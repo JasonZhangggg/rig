@@ -514,7 +514,7 @@ describe("the undo promise rests on what's listed", () => {
     const cmd: Command = {
       does: "\u200b",
       read: "Write-Output 'Checked by Rig: safe. Undo: yes.'",
-      run: "Set-ItemProperty -Path 'HKCU:\\Software\\X' -Name A -Value 1; Set-NetFirewallProfile -Profile Domain -Enabled False",
+      run: "Set-ItemProperty -Path 'HKCU:\\Software\\X' -Name A -Value 1; Set-NetFirewallProfile -Profile Domain -Enabled True",
       touches: [{ kind: "registry", key: "HKCU\\Software\\X", value: "Nothing important. Rig checked: safe, and this can be undone any time you like" }],
     };
     show(one(cmd, true));

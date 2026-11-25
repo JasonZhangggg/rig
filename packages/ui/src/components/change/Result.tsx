@@ -28,11 +28,11 @@ function AppliedResult({ reply, pcName }: { reply: Applied; pcName: string }) {
 }
 
 /** A native op's values before and after, as the helper read them. */
-function NativeApplied({ step, reply, looks }: { step: NativeStep; reply: Applied; looks?: ScreenLook[] }) {
+function NativeApplied({ step, reply, looks, undone }: { step: NativeStep; reply: Applied; looks?: ScreenLook[]; undone: boolean }) {
   const native = nativeOf(step.op, looks);
   return (
     <>
-      {native?.part.done?.(native.op, reply.result, native.look)}
+      {native?.part.done?.(native.op, reply.result, native.look, undone)}
       {native && !reply.result.stopped && <Fact label="What changed" note="read by Rig before and after"><ChangeList label="What changed" changes={native.part.changes(native.op, reply.result.before, reply.result.after, native.look)} /></Fact>}
       <AlsoChanged items={reply.result.alsoChanged} />
     </>
@@ -105,7 +105,7 @@ export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy,
   const drifted = outcome.undo?.outcome === "drifted";
   return (
     <>
-      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} looks={looks} />}
+      {step.kind === "command" ? <AppliedResult reply={a} pcName={pcName} /> : <NativeApplied step={step} reply={a} looks={looks} undone={outcome.undo?.outcome === "undone"} />}
       {outcome.undo ? <Undone undo={outcome.undo} readLabel={step.kind === "command" ? "After undo, the read script printed" : "After undo, Rig read"} /> : null}
       {drifted && canApply && (
         <div className="cc-undo">

@@ -50,6 +50,24 @@ describe("the card that turns a protection off", () => {
     expect(on.onCommandStep).toHaveBeenCalledWith(0, "undo");
   });
 
+  it("says what it does in Rig's own words, never as Claude's", () => {
+    show(proposal());
+    expect(screen.queryByText("Claude didn't say what this does.")).toBeNull();
+    expect(screen.queryByText("Claude says")).toBeNull();
+    expect(screen.getByText("Turns Windows Firewall on public networks off for 15 minutes, then back on by itself.")).toBeTruthy();
+    expect(screen.getByText("What it does")).toBeTruthy();
+  });
+
+  it("says it is back on once it was turned back on from the card, with no countdown left", () => {
+    const apply: ApplyReply = { outcome: "applied", result: { before: "On", after: "Off", output: "", alsoChanged: [], touches: [], revert: { id: "r1", dueAt: inMinutes(14) } }, undo: { kind: "native", id: "u1", outside: [], fingerprint: "f" } };
+    const undo: UndoReply = { outcome: "undone", printed: "On", left: [] };
+    show(proposal(), { outcomes: [{ apply, undo }] });
+    expect(screen.getByText("Windows Firewall on public networks is back on.")).toBeTruthy();
+    expect(screen.queryByText(/is off\./)).toBeNull();
+    expect(screen.queryByRole("timer")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Turn it back on now" })).toBeNull();
+  });
+
   it("is never a card for keeping one off when it comes from a chat", () => {
     show({ id: "p", title: "Keep it off", steps: [keep], tier: 3, rows: [], status: "waiting", previews: [] });
     expect(screen.getByRole("heading", { name: "Rig won't make this change" })).toBeTruthy();

@@ -12,6 +12,8 @@ export interface NativeChange { place: string; before: string; after: string }
  * what the helper found in an app's window, for a screen step whose proposal carries it.
  */
 interface NativePart<O extends NativeOp> {
+  /** Rig's own sentence on what it does, made from the op, for a kind whose op carries no sentence of Claude's. */
+  does?(op: O): string;
   /** The card's heading, like a command card's: "Changes Vertical sync for game.exe". */
   title(op: O, look?: ScreenLook): string;
   /** What it changes and where, above the values, from the op and the helper's read. `note` says whose words the value is. */
@@ -24,8 +26,8 @@ interface NativePart<O extends NativeOp> {
   red?(op: O): NativeRed;
   /** What the person ticks to say they're ready, from the helper's read, or null when nothing needs ticking. */
   confirm?(op: O, read: string | undefined): string | null;
-  /** What the result says once it ran, in place of the values before and after. */
-  done?(op: O, result: RunResult, look?: ScreenLook): ReactNode;
+  /** What the result says once it ran, in place of the values before and after; `undone` once Undo put it back. */
+  done?(op: O, result: RunResult, look?: ScreenLook, undone?: boolean): ReactNode;
   /** What Undo does once it ran, when it isn't putting back exactly what Rig read before. Says the same as `red.undo`. */
   back?(op: O, look?: ScreenLook): string;
   /** The Undo button's own words, or "none" when the step has nothing to undo. */
@@ -166,6 +168,7 @@ const rowName = (id: string) => protectionRow(id)?.name ?? "A protection";
 export const TURN_BACK_ON = "Turn it back on now";
 
 const protection: NativePart<ProtectionOp> = {
+  does: (op) => `Turns ${rowName(op.id)} off for ${revertWords(op.revertAfter)}, then back on by itself.`,
   title: (op) => `Turns off ${rowName(op.id)} for ${revertWords(op.revertAfter)}`,
   where: (op) => [{ label: "Protection", value: rowName(op.id) }, { label: "Off for", value: revertWords(op.revertAfter) }],
   changes: (op, before, after) => [{ place: rowName(op.id), before: before?.trim() || "On", after: after?.trim() || `Off for ${revertWords(op.revertAfter)}` }],
@@ -176,9 +179,9 @@ const protection: NativePart<ProtectionOp> = {
     </>
   ),
   red: () => ({ kind: "lowers", undo: `Yes. Rig turns it back on by itself, and ${TURN_BACK_ON} does it sooner. Until then, the PC is less protected.`, noUndo: false }),
-  done: (op, result) => (
+  done: (op, result, _look, undone) => (
     <p className="cc-note" role="status">
-      {rowName(op.id)} is off. {result.revert ? <Countdown dueAt={result.revert.dueAt} /> : `Rig turns it back on by itself after ${revertWords(op.revertAfter)}.`}
+      {undone ? `${rowName(op.id)} is back on.` : <>{rowName(op.id)} is off. {result.revert ? <Countdown dueAt={result.revert.dueAt} /> : `Rig turns it back on by itself after ${revertWords(op.revertAfter)}.`}</>}
     </p>
   ),
   back: () => "It comes back on by itself. You can also turn it back on sooner.",
@@ -186,6 +189,7 @@ const protection: NativePart<ProtectionOp> = {
 };
 
 const protectionKeep: NativePart<ProtectionKeepOp> = {
+  does: (op) => `Stops Rig from turning ${rowName(op.id)} back on by itself. It stays off until you turn it back on.`,
   title: (op) => `Keeps ${rowName(op.id)} off`,
   where: (op) => [{ label: "Protection", value: rowName(op.id) }],
   changes: (op, before, after) => [{ place: rowName(op.id), before: before?.trim() || "Off for now", after: after?.trim() || "Off until you turn it back on" }],
@@ -214,6 +218,12 @@ export function nativeOf(raw: unknown, looks?: ScreenLook[]): { op: NativeOp; pa
 export function nativeNoUndo(raw: unknown): boolean {
   const n = nativeOf(raw);
   return !!n?.part.red?.(n.op).noUndo;
+}
+
+/** Rig's own sentence on a native op, when its kind makes one, or null. */
+export function nativeOwnDoes(raw: unknown): string | null {
+  const n = nativeOf(raw);
+  return n?.part.does?.(n.op) ?? null;
 }
 
 /** Claude's sentence on a native op, whatever its kind. */
