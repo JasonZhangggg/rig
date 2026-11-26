@@ -14,9 +14,8 @@ import { PCPage } from "./pages/PCPage";
 import { Chat } from "./pages/Chat";
 import { Changes } from "./pages/Changes";
 import { Games } from "./pages/Games";
-import { History } from "./pages/History";
-import { Logs, WindowsEvents } from "./pages/Logs";
-import { LiveLogs } from "./pages/logs/Live";
+import { EventLog } from "./pages/logs/EventLog";
+import { Readings } from "./pages/logs/Readings";
 import { Web } from "./pages/Web";
 import { SignIn } from "./pages/SignIn";
 import { DeviceApprove } from "./pages/DeviceApprove";
@@ -138,7 +137,7 @@ function Root() {
     document.getElementById("main")?.focus({ preventScroll: true });
   }, [ui.route]);
 
-  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: PCPage, games: Games, history: History, logs: LiveLogs, recorded: Logs, events: WindowsEvents, manuals: PCPage, web: Web, signin: Overview, settings: Settings }[ui.route];
+  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: PCPage, games: Games, history: Readings, logs: Readings, recorded: Readings, events: EventLog, manuals: PCPage, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (
     <>
       <SceneFeed />

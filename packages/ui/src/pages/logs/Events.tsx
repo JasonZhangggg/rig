@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { eventTitle, type PCEvent } from "@rig/core";
-import { DayLabel, Row, Rows } from "../../components/Rows";
+import { Row } from "../../components/Rows";
 import { useActions, useData, useStillPC } from "../../state";
 import { serious, type Highlight } from "./summary";
 import { clock, clockSec, dayName, kindWord, shortDay } from "./words";
@@ -17,12 +17,12 @@ export type EventPick = string | null;
 export const MINOR = "minor";
 
 /** The page at a glance: one big count per thing that went wrong and when it last happened, then the minor entries and all of them. Each is a filter over the list. */
-export function Counters({ groups, events, pick, onPick }: { groups: Highlight[]; events: PCEvent[]; pick: EventPick; onPick: (p: EventPick) => void }) {
+export function Counters({ groups, events, pick, onPick, all = true }: { groups: Highlight[]; events: PCEvent[]; pick: EventPick; onPick: (p: EventPick) => void; /** Show a tile for every event, when nothing else in view clears the pick. */ all?: boolean }) {
   const minor = events.filter((e) => !serious(e));
   const items = [
     ...groups.map((g) => ({ key: g.key as EventPick, n: g.events.length, label: g.short, last: g.last, tone: g.key.startsWith("app:") ? "" : " look" })),
     ...(minor.length ? [{ key: MINOR as EventPick, n: minor.length, label: "Minor", last: Math.max(...minor.map((e) => e.t)), tone: " quiet" }] : []),
-    { key: null as EventPick, n: events.length, label: "All", last: null, tone: " quiet" },
+    ...(all ? [{ key: null as EventPick, n: events.length, label: "All", last: null, tone: " quiet" }] : []),
   ];
   return (
     <div className="lg-tiles" role="group" aria-label="Show only">
@@ -59,14 +59,17 @@ export function EventRow({ e, seconds, fresh }: { e: PCEvent; seconds?: boolean;
   );
 }
 
-/** Thirty days at a glance: one column per day, one dot per event. Each day is a button that filters the list to it. */
-function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number | null; onDay: (d: number | null) => void }) {
+/** One thing the strip marks: when, whether it was a problem, and what it was called. */
+export interface StripItem { t: number; key: string; bad: boolean; title: string }
+
+/** Thirty days at a glance: one column per day, one dot per entry. Each day is a button that filters the list to it. */
+export function Strip({ items: events, day, onDay: pickDay }: { items: StripItem[]; day: number | null; onDay: (d: number | null) => void }) {
   const days = useMemo(() => {
     const today = dayStart(Date.now());
     return Array.from({ length: DAYS }, (_, i) => {
       const d = new Date(today); d.setDate(d.getDate() - (DAYS - 1 - i));
       const from = d.getTime();
-      return { from, list: events.filter((e) => onDay(e, from)) };
+      return { from, list: events.filter((e) => e.t >= from && e.t < nextDay(from)) };
     });
   }, [events]);
   const selected = days.findIndex((d) => d.from === day);
@@ -101,7 +104,7 @@ function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number
             className="ev-day"
             tabIndex={i === tabbable ? 0 : -1}
             aria-pressed={i === selected}
-            aria-label={`${shortDay(d.from)}, ${n === 0 ? "nothing logged" : n === 1 ? `1 event: ${eventTitle(d.list[0])}` : `${n} events`}`}
+            aria-label={`${shortDay(d.from)}, ${n === 0 ? "nothing logged" : n === 1 ? `1 entry: ${d.list[0].title}` : `${n} entries`}`}
             aria-describedby={tip === i ? tipId : undefined}
             onClick={() => pickDay(i === selected ? null : d.from)}
             onKeyDown={(ev) => move(ev, i)}
@@ -111,7 +114,7 @@ function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number
             onPointerEnter={(ev) => { if (ev.pointerType === "mouse") setTip(i); }}
             onPointerLeave={(ev) => { if (ev.pointerType === "mouse") setTip(null); }}
           >
-            <span className="ev-dots">{d.list.slice(0, 4).map((e) => <i key={`${e.t}${e.source}${e.id}`} className={serious(e) ? "bad" : ""} />)}</span>
+            <span className="ev-dots">{d.list.slice(0, 4).map((e) => <i key={e.key} className={e.bad ? "bad" : ""} />)}</span>
             <span className="ev-tick">{i === DAYS - 1 ? "Today" : i % 7 === 1 ? shortDay(d.from) : ""}</span>
           </button>
         );
@@ -120,31 +123,10 @@ function Strip({ events, day, onDay: pickDay }: { events: PCEvent[]; day: number
         <div id={tipId} role="tooltip" className={`ev-tip${tip < 5 ? " start" : tip > DAYS - 6 ? " end" : ""}`} style={{ left: `${((tip + 0.5) / DAYS) * 100}%` }}>
           <b>{new Date(shown.from).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</b>
           {shown.list.length === 0 ? <span className="faint">Nothing logged</span>
-            : shown.list.slice(0, 3).map((e) => <span key={`${e.t}${e.source}${e.id}`}>{eventTitle(e)}</span>)}
+            : shown.list.slice(0, 3).map((e) => <span key={e.key}>{e.title}</span>)}
           {shown.list.length > 3 && <span className="faint">and {shown.list.length - 3} more</span>}
         </div>
       )}
-    </div>
-  );
-}
-
-/** The strip and the events under it, day by day. `strip` is what the strip shows, `events` what the list shows. */
-export function Events({ strip, events, day, onDay: pickDay, emptyText }: { strip: PCEvent[]; events: PCEvent[]; day: number | null; onDay: (d: number | null) => void; emptyText: string }) {
-  const groups = useMemo(() => {
-    const out: { day: string; list: PCEvent[] }[] = [];
-    for (const e of events) { const name = dayName(e.t); if (out[out.length - 1]?.day === name) out[out.length - 1].list.push(e); else out.push({ day: name, list: [e] }); }
-    return out;
-  }, [events]);
-
-  return (
-    <div className="lg-events-body">
-      <Strip events={strip} day={day} onDay={pickDay} />
-      {groups.length === 0 ? <p className="muted lg-none">{emptyText}</p> : groups.map((g) => (
-        <section key={g.day} className="ev-group" aria-label={g.day}>
-          <DayLabel day={g.day} count={g.list.length} one="event" many="events" />
-          <Rows timeline>{g.list.map((e) => <EventRow key={`${e.t}${e.source}${e.id}`} e={e} />)}</Rows>
-        </section>
-      ))}
     </div>
   );
 }

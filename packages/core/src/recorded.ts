@@ -2,7 +2,7 @@
 // the background recorder kept, filed under its part like the live view, or the
 // six main readings for a recording that has nothing more.
 
-import type { Reading } from "./model";
+import type { HistoryPoint, Reading } from "./model";
 import type { Recording, RecordingInfo, SensorRef } from "./recordings";
 import type { HardwareKind, SensorType } from "./telemetry";
 
@@ -111,6 +111,25 @@ export function joinRecordings(recs: readonly Pick<Recording, "samples" | "senso
     });
   }).sort((a, b) => a.t - b.t);
   return { samples, sensors: sensors.length ? sensors : undefined };
+}
+
+/** The readings a history point keeps, as sensors under their parts. */
+const historyKeys: [Exclude<keyof HistoryPoint, "t" | "busy" | "game">, SensorRef, string][] = [
+  ["cpu", { id: "cpu", hw: "cpu", hwName: "", type: "temperature", name: "Temperature" }, "cpu"],
+  ["cpuLoad", { id: "cpuLoad", hw: "cpu", hwName: "", type: "load", name: "Usage" }, "cpu"],
+  ["gpu", { id: "gpu", hw: "gpu", hwName: "", type: "temperature", name: "Temperature" }, "gpu"],
+  ["gpuLoad", { id: "gpuLoad", hw: "gpu", hwName: "", type: "load", name: "Usage" }, "gpu"],
+  ["mem", { id: "mem", hw: "memory", hwName: "", type: "load", name: "In use" }, "ram"],
+  ["drive", { id: "drive", hw: "storage", hwName: "", type: "temperature", name: "Temperature" }, "ssd"],
+  ["board", { id: "board", hw: "board", hwName: "", type: "temperature", name: "Temperature" }, "motherboard"],
+  ["fan", { id: "fan", hw: "board", hwName: "", type: "fan", name: "Fastest fan" }, "fans"],
+];
+
+/** The PC's 10-minute history in the shape of a recording, so a month draws the same way as a day of the log. */
+export function historyRecorded(points: readonly HistoryPoint[]): Recorded {
+  const keep = historyKeys.filter(([k]) => points.some((p) => p[k] != null));
+  const sensors: RecordedSensor[] = keep.map(([, s, part]) => ({ ...s, part }));
+  return withParts(sensors, points.map((p) => ({ t: p.t, v: keep.map(([k]) => (p[k] as number | null | undefined) ?? null) })), false);
 }
 
 /** A sensor's highest reading between two times, and when. */

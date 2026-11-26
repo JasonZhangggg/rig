@@ -24,8 +24,6 @@
 .lg-chip { gap: 8px; padding: 0 6px 0 10px; border: 0; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; animation: lg-in .18s var(--ease-out); }
 .lg-chip span { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: var(--text-3); font-size: 14px; line-height: 1; }
 @media (hover: hover) and (pointer: fine) { .lg-chip:hover span { background: var(--line); color: var(--text); } }
-.lg-events-body { display: flex; flex-direction: column; }
-.lg-none { padding: 12px 0; font-size: 13px; }
 @keyframes lg-in { from { opacity: 0; translate: 0 -3px; } to { opacity: 1; translate: 0 0; } }
 @keyframes lg-fade { from { opacity: 0; } }
 
@@ -154,20 +152,14 @@
 .lg-bg { display: grid; gap: 10px; }
 
 /* Recorded: a day of the background log, what happened first, then every sensor. */
-.rc-page { gap: 24px; }
 .rc-day { display: flex; align-items: center; gap: 6px; margin-top: -4px; }
 .rc-day .icon { width: 32px; padding: 0; }
 .rc-day-name { margin: 0; min-width: 9em; font: var(--t-label); font-size: 16px; text-align: center; }
 .rc-day-name.alone { min-width: 0; text-align: left; }
-.rc-happened, .rc-readings, .rc-found, .rc-lead { display: flex; flex-direction: column; gap: 10px; }
-.rc-happened .rows { max-width: 820px; }
-.rc-open { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--r-sm); }
-.rc-open > svg { flex: none; width: 16px; height: 16px; color: var(--text-3); }
-@media (hover: hover) and (pointer: fine) { .rc-open:hover { background: var(--surface-2); } }
+.rc-readings, .rc-found, .rc-lead { display: flex; flex-direction: column; gap: 10px; }
 .rc-sech { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
 .rc-sech .faint { font-size: 13px; }
 .rc-readings { padding-top: 18px; border-top: 1px solid var(--line); }
-.rc-none { max-width: 640px; }
 .rc-lower { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; align-items: start; }
 
 /* One log's own page: what happened, the key readings, then charts. */
@@ -225,7 +217,7 @@
 .lv-badge.on { color: var(--text); }
 .lv-badge.on i { background: var(--look); animation: lv-beat 2s var(--ease-in-out) infinite; }
 @keyframes lv-beat { 50% { opacity: .35; } }
-.lv-readings, .lv-feed { display: flex; flex-direction: column; gap: 10px; }
+.lv-feed { display: flex; flex-direction: column; gap: 10px; }
 .lv-feed { padding-top: 18px; border-top: 1px solid var(--line); }
 .lv-feed .rows { max-width: 900px; }
 .lv-sech { align-items: center; }
@@ -234,13 +226,21 @@
 .lv-tools .seg button { height: 28px; padding: 0 12px; font-size: 13px; }
 .lv-tools .seg .num { margin-left: 4px; color: var(--text-3); font-weight: 500; }
 .lv-more { align-self: flex-start; }
-.lv-older { margin: 4px 0 0; font-size: 13px; }
 .lv-since { margin: 8px 0 0; font-size: 13px; }
 .lv-none { margin: 0; }
+.rd-readings { display: flex; flex-direction: column; gap: 12px; }
+.rd-spans { align-self: flex-start; }
+.rd-spans button { height: 30px; padding: 0 14px; font-size: 13px; }
+.rd-head { margin-top: 0; flex-wrap: wrap; }
+.rd-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-left: auto; }
+.rd-source .faint { font-size: 13px; }
 @media (prefers-reduced-motion: reduce) { .lv-badge.on i { animation: none; } }
 
 @media (max-width: 760px) {
   .lv-sech { align-items: flex-start; flex-direction: column; }
+  .rd-spans { align-self: stretch; display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .rd-spans button { flex: 1 0 auto; padding: 0 9px; }
+  .rd-source { margin-left: 0; flex-basis: 100%; }
   .rc-lower { grid-template-columns: minmax(0, 1fr); }
   .rc-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rc-log h1 { font-size: 22px; }

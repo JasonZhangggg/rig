@@ -1,4 +1,4 @@
-// Rough edges that were fixed: History's figures, the greeting, what shows
+// Rough edges that were fixed: the greeting, what shows
 // when the server can't be reached, and Escape closing what's open.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,47 +27,6 @@ function webClient(over: Partial<Pick<RigClient, "account" | "machines">>): RigC
 
 beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; });
 afterEach(() => cleanup());
-
-describe("History figures", () => {
-  it("shows how warm the graphics card runs when busy, never a bare difference as a temperature", async () => {
-    render(<RigApp client={new DemoClient()} />);
-    await screen.findByText(/Things to look at/i);
-    await open("history");
-    for (const range of ["Day", "Week", "Month"]) {
-      fireEvent.click(screen.getByRole("button", { name: range }));
-      expect(screen.getByRole("heading", { level: 2, name: "Graphics card" })).toBeTruthy();
-      const card = (await screen.findByText("When busy")).parentElement!;
-      const figure = card.querySelector(".fig-n")!.textContent!;
-      expect(figure, range).toMatch(/^\d+°C$/);
-      expect(card.textContent, range).not.toMatch(/Steady/);
-      const hottest = (await screen.findByText("Hottest moment")).parentElement!.textContent!;
-      expect(hottest, range).toMatch(/(under|over) the limit|at the limit/);
-    }
-  });
-
-  it("converts the differences in °F as differences, not as temperatures", async () => {
-    const read = async () => {
-      location.hash = "";
-      render(<RigApp client={new DemoClient()} />);
-      await screen.findByText(/Things to look at/i);
-      await open("history");
-      fireEvent.click(screen.getByRole("button", { name: "Month" }));
-      const busy = (await screen.findByText("When busy")).parentElement!.textContent!;
-      const hottest = (await screen.findByText("Hottest moment")).parentElement!.textContent!;
-      cleanup();
-      const n = (text: string, re: RegExp) => { const m = text.match(re); return m ? Number(m[1]) : null; };
-      return { change: n(busy, /(\d+)° (?:warmer|cooler)/), headroom: n(hottest, /(\d+)° (?:under|over) the limit/), busy, hottest };
-    };
-    const c = await read();
-    localStorage.setItem("rig.tempUnit", "f");
-    const f = await read();
-    expect(f.busy + f.hottest).not.toMatch(/°C/);
-    expect(c.headroom).not.toBeNull();
-    // The °C figure is already rounded, so the °F one can land a degree either side of it times 1.8 (a temperature would be 32° off).
-    expect(Math.abs(f.headroom! - c.headroom! * 1.8)).toBeLessThanOrEqual(1.5);
-    if (c.change != null) expect(Math.abs(f.change! - c.change * 1.8)).toBeLessThanOrEqual(1.5);
-  }, 20_000); // It renders the app twice, which can pass five seconds while the other packages test alongside.
-});
 
 describe("Greeting", () => {
   it("fits the time of day, with late nights as evening", () => {

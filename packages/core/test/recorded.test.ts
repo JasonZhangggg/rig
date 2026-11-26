@@ -1,6 +1,6 @@
 // Days of the background log drawn as one chart.
 import { describe, expect, it } from "vitest";
-import { joinRecordings, recorded } from "../src/recorded";
+import { historyRecorded, joinRecordings, recorded } from "../src/recorded";
 import type { SensorRef } from "../src/recordings";
 
 const cpu: SensorRef = { id: "cpu/0/temp", hw: "cpu", hwName: "Ryzen", type: "temperature", name: "Tctl" };
@@ -16,5 +16,20 @@ describe("joinRecordings", () => {
     const at = (id: string) => r.sensors.findIndex((s) => s.id === id);
     expect(r.points.map((p) => p.v[at("cpu/0/temp")])).toEqual([48, 50, 55]);
     expect(r.points.map((p) => p.v[at("gpu/0/temp")])).toEqual([null, null, 60]);
+  });
+});
+
+describe("historyRecorded", () => {
+  it("files the 10-minute history under its parts, leaving out readings the PC never gave", () => {
+    const r = historyRecorded([
+      { t: 2, cpu: 60, gpu: null, busy: false, cpuLoad: 30, mem: 40 },
+      { t: 1, cpu: 50, gpu: null, busy: true, cpuLoad: 80, mem: 45, drive: 38 },
+    ]);
+    expect(r.parts.map((p) => p.name)).toEqual(["Processor", "Memory", "Storage"]);
+    expect(r.points.map((p) => p.t)).toEqual([1, 2]);
+    const cpu = r.parts[0];
+    expect(r.sensors[cpu.lead].type).toBe("temperature");
+    expect(r.points.map((p) => p.v[cpu.lead])).toEqual([50, 60]);
+    expect(r.sensors.some((s) => s.part === "gpu")).toBe(false);
   });
 });

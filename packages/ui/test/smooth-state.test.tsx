@@ -28,11 +28,12 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Steady interactions", () => {
   it("keeps the chart up while another range loads", async () => {
-    const client = await show("history");
-    await screen.findByRole("img", { name: "Graphics card, temperature" });
+    const client = await show("logs");
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    await screen.findByRole("img", { name: "Temperatures" });
     vi.spyOn(client, "history").mockImplementation(() => new Promise(() => {}));
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    expect(screen.getByRole("img", { name: "Graphics card, temperature" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Temperatures" })).toBeTruthy();
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
@@ -69,7 +70,7 @@ describe("Steady interactions", () => {
   });
 
   it("goes back to where the Logs list was scrolled after a recording", async () => {
-    await show("recorded");
+    await show("logs");
     const scrolls: number[] = [];
     window.scrollTo = ((_x: number, y: number) => { scrolls.push(y); }) as typeof window.scrollTo;
     Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });

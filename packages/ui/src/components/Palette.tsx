@@ -15,14 +15,12 @@ import { shopCatOf } from "../pages/shared";
 const pageWords: Partial<Record<Route, [string, string]>> = {
   overview: ["Your dashboard: health, temperatures and things to look at", "home dashboard overview health summary tiles customize"],
   pc: ["Your PC in 3D with every part and how warm it runs", "my pc 3d parts specs components hardware temperature"],
-  history: ["In Logs: each part's temperature, usage and sensors, live or over the month", "temperature history temps heat hot chart graph week month usage load cpu gpu memory ram fans sensors task manager hwmonitor live"],
   games: ["In Logs: how your games ran and how warm they got", "games fps gaming performance tuning"],
   upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
   manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
   chat: ["Ask Rig anything about your PC", "ask chat help question"],
-  logs: ["Every reading and log entry as it comes in", "logs live now real time realtime readings sensors log feed tail events alerts"],
-  recorded: ["In Logs: everything Rig recorded, day by day, and what happened", "logs recordings record recorded background log sensors closer look custom log day yesterday"],
-  events: ["In Logs: what went wrong, from the Windows event log", "windows events event log crashes errors blue screen driver shutdown"],
+  logs: ["Every sensor, live or back to the last month", "logs readings live now real time realtime sensors temperature history temps heat chart graph day week month usage load cpu gpu memory ram fans performance task manager hwmonitor recordings recorded background log closer look custom log yesterday"],
+  events: ["In Logs: everything that happened, newest first", "events log feed tail alerts windows event log crashes errors blue screen driver shutdown problems closer look"],
   changes: ["What Rig or you changed, with undo", "changes undo fixes applied review"],
   settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
 };
@@ -87,7 +85,7 @@ function OpenPalette() {
     const items: Item[] = [];
     for (const [route, name] of navItems) {
       const [sub, keys] = pageWords[route] ?? ["", ""];
-      items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "recorded" ? { recordingId: null } : {}) });
+      items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
     }
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({

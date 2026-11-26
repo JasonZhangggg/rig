@@ -35,7 +35,9 @@ describe("Logs", () => {
     await screen.findByText(/Things to look at/i);
     expect(screen.getByRole("link", { name: /Logs/ }).getAttribute("href")).toBe("#logs");
     await open("logs");
-    fireEvent.click(within(await screen.findByRole("navigation", { name: "Logs" })).getByRole("link", { name: "Windows events" }));
+    const tabs = await screen.findByRole("navigation", { name: "Logs" });
+    expect(within(tabs).getAllByRole("link").map((a) => a.textContent)).toEqual(["Readings", "Events"]);
+    fireEvent.click(within(tabs).getByRole("link", { name: "Events" }));
     await open("events");
     const counts = await screen.findByRole("group", { name: "Show only" });
     const count = (name: RegExp) => within(counts).getByRole("button", { name });
@@ -43,18 +45,15 @@ describe("Logs", () => {
     expect(count(/Unexpected shutdown/).textContent).toMatch(/^1Unexpected shutdown/);
     expect(count(/Discord crash/).textContent).toMatch(/^1Discord crash/);
     expect(count(/Minor/).textContent).toMatch(/^3Minor/);
-    expect(count(/All/).textContent).toMatch(/^7All/);
-    expect(count(/All/).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.queryByText("Reading the event log…")).toBeNull();
+    expect(screen.queryByText("Reading the logs…")).toBeNull();
 
-    // Every event is listed straight away, one line each.
-    const list = screen.getByRole("region", { name: /Events/ });
+    // Every event is listed straight away, one line each, with everything else that happened.
+    const list = screen.getByRole("region", { name: "Log" });
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(7);
     within(list).getByText("Discord.exe crashed");
 
     fireEvent.click(count(/Driver resets/));
     expect(count(/Driver resets/).getAttribute("aria-pressed")).toBe("true");
-    expect(count(/All/).getAttribute("aria-pressed")).toBe("false");
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(2);
     expect(within(list).queryByText("Discord.exe crashed")).toBeNull();
     expect(screen.queryByRole("region", { name: "Graphics driver reset" })).toBeNull();
@@ -63,7 +62,7 @@ describe("Logs", () => {
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(3);
     fireEvent.click(within(list).getByRole("button", { name: "Remove filter: Minor" }));
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(7);
-    expect(count(/All/).getAttribute("aria-pressed")).toBe("true");
+    expect(count(/Minor/).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("filters the events to a day from the strip, with what happened on hover", async () => {
@@ -73,14 +72,14 @@ describe("Logs", () => {
     const strip = await screen.findByRole("group", { name: "Last 30 days" });
     const days = within(strip).getAllByRole("button");
     expect(days).toHaveLength(30);
-    const day = within(strip).getByRole("button", { name: /1 event: The PC turned off without shutting down/ });
+    const day = within(strip).getByRole("button", { name: /1 entry: The PC turned off without shutting down/ });
 
     fireEvent.pointerEnter(day, { pointerType: "mouse" });
     expect(within(strip).getByRole("tooltip").textContent).toMatch(/The PC turned off without shutting down/);
     fireEvent.pointerLeave(day, { pointerType: "mouse" });
     expect(within(strip).queryByRole("tooltip")).toBeNull();
 
-    const list = screen.getByRole("region", { name: /Events/ });
+    const list = screen.getByRole("region", { name: "Log" });
     fireEvent.click(day);
     expect(day.getAttribute("aria-pressed")).toBe("true");
     expect(within(list).getAllByRole("button", { expanded: false })).toHaveLength(1);
@@ -94,7 +93,7 @@ describe("Logs", () => {
     // A count and a day together.
     fireEvent.click(day);
     fireEvent.click(within(screen.getByRole("group", { name: "Show only" })).getByRole("button", { name: /Discord crash/ }));
-    within(list).getByText(/None of these on/);
+    within(list).getByText(/^Nothing here on /);
   });
 
   it("shows each event as a row with its time and kind, opens what Windows wrote under Details, and asks about it", async () => {
@@ -121,12 +120,13 @@ describe("Logs", () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     await open("events");
-    const list = await screen.findByRole("region", { name: /^Events/ });
+    const list = await screen.findByRole("region", { name: "Log" });
+    await within(list).findAllByText("The graphics driver stopped and recovered");
     const days = within(list).getAllByRole("region");
     expect(days.length).toBeGreaterThan(1);
     for (const d of days) {
       const n = within(d).getAllByRole("listitem").length;
-      within(d).getByText(n === 1 ? "1 event" : `${n} events`);
+      within(d).getByText(n === 1 ? "1 entry" : `${n} entries`);
     }
   });
 
@@ -184,14 +184,13 @@ describe("Logs", () => {
     localStorage.setItem("rig.pc", "demo-pebble");
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("recorded");
-    await screen.findByText(/No background log on Pebble/);
-    screen.getByText(/No recordings yet/);
+    await open("logs");
+    await screen.findByText(/No recordings yet/);
     screen.getByRole("button", { name: "Start recording" });
     await open("events");
-    await screen.findByText(/Windows logged no problems on Pebble in the last 30 days/);
+    await screen.findByText("Nothing logged on Pebble in the last 30 days.");
     expect(screen.queryByRole("group", { name: "Show only" })).toBeNull();
-    expect(screen.queryByRole("region", { name: /Events/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Last 30 days" })).toBeNull();
   });
 
   it("shows a recording in °F when that's the unit picked", async () => {
@@ -213,10 +212,10 @@ describe("Logs", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const search = await screen.findByRole("textbox", { name: "Search" });
     fireEvent.change(search, { target: { value: "crashes" } });
-    screen.getByRole("button", { name: /^Windows events In Logs: what went wrong/ });
+    screen.getByRole("button", { name: /^Events In Logs: everything that happened/ });
     fireEvent.change(search, { target: { value: "sensors" } });
-    screen.getByRole("button", { name: /^Logs Every reading and log entry as it comes in/ });
-    screen.getByRole("button", { name: /^Recorded logs In Logs: everything Rig recorded/ });
+    screen.getByRole("button", { name: /^Logs Every sensor, live or back to the last month/ });
+    expect(screen.queryByRole("button", { name: /^Performance/ })).toBeNull();
     fireEvent.change(search, { target: { value: "while you play" } });
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     await waitFor(() => expect(location.hash).toBe("#logs"));
@@ -224,18 +223,21 @@ describe("Logs", () => {
     await screen.findByText("What Rig found");
   });
 
-  it("opens on what's happening now: readings that move as they come in, and every log entry", async () => {
+  it("opens on what's happening now: readings that move as they come in, and every log entry on Events", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     // Readings that came in on Home are already drawn when Logs opens; nobody waits for the chart to fill.
     await act(() => new Promise((r) => setTimeout(r, 4500)));
     await open("logs");
-    expect(within(screen.getByRole("navigation", { name: "Logs" })).getByRole("link", { name: "Live" }).getAttribute("aria-current")).toBe("page");
+    expect(within(screen.getByRole("navigation", { name: "Logs" })).getByRole("link", { name: "Readings" }).getAttribute("aria-current")).toBe("page");
     const readings = screen.getByRole("region", { name: "Readings" });
     const temps = await within(readings).findByRole("img", { name: "Temperatures" }, { timeout: 500 });
-    within(readings).getByText(/New reading every 2 s/);
+    within(readings).getByRole("heading", { name: "Last 5 minutes" });
+    within(readings).getByText("Live");
+    within(readings).getByText(/A reading every 2 s/);
+    // One picker reaches from the last few minutes back to the month.
     const spans = within(readings).getByRole("group", { name: "How far back" });
-    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["1 min", "5 min", "15 min", "1 hour"]);
+    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["5 min", "1 hour", "6 hours", "Day", "Week", "Month"]);
     // Rig has only been open a few seconds, so an hour of readings starts partway, and says when.
     fireEvent.click(within(spans).getByRole("button", { name: "1 hour" }));
     within(readings).getByText(/Readings start at .*, when Rig opened/);
@@ -245,8 +247,9 @@ describe("Logs", () => {
     const before = line();
     await waitFor(() => expect(line()).not.toBe(before), { timeout: 4000 });
 
-    const log = screen.getByRole("region", { name: "Log" });
-    within(log).getAllByText("The graphics driver stopped and recovered");
+    await open("events");
+    const log = await screen.findByRole("region", { name: "Log" });
+    (await within(log).findAllByText("The graphics driver stopped and recovered"));
     within(log).getByText(/Discord's memory and processor use/);
     fireEvent.click(within(log).getByRole("button", { name: /^Problems/ }));
     expect(within(log).queryByText(/Discord's memory and processor use/)).toBeNull();
@@ -276,7 +279,7 @@ describe("Logs", () => {
       await open("recorded");
       await screen.findByRole("heading", { name: "Today" });
       const readings = screen.getByRole("region", { name: "Readings" });
-      const span = await within(readings).findByText(/ to /);
+      const span = await within(readings).findByText(/ to .*, every 30 s$/);
       const before = span.textContent;
       // A day keeps a set number of readings, so the newest one replaces an old one: same count, later finish.
       const today = list.filter((r) => r.id.startsWith("bg-d-")).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))[0];
@@ -285,7 +288,7 @@ describe("Logs", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("shows a day of the background log: what happened first, then every sensor", async () => {
+  it("shows a day of the background log with every sensor, and opens its closer look from Events", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
     try {
@@ -293,23 +296,20 @@ describe("Logs", () => {
       await screen.findByText(/Things to look at/i);
       await open("recorded");
       await screen.findByRole("heading", { name: "Today" });
+      expect(within(screen.getByRole("navigation", { name: "Logs" })).getByRole("link", { name: "Readings" }).getAttribute("aria-current")).toBe("page");
       fireEvent.click(screen.getByRole("button", { name: "Day before" }));
       await screen.findByRole("heading", { name: "Yesterday" });
-      const happened = screen.getByRole("region", { name: "What happened" });
-      // The recording Rig's chat started, and the closer look the background recorder took on its own around the same reset.
-      const rows = within(happened).getAllByRole("button", { name: /The graphics driver stopped and recovered/ });
-      expect(rows.map((r) => r.textContent).join("|")).toMatch(/Recording · 45 min/);
-      const look = rows.find((r) => /Closer look/.test(r.textContent ?? ""))!;
-      expect(look.textContent).toMatch(/\d+°CGPU/);
       const readings = screen.getByRole("region", { name: "Readings" });
-      expect(happened.compareDocumentPosition(readings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       await within(readings).findByRole("img", { name: "Temperatures" });
       within(readings).getByRole("img", { name: "Fans" });
       fireEvent.click(within(readings).getByRole("button", { name: /^Graphics card/ }));
       within(readings).getByText("GPU Hot Spot");
       within(readings).getByRole("img", { name: "Power" });
 
-      fireEvent.click(look);
+      await open("events");
+      const log = await screen.findByRole("region", { name: "Log" });
+      const look = (await within(log).findAllByText(/^Closer look: Rig read every sensor/))[0].closest("li")!;
+      fireEvent.click(within(look).getByRole("button", { name: "Open" }));
       await screen.findByRole("heading", { level: 1, name: "The graphics driver stopped and recovered" });
       const key = screen.getByLabelText("Key readings");
       within(key).getByText("Graphics card");
@@ -320,31 +320,49 @@ describe("Logs", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("shows the last 6 hours or the whole week of the background log, not only a day", async () => {
+  it("shows the last 6 hours, the week or the month on the same chart, saying where the readings came from", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
     try {
       render(<RigApp client={new DemoClient()} />);
       await screen.findByText(/Things to look at/i);
-      await open("recorded");
-      await screen.findByRole("heading", { name: "Today" });
-      const spans = screen.getByRole("group", { name: "How far back" });
+      await open("logs");
+      const readings = await screen.findByRole("region", { name: "Readings" });
+      const spans = within(readings).getByRole("group", { name: "How far back" });
       fireEvent.click(within(spans).getByRole("button", { name: "Week" }));
-      await screen.findByRole("heading", { name: /^Last \d days$/ });
-      expect(screen.queryByRole("button", { name: "Day before" })).toBeNull();
-      const readings = screen.getByRole("region", { name: "Readings" });
-      // The chart runs across days, from the first one's morning to now.
-      await within(readings).findByText(/^[A-Z][a-z]{2} \d+, .* to now$/);
+      within(readings).getByRole("heading", { name: "Last 7 days" });
+      expect(within(readings).queryByRole("button", { name: "Day before" })).toBeNull();
+      await within(readings).findByText("Every sensor, every 30 s");
       await within(readings).findByRole("img", { name: "Temperatures" });
-      // Yesterday's driver reset is there, with its day, since a week has more than one 8:41 PM.
-      const happened = screen.getByRole("region", { name: "What happened" });
-      expect(within(happened).getAllByRole("button", { name: /The graphics driver stopped and recovered/ })[0].textContent).toMatch(/^\w{3} \d+:\d\d/);
 
       fireEvent.click(within(spans).getByRole("button", { name: "6 hours" }));
-      await screen.findByRole("heading", { name: "Last 6 hours" });
-      within(screen.getByRole("region", { name: "What happened" })).getByText("Nothing unusual in the last 6 hours.");
-      await within(screen.getByRole("region", { name: "Readings" })).findByText(/^\d+:\d\d [AP]M to now$/);
+      within(readings).getByRole("heading", { name: "Last 6 hours" });
+      await within(readings).findByRole("img", { name: "Temperatures" });
+
+      // A month is longer than the background log keeps, so it's Rig's 10-minute history, on the same chart.
+      fireEvent.click(within(spans).getByRole("button", { name: "Month" }));
+      within(readings).getByRole("heading", { name: "Last 30 days" });
+      within(readings).getByText("Every 10 minutes while Rig was open");
+      const month = await within(readings).findByRole("img", { name: "Temperatures" });
+      within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ });
+      // A month's axis names a date every few days, not all thirty weekdays in a row.
+      const dates = [...month.parentElement!.parentElement!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
+      expect(dates.length).toBeGreaterThan(1);
+      expect(dates.length).toBeLessThan(15);
     } finally { vi.useRealTimers(); }
+  });
+
+  it("draws a day from Rig's history on a PC without the background log, and says how to get more", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const readings = await screen.findByRole("region", { name: "Readings" });
+    fireEvent.click(within(readings).getByRole("button", { name: "Day" }));
+    within(readings).getByRole("heading", { name: "Last 24 hours" });
+    within(readings).getByText("Every 10 minutes while Rig was open");
+    await within(readings).findByRole("img", { name: "Temperatures" });
+    within(readings).getByText(/Turn on the background recorder in Settings/);
   });
 
   it("opens a custom log with its highest readings and a chart of them", async () => {

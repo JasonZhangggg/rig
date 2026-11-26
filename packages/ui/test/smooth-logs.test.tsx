@@ -153,7 +153,7 @@ describe("Chat", () => {
 describe("Logs", () => {
   it("says Stopping… on Stop until the recording has stopped", async () => {
     const client = await start();
-    await go("recorded");
+    await go("logs");
     fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
     await screen.findByText("Recording now");
     const g = slow(client, "stopRecording");
@@ -166,7 +166,7 @@ describe("Logs", () => {
 
   it("says Stopping… on a recording's own page, and keeps its readings if a later read fails", async () => {
     const client = await start();
-    await go("recorded");
+    await go("logs");
     fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
     await screen.findByText("Recording now");
     fireEvent.click(screen.getByRole("button", { name: "Watch it" }));
@@ -189,7 +189,7 @@ describe("Logs", () => {
     await start();
     await go("events");
     const strip = await screen.findByRole("group", { name: "Last 30 days" });
-    const day = within(strip).getByRole("button", { name: /1 event: The PC turned off without shutting down/ });
+    const day = within(strip).getByRole("button", { name: /1 entry: The PC turned off without shutting down/ });
 
     fireEvent.pointerDown(day, { pointerType: "touch" });
     fireEvent.pointerEnter(day, { pointerType: "touch" });

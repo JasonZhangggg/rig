@@ -56,7 +56,7 @@ describe("Settings", () => {
     await waitFor(() => expect(main.textContent).toMatch(/\d+°F/));
     expect(main.textContent).not.toMatch(/°C/);
     await open("history");
-    await waitFor(() => expect(screen.getByRole("main").textContent).toMatch(/°F limit/));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }).textContent).toMatch(/\d+°F/));
     expect(screen.getByRole("main").textContent).not.toMatch(/°C/);
     await open("overview");
     await screen.findByText(/Each day, °F/);
