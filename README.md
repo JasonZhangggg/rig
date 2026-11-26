@@ -31,7 +31,7 @@ Building the Windows installer: Actions, CI, Run workflow, then download `rig-wi
 | --- | --- |
 | `packages/core` | Data shapes, health checks, the fix catalog, and the clients the screens talk to |
 | `packages/ui` | Every screen, shared by the desktop app and the website |
-| `apps/web` | The website: landing page, demo and your PCs |
+| `apps/web` | The website: the install page, the demo and your PCs |
 | `apps/desktop` | The Tauri app: starts the helper, keeps history and the change log on disk |
 | `helper/RigHelper` | The C# helper that reads sensors and makes changes, with admin rights |
 | `apps/server` | Accounts, sync between the app and the website, and chat |

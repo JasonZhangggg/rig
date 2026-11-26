@@ -146,6 +146,9 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.6(@types/node@26.6.6)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@26.6.6)(jsdom@25.0.1)
 
   packages/core:
     devDependencies:

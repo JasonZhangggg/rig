@@ -1,98 +1,119 @@
+/* The install page, in the sign-in screen's look: the Home PC on an inset graphite
+   panel beside a light column. Colors and type follow packages/ui/src/styles/tokens.css. */
 :root {
-  --bg: #F2F0EC; --text: #1B1B1F; --text-2: #5E5D59; --text-3: #65645F;
-  --line: rgba(27, 27, 31, .12); --line-strong: #1B1B1F;
-  --btn: #1B1B1F; --btn-text: #FFFFFF;
-  --pad: clamp(20px, 4vw, 64px);
+  --bg: #F2F0EC; --surface: #FFFFFF; --text: #1B1B1F; --text-2: #5E5D59; --text-3: #65645F;
+  --line: rgba(27, 27, 31, .10); --line-strong: rgba(27, 27, 31, .18);
+  --graphite: #1B1B1F; --graphite-2: #26262B;
+  --btn: var(--graphite); --btn-hover: var(--graphite-2); --btn-text: #FFFFFF;
+  --r: 28px; --r-sm: 14px; --r-pill: 999px;
   /* What the 3D part labels use, matching the app's defaults. */
-  --surface: #FFFFFF; --graphite: #1B1B1F; --focus: #1B1B1F; --sel: color-mix(in srgb, var(--text) 8%, transparent);
-  --good: #E6D3A3; --good-mark: #7C6A3A; --look-text: #A4471C; --warn: #A4471C; --r-pill: 999px; --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --focus: #1B1B1F; --sel: color-mix(in srgb, var(--text) 8%, transparent);
+  --good: #E6D3A3; --good-mark: #7C6A3A; --look-text: #A4471C; --warn: #A4471C; --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   font-family: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
   color: var(--text); background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--bg); }
 a { color: inherit; }
-a:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; border-radius: 2px; }
-h1, h2, h3, p, ol, figure { margin: 0; }
+a:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; border-radius: 4px; }
+h1, h2, h3, p, ol, dl, dd { margin: 0; }
 
-.lp { max-width: 1600px; margin: 0 auto; padding: 0 var(--pad); }
+.ip { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); min-height: 100dvh; }
 
-.lp-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 0; border-bottom: 1px solid var(--line); }
-.lp-top nav { display: flex; align-items: center; gap: 32px; font-weight: 600; font-size: 15px; }
-.lp-top nav a { text-decoration: none; color: var(--text-2); transition: color 150ms ease; }
-@media (hover: hover) and (pointer: fine) { .lp-top nav a:hover { color: var(--text); } }
-.lp-top nav .lp-link { color: var(--text); }
-.lp-logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 19px; letter-spacing: -0.02em; text-decoration: none; }
-.lp-logo span { width: 30px; height: 30px; border-radius: 4px; background: var(--btn); color: var(--btn-text); display: grid; place-items: center; font-size: 16px; }
-
-.lp-label { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
-
-.lp-link { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; text-decoration: none; border-bottom: 1px solid currentColor; padding-bottom: 2px; }
-.lp-arrow { flex: none; transition: transform .2s var(--ease-out); }
-@media (hover: hover) and (pointer: fine) { a:hover > .lp-arrow { transform: translateX(3px); } }
-
-.lp-btn { display: inline-flex; align-items: center; gap: 12px; padding: 16px 24px; border-radius: 2px; background: var(--btn); color: var(--btn-text); font-weight: 650; font-size: 16px; text-decoration: none; transition: background-color 150ms ease, transform 160ms var(--ease-out); }
-.lp-btn:active { transform: scale(.97); }
-@media (hover: hover) and (pointer: fine) { .lp-btn:hover { background: #000; } }
-
-.lp-hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(24px, 4vw, 72px); align-items: center; padding: clamp(40px, 6vw, 96px) 0 clamp(40px, 5vw, 72px); border-bottom: 2px solid var(--line-strong); }
-.lp-hero-text { display: grid; gap: 28px; justify-items: start; }
-.lp-hero h1 { font-size: clamp(2.75rem, 5.4vw, 5.75rem); line-height: .98; letter-spacing: -0.045em; font-weight: 650; text-wrap: balance; }
-.lp-sub { font-size: clamp(17px, 1.35vw, 20px); line-height: 1.55; color: var(--text-2); max-width: 30em; text-wrap: pretty; }
-.lp-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; margin-top: 4px; }
-.lp-status { text-wrap: pretty; font-size: 14px; color: var(--text-3); margin-top: -12px; }
-.lp-stage { position: relative; }
-.lp-canvas { position: relative; width: 100%; aspect-ratio: 1 / .86; overflow: hidden; }
-.lp-canvas > * { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; }
-.lp-stage figcaption { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 12.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
-@media (max-width: 760px) { .lp-stage figcaption { position: static; margin-top: 12px; } }
-
-.lp-section { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 32px clamp(24px, 4vw, 72px); padding: clamp(48px, 6vw, 96px) 0; border-bottom: 1px solid var(--line); }
-.lp-section-head { display: grid; gap: 16px; align-content: start; }
-.lp-section-head h2 { font-size: clamp(1.75rem, 2.6vw, 2.5rem); line-height: 1.08; letter-spacing: -0.035em; font-weight: 650; max-width: 12em; text-wrap: balance; }
-.lp-section-head > p:last-child:not(.lp-label) { font-size: 16px; line-height: 1.55; color: var(--text-2); max-width: 24em; }
-
-.lp-num { font-size: 13px; font-weight: 650; letter-spacing: .04em; color: var(--text-3); font-variant-numeric: tabular-nums; }
-
-.lp-features { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(24px, 3vw, 56px); }
-.lp-features li { display: grid; align-content: start; grid-template-columns: 40px minmax(0, 1fr); column-gap: 8px; padding: 24px 0 32px; border-top: 1px solid var(--line); }
-.lp-features .lp-num { grid-row: span 2; padding-top: 4px; }
-.lp-features h3 { font-size: 19px; line-height: 1.3; letter-spacing: -0.02em; font-weight: 650; margin-bottom: 8px; }
-.lp-features p { text-wrap: pretty; font-size: 15.5px; line-height: 1.6; color: var(--text-2); max-width: 32em; }
-
-.lp-promises { list-style: none; padding: 0; border-bottom: 1px solid var(--line); }
-.lp-promises li { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 20px 0; border-top: 1px solid var(--line); font-size: 18px; line-height: 1.5; letter-spacing: -0.01em; font-weight: 500; }
-
-.lp-end { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; padding: clamp(40px, 5vw, 72px) 0; border-bottom: 1px solid var(--line); }
-.lp-end p { font-size: clamp(1.4rem, 2.2vw, 2rem); line-height: 1.2; letter-spacing: -0.03em; font-weight: 600; }
-
-.lp-foot { display: flex; gap: 24px; padding: 24px 0 32px; color: var(--text-2); font-size: 14px; }
-.lp-foot a { text-decoration: none; transition: color 150ms ease; }
-@media (hover: hover) and (pointer: fine) { .lp-foot a:hover { color: var(--text); text-decoration: underline; } }
-.lp-foot span { font-weight: 650; color: var(--text); margin-right: auto; }
-.lp-foot small { margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--text-3); }
-
-@media (max-width: 1100px) {
-  .lp-section { grid-template-columns: 1fr; }
+/* The graphite panel stays in view while the column beside it scrolls. */
+.ip-art {
+  position: sticky; top: 14px; height: calc(100dvh - 28px); margin: 14px 0 14px 14px; overflow: hidden; border-radius: var(--r);
+  background: radial-gradient(70% 55% at 52% 42%, #2B2B31, var(--graphite) 72%); color: #F4F3F0;
 }
+.ip-pc { position: absolute; inset: 40px 12px 72px; animation: ip-in .9s var(--ease-out) both; }
+.ip-pc::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: 2%; height: 10%; border-radius: 50%; background: radial-gradient(closest-side, rgba(230, 211, 163, .16), transparent); pointer-events: none; }
+.ip-canvas { position: absolute; inset: 0; --labels: picked; }
+.ip-canvas > * { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; }
+.ip-canvas .scene-labels { display: none; }
+.ip-art-cap { position: absolute; left: 34px; right: 34px; bottom: 30px; color: #A3A29C; font-size: 13px; }
+@keyframes ip-in { from { opacity: 0; transform: translateY(8px); filter: blur(4px); } }
+
+.ip-main { display: flex; flex-direction: column; min-width: 0; padding: 0 clamp(24px, 4.5vw, 72px); }
+.ip-main > main { flex: 1; width: 100%; max-width: 520px; margin: 0 auto; }
+
+.ip-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; max-width: 520px; margin: 0 auto; padding: 28px 0 0; }
+.ip-logo { display: flex; align-items: center; gap: 12px; font-size: 1.25rem; font-weight: 600; line-height: 1; letter-spacing: -.03em; text-decoration: none; }
+.ip-logo img { display: block; border-radius: 10px; }
+.ip-top nav { display: flex; align-items: center; gap: 24px; font-weight: 600; }
+.ip-top nav a { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); text-decoration: none; transition: color 150ms ease; }
+.ip-top nav .ip-nav-strong { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .ip-top nav a:hover { color: var(--text); } }
+.ip-arrow { flex: none; transition: transform .2s var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { a:hover > .ip-arrow { transform: translateX(3px); } }
+
+.ip-hero { display: flex; flex-direction: column; align-items: flex-start; padding: clamp(48px, 9vh, 104px) 0 48px; animation: ip-in .7s var(--ease-out) .08s both; }
+.ip-label { color: var(--text-3); font-size: 13px; font-weight: 600; }
+.ip-hero h1 { margin-top: 12px; font-size: clamp(2.5rem, 3.6vw, 3.6rem); line-height: 1; letter-spacing: -.045em; font-weight: 600; text-wrap: balance; }
+.ip-sub { margin-top: 16px; color: var(--text-2); font-size: clamp(16px, 1.1vw, 17.5px); line-height: 1.55; text-wrap: pretty; }
+
+.ip-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; margin-top: 32px; height: 54px; padding: 0 28px;
+  border-radius: var(--r-pill); background: var(--btn); color: var(--btn-text); font-size: 16.5px; font-weight: 600; text-decoration: none;
+  transition: background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.ip-btn:active { transform: scale(.97); }
+@media (hover: hover) and (pointer: fine) { .ip-btn:hover { background: var(--btn-hover); } }
+.ip-meta { margin-top: 12px; color: var(--text-3); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.ip-alt { margin-top: 20px; color: var(--text-2); font-size: 14.5px; }
+.ip-alt a, .ip-note a { color: var(--text); font-weight: 600; text-underline-offset: 3px; }
+
+.ip-section { padding: 36px 0; border-top: 1px solid var(--line); }
+.ip-section h2 { font-size: 18px; line-height: 1.25; font-weight: 600; letter-spacing: -.01em; }
+
+.ip-steps { list-style: none; padding: 0; margin-top: 20px; display: grid; gap: 18px; }
+.ip-steps li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; align-items: start; }
+.ip-num { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ip-steps h3 { font-size: 15.5px; line-height: 1.3; font-weight: 600; padding-top: 5px; }
+.ip-steps p { margin-top: 4px; color: var(--text-2); line-height: 1.55; text-wrap: pretty; }
+.ip-note { margin-top: 22px; padding: 14px 16px; border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); font-size: 14px; line-height: 1.55; text-wrap: pretty; }
+.ip-note code { white-space: nowrap; font: 500 .92em ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--text); }
+
+.ip-needs { margin-top: 12px; }
+.ip-needs > div { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); line-height: 1.45; }
+.ip-needs > div:last-child { border-bottom: 0; }
+.ip-needs dt { font-weight: 600; }
+.ip-needs dd { color: var(--text-2); }
+
+.ip-foot { display: flex; flex-wrap: wrap; gap: 10px 22px; width: 100%; max-width: 520px; margin: 0 auto; padding: 24px 0 32px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 14px; }
+.ip-foot a { text-decoration: none; transition: color 150ms ease; }
+@media (hover: hover) and (pointer: fine) { .ip-foot a:hover { color: var(--text); text-decoration: underline; } }
+.ip-foot span { margin-right: auto; color: var(--text); font-weight: 600; }
+.ip-foot small { margin-left: 6px; color: var(--text-3); font-size: 12px; font-weight: 500; }
+
+/* Phones and narrow windows: the header, then the PC on a short panel, as on the sign-in screen. */
 @media (max-width: 860px) {
-  .lp-hero { grid-template-columns: 1fr; }
-  .lp-stage { max-width: 560px; justify-self: center; width: 100%; }
+  .ip { display: flex; flex-direction: column; }
+  .ip-main { display: contents; }
+  .ip-top { order: -1; padding: 16px max(20px, env(safe-area-inset-right, 0px)) 10px max(20px, env(safe-area-inset-left, 0px)); max-width: 600px; }
+  .ip-art { position: relative; top: 0; height: 280px; margin: 0 10px; }
+  .ip-pc { inset: 8px 0 34px; }
+  .ip-art-cap { left: 20px; right: 20px; bottom: 14px; font-size: 12px; }
+  .ip-main > main, .ip-foot { max-width: 600px; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+  .ip-hero { padding: 32px 0 36px; }
+  .ip-btn { align-self: stretch; }
 }
-@media (max-width: 640px) {
-  .lp-hide-sm { display: none; }
-  .lp-features { grid-template-columns: 1fr; }
-  .lp-features li, .lp-promises li { grid-template-columns: 32px minmax(0, 1fr); }
-  .lp-promises li { font-size: 16.5px; }
+@media (max-width: 480px) {
+  .ip-needs > div { grid-template-columns: 1fr; gap: 2px; }
 }
+
+@media (max-width: 360px) { .ip-top nav .ip-hide-sm { display: none; } }
+
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .lp-arrow { transition: none; }
-  a:hover > .lp-arrow { transform: none; }
+  .ip-pc, .ip-hero { animation: none; }
+  .ip-arrow { transition: none; }
+  a:hover > .ip-arrow { transform: none; }
 }
+
+/* Dark: the column turns graphite too, and the panel keeps a hairline so it still reads as a panel. */
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #131316; --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C; --line: rgba(255, 255, 255, .12); --line-strong: #F4F3F0; --btn: #F4F3F0; --btn-text: #131316; }
+  :root { --bg: #131316; --surface: #1F1F24; --text: #F4F3F0; --text-2: #BDBBB5; --text-3: #A3A29C; --line: rgba(255, 255, 255, .10); --focus: #F4F3F0; --btn: #F4F3F0; --btn-hover: #FFFFFF; --btn-text: #131316; color-scheme: dark; }
+  .ip-art { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+  .ip-logo img { box-shadow: 0 0 0 1px rgba(255, 255, 255, .14); }
 }
-@media (prefers-color-scheme: dark) and (hover: hover) and (pointer: fine) { .lp-btn:hover { background: #FFFFFF; } }
