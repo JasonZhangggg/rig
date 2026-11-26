@@ -69,13 +69,26 @@ describe("Manuals", () => {
     const board = await card(/^Motherboard:/);
     expect(board.getByText("12 pages")).toBeTruthy();
     expect(board.getByRole("button", { name: "Open manual" })).toBeTruthy();
-    fireEvent.click(board.getByRole("button", { name: "All 11 sections" }));
-    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in", "Fitting parts", "About the board"]);
+    expect(board.queryByRole("list")).toBeNull();
     expect(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" })).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search the manuals" }), { target: { value: "F_PANEL" } });
     const hit = await screen.findByRole("button", { name: /Page 9/ });
     fireEvent.click(hit);
     expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
+  });
+
+  it("lists each part's manual as a row, with no Ready badge and one box for opening a manual", async () => {
+    await show("manuals");
+    const list = within(await screen.findByRole("region", { name: "Manuals" }));
+    const board = await card(/^Motherboard:/);
+    expect(board.getByRole("heading", { level: 3 }).textContent).toBe("MSI MAG B650 TOMAHAWK WIFI");
+    expect(board.getByText("Motherboard")).toBeTruthy();
+    expect(board.queryByText("Ready")).toBeNull();
+    expect(board.getByRole("button", { name: "Open manual" }).className).toContain("primary");
+    const gpu = await card(/^Graphics card:/);
+    expect(gpu.getByText("Rig needs the card's exact model to find its manual.")).toBeTruthy();
+    expect(gpu.getByRole("button", { name: "Find manual" }).className).not.toContain("primary");
+    expect(list.getAllByRole("listitem").at(-1)!.textContent).toMatch(/^Add a manual/);
   });
 
   it("opens Atlas's board manual from its name or the icon beside it, with Replace and Remove under the dots", async () => {

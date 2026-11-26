@@ -5,7 +5,7 @@ import { MoreMenu } from "../components/MoreMenu";
 import { openManual } from "./viewerState";
 import { ManualSections, OpenManualIcon } from "./ManualOutline";
 import type { ManualStore } from "./useManuals";
-import { busy, groupedJumps, jobText, jumpPages, keyJumps, manualJumps, modelName, pagesText, partName, type Jump, type Row } from "./words";
+import { busy, jobText, modelName, pagesText, partName, type Row } from "./words";
 
 /** A hidden file input for PDFs, and a way to open it from any button or menu item. */
 function usePdfPicker(onPick: (f: File) => void): [() => void, ReactNode] {
@@ -43,45 +43,6 @@ export function ModelForm({ target, intro, cta = "Find manual", onFind, onCancel
   );
 }
 
-/** One section of a manual: its name, and the page it opens at. */
-function JumpRow({ manual, jump }: { manual: Manual; jump: Jump }) {
-  return (
-    <li>
-      <button type="button" className="mn-jump" aria-label={`${jump.label}, ${jump.pages.length > 1 ? "pages" : "page"} ${jump.pages.join(" and ")}`} onClick={() => openManual(manual.id, jump.pages[0])}>
-        <span>{jump.label}</span><span className="mn-jump-p">{jumpPages(jump)}</span>
-      </button>
-    </li>
-  );
-}
-
-/**
- * The manual's sections to jump to: the few this part needs first, and every other one,
- * grouped, a click away. Each section shows once, even when it's on two pages.
- */
-export function ManualJumps({ manual, only, prefer, count = 4, heading = "Jump to a section" }: { manual: Manual; only?: DiagramKind[]; prefer?: DiagramKind[]; count?: number; heading?: string | null }) {
-  const [all, setAll] = useState(false);
-  const jumps = manualJumps(manual.diagrams.filter((d) => !only || only.includes(d.kind)));
-  if (!jumps.length) return null;
-  const more = jumps.length > count;
-  const name = `Sections of the ${manual.title}`;
-  return (
-    <div className="mn-jumps">
-      {all && more ? groupedJumps(jumps).map(([group, list]) => (
-        <div key={group} className="mn-jump-group">
-          <span className="mn-jump-h">{group}</span>
-          <ul className="mn-jump-list" aria-label={`${group}, in the ${manual.title}`}>{list.map((j) => <JumpRow key={`${j.kind}-${j.label}`} manual={manual} jump={j} />)}</ul>
-        </div>
-      )) : (
-        <>
-          {heading && <span className="mn-jump-h">{heading}</span>}
-          <ul className="mn-jump-list" aria-label={name}>{keyJumps(jumps, prefer, count).map((j) => <JumpRow key={`${j.kind}-${j.label}`} manual={manual} jump={j} />)}</ul>
-        </>
-      )}
-      {more && <button type="button" className="linkish mn-jump-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "Show fewer" : `All ${jumps.length} sections`}</button>}
-    </div>
-  );
-}
-
 /**
  * One part and its manual: what's happening and the one thing to do next. With outline (a part's Manual tab),
  * the manual opens from its name or the icon beside it, and its sections fold open in groups.
@@ -100,22 +61,23 @@ export function ManualCard({ row, store, compact, prefer, outline }: { row: Row;
   let menu: ReactNode = null;
   let openable: Manual | null = null;
 
-  let state: ReactNode;
+  // Each state of the card, in four pieces: one line saying where things stand, an aside under it,
+  // the buttons, and what goes below. The Manuals tab lays them out as a row of a list; a part's Manual tab stacks them.
+  let line: ReactNode = null;
+  let aside: ReactNode = null;
+  let actions: ReactNode = null;
+  let below: ReactNode = null;
   if (busy(job)) {
     const j = job!;
-    state = (
-      <div className="mn-progress" role="status">
-        <span>{jobText(j)}</span>
-        {j.step === "reading" && j.total > 0 && <div className="bar"><i style={{ transform: `translateX(${(j.done / j.total) * 100 - 100}%)` }} /></div>}
-      </div>
-    );
+    line = jobText(j);
+    if (j.step === "reading" && j.total > 0) below = <div className="bar mn-bar" aria-hidden="true"><i style={{ transform: `translateX(${(j.done / j.total) * 100 - 100}%)` }} /></div>;
   } else if (form) {
-    state = <ModelForm target={target} onFind={find} onCancel={() => setForm(null)}
+    below = <ModelForm target={target} onFind={find} onCancel={() => setForm(null)}
       intro={form === "exact"
         ? "Windows only knows the chip, and each card maker writes its own manual. The exact model is on the card's box or the sticker on the card, like ASUS DUAL RTX 4070 SUPER OC."
         : "Check the model on the box, the sticker on the part or the order, then search again."} />;
   } else if (confirm && m) {
-    state = (
+    below = (
       <div className="mn-confirm" role="group" aria-label="Remove this manual?">
         <p>Remove the {m.title}? Its pages leave search and the chat{m.source === "added" ? ", and the copy of the file on this device is deleted" : ""}.</p>
         <div className="mn-actions">
@@ -125,75 +87,82 @@ export function ManualCard({ row, store, compact, prefer, outline }: { row: Row;
       </div>
     );
   } else if (job?.step === "notfound" || job?.step === "error") {
-    state = (
+    if (job.step === "notfound") line = `Rig couldn't find this manual on ${maker}'s site.`;
+    else aside = <p className="callout warn">{job.message}</p>;
+    actions = (
       <>
-        <p className={job.step === "error" ? "callout warn" : "muted"}>{job.step === "notfound" ? `Rig couldn't find this manual on ${maker}'s site.` : job.message}</p>
-        <div className="mn-actions">
-          <PickPdf onPick={(f) => add(f, m?.id)}>Add a PDF you have</PickPdf>
-          {job.step === "notfound" || !m ? <button type="button" className="btn ghost sm" onClick={() => setForm("again")}>Search again with a different model name</button>
-            : <button type="button" className="btn ghost sm" onClick={() => { store.clearJob(target.part); void store.read(m); }}>Try again</button>}
-        </div>
+        <PickPdf className={compact ? "btn sm" : "btn ghost sm"} onPick={(f) => add(f, m?.id)}>Add a PDF you have</PickPdf>
+        {job.step === "notfound" || !m ? <button type="button" className="btn ghost sm" onClick={() => setForm("again")}>Search again with a different model name</button>
+          : <button type="button" className="btn ghost sm" onClick={() => { store.clearJob(target.part); void store.read(m); }}>Try again</button>}
       </>
     );
   } else if (m) {
     const canOpen = m.indexed || !fileElsewhere;
     if (canOpen) openable = m;
     menu = <MoreMenu label={`More for the ${m.title}`} items={[{ label: "Replace with another PDF", run: pickReplacement }, { label: "Remove this manual", run: () => setConfirm(true), danger: true }]} />;
-    state = (
-      <>
-        <p className="mn-meta">
-          <span>{pagesText(m)}</span>
-          <span>{m.source === "added" ? "Added from a file" : m.host ? `From ${m.host}` : "From the maker"}</span>
-        </p>
-        {fileElsewhere && <p className="mn-note">The file is on the device it was added on. {m.indexed ? "Search and the chat still use it." : "Open Rig there to read it."}</p>}
-        {outline ? (
-          <>
-            {!m.indexed && !fileElsewhere && <button type="button" className="btn sm mn-read" onClick={() => void store.read(m)}>Read it so search and the chat can use it</button>}
-            <ManualSections manual={m} prefer={prefer} />
-          </>
-        ) : (
-          <>
-            {(canOpen || !m.indexed) && (
-              <div className="mn-open-row">
-                {canOpen && <button type="button" className="btn primary mn-open" onClick={() => openManual(m.id)}>Open manual</button>}
-                {!m.indexed && !fileElsewhere && <button type="button" className="btn" onClick={() => void store.read(m)}>Read it</button>}
-              </div>
-            )}
-            <ManualJumps manual={m} prefer={prefer} />
-          </>
-        )}
-      </>
-    );
+    line = <><span>{pagesText(m)}</span><span>{m.source === "added" ? "Added from a file" : m.host ? `From ${m.host}` : "From the maker"}</span></>;
+    if (fileElsewhere) aside = <p className="mn-note">The file is on the device it was added on. {m.indexed ? "Search and the chat still use it." : "Open Rig there to read it."}</p>;
+    if (outline) {
+      if (!m.indexed && !fileElsewhere) actions = <button type="button" className="btn sm mn-read" onClick={() => void store.read(m)}>Read it so search and the chat can use it</button>;
+      below = <ManualSections manual={m} prefer={prefer} />;
+    } else {
+      actions = (canOpen || !m.indexed) && (
+        <>
+          {canOpen && <button type="button" className="btn primary sm" onClick={() => openManual(m.id)}>Open manual</button>}
+          {!m.indexed && !fileElsewhere && <button type="button" className="btn ghost sm" onClick={() => void store.read(m)}>Read it</button>}
+        </>
+      );
+    }
   } else {
     const canFind = !!client.findManual;
-    state = (
+    line = target.askModel ? `Rig needs the card's exact model to find its manual.` : `Rig hasn't looked for this one yet.`;
+    actions = (
       <>
-        <p className="muted">{target.askModel ? `Rig needs the card's exact model to find its manual.` : `Rig hasn't looked for this one yet.`}</p>
-        <div className="mn-actions">
-          {canFind && <button type="button" className="btn primary sm" onClick={() => (target.askModel ? setForm("exact") : find(target))}>Find manual</button>}
-          <PickPdf className={canFind ? "btn ghost sm" : "btn sm"} onPick={(f) => add(f)}>Add a PDF you have</PickPdf>
-          {target.source === "added" && <button type="button" className="btn ghost sm" onClick={() => store.dropExtra(target.part)}>Remove</button>}
-        </div>
+        {canFind && <button type="button" className={compact ? "btn primary sm" : "btn ghost sm"} onClick={() => (target.askModel ? setForm("exact") : find(target))}>Find manual</button>}
+        <PickPdf className={canFind || !compact ? "btn ghost sm" : "btn sm"} onPick={(f) => add(f)}>Add a PDF you have</PickPdf>
+        {target.source === "added" && <button type="button" className="btn ghost sm" onClick={() => store.dropExtra(target.part)}>Remove</button>}
       </>
     );
   }
 
-  const title = m && !compact ? m.title : modelName(target);
+  if (!compact) {
+    // The Manuals tab: a row like the Drivers and BIOS rows under it. The part's name in bold, one grey line with
+    // what kind of part it is and where its manual stands, the buttons on the right, and the sections under it.
+    const status = busy(job);
+    return (
+      <li className="mn-row">
+        <article className="mn-card" aria-label={`${partName(target)}: ${modelName(target)}`} aria-busy={status || undefined}>
+          <div className="mn-row-main">
+            <div className="mn-row-body">
+              <h3 className="mn-title">{modelName(target)}</h3>
+              <p className="mn-meta" role={status ? "status" : undefined}><span>{partName(target)}</span>{line && (typeof line === "string" ? <span>{line}</span> : line)}</p>
+            </div>
+            {(actions || menu) && <div className="mn-row-acts">{actions}{menu}</div>}
+          </div>
+          {aside}
+          {below}
+          {replaceInput}
+        </article>
+      </li>
+    );
+  }
+
+  const state = (
+    <>
+      {line != null && (busy(job) ? <div className="mn-progress" role="status"><span>{line}</span>{below}</div>
+        : m && !job ? <p className="mn-meta">{line}</p> : <p className="muted">{line}</p>)}
+      {aside}
+      {actions && <div className="mn-actions">{actions}</div>}
+      {!busy(job) && below}
+    </>
+  );
+
   return (
-    <article className={`mn-card${compact ? " compact" : " card"}`} aria-label={`${partName(target)}: ${modelName(target)}`}>
-      {!compact && (
-        <div className="mn-card-head">
-          <span className="label">{partName(target)}</span>
-          {m?.indexed && !busy(job) && <span className="chip ok">Ready</span>}
-          {job?.step === "notfound" && <span className="chip warn">Not found</span>}
-          {busy(job) && <span className="chip info">Working</span>}
-        </div>
-      )}
+    <article className="mn-card compact" aria-label={`${partName(target)}: ${modelName(target)}`}>
       <div className="mn-title-row">
-        <h3 className="mn-title">{outline && openable ? <button type="button" className="mn-title-link" onClick={() => openManual(openable!.id)}>{title}</button> : title}</h3>
+        <h3 className="mn-title">{outline && openable ? <button type="button" className="mn-title-link" onClick={() => openManual(openable!.id)}>{modelName(target)}</button> : modelName(target)}</h3>
         {(outline && openable) || menu ? <div className="mn-head-tools">{outline && openable && <OpenManualIcon manual={openable} />}{menu}</div> : null}
       </div>
-      {m && !compact && m.title !== modelName(target) && <p className="faint mn-model">{modelName(target)}</p>}
       {state}
       {replaceInput}
     </article>

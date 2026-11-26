@@ -1,7 +1,7 @@
-// The sections of a manual to jump to: each once, the ones a part needs first, the rest grouped.
+// The sections of a manual to jump to: each once, grouped.
 import { describe, expect, it } from "vitest";
 import type { ManualDiagram } from "@rig/core";
-import { groupedJumps, jumpPages, keyJumps, manualJumps } from "../src/manuals/words";
+import { groupedJumps, jumpPages, manualJumps } from "../src/manuals/words";
 
 // What Rig found in a real 101-page ASRock board manual: some sections on two pages, two install steps.
 const asrock: ManualDiagram[] = [
@@ -29,12 +29,6 @@ describe("manual sections", () => {
       "USB headers p. 12, 24", "Installing the CPU p. 15", "Installing the CPU Fan and Heatsink p. 18",
       "Memory slot order p. 19", "Front panel header p. 23", "Power connectors p. 26",
     ]);
-  });
-
-  it("puts the sections most people need first, or the ones the part needs", () => {
-    const jumps = manualJumps(asrock);
-    expect(keyJumps(jumps).map((j) => j.label)).toEqual(["Board layout", "Front panel header", "Fan headers", "Memory slot order"]);
-    expect(keyJumps(jumps, ["power-connectors"]).map((j) => j.label)[0]).toBe("Power connectors");
   });
 
   it("groups every section by what it's for", () => {
