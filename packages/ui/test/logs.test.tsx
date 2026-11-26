@@ -352,6 +352,41 @@ describe("Logs", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it("lists every sensor in a table, like a hardware monitor, with its lowest and highest, and finds one by name", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
+    try {
+      render(<RigApp client={new DemoClient()} />);
+      await screen.findByText(/Things to look at/i);
+      await open("recorded");
+      await screen.findByRole("heading", { name: "Today" });
+      const readings = screen.getByRole("region", { name: "Readings" });
+      await within(readings).findByRole("img", { name: "Temperatures" });
+      fireEvent.click(within(within(readings).getByRole("group", { name: "Show as" })).getByRole("button", { name: "Table" }));
+      const table = within(readings).getByRole("table", { name: "Every sensor" });
+      expect(within(readings).queryByRole("img", { name: "Temperatures" })).toBeNull();
+      expect(within(table).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Last", "Lowest", "Highest"]);
+      // Grouped by part, then by kind, like HWMonitor.
+      const gpu = within(table).getByRole("rowgroup", { name: "Graphics card" });
+      within(gpu).getByRole("rowheader", { name: "Temperatures" });
+      const hot = within(gpu).getByRole("row", { name: /^GPU Hot Spot/ });
+      const [last, low, high] = within(hot).getAllByRole("cell").map((c) => c.textContent ?? "");
+      for (const v of [last, low, high]) expect(v).toMatch(/^\d+°C$/);
+      expect(parseInt(low)).toBeLessThanOrEqual(parseInt(last));
+      expect(parseInt(high)).toBeGreaterThanOrEqual(parseInt(last));
+      expect(within(table).getAllByRole("rowgroup").length).toBeGreaterThan(3);
+
+      fireEvent.change(within(readings).getByRole("searchbox", { name: "Find a sensor" }), { target: { value: "hot spot" } });
+      const rows = within(within(readings).getByRole("table", { name: "Every sensor" })).getAllByRole("row").filter((r) => r.querySelector("th[scope=row]"));
+      expect(rows.map((r) => r.querySelector("th")!.textContent)).toEqual(["GPU Hot Spot"]);
+      fireEvent.change(within(readings).getByRole("searchbox", { name: "Find a sensor" }), { target: { value: "nothing like this" } });
+      within(readings).getByText(/No sensor matches/);
+
+      fireEvent.click(within(readings).getByRole("button", { name: "Chart" }));
+      await within(readings).findByRole("img", { name: "Temperatures" });
+    } finally { vi.useRealTimers(); }
+  });
+
   it("draws a day from Rig's history on a PC without the background log, and says how to get more", async () => {
     localStorage.setItem("rig.pc", "demo-pebble");
     render(<RigApp client={new DemoClient()} />);

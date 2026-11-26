@@ -229,8 +229,23 @@
 .lv-since { margin: 8px 0 0; font-size: 13px; }
 .lv-none { margin: 0; }
 .rd-readings { display: flex; flex-direction: column; gap: 12px; }
-.rd-spans { align-self: flex-start; }
-.rd-spans button { height: 30px; padding: 0 14px; font-size: 13px; }
+.rd-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.rd-views button, .rd-spans button { height: 30px; padding: 0 14px; font-size: 13px; }
+.st { display: flex; flex-direction: column; gap: 12px; }
+.st-find { display: flex; align-items: center; gap: 14px; }
+.st-find .input { flex: 1; max-width: 420px; height: 38px; }
+.st-find .faint { font-size: 13px; }
+.st-none { margin: 0; }
+.st-table { width: 100%; max-width: 900px; border-collapse: collapse; font-size: 13.5px; }
+.st-table th, .st-table td { padding: 6px 10px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.st-table :is(thead th, tbody th) { text-align: left; font-weight: 500; }
+.st-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); border-top: 0; color: var(--text-3); font-size: 12px; font-weight: 600; }
+.st-table th:first-child { width: 100%; padding-left: 0; white-space: normal; }
+.st-table tbody th[scope="row"] { padding-left: 16px; }
+.st-table .st-part th { padding: 18px 0 6px; border-top: 0; font: var(--t-label); font-size: 15px; }
+.st-table .st-kind th { padding: 8px 0 4px; color: var(--text-3); font-size: 12px; font-weight: 600; }
+.st-table td.look { color: var(--look-text); font-weight: 600; }
+.st-table thead th:not(:first-child) { text-align: right; }
 .rd-head { margin-top: 0; flex-wrap: wrap; }
 .rd-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-left: auto; }
 .rd-source .faint { font-size: 13px; }
@@ -238,9 +253,11 @@
 
 @media (max-width: 760px) {
   .lv-sech { align-items: flex-start; flex-direction: column; }
-  .rd-spans { align-self: stretch; display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .rd-spans { flex: 1 1 100%; display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .rd-spans button { flex: 1 0 auto; padding: 0 9px; }
   .rd-source { margin-left: 0; flex-basis: 100%; }
+  .st-table th, .st-table td { padding: 6px 6px; }
+  .st-table tbody th[scope="row"] { padding-left: 8px; }
   .rc-lower { grid-template-columns: minmax(0, 1fr); }
   .rc-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rc-log h1 { font-size: 22px; }

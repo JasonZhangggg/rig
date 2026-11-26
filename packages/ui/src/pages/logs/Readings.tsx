@@ -7,6 +7,7 @@ import { useOpenLog } from "../Logs";
 import { LogsHead } from "./Head";
 import { AllSensors, type Band, type ChartMark } from "./Lanes";
 import { CustomLogs, NowRecording, Recordings } from "./Recordings";
+import { SensorTable } from "./SensorTable";
 import { clock, dayName, isPhone } from "./words";
 
 const MIN = 60_000, HOUR = 36e5, DAY = 864e5;
@@ -63,7 +64,7 @@ function useDays(need: RecordingInfo[]): Recording[] | null {
 }
 
 /** What one stretch of the chart shows, and where its readings came from. */
-interface Shown { r: Recorded | null; from: number; to: number; title: string; source: string; note?: string; live?: boolean; empty?: string }
+interface Shown { r: Recorded | null; /** Every reading, not thinned, for the table's lowest and highest. */ whole?: Recorded | null; from: number; to: number; title: string; source: string; note?: string; live?: boolean; empty?: string }
 
 /** Every reading on the PC, over whatever stretch you pick: the last few minutes as they come in, back to the last month. */
 export function Readings() {
@@ -74,6 +75,8 @@ export function Readings() {
   const data = useData("recordings", "live");
   const [span, setSpan] = useState<Span>(ui.route === "recorded" ? "day" : ui.route === "history" ? "week" : "5m");
   const [pick, setPick] = useState(0);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const table = view === "table";
   const limits = limitsOf(full);
   const days = useMemo(() => data.recordings.filter((r) => r.id.startsWith("bg-d-")).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)), [data.recordings]);
   const logged = !isLive(span) && span !== "month" && days.length > 0;
@@ -92,13 +95,14 @@ export function Readings() {
     if (isLive(span)) {
       const live = data.live;
       const r = live.length > 1 ? liveRecorded(full.readings ?? [], thin(live, from, to - from)) : null;
+      const whole = r && table ? liveRecorded(full.readings ?? [], live.filter((p) => p.t >= from)) : null;
       const last = live[live.length - 1];
       const every = live.length > 1 ? Math.max(1, Math.round((last.t - live[live.length - 2].t) / 1000)) : null;
       // Rig keeps readings from when it opened, so a long span may start partway.
       const since = live[0] && live[0].t > from + 30_000 ? live[0].t : null;
       // Until then the chart starts where the readings do, so they fill it instead of sitting at its right edge.
       return {
-        r: r && r.sensors.length ? r : null, from: since ? Math.min(since, to - MIN) : from, to, title, live: full.online,
+        r: r && r.sensors.length ? r : null, whole, from: since ? Math.min(since, to - MIN) : from, to, title, live: full.online,
         source: !full.online ? (last ? `Offline since ${clock(last.t)}` : "Offline") : every ? `A reading every ${every} s` : "Waiting for the next reading",
         note: since ? `Readings start at ${clock(since)}, when Rig opened. For earlier ones, pick 6 hours.` : undefined,
         empty: !full.online ? `${pc.name} is offline, so there's nothing live to show. Pick 6 hours or longer for what it logged.` : "Readings draw here as they come in.",
@@ -107,11 +111,12 @@ export function Readings() {
     if (logged) {
       if (!recs) return { r: null, from, to, title, source: "", empty: "Loading…" };
       const all = recs.length ? recorded(recs.length === 1 ? recs[0] : joinRecordings(recs)) : null;
-      const r = all && { ...all, points: thin(all.points.filter((p) => p.t >= from && p.t <= to), from, to - from) };
+      const inRange = all ? all.points.filter((p) => p.t >= from && p.t <= to) : [];
+      const r = all && { ...all, points: thin(inRange, from, to - from) };
       const first = r?.points[0]?.t ?? from, last = r?.points.at(-1)?.t ?? to;
       // A day draws from its first reading; a stretch up to now draws all of it, so a gap shows as a gap.
       return {
-        r: r && r.points.length ? r : null, title,
+        r: r && r.points.length ? r : null, title, whole: all && table ? { ...all, points: inRange } : null,
         from: dayInfo ? first : from, to: dayInfo ? Math.max(last, first + HOUR) : to,
         source: dayInfo ? `${clock(first)} to ${last >= to - MIN ? "midnight" : clock(last)}, every 30 s` : "Every sensor, every 30 s",
         empty: "Nothing logged in this stretch.",
@@ -121,11 +126,11 @@ export function Readings() {
     const points = history.filter((p) => p.t >= from && p.t <= to);
     const r = points.length ? historyRecorded(thin(points, from, to - from)) : null;
     return {
-      r, from, to, title, source: "Every 10 minutes while Rig was open",
+      r, whole: r && table ? historyRecorded(points) : null, from, to, title, source: "Every 10 minutes while Rig was open",
       note: span !== "month" ? "Turn on the background recorder in Settings on this PC to keep every sensor every 30 seconds, even while Rig is closed." : undefined,
       empty: `Nothing logged on ${pc.name} in the last ${span === "month" ? "30 days" : span === "week" ? "7 days" : span === "day" ? "24 hours" : "6 hours"}.`,
     };
-  }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, logged]);
+  }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, logged, table]);
 
   if (opened) return opened;
   const active = data.recordings.find(isActive);
@@ -139,8 +144,14 @@ export function Readings() {
       <LogsHead sub={`Every sensor on ${pc.name}, from the last few minutes back to the last month.`} />
       {active && <NowRecording r={active} pcName={pc.name} />}
       <section className="rd-readings" aria-label="Readings">
-        <div className="seg rd-spans" role="group" aria-label="How far back">
-          {spanWords.map(([k, word]) => <button key={k} type="button" aria-pressed={span === k} onClick={() => { setSpan(k); setPick(0); }}>{word}</button>)}
+        <div className="rd-bar">
+          <div className="seg rd-spans" role="group" aria-label="How far back">
+            {spanWords.map(([k, word]) => <button key={k} type="button" aria-pressed={span === k} onClick={() => { setSpan(k); setPick(0); }}>{word}</button>)}
+          </div>
+          <div className="seg rd-views" role="group" aria-label="Show as">
+            <button type="button" aria-pressed={!table} onClick={() => setView("chart")}>Chart</button>
+            <button type="button" aria-pressed={table} onClick={() => setView("table")}>Table</button>
+          </div>
         </div>
         <div className="rc-day rd-head">
           {dayInfo && <button type="button" className="btn ghost sm icon" aria-label="Day before" disabled={pick >= days.length - 1} onClick={() => setPick(pick + 1)}><Icon d="M12 4 6 10l6 6" /></button>}
@@ -152,6 +163,7 @@ export function Readings() {
           </span>
         </div>
         {!shown.r ? <ChartNote>{shown.empty ?? "Nothing to show."}</ChartNote>
+          : table ? <SensorTable r={shown.whole ?? shown.r} from={shown.from} to={shown.to} limits={limits} live={live} />
           : <AllSensors r={shown.r} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} />}
         {shown.r && shown.note && <p className="faint lv-since">{shown.note}</p>}
       </section>
