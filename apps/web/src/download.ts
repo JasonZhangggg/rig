@@ -48,3 +48,10 @@ export async function latestDownload(signal?: AbortSignal): Promise<Download | n
 }
 
 export const megabytes = (bytes: number) => `${Math.round(bytes / 1e6)} MB`;
+
+/** Whether this browser runs on Windows, so the page can lead with the download (as Discord's names the visitor's system). */
+export function onWindows(nav: { userAgent?: string; userAgentData?: { platform?: string } }): boolean {
+  const platform = nav.userAgentData?.platform;
+  if (platform) return platform === "Windows";
+  return /Windows NT/.test(nav.userAgent ?? "");
+}

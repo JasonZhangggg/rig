@@ -5,7 +5,7 @@ import type { PC } from "@rig/core";
 import { DemoClient } from "@rig/core/demo";
 import { PCPreview } from "@rig/ui/preview";
 import { rigVersion } from "@rig/ui/version";
-import { builtDownload, latestDownload, megabytes, type Download } from "./download";
+import { builtDownload, latestDownload, megabytes, onWindows, type Download } from "./download";
 import "./landing.css";
 
 // The install page. The web app (your PCs, the demo, and the page the desktop app
@@ -13,17 +13,15 @@ import "./landing.css";
 
 const steps: { t: string; d: string }[] = [
   { t: "Open Rig Setup", d: "Open the file you downloaded. It's in your Downloads folder." },
-  { t: "Get past the blue warning", d: "If Windows says “Windows protected your PC”, choose More info, then Run anyway. Rig Setup isn't code-signed yet, so Windows doesn't recognize it." },
-  { t: "Choose Install, then Yes", d: "When Windows asks whether Rig may make changes, choose Yes. Rig needs it once, to read your temperatures and fans in the background." },
-  { t: "Rig opens", d: "It reads your PC and shows it in 3D. Sign in if you'd like to see it from any browser." },
+  { t: "Choose More info, then Run anyway", d: "Windows says “Windows protected your PC” because Rig Setup isn't code-signed yet." },
+  { t: "Choose Install, then Yes", d: "Windows asks once whether Rig may make changes, so it can read your temperatures and fans." },
 ];
 
 const needs: { t: string; d: string }[] = [
-  { t: "Windows", d: "Windows 10 or 11, 64-bit" },
-  { t: "Your PC", d: "Any desktop or laptop" },
-  { t: "Permission", d: "An administrator's yes, once, while installing" },
+  { t: "Windows", d: "10 or 11, 64-bit" },
+  { t: "Any PC", d: "Desktop or laptop" },
+  { t: "One yes", d: "From an administrator, while installing" },
   { t: "Internet", d: "For chat, sign-in and updates" },
-  { t: "Mac and Linux", d: "Not yet. You can see your PCs from any browser." },
 ];
 
 function Arrow() {
@@ -42,8 +40,8 @@ function DownloadIcon() {
   );
 }
 
-/** The demo PC from Home, turning slowly on graphite, as on the sign-in screen. */
-function Art() {
+/** The demo PC from Home, turning slowly, as on the sign-in screen. */
+function DemoPC() {
   const [pc, setPC] = useState<PC | null>(null);
   useEffect(() => {
     let live = true;
@@ -51,72 +49,120 @@ function Art() {
     return () => { live = false; };
   }, []);
   return (
-    <aside className="ip-art" aria-label="Rig's 3D view of a PC">
-      <div className="ip-pc">{pc && <PCPreview pc={pc} className="ip-canvas" />}</div>
-      <p className="ip-art-cap">{pc ? `${pc.name}, the demo PC, as Rig shows it` : " "}</p>
-    </aside>
+    <figure className="ip-pc">
+      <div className="ip-pc-stage">{pc && <PCPreview pc={pc} className="ip-canvas" />}</div>
+      <figcaption>{pc ? `${pc.name}, the demo PC, as Rig shows it` : " "}</figcaption>
+    </figure>
   );
 }
 
 function Landing() {
   const [dl, setDL] = useState<Download>(() => builtDownload(rigVersion));
+  const [started, setStarted] = useState(false);
+  const windows = onWindows(navigator);
   useEffect(() => {
     const stop = new AbortController();
     void latestDownload(stop.signal).then((d) => { if (d) setDL(d); });
     return () => stop.abort();
   }, []);
   const meta = [`Version ${dl.version}`, "Windows 10 and 11, 64-bit", dl.size ? megabytes(dl.size) : null].filter(Boolean).join(" · ");
+  // After the click, the page turns to what comes next, as Discord's and Spotify's do.
+  const begin = () => {
+    setStarted(true);
+    requestAnimationFrame(() => document.getElementById("ip-install")?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
+  };
 
   return (
     <div className="ip">
-      <Art />
-      <div className="ip-main">
+      <section className="ip-hero" aria-labelledby="ip-title">
         <header className="ip-top">
           <a className="ip-logo" href="/"><img src="/rig-logo.png" alt="" width="34" height="34" />Rig</a>
           <nav aria-label="Main">
             <a className="ip-hide-sm" href="/app/?demo">Try the demo</a>
-            <a className="ip-nav-strong" href="/app/">Sign in <Arrow /></a>
+            <a className="ip-signin" href="/app/">Sign in</a>
           </nav>
         </header>
 
-        <main>
-          <section className="ip-hero" aria-labelledby="ip-title">
-            <p className="ip-label">Free for Windows</p>
-            <h1 id="ip-title">See inside your PC.</h1>
-            <p className="ip-sub">Rig shows your parts in 3D with live temperatures, explains problems in plain words, and fixes settings only when you say yes, with one-click undo.</p>
-            <a className="ip-btn" href={dl.url}><DownloadIcon />Download for Windows</a>
-            <p className="ip-meta">{meta}</p>
-            <p className="ip-alt">Not on Windows right now? <a href="/app/?demo">Try the demo in your browser</a></p>
-          </section>
+        <div className="ip-hero-copy">
+          <h1 id="ip-title">See inside your&nbsp;PC.</h1>
+          <p className="ip-sub">Rig shows your parts in 3D with live temperatures, explains problems in plain words, and fixes settings only when you say yes, with one-click undo. Free.</p>
+          {windows ? (
+            <>
+              <a className="ip-btn" href={dl.url} onClick={begin}><DownloadIcon />Download for Windows</a>
+              <p className="ip-meta">{meta}</p>
+            </>
+          ) : (
+            <>
+              <a className="ip-btn" href="/app/?demo">Try the demo <Arrow /></a>
+              <p className="ip-meta">Rig runs on Windows PCs. Open rigpc.app on yours to install it, or <a href={dl.url} onClick={begin}>download it here</a> ({meta}).</p>
+            </>
+          )}
+        </div>
+        <DemoPC />
+      </section>
 
-          <section className="ip-section" aria-labelledby="ip-install">
-            <h2 id="ip-install">Install in a minute</h2>
-            <ol className="ip-steps">
-              {steps.map((s, i) => (
-                <li key={s.t}>
-                  <span className="ip-num" aria-hidden="true">{i + 1}</span>
-                  <div><h3>{s.t}</h3><p>{s.d}</p></div>
-                </li>
-              ))}
-            </ol>
-            <p className="ip-note">Rig checks for updates by itself and asks before it installs one. To check the file, compare <code>Get-FileHash</code> in PowerShell with SHA256SUMS.txt on the <a href={dl.page}>release page</a>.</p>
-          </section>
+      <main>
+        <section className={started ? "ip-section ip-install is-started" : "ip-section ip-install"} aria-labelledby="ip-install">
+          <div className="ip-head">
+            <h2 id="ip-install" tabIndex={-1}>{started ? "Thanks for downloading Rig" : "Install in three steps"}</h2>
+            <p>{started
+              ? <>Your download should start in a moment. Then follow these steps. Didn't start? <a href={dl.url}>Download it again</a>.</>
+              : "About a minute, start to finish. Rig opens when it's done and reads your PC."}</p>
+          </div>
+          <ol className="ip-steps">
+            {steps.map((s, i) => (
+              <li key={s.t}>
+                <span className="ip-num" aria-hidden="true">{i + 1}</span>
+                <h3>{s.t}</h3>
+                <p>{s.d}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="ip-note">Rig updates itself and asks before it installs an update. To check the file, compare <code>Get-FileHash</code> in PowerShell with SHA256SUMS.txt on the <a href={dl.page}>release page</a>.</p>
+        </section>
 
-          <section className="ip-section" aria-labelledby="ip-needs">
-            <h2 id="ip-needs">What you need</h2>
-            <dl className="ip-needs">
-              {needs.map((n) => <div key={n.t}><dt>{n.t}</dt><dd>{n.d}</dd></div>)}
-            </dl>
-          </section>
-        </main>
+        <section className="ip-section" aria-labelledby="ip-every">
+          <div className="ip-head">
+            <h2 id="ip-every">One account, every PC</h2>
+            <p>Sign in on each PC, then check on all of them from anywhere.</p>
+          </div>
+          <div className="ip-places">
+            <article className="ip-place">
+              <p className="ip-place-kind">On your PC</p>
+              <h3>The Windows app</h3>
+              <p>Live temperatures, the 3D view, chat about your parts, and fixes you approve.</p>
+              <a href={dl.url} onClick={begin}>Download for Windows <Arrow /></a>
+            </article>
+            <article className="ip-place">
+              <p className="ip-place-kind">Anywhere else</p>
+              <h3>Any browser</h3>
+              <p>See every PC on your account from your phone or another computer: the gaming rig, the laptop, the one at your parents' place.</p>
+              <a href="/app/">Sign in <Arrow /></a>
+            </article>
+            <article className="ip-place">
+              <p className="ip-place-kind">No account</p>
+              <h3>The demo</h3>
+              <p>Look around two sample PCs in your browser before you install anything.</p>
+              <a href="/app/?demo">Try the demo <Arrow /></a>
+            </article>
+          </div>
+        </section>
 
-        <footer className="ip-foot">
-          <span>Rig <small>{rigVersion}</small></span>
-          <a href={dl.page}>Release notes</a>
-          <a href="/app/?demo">Demo</a>
-          <a href="/app/">Your PCs</a>
-        </footer>
-      </div>
+        <section className="ip-section" aria-labelledby="ip-needs">
+          <div className="ip-head"><h2 id="ip-needs">What you need</h2></div>
+          <dl className="ip-needs">
+            {needs.map((n) => <div key={n.t}><dt>{n.t}</dt><dd>{n.d}</dd></div>)}
+          </dl>
+          <p className="ip-later">Mac and Linux aren't supported yet.</p>
+        </section>
+      </main>
+
+      <footer className="ip-foot">
+        <span>Rig <small>{rigVersion}</small></span>
+        <a href={dl.page}>Release notes</a>
+        <a href="/app/?demo">Demo</a>
+        <a href="/app/">Your PCs</a>
+      </footer>
     </div>
   );
 }
