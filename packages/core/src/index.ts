@@ -1,6 +1,7 @@
 export * from "./model";
 export * from "./telemetry";
 export * from "./drives";
+export * from "./roomForGames";
 export * from "./actions";
 export * from "./change";
 export * from "./screen";

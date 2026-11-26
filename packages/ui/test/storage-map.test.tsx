@@ -56,4 +56,18 @@ describe("Storage map", () => {
     expect(await screen.findByText(/Measuring folders now/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Measuring…" }) as HTMLButtonElement).disabled).toBe(true);
   });
+  it("counts each drive's free space in the games on it, and offers one game to move to the roomier drive", async () => {
+    await openStorage();
+    expect(screen.getByText("Room for about 4 more big games")).toBeTruthy();
+    expect(screen.getByText("726 GB free: 4 installs the size of Baldur's Gate 3 (148 GB), with 134 GB to spare.")).toBeTruthy();
+    expect(screen.getByText("Room for about 8 more big games")).toBeTruthy();
+    // Only C: has a roomier drive to move to.
+    const move = within(screen.getByRole("list", { name: "Move one thing to D:" }));
+    expect(move.getByText("Move Baldur's Gate 3 to D:")).toBeTruthy();
+    expect(move.getByText("148 GB · most likely loads slower from a hard drive")).toBeTruthy();
+    expect(move.getByText("+1")).toBeTruthy();
+    fireEvent.click(move.getByRole("button", { name: "Details: Baldur's Gate 3" }));
+    expect(move.getByText(/Move it from the launcher it came from/)).toBeTruthy();
+    expect(screen.queryAllByRole("list", { name: /^Move one thing to/ })).toHaveLength(1);
+  });
 });
