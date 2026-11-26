@@ -4,7 +4,7 @@
 import rootPackage from "../../../package.json";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DataExport } from "@rig/core";
+import type { DataExport, ProbeSpec, RecorderStatus } from "@rig/core";
 import { DemoClient } from "@rig/core/demo";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
@@ -154,6 +154,22 @@ describe("Settings", () => {
     fireEvent.click(sw);
     expect(set).toHaveBeenCalledWith(true);
     await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true"));
+  });
+
+  // The App section's switches once kept the filled, rounded look of an old switch panel, so two rows
+  // stood out as grey boxes of different widths. Every switch on Settings is a plain row's control.
+  it("shows the App section's switches as plain rows, like every other setting", async () => {
+    const status: RecorderStatus = { supported: true, service: "running", mine: "S-1", probes: { list: [] } };
+    const recorder = { status: async () => status, set: async () => {}, probes: async () => [] as ProbeSpec[], approveAdmin: async () => [] as ProbeSpec[] };
+    render(<RigApp client={new DemoClient()} host={{ autostart: { get: async () => false, set: async () => {} }, recorder }} />);
+    await open("settings");
+    const app = within(await screen.findByRole("region", { name: "App" }));
+    for (const name of ["Start Rig with Windows", "Keep a log while Rig is closed"]) {
+      const sw = await app.findByRole("switch", { name });
+      expect(sw.className).toBe("switch set-toggle");
+      expect(sw.textContent).toBe("");
+      expect(sw.closest(".set-row")?.textContent).toContain(name);
+    }
   });
 
   it("shows the version from the root package.json, and on desktop the server it signs in to", async () => {

@@ -24,8 +24,6 @@
 .set-danger ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .set-danger .input { max-width: 260px; background: var(--surface); }
 .set-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.set-switches { padding: 10px 0; }
-.set-switches .switch { margin: 0 -8px; }
 .switch.set-toggle { padding: 0; background: transparent; }
 .set-body > .notify-note { padding: 14px 0 4px; font-size: 13px; }
 .set-body > .notify-note + .set-row { border-top: 0; }
@@ -149,7 +147,6 @@
   .set-chev { transition: none; }
 }
 
-.custom-logs { display: grid; gap: 8px; }
-.custom-logs h4 { margin: 8px 0 0; font-size: 14px; }
-.custom-log-row { display: flex; align-items: center; gap: 10px; }
-.custom-log-row .switch { flex: 1; min-width: 0; }
+.custom-logs { display: grid; padding-top: 14px; border-top: 1px solid var(--line); }
+.custom-logs h4 { margin: 0; font-size: 14px; }
+.custom-logs h4 + .set-row { border-top: 0; }
