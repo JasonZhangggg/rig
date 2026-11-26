@@ -94,7 +94,7 @@
 }
 .gp-pick-row b { font-size: 14px; font-weight: 600; }
 .gp-pick-row span { color: var(--text-2); white-space: nowrap; }
-@media (hover: hover) { .gp-pick-row:hover { background: var(--sel); } }
+@media (hover: hover) and (pointer: fine) { .gp-pick-row:hover { background: var(--sel); } }
 .gp-pick-row.is-on { border-color: var(--text); background: var(--sel); }
 .gp-pick .sheet-foot { padding-top: 8px; }
 .po-pin.is-small { width: calc(var(--po-pin) * .62); height: calc(var(--po-pin) * .62); justify-self: center; align-self: end; }
