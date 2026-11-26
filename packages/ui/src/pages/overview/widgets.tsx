@@ -126,7 +126,7 @@ export function HealthWidget({ style, opts, box }: WidgetProps) {
     <div className="f-health-text">
       <h2>Health</h2>
       {on(opts, "summary") && <p>{known ? healthWhy(pc.breakdown, summary) : `Rig scores ${pc.name} once it has had a good look.`}</p>}
-      {on(opts, "link") && <a className="f-link" href="#history">See performance<Go /></a>}
+      {on(opts, "link") && <a className="f-link" href="#logs">See readings<Go /></a>}
     </div>
   );
   return (

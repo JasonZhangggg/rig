@@ -145,7 +145,7 @@ const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
  * its part or its kind. A number has to match whole, right after the word before it, so "core 3" finds Core #3 and its
  * threads but not Core #13, nor Core #1's third thread.
  */
-export function findReadings(readings: readonly Reading[], query: string): Reading[] {
+export function findReadings<T extends Pick<Reading, "name" | "part" | "type">>(readings: readonly T[], query: string): T[] {
   const q = words(query);
   if (!q.length) return [];
   const ok = (w: string, t: string | undefined) => t != null && (isNum(w) ? t === w : t.startsWith(w));

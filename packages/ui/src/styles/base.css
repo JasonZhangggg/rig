@@ -33,4 +33,3 @@ p { margin: 0; }
 /* Numbers that change keep their width: a font shorthand resets this, so it is set again after them. */
 :is(.fig-n, .lg-tile-n, .pl-figure b, .pl-stat b, .f-store-num b, .fp-count) { font-variant-numeric: tabular-nums; }
 /* Under 16px, phones zoom the page when a field gets focus. */
-@media (max-width: 760px) { :is(.input, .shop-q, .pf-find, .pal-search input, .chat-composer textarea, .mt-q, select) { font-size: 16px; } }

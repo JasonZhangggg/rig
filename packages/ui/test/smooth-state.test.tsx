@@ -28,11 +28,12 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Steady interactions", () => {
   it("keeps the chart up while another range loads", async () => {
-    const client = await show("history");
-    await screen.findByRole("img", { name: "Graphics card, temperature" });
+    const client = await show("logs");
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    await screen.findByRole("img", { name: "Temperatures" });
     vi.spyOn(client, "history").mockImplementation(() => new Promise(() => {}));
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    expect(screen.getByRole("img", { name: "Graphics card, temperature" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Temperatures" })).toBeTruthy();
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 

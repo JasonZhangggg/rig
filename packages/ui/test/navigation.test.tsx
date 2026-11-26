@@ -69,10 +69,10 @@ describe("navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: /Search or ask/ }));
     const palette = within(screen.getByRole("dialog", { name: "Search" }));
     fireEvent.change(palette.getByRole("textbox", { name: "Search" }), { target: { value: "temps" } });
-    fireEvent.click(palette.getByRole("button", { name: /^Performance/ }));
-    expect(location.hash).toBe("#history");
+    fireEvent.click(palette.getByRole("button", { name: /^Logs Every sensor/ }));
+    expect(location.hash).toBe("#logs");
     expect(await screen.findByRole("heading", { name: "Logs" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Performance" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Readings" }).getAttribute("aria-current")).toBe("page");
     // The sidebar marks Logs, the page the view belongs to.
     expect(screen.getByRole("link", { name: /^Logs/ }).getAttribute("aria-current")).toBe("page");
   });

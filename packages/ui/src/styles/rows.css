@@ -52,3 +52,8 @@
   .row-main { flex-wrap: wrap; row-gap: 2px; }
   .row-time { width: 100%; padding: 0; }
 }
+
+/* A row that arrived while its list was on screen: lit for a moment, then like the rest. */
+.row.row-new { animation: row-new 2.4s var(--ease-out) both; }
+@keyframes row-new { from { background: color-mix(in srgb, var(--look) 14%, transparent); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .row.row-new { animation: none; } }

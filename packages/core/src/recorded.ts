@@ -2,8 +2,9 @@
 // the background recorder kept, filed under its part like the live view, or the
 // six main readings for a recording that has nothing more.
 
+import type { HistoryPoint, Reading } from "./model";
 import type { Recording, RecordingInfo, SensorRef } from "./recordings";
-import type { SensorType } from "./telemetry";
+import type { HardwareKind, SensorType } from "./telemetry";
 
 /** One sensor of a recording, filed under a part. */
 export interface RecordedSensor extends SensorRef { part: string }
@@ -16,7 +17,7 @@ export interface RecordedPoint { t: number; v: (number | null)[] }
 
 export interface Recorded { sensors: RecordedSensor[]; parts: RecordedPart[]; points: RecordedPoint[]; full: boolean }
 
-const partNames: [string, string][] = [["cpu", "Processor"], ["gpu", "Graphics card"], ["ram", "Memory"], ["motherboard", "Motherboard"], ["fans", "Fans"]];
+const partNames: [string, string][] = [["cpu", "Processor"], ["gpu", "Graphics card"], ["ram", "Memory"], ["ssd", "Storage"], ["motherboard", "Motherboard"], ["fans", "Fans"], ["battery", "Battery"]];
 
 function partOf(s: SensorRef): string | null {
   if (s.hw === "gpu") return "gpu";
@@ -49,6 +50,32 @@ function leadOf(part: string, idx: number[], sensors: RecordedSensor[]): number 
   return of("temperature") ?? of("load") ?? idx[0];
 }
 
+/** Files sensors under their parts, each part led by its main reading. */
+function withParts(sensors: RecordedSensor[], points: RecordedPoint[], full: boolean): Recorded {
+  const parts: RecordedPart[] = [];
+  for (const [id, name] of partNames) {
+    const idx = sensors.map((s, i) => (s.part === id ? i : -1)).filter((i) => i >= 0);
+    if (idx.length) parts.push({ id, name, sensors: idx, lead: leadOf(id, idx, sensors) });
+  }
+  return { sensors, parts, points: points.sort((a, b) => a.t - b.t), full };
+}
+
+/** One live reading of a PC: every sensor's value by id, at a moment. */
+export interface LiveSample { t: number; vals: Record<string, number> }
+
+const liveHw: Record<string, HardwareKind> = { cpu: "cpu", gpu: "gpu", ram: "memory", ssd: "storage", motherboard: "board", board: "board", fans: "board", battery: "battery" };
+
+/**
+ * The PC's live readings in the shape of a recording, so the live charts draw every sensor the way a day of the log
+ * does. Sizes (data) are left out, as they don't move. Sensors come from the latest readings, in the order the PC lists them.
+ */
+export function liveRecorded(readings: readonly Reading[], samples: readonly LiveSample[]): Recorded {
+  const keep = readings.filter((r) => r.type !== "data" && liveHw[r.part]);
+  const sensors: RecordedSensor[] = keep.map((r) => ({ id: r.id, hw: liveHw[r.part], hwName: "", type: r.type, name: r.name, part: r.part === "board" ? "motherboard" : r.part }));
+  const points = samples.map((s) => ({ t: s.t, v: keep.map((r) => s.vals[r.id] ?? null) }));
+  return withParts(sensors, points, true);
+}
+
 /** A recording's readings sensor by sensor. Sensors that never read anything are left out. */
 export function recorded(rec: Pick<Recording, "samples" | "sensors">): Recorded {
   const full = !!rec.sensors?.length && rec.samples.some((s) => s.all);
@@ -63,12 +90,46 @@ export function recorded(rec: Pick<Recording, "samples" | "sensors">): Recorded 
     sensors = keep.map(([, s, part]) => ({ ...s, part }));
     points = rec.samples.map((x) => ({ t: x.t, v: keep.map(([k]) => x[k] ?? null) }));
   }
-  const parts: RecordedPart[] = [];
-  for (const [id, name] of partNames) {
-    const idx = sensors.map((s, i) => (s.part === id ? i : -1)).filter((i) => i >= 0);
-    if (idx.length) parts.push({ id, name, sensors: idx, lead: leadOf(id, idx, sensors) });
-  }
-  return { sensors, parts, points: points.sort((a, b) => a.t - b.t), full };
+  return withParts(sensors, points, full);
+}
+
+/**
+ * Several recordings as one, in time order, for a chart that spans days. Each day lists its own sensors, so every
+ * reading is lined up again with the sensors of all of them together, matched by id.
+ */
+export function joinRecordings(recs: readonly Pick<Recording, "samples" | "sensors">[]): Pick<Recording, "samples" | "sensors"> {
+  const sensors: SensorRef[] = [];
+  const at = new Map<string, number>();
+  for (const r of recs) for (const s of r.sensors ?? []) if (!at.has(s.id)) { at.set(s.id, sensors.length); sensors.push(s); }
+  const samples = recs.flatMap((r) => {
+    const to = (r.sensors ?? []).map((s) => at.get(s.id)!);
+    return r.samples.map((x) => {
+      if (!x.all) return x;
+      const all: (number | null)[] = new Array(sensors.length).fill(null);
+      x.all.forEach((v, i) => { if (to[i] != null) all[to[i]] = v; });
+      return { ...x, all };
+    });
+  }).sort((a, b) => a.t - b.t);
+  return { samples, sensors: sensors.length ? sensors : undefined };
+}
+
+/** The readings a history point keeps, as sensors under their parts. */
+const historyKeys: [Exclude<keyof HistoryPoint, "t" | "busy" | "game">, SensorRef, string][] = [
+  ["cpu", { id: "cpu", hw: "cpu", hwName: "", type: "temperature", name: "Temperature" }, "cpu"],
+  ["cpuLoad", { id: "cpuLoad", hw: "cpu", hwName: "", type: "load", name: "Usage" }, "cpu"],
+  ["gpu", { id: "gpu", hw: "gpu", hwName: "", type: "temperature", name: "Temperature" }, "gpu"],
+  ["gpuLoad", { id: "gpuLoad", hw: "gpu", hwName: "", type: "load", name: "Usage" }, "gpu"],
+  ["mem", { id: "mem", hw: "memory", hwName: "", type: "load", name: "In use" }, "ram"],
+  ["drive", { id: "drive", hw: "storage", hwName: "", type: "temperature", name: "Temperature" }, "ssd"],
+  ["board", { id: "board", hw: "board", hwName: "", type: "temperature", name: "Temperature" }, "motherboard"],
+  ["fan", { id: "fan", hw: "board", hwName: "", type: "fan", name: "Fastest fan" }, "fans"],
+];
+
+/** The PC's 10-minute history in the shape of a recording, so a month draws the same way as a day of the log. */
+export function historyRecorded(points: readonly HistoryPoint[]): Recorded {
+  const keep = historyKeys.filter(([k]) => points.some((p) => p[k] != null));
+  const sensors: RecordedSensor[] = keep.map(([, s, part]) => ({ ...s, part }));
+  return withParts(sensors, points.map((p) => ({ t: p.t, v: keep.map(([k]) => (p[k] as number | null | undefined) ?? null) })), false);
 }
 
 /** A sensor's highest reading between two times, and when. */

@@ -1,4 +1,7 @@
-import { useId, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useState, type ReactNode } from "react";
+
+/** Set around a row that arrived while its list was on screen, like a new entry in the live log, so it shows as new for a moment. */
+export const FreshCtx = createContext(false);
 
 /**
  * Lists, the way the Changes page shows them: one item per line, with a time on the left, a bold title and one grey
@@ -37,10 +40,13 @@ export interface RowProps {
   name: string;
   /** A row that shows its item somewhere else on the page, like on a chart: pressing it picks it. */
   pick?: { pressed: boolean; onPick: () => void };
+  /** It just arrived in a list that's on screen. */
+  fresh?: boolean;
 }
 
-export function Row({ time, at, mark, markLabel, title, tag, meta, figure, action, details, name, pick }: RowProps) {
+export function Row({ time, at, mark, markLabel, title, tag, meta, figure, action, details, name, pick, fresh: freshProp }: RowProps) {
   const [open, setOpen] = useState(false);
+  const fresh = useContext(FreshCtx) || freshProp;
   const id = useId();
   const main = (
     <>
@@ -53,7 +59,7 @@ export function Row({ time, at, mark, markLabel, title, tag, meta, figure, actio
     </>
   );
   return (
-    <li className={`row${mark ? markClass[mark] : ""}${time != null ? " has-time" : ""}${open ? " open" : ""}`}>
+    <li className={`row${mark ? markClass[mark] : ""}${time != null ? " has-time" : ""}${open ? " open" : ""}${fresh ? " row-new" : ""}`}>
       {mark && markLabel && <span className="sr-only">{markLabel}</span>}
       {pick
         ? <button type="button" className="row-main row-pick" aria-pressed={pick.pressed} onClick={pick.onPick}>{main}</button>
