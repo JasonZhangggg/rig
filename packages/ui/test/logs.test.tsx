@@ -438,6 +438,18 @@ describe("Logs", () => {
     expect(screen.getByRole("img", { name: "Temperatures" }).querySelector(".chart-limit")).not.toBeNull();
   });
 
+  it("draws a live line all the way to the right edge, so no gap opens before the next reading", () => {
+    const now = Date.now();
+    // A reading every 2 s, the newest one a moment ago, as the live view gets them.
+    const points = Array.from({ length: 40 }, (_, k) => ({ t: now - 300 - (39 - k) * 2000, v: [50 + (k % 5)] }));
+    const lanes = [{ title: "Temperatures", type: "temperature" as const, series: [{ i: 0, cls: "c-ink", name: "Processor" }] }];
+    render(<Lanes points={points} lanes={lanes} t0={now - 60_000} t1={now} cursor={null} onCursor={() => {}} live />);
+    const d = screen.getByRole("img", { name: "Temperatures" }).querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    const xs = [...d.matchAll(/[ML](-?[\d.]+),/g)].map((m) => Number(m[1]));
+    // The chart is 900 wide with 8 to spare on the right, so the line has to reach 892.
+    expect(Math.max(...xs)).toBeGreaterThanOrEqual(892);
+  });
+
   it("labels the start and end of a chart with only a few readings", () => {
     const t0 = new Date(2026, 10, 17, 21, 0, 3).getTime();
     const points = [0, 2000, 4000].map((d, i) => ({ t: t0 + d, cpu: 60 + i, gpu: null, busy: false }));

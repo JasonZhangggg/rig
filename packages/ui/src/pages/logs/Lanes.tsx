@@ -50,24 +50,28 @@ function nearest(t: number, points: readonly RecordedPoint[]) {
   return best;
 }
 
-/** One sensor's line, bucketed to about two pixels so a day of readings stays light. Spikes keep their peak; a stretch with no readings is a gap. */
+/**
+ * One sensor's line, bucketed to about two pixels so a day of readings stays light. Spikes keep their peak; a stretch with
+ * no readings is a gap. Buckets are fixed in time, so as a live chart slides, a reading stays in its bucket and the line
+ * doesn't shimmer.
+ */
 function pathOf(points: readonly RecordedPoint[], i: number, x: (t: number) => number, y: (v: number) => number, t0: number, t1: number, w: number, gapMs: number) {
-  const n = Math.max(20, Math.round(w / 2));
-  const b: { t: number; v: number; gap: boolean }[] = [];
+  const size = (t1 - t0) / Math.max(20, Math.round(w / 2)) || 1;
+  const b: { k: number; t: number; v: number; gap: boolean }[] = [];
   let last = -Infinity;
   for (const p of points) {
     if (p.t < t0 || p.t > t1) continue;
     const v = p.v[i];
     if (v == null) continue;
-    const k = Math.min(n - 1, Math.floor(((p.t - t0) / (t1 - t0 || 1)) * n));
+    const k = Math.floor(p.t / size);
     const gap = last > -Infinity && p.t - last > gapMs;
     last = p.t;
-    const cur = b[k];
-    if (!cur) b[k] = { t: p.t, v, gap };
+    const cur = b[b.length - 1];
+    if (!cur || cur.k !== k) b.push({ k, t: p.t, v, gap });
     else { if (gap) cur.gap = true; if (v > cur.v) { cur.v = v; cur.t = p.t; } }
   }
   let d = "";
-  for (const p of b) if (p) d += `${d && !p.gap ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+  for (const p of b) d += `${d && !p.gap ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
   return d;
 }
 
@@ -169,13 +173,22 @@ const NAMED = 4;
  * Sensor lanes on one time axis, as the live view shows them: a lane per kind of reading, and one crosshair through them
  * all, with each named line's value at that moment in its lane's head.
  */
-export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], marks = [], compact, gapMs = 90_000, live }: {
+export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, bands = [], marks = [], compact, gapMs = 90_000, live }: {
   points: readonly RecordedPoint[]; lanes: Lane[]; t0: number; t1: number; cursor: number | null; onCursor: (t: number | null) => void;
   bands?: Band[]; marks?: ChartMark[]; compact?: boolean; gapMs?: number;
   /** The last few minutes up to now: the lines slide left as new readings come in, and the newest value shows in each lane's head. */
   live?: boolean;
 }) {
   const temp = useTemp();
+  // The usual time between readings.
+  const every = useMemo(() => {
+    const steps = points.slice(1, 400).map((p, i) => p.t - points[i].t).sort((a, b) => a - b);
+    return steps[steps.length >> 1] ?? 0;
+  }, [points]);
+  // Live, the chart runs a couple of readings behind now. Each new reading is then drawn before the line slides to it,
+  // so the right edge never shows a gap that fills in when the reading arrives.
+  const lag = live ? Math.min(10_000, Math.max(1000, 2 * every)) : 0;
+  const t0 = start - lag, t1 = end - lag;
   const [ref, w] = useWidth<HTMLDivElement>(900);
   const clip = `ln-clip${useId().replace(/[^\w-]/g, "")}`;
   const pad = { l: compact ? 34 : 42, r: 8 };
@@ -185,7 +198,7 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
   // Live, the heads show the newest reading until the pointer picks a moment.
   const latest = live && !at ? points[points.length - 1] ?? null : null;
   const head = at ?? latest;
-  useGlide(ref, !!live, t1, iw / (t1 - t0 || 1));
+  useGlide(ref, !!live, end, iw / (t1 - t0 || 1));
   const shown = marks.filter((m) => m.t >= t0 && m.t <= t1);
   const move = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -194,21 +207,18 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
   };
 
   // Readings further apart than a few of their usual steps (the PC was off or asleep) leave a gap.
-  const gap = useMemo(() => {
-    const steps = points.slice(1, 400).map((p, i) => p.t - points[i].t).sort((a, b) => a - b);
-    return Math.max(gapMs, 3 * (steps[steps.length >> 1] ?? 0));
-  }, [points, gapMs]);
+  const gap = Math.max(gapMs, 3 * every);
   const drawn = useMemo(() => lanes.map((lane) => {
     const h = lane.h ?? (compact ? 76 : 96);
     const vals: number[] = [];
-    for (const p of points) if (p.t >= t0 && p.t <= t1) for (const s of lane.series) { const v = p.v[s.i]; if (v != null) vals.push(v); }
+    for (const p of points) if (p.t >= t0 && p.t <= end) for (const s of lane.series) { const v = p.v[s.i]; if (v != null) vals.push(v); }
     // A short lane gets fewer grid lines, so their labels don't crowd.
     const sc = scale(lane.type, vals, lane.limit, h >= 100 ? 4 : 3);
     const y = (v: number) => 6 + (h - 12) * (1 - (v - sc.lo) / (sc.hi - sc.lo || 1));
     const grid = gridOf(sc);
     // Live lines start a little before the left edge, so sliding left never shows an empty strip there.
     const from = live ? t0 - (t1 - t0) / 10 : t0;
-    const paths = lane.series.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, t1, iw, gap) }));
+    const paths = lane.series.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap) }));
     return { lane, h, y, grid, paths, sc };
   }), [points, lanes, t0, t1, w, compact, gap]); // eslint-disable-line react-hooks/exhaustive-deps
 
