@@ -12,8 +12,27 @@ import { serious } from "./summary";
 import { clock, clockSec, dayName, isPhone, stateWord } from "./words";
 
 const DAY = 864e5;
-/** How far back the live charts reach, in minutes: the last couple, like Task Manager, or the last ten Rig keeps. */
-const spans = [2, 10] as const;
+/** How far back the live charts reach, in minutes, up to the hour Rig keeps. */
+const spans = [1, 5, 15, 60] as const;
+const spanWord = (m: number) => (m === 60 ? "1 hour" : `${m} min`);
+/** About this many readings are drawn across a chart, however long it spans. */
+const DRAWN = 400;
+
+/**
+ * Every reading for a short span; for a long one, the last reading of each slot, so an hour isn't 1,800 points a line.
+ * Slots are fixed in time, so a reading stays drawn as the chart slides.
+ */
+function thin<T extends { t: number }>(list: readonly T[], from: number, span: number): T[] {
+  const inRange = list.filter((p) => p.t >= from - span / 10);
+  const step = span / DRAWN;
+  if (inRange.length <= DRAWN * 1.5) return inRange;
+  const out: T[] = [];
+  for (const p of inRange) {
+    const slot = Math.floor(p.t / step);
+    if (out.length && Math.floor(out[out.length - 1].t / step) === slot) out[out.length - 1] = p; else out.push(p);
+  }
+  return out;
+}
 /** Windows' event log is read again this often while Live is open. */
 const EVENTS_EVERY_MS = 30_000;
 /** How many log entries show before Show more. */
@@ -42,10 +61,12 @@ export function LiveLogs() {
 function LiveReadings() {
   const pc = useAppSelector((c) => c.pc, Object.is);
   const { live } = useData("live");
-  const [span, setSpan] = useState<number>(spans[0]);
-  const r = useMemo(() => liveRecorded(pc.readings ?? [], live), [pc.readings, live]);
-  const limits = limitsOf(pc);
+  const [span, setSpan] = useState<number>(5);
   const now = Date.now();
+  const r = useMemo(() => liveRecorded(pc.readings ?? [], thin(live, now - span * 60_000, span * 60_000)), [pc.readings, live, span]); // eslint-disable-line react-hooks/exhaustive-deps
+  const limits = limitsOf(pc);
+  // Rig keeps readings from when it opened, so a long span may start partway.
+  const since = live[0] && live[0].t > now - span * 60_000 + 30_000 ? live[0].t : null;
   const last = live[live.length - 1];
   const every = live.length > 1 ? Math.max(1, Math.round((last.t - live[live.length - 2].t) / 1000)) : null;
   const status = !pc.online ? (last ? `Last reading at ${clock(last.t)}` : "") : every ? `New reading every ${every} s` : "Waiting for the next reading";
@@ -56,13 +77,16 @@ function LiveReadings() {
         <div className="lv-tools">
           <span className="faint" aria-live="off">{status}</span>
           <div className="seg" role="group" aria-label="How far back">
-            {spans.map((m) => <button key={m} type="button" aria-pressed={span === m} onClick={() => setSpan(m)}>{m} min</button>)}
+            {spans.map((m) => <button key={m} type="button" aria-pressed={span === m} onClick={() => setSpan(m)}>{spanWord(m)}</button>)}
           </div>
         </div>
       </div>
       {!pc.online && live.length < 2 ? <ChartNote>{`${pc.name} is offline, so there's nothing live to show. Recorded has what it logged.`}</ChartNote>
         : live.length < 2 || !r.sensors.length ? <ChartNote>Readings draw here as they come in.</ChartNote>
-        : <AllSensors r={r} from={now - span * 60_000} to={now} limits={limits} compact={isPhone()} live={pc.online} />}
+        : <>
+          <AllSensors r={r} from={now - span * 60_000} to={now} limits={limits} compact={isPhone()} live={pc.online} />
+          {since && <p className="faint lv-since">Readings start at {clock(since)}, when Rig opened. For earlier ones, see <a href="#recorded">Recorded</a>.</p>}
+        </>}
     </section>
   );
 }

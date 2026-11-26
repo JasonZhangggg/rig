@@ -101,8 +101,8 @@ export interface Data {
 /** A live reading of the whole PC: its main readings as a history point, and every sensor's value by id. */
 export type LivePoint = HistoryPoint & { vals: Record<string, number> };
 
-/** How far back the live readings reach. */
-export const LIVE_KEEP_MS = 10 * 60_000;
+/** How far back the live readings reach: an hour, from the moment Rig opened. */
+export const LIVE_KEEP_MS = 60 * 60_000;
 
 /**
  * The live readings with the PC's newest one added. Kept from the moment the PC is on screen, not from when a page that

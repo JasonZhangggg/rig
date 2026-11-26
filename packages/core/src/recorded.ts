@@ -93,6 +93,26 @@ export function recorded(rec: Pick<Recording, "samples" | "sensors">): Recorded 
   return withParts(sensors, points, full);
 }
 
+/**
+ * Several recordings as one, in time order, for a chart that spans days. Each day lists its own sensors, so every
+ * reading is lined up again with the sensors of all of them together, matched by id.
+ */
+export function joinRecordings(recs: readonly Pick<Recording, "samples" | "sensors">[]): Pick<Recording, "samples" | "sensors"> {
+  const sensors: SensorRef[] = [];
+  const at = new Map<string, number>();
+  for (const r of recs) for (const s of r.sensors ?? []) if (!at.has(s.id)) { at.set(s.id, sensors.length); sensors.push(s); }
+  const samples = recs.flatMap((r) => {
+    const to = (r.sensors ?? []).map((s) => at.get(s.id)!);
+    return r.samples.map((x) => {
+      if (!x.all) return x;
+      const all: (number | null)[] = new Array(sensors.length).fill(null);
+      x.all.forEach((v, i) => { if (to[i] != null) all[to[i]] = v; });
+      return { ...x, all };
+    });
+  }).sort((a, b) => a.t - b.t);
+  return { samples, sensors: sensors.length ? sensors : undefined };
+}
+
 /** A sensor's highest reading between two times, and when. */
 export function peakOf(r: Recorded, i: number, from = -Infinity, to = Infinity): { max: number; at: number } | null {
   let best: { max: number; at: number } | null = null;

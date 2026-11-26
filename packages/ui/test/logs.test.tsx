@@ -234,6 +234,12 @@ describe("Logs", () => {
     const readings = screen.getByRole("region", { name: "Readings" });
     const temps = await within(readings).findByRole("img", { name: "Temperatures" }, { timeout: 500 });
     within(readings).getByText(/New reading every 2 s/);
+    const spans = within(readings).getByRole("group", { name: "How far back" });
+    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["1 min", "5 min", "15 min", "1 hour"]);
+    // Rig has only been open a few seconds, so an hour of readings starts partway, and says when.
+    fireEvent.click(within(spans).getByRole("button", { name: "1 hour" }));
+    within(readings).getByText(/Readings start at .*, when Rig opened/);
+    fireEvent.click(within(spans).getByRole("button", { name: "5 min" }));
     // The line moves with each new reading.
     const line = () => [...temps.querySelectorAll("path")].map((p) => p.getAttribute("d")).join("|");
     const before = line();
@@ -311,6 +317,33 @@ describe("Logs", () => {
       const all = screen.getByRole("region", { name: "All sensors" });
       expect(key.compareDocumentPosition(all) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Ask about this" })).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("shows the last 6 hours or the whole week of the background log, not only a day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
+    try {
+      render(<RigApp client={new DemoClient()} />);
+      await screen.findByText(/Things to look at/i);
+      await open("recorded");
+      await screen.findByRole("heading", { name: "Today" });
+      const spans = screen.getByRole("group", { name: "How far back" });
+      fireEvent.click(within(spans).getByRole("button", { name: "Week" }));
+      await screen.findByRole("heading", { name: /^Last \d days$/ });
+      expect(screen.queryByRole("button", { name: "Day before" })).toBeNull();
+      const readings = screen.getByRole("region", { name: "Readings" });
+      // The chart runs across days, from the first one's morning to now.
+      await within(readings).findByText(/^[A-Z][a-z]{2} \d+, .* to now$/);
+      await within(readings).findByRole("img", { name: "Temperatures" });
+      // Yesterday's driver reset is there, with its day, since a week has more than one 8:41 PM.
+      const happened = screen.getByRole("region", { name: "What happened" });
+      expect(within(happened).getAllByRole("button", { name: /The graphics driver stopped and recovered/ })[0].textContent).toMatch(/^\w{3} \d+:\d\d/);
+
+      fireEvent.click(within(spans).getByRole("button", { name: "6 hours" }));
+      await screen.findByRole("heading", { name: "Last 6 hours" });
+      within(screen.getByRole("region", { name: "What happened" })).getByText("Nothing unusual in the last 6 hours.");
+      await within(screen.getByRole("region", { name: "Readings" })).findByText(/^\d+:\d\d [AP]M to now$/);
     } finally { vi.useRealTimers(); }
   });
 

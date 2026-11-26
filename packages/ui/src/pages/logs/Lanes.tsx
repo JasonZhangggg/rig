@@ -94,14 +94,16 @@ function gridLabel(type: LaneType, v: number) {
 /** Times along the axis; `fine` allows ticks every 15 or 30 seconds, for the live view, where labels carry seconds. */
 function ticksFor(t0: number, t1: number, w: number, fine = false) {
   const M = 60_000, H = 36e5;
-  const want = (t1 - t0) / Math.max(2, Math.floor(w / (fine ? 70 : 90)));
-  const every = [...(fine ? [15_000, 30_000] : []), M, 2 * M, 5 * M, 10 * M, 15 * M, 30 * M, H, 2 * H, 3 * H, 6 * H].find((e) => e >= want) ?? 6 * H;
+  // Over days, one tick a day, named by the day.
+  const want = t1 - t0 > 2 * 864e5 ? 24 * H : (t1 - t0) / Math.max(2, Math.floor(w / (fine ? 70 : 90)));
+  const every = [...(fine ? [15_000, 30_000] : []), M, 2 * M, 5 * M, 10 * M, 15 * M, 30 * M, H, 2 * H, 3 * H, 6 * H, 12 * H, 24 * H].find((e) => e >= want) ?? 24 * H;
   const zone = new Date(t0).getTimezoneOffset() * M;
   const out: number[] = [];
   for (let t = Math.ceil((t0 - zone) / every) * every + zone; t <= t1; t += every) out.push(t);
   return out;
 }
-const tickLabel = (t: number, span: number) => (span > 4 * 36e5 && new Date(t).getMinutes() === 0 ? new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) : clock(t));
+const tickLabel = (t: number, span: number) => (span > 2 * 864e5 ? new Date(t).toLocaleDateString(undefined, { weekday: "short" })
+  : span > 4 * 36e5 && new Date(t).getMinutes() === 0 ? new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) : clock(t));
 
 const reduceMotion = () => typeof window !== "undefined" && (document.documentElement.dataset.motion === "reduce" || !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 
@@ -220,7 +222,7 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
       <svg width={w} height={22} className="ln-axis" aria-hidden="true">
         {live && <defs><clipPath id={`${clip}-axis`}><rect x={pad.l - 30} y={0} width={iw + 38} height={22} /></clipPath></defs>}
         <g clipPath={live ? `url(#${clip}-axis)` : undefined}>
-          <g className="ln-move">{ticksFor(live ? t0 - (t1 - t0) / 10 : t0, t1, iw, live).map((t) => <text key={t} x={x(t)} y={14} className="chart-tick" textAnchor="middle">{live ? clockSec(t).replace(/\s?[AP]M$/i, "") : tickLabel(t, t1 - t0)}</text>)}</g>
+          <g className="ln-move">{ticksFor(live ? t0 - (t1 - t0) / 10 : t0, t1, iw, live).map((t) => <text key={t} x={x(t)} y={14} className="chart-tick" textAnchor="middle">{live ? (t1 - t0 > 5 * 60_000 ? clock(t) : clockSec(t)).replace(/\s?[AP]M$/i, "") : tickLabel(t, t1 - t0)}</text>)}</g>
         </g>
         {at && <g className="ln-when"><rect x={x(at.t) - 42} y={0} width={84} height={20} rx={10} /><text x={x(at.t)} y={14} textAnchor="middle">{t1 - t0 < 30 * 60_000 ? clockSec(at.t) : clock(at.t)}</text></g>}
       </svg>
