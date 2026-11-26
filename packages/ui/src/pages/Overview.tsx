@@ -10,6 +10,7 @@ import { Popover } from "./overview/Popover";
 import { TempsCard, type TempsStyle } from "./overview/TempsCard";
 import { dashboardKey, useDashboard } from "./overview/useDashboard";
 import { WeekCard, type EveningsStyle } from "./overview/WeekCard";
+import { ChangesWidget, DriversWidget, DrivesWidget, EventsWidget, GamesWidget, LogsWidget, ManualsWidget, TrendWidget, UpgradeWidget } from "./overview/more";
 import { Arrow, AsksWidget, HealthWidget, LiveWidget, PCWidget, PartsWidget, StorageWidget, TodoWidget, checkupQuestion, scored, sourceItems, useHomeIssues, useOpenIssue, type TileBox } from "./overview/widgets";
 import { focusSection } from "./settings/sections";
 import { firstName, greeting } from "./shared";
@@ -116,6 +117,15 @@ export function Overview() {
       case "storage": return <StorageWidget {...props} />;
       case "live": return <LiveWidget {...props} />;
       case "parts": return <PartsWidget {...props} />;
+      case "trend": return <TrendWidget {...props} />;
+      case "drives": return <DrivesWidget {...props} />;
+      case "changes": return <ChangesWidget {...props} />;
+      case "events": return <EventsWidget {...props} />;
+      case "games": return <GamesWidget {...props} />;
+      case "upgrade": return <UpgradeWidget {...props} />;
+      case "drivers": return <DriversWidget {...props} />;
+      case "logs": return <LogsWidget {...props} />;
+      case "manuals": return <ManualsWidget {...props} />;
       case "temps": return (
         <TempsCard
           temps={week?.temps ?? null} name={pc.name} style={w.style as TempsStyle} days={Number(o.days)} compact={compact}
