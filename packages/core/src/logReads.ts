@@ -15,6 +15,8 @@ export interface LogQuery { channel: string; providers?: string[]; ids?: number[
 interface LogTopic { says: string; for: string[]; queries: LogQuery[]; also: string[] }
 interface LogFile { says: string; path?: string; folder?: string; match?: string; format?: "setupapi" }
 interface LogVendor { name: string; folders: string[] }
+export type FactType = "stop" | "hex" | "int" | "version" | "kb" | "guid" | "id" | "name" | "file";
+export interface LogFact { provider: string; ids: number[]; says: string; fields: Record<string, { from: string[]; type: FactType }> }
 
 interface LogRules {
   version: number;
@@ -22,19 +24,21 @@ interface LogRules {
     defaultHours: number; defaultLongHours: number; maxHours: number; defaultMax: number; maxEvents: number; maxFiles: number; defaultLines: number; maxLines: number;
     messageChars: number; lineChars: number; textChars: number; scanBytes: number; examine: number; providers: number; ids: number; containsChars: number;
   };
-  sources: Record<LogSource, { says: string; clean: boolean }>;
+  sources: Record<LogSource, { says: string; clean: boolean; textTaints?: boolean }>;
   topics: Record<string, LogTopic>;
   files: Record<string, LogFile>;
   vendors: Record<string, LogVendor>;
   vendorExtensions: string[];
   vendorDepth: number;
+  facts: LogFact[];
+  factTypes: Record<FactType, string>;
   bugchecks: Record<string, string>;
   esrtStatus: Record<string, string>;
   esrtType: Record<string, string>;
 }
 
 /** The one table of what log reads may look at, shared with the helper (rules/logs.json). */
-export const LOG_RULES = rulesJson as LogRules;
+export const LOG_RULES = rulesJson as unknown as LogRules;
 export const LOG_SOURCES = Object.keys(LOG_RULES.sources) as LogSource[];
 export const LOG_TOPICS = Object.keys(LOG_RULES.topics);
 export const LOG_FILES = Object.keys(LOG_RULES.files);
@@ -67,6 +71,8 @@ export interface LogRead {
   lines?: number;
   /** channels: a word in the channel's name. */
   find?: string;
+  /** events, topic and reliability: each event's message too, which counts as outside text. Without it, each event's facts only. */
+  text?: boolean;
 }
 
 const L = LOG_RULES.limits;
@@ -113,6 +119,10 @@ export function checkLogRead(r: Record<string, unknown>, now = Date.now()): LogR
     const cap = source === "vendor" ? L.maxFiles : L.maxEvents;
     if (!int(r.max, 1, cap)) return `max must be a whole number from 1 to ${cap}.`;
     out.max = r.max as number;
+  }
+  if (r.text !== undefined && r.text !== false) {
+    if (r.text !== true) return "text must be true or false.";
+    if (LOG_RULES.sources[source].textTaints) out.text = true;
   }
   if (r.contains !== undefined && r.contains !== "") {
     if (typeof r.contains !== "string" || r.contains.length > L.containsChars || !PLAIN.test(r.contains)) return `contains must be plain text of at most ${L.containsChars} characters.`;
@@ -188,8 +198,78 @@ function vendorFile(raw: string): string | null {
   return LOG_RULES.vendorExtensions.some((e) => low(p).endsWith(e)) ? p : null;
 }
 
-/** Whether a log read can bring back text someone else wrote. Only crash dumps' stop codes and firmware versions are Windows' own. */
-export const logTaints = (r: LogRead) => !LOG_RULES.sources[r.source].clean;
+/**
+ * Whether a log read can bring back text someone else wrote. Events, topics and Reliability Monitor bring back each event's
+ * facts only, unless the read asks for text; crash dumps, error reports and firmware status are facts only.
+ */
+export const logTaints = (r: LogRead) => {
+  const s = LOG_RULES.sources[r.source];
+  return !s.clean || (!!s.textTaints && r.text === true);
+};
+
+/** What a fact of each type may look like. The helper keeps only values that fit; cleanLogAnswer checks them again. */
+export const FACT_PATTERNS: Record<FactType, RegExp> = {
+  stop: /^0x[0-9A-F]{8}$/,
+  hex: /^0x[0-9A-F]{8}(?:[0-9A-F]{8})?$/,
+  int: /^-?[0-9]{1,19}$/,
+  version: /^[0-9]{1,9}(?:\.[0-9]{1,9}){1,4}$/,
+  kb: /^KB[0-9]{6,8}$/,
+  guid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  id: /^[A-Za-z0-9._+#{}&\\:$@-]{1,160}$/,
+  name: /^[\p{L}\p{N}][\p{L}\p{N} ._()+&#,/:!-]{0,63}$/u,
+  file: /^[\p{L}\p{N}][\p{L}\p{N} ._()+&#,!-]{0,63}$/u,
+};
+const isFact = (v: unknown) => typeof v === "string" && (Object.values(FACT_PATTERNS).some((p) => p.test(v)) || BUGCHECK_NAMES.has(v));
+const BUGCHECK_NAMES = new Set(Object.values(LOG_RULES.bugchecks));
+const SAYS = new Set([...LOG_RULES.facts.map((f) => f.says), ...Object.values(LOG_RULES.topics).map((t) => t.says)]);
+const ISO = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?Z$/;
+
+/** The fields each kind of row may keep in a clean answer, and what each must look like. Anything else is left out. */
+const ROW_FIELDS: Record<string, (v: unknown) => boolean> = {
+  t: (v) => typeof v === "string" && ISO.test(v),
+  log: (v) => typeof v === "string" && CHANNEL.test(v),
+  source: (v) => typeof v === "string" && PROVIDER.test(v),
+  id: (v) => typeof v === "number" && Number.isInteger(v),
+  level: (v) => LOG_LEVELS.includes(v as LogLevel),
+  what: (v) => typeof v === "string" && SAYS.has(v),
+  type: (v) => typeof v === "string" && FACT_PATTERNS.id.test(v),
+  app: (v) => typeof v === "string" && FACT_PATTERNS.file.test(v),
+  product: (v) => typeof v === "string" && FACT_PATTERNS.name.test(v),
+};
+const LEFT_OUT = "(left out)";
+
+function cleanRow(row: unknown): unknown {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (k === "facts" || k === "signature") {
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      const facts: Record<string, unknown> = {};
+      for (const [fk, fv] of Object.entries(v)) {
+        const key = FACT_PATTERNS.name.test(fk) ? fk : null;
+        if (key) facts[key] = isFact(fv) ? fv : LEFT_OUT;
+      }
+      out[k] = facts;
+    } else if (ROW_FIELDS[k]) out[k] = ROW_FIELDS[k](v) ? v : LEFT_OUT;
+  }
+  return out;
+}
+
+/** The lists in a log read's answer whose rows came from the PC. Their rows keep only checked fields; the rest of the answer is the helper's own. */
+const ROW_LISTS = ["events", "reports", "records"];
+
+/**
+ * A clean log read's answer as the model may see it: each event, report or record keeps only fields that fit their
+ * type, so no message or other text an app wrote gets through. Crash dumps and firmware status pass as they are.
+ */
+export function cleanLogAnswer(text: string): string {
+  let a: unknown;
+  try { a = JSON.parse(text); } catch { return JSON.stringify({ error: "Rig couldn't read this log's answer." }); }
+  if (!a || typeof a !== "object" || Array.isArray(a)) return JSON.stringify({ error: "Rig couldn't read this log's answer." });
+  const o = a as Record<string, unknown>;
+  for (const list of ROW_LISTS) if (Array.isArray(o[list])) o[list] = (o[list] as unknown[]).map(cleanRow);
+  return JSON.stringify(o);
+}
 
 /** A log read in a few plain words, like "the System event log" or "logs about firewall changes". */
 export function logWhat(r: LogRead): string {
