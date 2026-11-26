@@ -6,7 +6,7 @@ import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
 import type { BuildShape, Picks } from "./build";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
-export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "events" | "manuals" | "web" | "signin" | "settings";
+export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "recorded" | "events" | "manuals" | "web" | "signin" | "settings";
 
 /** One row of a before and after table: [setting, now, after]. */
 export type DiffRow = [string, string, string];

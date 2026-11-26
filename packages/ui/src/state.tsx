@@ -2,9 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
 import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
-import { alertRules, formatTemp, helperStep, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply, type OpenRevert } from "@rig/core";
+import { alertRules, formatTemp, helperStep, livePoint, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply, type OpenRevert } from "@rig/core";
 
-export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "events", "manuals", "web", "signin", "settings"];
+export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "recorded", "events", "manuals", "web", "signin", "settings"];
 
 /** What the app around the screens can do beyond the client. The desktop app passes these; the website passes none. */
 export interface AppHost {
@@ -94,6 +94,29 @@ export interface Data {
   recordings: RecordingInfo[];
   /** Changes made on the on-screen PC that you haven't seen: not made in this window, and since you last opened Changes. */
   unseenChanges: number;
+  /** The on-screen PC's readings as they came in, oldest first, the last ten minutes of them, for the live charts. */
+  live: LivePoint[];
+}
+
+/** A live reading of the whole PC: its main readings as a history point, and every sensor's value by id. */
+export type LivePoint = HistoryPoint & { vals: Record<string, number> };
+
+/** How far back the live readings reach. */
+export const LIVE_KEEP_MS = 10 * 60_000;
+
+/**
+ * The live readings with the PC's newest one added. Kept from the moment the PC is on screen, not from when a page that
+ * charts them opens, so the charts are full the first time you look. The same list when nothing new came in.
+ */
+export function withLive(prev: LivePoint[], pc: PC): LivePoint[] {
+  if (!pc.online || !pc.parts) return prev;
+  const t = pc.seenAt ? Date.parse(pc.seenAt) : Date.now();
+  if (!Number.isFinite(t) || (prev.length && prev[prev.length - 1].t >= t)) return prev;
+  const vals: Record<string, number> = {};
+  for (const r of pc.readings ?? []) if (r.value != null) vals[r.id] = r.value;
+  const from = t - LIVE_KEEP_MS;
+  const keep = prev.length && prev[0].t < from ? prev.filter((p) => p.t >= from) : prev;
+  return [...keep, { ...livePoint(pc, t), vals }];
 }
 
 const storage = {
@@ -116,6 +139,9 @@ function readSeen(pcId: string): SeenChanges | null {
   } catch { return null; }
 }
 const unseenOf = (list: Change[], s: SeenChanges) => list.filter((c) => time(c.at) > time(s.at) && !s.ids.includes(c.id)).length;
+
+/** The views of the Logs page, where a log opens in place. */
+const logRoutes: Route[] = ["logs", "recorded", "events"];
 
 function routeFromHash(): Route {
   const h = location.hash.replace("#", "") as Route;
@@ -316,7 +342,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
-  const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0 });
+  const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0, live: [] });
   const [loaded, setLoaded] = useState(false);
   /** Why the first read failed or stalled, or null while it hasn't. */
   const [failed, setFailed] = useState<string | null>(null);
@@ -359,11 +385,13 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     storage.set("rig.pc", ui.pcId);
     const id = ui.pcId;
     firstRead.current = null;
-    setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: client.conversation?.(id) ?? [], recordings: [], unseenChanges: 0 }));
+    setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: client.conversation?.(id) ?? [], recordings: [], unseenChanges: 0, live: [] }));
     setUI((u) => ({ ...u, recordingId: null }));
     const stop = client.watch(id, (next) => setData((d) => {
       const pc = keepUnchanged(d.pc?.id === next.id ? d.pc : null, next);
-      return pc === d.pc ? d : { ...d, pc, pcs: d.pcs.map((p) => (p.id === pc.id ? pc : p)) };
+      const live = next.id === id ? withLive(d.live, next) : d.live;
+      if (pc === d.pc && live === d.live) return d;
+      return { ...d, pc, live, pcs: pc === d.pc ? d.pcs : d.pcs.map((p) => (p.id === pc.id ? pc : p)) };
     }));
     const stopRecordings = client.watchRecordings(id, (recordings) => setData((d) => ({ ...d, recordings })));
     let live = true;
@@ -538,10 +566,12 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
       }),
 
       openRecording: (id) => {
-        const back = id == null && uiNow.current.recordingId != null && uiNow.current.route === "logs";
-        if (id != null && uiNow.current.route === "logs" && uiNow.current.recordingId == null) logsScroll.current = window.scrollY;
+        // A log opens over the Logs view it was picked from; from anywhere else, over Logs.
+        const inLogs = logRoutes.includes(uiNow.current.route);
+        const back = id == null && uiNow.current.recordingId != null && inLogs;
+        if (id != null && inLogs && uiNow.current.recordingId == null) logsScroll.current = window.scrollY;
         set({ recordingId: id });
-        if (id && location.hash !== "#logs") location.hash = "logs";
+        if (id && !inLogs) location.hash = "logs";
         // Back to the list lands where it was; a recording opens at its top.
         if (back) requestAnimationFrame(() => window.scrollTo(0, logsScroll.current));
         else window.scrollTo(0, 0);

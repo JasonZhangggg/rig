@@ -69,7 +69,7 @@ describe("Steady interactions", () => {
   });
 
   it("goes back to where the Logs list was scrolled after a recording", async () => {
-    await show("logs");
+    await show("recorded");
     const scrolls: number[] = [];
     window.scrollTo = ((_x: number, y: number) => { scrolls.push(y); }) as typeof window.scrollTo;
     Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });

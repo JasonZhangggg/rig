@@ -16,12 +16,13 @@ export const navItems: [Route, string, string][] = [
   ["games", "Games", "M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01"],
   ["history", "Performance", "M3 15l4-5 3 3 5-7M3 17h14"],
   ["logs", "Logs", "M5 3h7l3 3v11H5zM12 3v3h3M8 10h4M8 13h4"],
+  ["recorded", "Recorded logs", "M3 10h3l2-5 4 10 2-5h3"],
   ["events", "Windows events", "M10 3 2 17h16zM10 8v4M10 14.5v.01"],
   ["settings", "Settings", "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4"],
 ];
 
 /** The page a route lives on in the sidebar: upgrades and manuals are on My PC, performance, games and Windows events are views of Logs. */
-export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" ? "pc" : r === "history" || r === "games" || r === "events" ? "logs" : r);
+export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" ? "pc" : r === "history" || r === "games" || r === "events" || r === "recorded" ? "logs" : r);
 
 /** Shows exactly what will change, before anything does. */
 export function ReviewSheet() {

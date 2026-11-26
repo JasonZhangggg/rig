@@ -153,7 +153,7 @@ describe("Chat", () => {
 describe("Logs", () => {
   it("says Stopping… on Stop until the recording has stopped", async () => {
     const client = await start();
-    await go("logs");
+    await go("recorded");
     fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
     await screen.findByText("Recording now");
     const g = slow(client, "stopRecording");
@@ -166,7 +166,7 @@ describe("Logs", () => {
 
   it("says Stopping… on a recording's own page, and keeps its readings if a later read fails", async () => {
     const client = await start();
-    await go("logs");
+    await go("recorded");
     fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
     await screen.findByText("Recording now");
     fireEvent.click(screen.getByRole("button", { name: "Watch it" }));

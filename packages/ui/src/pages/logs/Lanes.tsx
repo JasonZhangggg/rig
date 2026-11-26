@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from "react";
 import { peakOf, sensorGroups, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
@@ -91,16 +91,38 @@ function gridLabel(type: LaneType, v: number) {
   return `${v}°`;
 }
 
-function ticksFor(t0: number, t1: number, w: number) {
+/** Times along the axis; `fine` allows ticks every 15 or 30 seconds, for the live view, where labels carry seconds. */
+function ticksFor(t0: number, t1: number, w: number, fine = false) {
   const M = 60_000, H = 36e5;
-  const want = (t1 - t0) / Math.max(2, Math.floor(w / 90));
-  const every = [M, 2 * M, 5 * M, 10 * M, 15 * M, 30 * M, H, 2 * H, 3 * H, 6 * H].find((e) => e >= want) ?? 6 * H;
+  const want = (t1 - t0) / Math.max(2, Math.floor(w / (fine ? 70 : 90)));
+  const every = [...(fine ? [15_000, 30_000] : []), M, 2 * M, 5 * M, 10 * M, 15 * M, 30 * M, H, 2 * H, 3 * H, 6 * H].find((e) => e >= want) ?? 6 * H;
   const zone = new Date(t0).getTimezoneOffset() * M;
   const out: number[] = [];
   for (let t = Math.ceil((t0 - zone) / every) * every + zone; t <= t1; t += every) out.push(t);
   return out;
 }
 const tickLabel = (t: number, span: number) => (span > 4 * 36e5 && new Date(t).getMinutes() === 0 ? new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) : clock(t));
+
+const reduceMotion = () => typeof window !== "undefined" && (document.documentElement.dataset.motion === "reduce" || !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+
+/**
+ * Slides live lines left as time passes, so between readings they glide rather than jump: each frame moves the lines
+ * by however long it's been since they were drawn. Nothing moves with reduced motion; the lines step with each reading.
+ */
+function useGlide(box: RefObject<HTMLElement>, on: boolean, drawnAt: number, pxPerMs: number) {
+  // Before paint, so freshly drawn lines never show a frame at the old offset.
+  useLayoutEffect(() => {
+    const groups = box.current ? [...box.current.querySelectorAll<SVGGElement>(".ln-move")] : [];
+    const put = (dx: number) => groups.forEach((g) => g.setAttribute("transform", `translate(${(-dx).toFixed(2)},0)`));
+    put(0);
+    if (!on || reduceMotion() || typeof requestAnimationFrame === "undefined") return;
+    let frame = 0;
+    // Never further than a few readings' worth, so a stalled PC doesn't slide its lines out of view.
+    const step = () => { put(Math.min(Date.now() - drawnAt, 8000) * pxPerMs); frame = requestAnimationFrame(step); };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [box, on, drawnAt, pxPerMs]);
+}
 
 /** How many lines a lane names in its head; the rest are drawn faint. */
 const NAMED = 4;
@@ -109,16 +131,23 @@ const NAMED = 4;
  * Sensor lanes on one time axis, as the live view shows them: a lane per kind of reading, and one crosshair through them
  * all, with each named line's value at that moment in its lane's head.
  */
-export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], marks = [], compact, gapMs = 90_000 }: {
+export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], marks = [], compact, gapMs = 90_000, live }: {
   points: readonly RecordedPoint[]; lanes: Lane[]; t0: number; t1: number; cursor: number | null; onCursor: (t: number | null) => void;
   bands?: Band[]; marks?: ChartMark[]; compact?: boolean; gapMs?: number;
+  /** The last few minutes up to now: the lines slide left as new readings come in, and the newest value shows in each lane's head. */
+  live?: boolean;
 }) {
   const temp = useTemp();
   const [ref, w] = useWidth<HTMLDivElement>(900);
+  const clip = `ln-clip${useId().replace(/[^\w-]/g, "")}`;
   const pad = { l: compact ? 34 : 42, r: 8 };
   const iw = Math.max(40, w - pad.l - pad.r);
   const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * iw;
   const at = cursor != null ? nearest(cursor, points) : null;
+  // Live, the heads show the newest reading until the pointer picks a moment.
+  const latest = live && !at ? points[points.length - 1] ?? null : null;
+  const head = at ?? latest;
+  useGlide(ref, !!live, t1, iw / (t1 - t0 || 1));
   const shown = marks.filter((m) => m.t >= t0 && m.t <= t1);
   const move = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -139,7 +168,9 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
     const y = (v: number) => 6 + (h - 12) * (1 - (v - sc.lo) / (sc.hi - sc.lo || 1));
     const grid: number[] = [];
     for (let v = sc.lo; v <= sc.hi; v += sc.step) grid.push(v);
-    const paths = lane.series.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, t0, t1, iw, gap) }));
+    // Live lines start a little before the left edge, so sliding left never shows an empty strip there.
+    const from = live ? t0 - (t1 - t0) / 10 : t0;
+    const paths = lane.series.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, t1, iw, gap) }));
     return { lane, h, y, grid, paths };
   }), [points, lanes, t0, t1, w, compact, gap]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -154,13 +185,14 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
               {lane.series.slice(0, NAMED).map((s) => (
                 <span key={s.i} className="ln-key">
                   <i className={`ln-sw ${s.cls}`} />{s.name}
-                  {at && <b className="num">{value(temp, lane.type, at.v[s.i])}</b>}
+                  {head && <b className="num">{value(temp, lane.type, head.v[s.i])}</b>}
                 </span>
               ))}
               {lane.series.length > NAMED && <span className="ln-key faint">and {lane.series.length - NAMED} more</span>}
             </span>
           </div>
           <svg width={w} height={h} className="ln-svg" role="img" aria-label={lane.title}>
+            {live && <defs><clipPath id={`${clip}-${li}`}><rect x={pad.l} y={-2} width={iw} height={h + 4} /></clipPath></defs>}
             {bands.filter((b) => b.to > t0 && b.from < t1).map((b) => (
               <rect key={`${b.kind}${b.from}`} x={x(Math.max(b.from, t0))} width={Math.max(2, x(Math.min(b.to, t1)) - x(Math.max(b.from, t0)))} y={0} height={h} className={`ln-band ${b.kind}`} />
             ))}
@@ -172,7 +204,9 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
             ))}
             {lane.limit != null && <line x1={pad.l} x2={w - pad.r} y1={y(lane.limit)} y2={y(lane.limit)} className="chart-limit" />}
             {shown.map((m) => <line key={m.t} x1={x(m.t)} x2={x(m.t)} y1={0} y2={h} className={`ln-mark${m.look ? " look" : ""}`} />)}
-            {[...paths].reverse().map((p) => <path key={p.i} d={p.d} className={`ln-line ${p.cls}`} />)}
+            <g clipPath={live ? `url(#${clip}-${li})` : undefined}>
+              <g className="ln-move">{[...paths].reverse().map((p) => <path key={p.i} d={p.d} className={`ln-line ${p.cls}`} />)}</g>
+            </g>
             {at && <line x1={x(at.t)} x2={x(at.t)} y1={0} y2={h} className="ln-cross" />}
             {at && paths.slice(0, NAMED).map((p) => at.v[p.i] != null && <circle key={p.i} cx={x(at.t)} cy={y(at.v[p.i]!)} r={3.5} className={`ln-dot ${p.cls}`} />)}
             {li === 0 && shown.filter((m) => m.n != null).map((m) => (
@@ -184,7 +218,10 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
         </div>
       ))}
       <svg width={w} height={22} className="ln-axis" aria-hidden="true">
-        {ticksFor(t0, t1, iw).map((t) => <text key={t} x={x(t)} y={14} className="chart-tick" textAnchor="middle">{tickLabel(t, t1 - t0)}</text>)}
+        {live && <defs><clipPath id={`${clip}-axis`}><rect x={pad.l - 30} y={0} width={iw + 38} height={22} /></clipPath></defs>}
+        <g clipPath={live ? `url(#${clip}-axis)` : undefined}>
+          <g className="ln-move">{ticksFor(live ? t0 - (t1 - t0) / 10 : t0, t1, iw, live).map((t) => <text key={t} x={x(t)} y={14} className="chart-tick" textAnchor="middle">{live ? clockSec(t).replace(/\s?[AP]M$/i, "") : tickLabel(t, t1 - t0)}</text>)}</g>
+        </g>
         {at && <g className="ln-when"><rect x={x(at.t) - 42} y={0} width={84} height={20} rx={10} /><text x={x(at.t)} y={14} textAnchor="middle">{t1 - t0 < 30 * 60_000 ? clockSec(at.t) : clock(at.t)}</text></g>}
       </svg>
     </div>
@@ -241,8 +278,10 @@ export function lanesFor(r: Recorded, pick: string, limits: { cpu?: number; gpu?
 }
 
 /** The parts down the side, as in the live view: what each part's main reading reached in the stretch, and its line. */
-export function PartRail({ r, pick, onPick, from, to, limits }: {
+export function PartRail({ r, pick, onPick, from, to, limits, live }: {
   r: Recorded; pick: string; onPick: (id: string) => void; from: number; to: number; limits: { cpu?: number; gpu?: number };
+  /** Show each part's reading now, not its highest. */
+  live?: boolean;
 }) {
   const temp = useTemp();
   return (
@@ -253,13 +292,14 @@ export function PartRail({ r, pick, onPick, from, to, limits }: {
       </button>
       {r.parts.map((p) => {
         const s = r.sensors[p.lead];
-        const top = peakOf(r, p.lead, from, to);
+        const newest = live ? r.points[r.points.length - 1]?.v[p.lead] : null;
+        const top = live ? (newest == null ? null : { max: newest }) : peakOf(r, p.lead, from, to);
         const limit = p.id === "gpu" ? limits.gpu : p.id === "cpu" ? limits.cpu : undefined;
         const near = top && limit != null && s.type === "temperature" && top.max >= limit - 6;
         return (
           <button key={p.id} type="button" className="pf-part" aria-pressed={pick === p.id} onClick={() => onPick(p.id)}>
             <span className="pf-part-name">{p.name}</span>
-            <span className="pf-part-now"><b className={`num${near ? " look" : ""}`}>{value(temp, s.type, top?.max)}</b><span className="faint">highest</span></span>
+            <span className="pf-part-now"><b className={`num${near ? " look" : ""}`}>{value(temp, s.type, top?.max)}</b><span className="faint">{live ? "now" : "highest"}</span></span>
             <Spark points={r.points} i={p.lead} from={from} to={to} />
           </button>
         );
@@ -269,16 +309,19 @@ export function PartRail({ r, pick, onPick, from, to, limits }: {
 }
 
 /** Every sensor over a stretch: the parts down the side and their lanes. */
-export function AllSensors({ r, from, to, limits, bands, marks, compact }: {
-  r: Recorded; from: number; to: number; limits: { cpu?: number; gpu?: number }; bands?: Band[]; marks?: ChartMark[]; compact?: boolean;
+export function AllSensors({ r, from, to, limits, bands, marks, compact, live }: {
+  r: Recorded; from: number; to: number; limits: { cpu?: number; gpu?: number }; bands?: Band[]; marks?: ChartMark[]; compact?: boolean; live?: boolean;
 }) {
   const [pick, setPick] = useState("all");
   const [cursor, setCursor] = useState<number | null>(null);
-  const lanes = useMemo(() => lanesFor(r, pick, limits, compact ? 110 : 140), [r, pick, limits.cpu, limits.gpu, compact]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Live lanes are kept short, so the log under them is in view too.
+  const first = live ? (compact ? 96 : 116) : compact ? 110 : 140;
+  const lanes = useMemo(() => lanesFor(r, pick, limits, first).map((l, j) => (live && j > 0 ? { ...l, h: l.h ?? (compact ? 64 : 78) } : l)),
+    [r.sensors, r.parts, pick, limits.cpu, limits.gpu, first, live, compact]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="ln-grid">
-      <PartRail r={r} pick={pick} onPick={setPick} from={from} to={to} limits={limits} />
-      <Lanes points={r.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} />
+      <PartRail r={r} pick={pick} onPick={setPick} from={from} to={to} limits={limits} live={live} />
+      <Lanes points={r.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} />
     </div>
   );
 }

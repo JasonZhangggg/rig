@@ -217,7 +217,28 @@
 .ln-when rect { fill: var(--text); }
 .ln-when text { fill: var(--surface); font: 600 11.5px var(--font); }
 
+/* Live: every reading as it comes in, then the log as it's written. */
+.lv-page { gap: 24px; }
+.lv-badge { display: inline-flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 13px; font-weight: 600; }
+.lv-badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.lv-badge.on { color: var(--text); }
+.lv-badge.on i { background: var(--look); animation: lv-beat 2s var(--ease-in-out) infinite; }
+@keyframes lv-beat { 50% { opacity: .35; } }
+.lv-readings, .lv-feed { display: flex; flex-direction: column; gap: 10px; }
+.lv-feed { padding-top: 18px; border-top: 1px solid var(--line); }
+.lv-feed .rows { max-width: 900px; }
+.lv-sech { align-items: center; }
+.lv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.lv-tools .faint { font-size: 13px; }
+.lv-tools .seg button { height: 28px; padding: 0 12px; font-size: 13px; }
+.lv-tools .seg .num { margin-left: 4px; color: var(--text-3); font-weight: 500; }
+.lv-more { align-self: flex-start; }
+.lv-older { margin: 4px 0 0; font-size: 13px; }
+.lv-none { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .lv-badge.on i { animation: none; } }
+
 @media (max-width: 760px) {
+  .lv-sech { align-items: flex-start; flex-direction: column; }
   .rc-lower { grid-template-columns: minmax(0, 1fr); }
   .rc-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rc-log h1 { font-size: 22px; }

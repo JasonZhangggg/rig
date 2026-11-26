@@ -41,14 +41,14 @@ export function Counters({ groups, events, pick, onPick }: { groups: Highlight[]
 const lastWhen = (t: number) => { const d = dayName(t); return d === "Today" || d === "Yesterday" ? d.toLowerCase() : shortDay(t); };
 
 /** One Windows event: when and what, with what Windows wrote behind Details and a button that asks about it. */
-export function EventRow({ e, seconds }: { e: PCEvent; seconds?: boolean }) {
+export function EventRow({ e, seconds, fresh }: { e: PCEvent; seconds?: boolean; fresh?: boolean }) {
   const { ask } = useActions();
   const pc = useStillPC();
   const data = useData("answering");
   const title = eventTitle(e);
   const question = `Windows logged "${title}" on ${pc.name} on ${shortDay(e.t)} at ${clock(e.t)} (${e.source}, event ${e.id}). What does it mean, and should I do anything?`;
   return (
-    <Row name={title} title={title} time={seconds ? clockSec(e.t) : clock(e.t)} at={new Date(e.t).toISOString()}
+    <Row fresh={fresh} name={title} title={title} time={seconds ? clockSec(e.t) : clock(e.t)} at={new Date(e.t).toISOString()}
       mark={serious(e) ? "look" : "dot"} markLabel={kindWord(e.kind)}
       meta={`${kindWord(e.kind)}, logged by ${e.source}.`}
       details={<>

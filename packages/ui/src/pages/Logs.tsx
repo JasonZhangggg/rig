@@ -16,22 +16,25 @@ type Limits = { cpu?: number; gpu?: number };
 const DAY = 864e5;
 const startOfDay = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
-/** The PC's events from the Windows event log, for whichever view needs them. */
-function useEvents(): PCEvent[] | null {
+/** The PC's events from the Windows event log, for whichever view needs them. With `everyMs`, read again that often while the view is open. */
+export function useEvents(everyMs?: number): PCEvent[] | null {
   const { client } = useActions();
   const pc = useStillPC();
   const [events, setEvents] = useState<PCEvent[] | null>(null);
   useEffect(() => {
     let live = true;
     setEvents(null);
-    client.events(pc.id).then((e) => live && setEvents(e)).catch(() => live && setEvents([]));
-    return () => { live = false; };
-  }, [client, pc.id]);
+    // A read that fails after the first keeps what's on screen.
+    const read = (first: boolean) => client.events(pc.id).then((e) => live && setEvents(e)).catch(() => live && first && setEvents([]));
+    void read(true);
+    const timer = everyMs ? setInterval(() => void read(false), everyMs) : undefined;
+    return () => { live = false; clearInterval(timer); };
+  }, [client, pc.id, everyMs]);
   return events;
 }
 
 /** A log opened from Logs, shown in place of the page. */
-function useOpenLog() {
+export function useOpenLog() {
   const { openRecording } = useActions();
   const ui = useUI();
   const data = useData("recordings");
@@ -56,8 +59,9 @@ export function Logs() {
   const [pick, setPick] = useState(0);
   const info: RecordingInfo | undefined = days[Math.min(pick, days.length - 1)];
   const [rec, setRec] = useState<Recording | null>(null);
-  // Fetch the day again as today's grows.
-  const version = info ? `${info.id}|${Math.floor(info.sampleCount / 10)}|${info.eventCount}` : "";
+  // Fetch the day again whenever today's grows. Its newest reading is what moves: a day keeps at most 360 readings, so
+  // after a few hours the count stops growing even as new ones replace the old.
+  const version = info ? `${info.id}|${info.finishedAt ?? ""}|${info.sampleCount}|${info.eventCount}` : "";
   useEffect(() => {
     let live = true;
     if (!info) { setRec(null); return; }

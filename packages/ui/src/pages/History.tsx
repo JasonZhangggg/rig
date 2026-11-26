@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { arrowKeys } from "../components/modal";
 import {
   coreLoad, coresOf, findReadings, HOT_MARGIN, historySummary, keyReadings, livePoint, sensorGroups, sensorKinds, STEADY_MARGIN,
@@ -6,7 +6,7 @@ import {
 } from "@rig/core";
 import { calm, ChartNote, LineChart } from "../chart";
 import { Figure } from "../components/Figure";
-import { useApp, useHistory, useTemp } from "../state";
+import { useApp, useData, useHistory, useTemp, type LivePoint } from "../state";
 import { Events } from "./history/Events";
 import { LogsHead } from "./logs/Head";
 
@@ -73,22 +73,11 @@ const reduceMotion = () => document.documentElement.dataset.motion === "reduce" 
 /** How far back the live charts reach. */
 const LIVE_MS = 5 * 60_000;
 
-/** A live reading of the whole PC, with every sensor's value by id for the per-core lines. */
-type LivePoint = HistoryPoint & { vals: Record<string, number> };
-
-/** The PC's readings as they arrive while this page is open, the last few minutes of them, for the live charts. */
-function useLive(pc: PC): LivePoint[] {
-  const [pts, setPts] = useState<LivePoint[]>([]);
-  const id = useRef(pc.id);
-  useEffect(() => {
-    if (id.current !== pc.id) { id.current = pc.id; setPts([]); }
-    if (!pc.online || !pc.parts) return;
-    const t = pc.seenAt ? Date.parse(pc.seenAt) : Date.now();
-    const vals: Record<string, number> = {};
-    for (const r of pc.readings ?? []) if (r.value != null) vals[r.id] = r.value;
-    setPts((prev) => (prev.length && prev[prev.length - 1].t >= t ? prev : [...prev.filter((p) => p.t > t - LIVE_MS), { ...livePoint(pc, t), vals }]));
-  }, [pc]);
-  return pts;
+/** The last few minutes of the PC's live readings, kept since Rig opened, so the live charts are full the first time you look. */
+function useLive(): LivePoint[] {
+  const { live } = useData("live");
+  const from = (live[live.length - 1]?.t ?? 0) - LIVE_MS;
+  return useMemo(() => (live.length && live[0].t < from ? live.filter((p) => p.t >= from) : live), [live, from]);
 }
 
 /** Each part's own charts and readings, the way Task Manager's Performance tab and HWMonitor lay them out. */
@@ -96,7 +85,7 @@ export function History() {
   const { ui, pc, set, ask } = useApp();
   const temp = useTemp();
   const pts = useHistory(ui.range);
-  const recent = useLive(pc);
+  const recent = useLive();
   const [live, setLive] = useState(false);
   const lines = partLines(pc);
   // The graphics card leads where there is one, as it's what heats up in games.
@@ -226,13 +215,13 @@ export function History() {
               <div className="pf-chart">
                 <div className="pf-chart-head">
                   <h3 className="label">{sensor ? sensor.name : `All ${view.title.toLowerCase()}`}</h3>
-                  <span className="faint">Since you opened this page</span>
+                  <span className="faint">The last five minutes</span>
                 </div>
                 <SensorChart readings={sensor ? [sensor] : ofKind} recent={recent} online={!!pc.online} label={`${part.name}, ${sensor ? sensor.name : view.title.toLowerCase()}`} />
               </div>
             )}
             {metric && !live && pts == null && <ChartNote busy>Loading…</ChartNote>}
-            {metric && live && <p className="faint pf-live-note">The last few minutes, since you opened this page. Day, Week and Month show what Rig logged.</p>}
+            {metric && live && <p className="faint pf-live-note">The last five minutes. Day, Week and Month show what Rig logged.</p>}
             {part.id === "cpu" && view?.type === "load" && <Cores readings={mine} recent={recent} />}
             {view && <Readings part={part} title={view.title} readings={ofKind} logged={!!metric} picked={sensor?.id ?? null}
               onPick={(id) => { setOne(id); setFocus(null); if (id) paneRef.current?.querySelector(".pf-chart")?.scrollIntoView({ block: "nearest", behavior: reduceMotion() ? "auto" : "smooth" }); }} />}
@@ -368,7 +357,7 @@ function SensorChart({ readings, recent, online, label }: { readings: Reading[];
   const temp = useTemp();
   const pts = recent.filter((p) => readings.some((r) => p.vals[r.id] != null));
   if (!readings.length || pts.length < 2) {
-    return <ChartNote>{online ? "This draws as readings come in. Rig logs each part's temperature and usage over days; single sensors chart from when you open the page." : "This PC is offline, so there's nothing live to chart."}</ChartNote>;
+    return <ChartNote>{online ? "This draws as readings come in." : "This PC is offline, so there's nothing live to chart."}</ChartNote>;
   }
   const w = 860, h = 200, type = readings[0].type;
   const vs = pts.flatMap((p) => readings.map((r) => p.vals[r.id])).filter((v): v is number => v != null);

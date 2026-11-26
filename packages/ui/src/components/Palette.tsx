@@ -20,7 +20,8 @@ const pageWords: Partial<Record<Route, [string, string]>> = {
   upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
   manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
   chat: ["Ask Rig anything about your PC", "ask chat help question"],
-  logs: ["Everything Rig recorded, day by day, and what happened", "logs recordings record recorded background log sensors closer look custom log"],
+  logs: ["Every reading and log entry as it comes in", "logs live now real time realtime readings sensors log feed tail events alerts"],
+  recorded: ["In Logs: everything Rig recorded, day by day, and what happened", "logs recordings record recorded background log sensors closer look custom log day yesterday"],
   events: ["In Logs: what went wrong, from the Windows event log", "windows events event log crashes errors blue screen driver shutdown"],
   changes: ["What Rig or you changed, with undo", "changes undo fixes applied review"],
   settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
@@ -86,7 +87,7 @@ function OpenPalette() {
     const items: Item[] = [];
     for (const [route, name] of navItems) {
       const [sub, keys] = pageWords[route] ?? ["", ""];
-      items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" ? { recordingId: null } : {}) });
+      items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "recorded" ? { recordingId: null } : {}) });
     }
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({

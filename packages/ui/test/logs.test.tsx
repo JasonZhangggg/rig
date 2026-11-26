@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
+import type { RecordingInfo } from "@rig/core";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -132,7 +133,7 @@ describe("Logs", () => {
   it("shows a finished recording as what it found, and opens it from the events it caught", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("recorded");
     const recs = await screen.findByRole("region", { name: "Recordings" });
     const row = within(recs).getByRole("button", { name: /Watch temperatures, load and Windows events while you play/ });
     expect(row.textContent).toMatch(/Found: The graphics driver stopped and recovered/);
@@ -144,7 +145,7 @@ describe("Logs", () => {
   it("opens a recording with what Rig found, its charts and Ask about this", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("recorded");
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     await screen.findByText("What Rig found");
     expect((await screen.findAllByText(/Graphics card ran hot for \d+ minutes/)).length).toBeGreaterThan(0);
@@ -169,7 +170,7 @@ describe("Logs", () => {
     screen.getByText("Recording finished");
     screen.getByRole("button", { name: "See what Rig found" });
 
-    await open("logs");
+    await open("recorded");
     fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
     await screen.findByText("Recording now");
     await screen.findByText(/Ends at/);
@@ -183,7 +184,7 @@ describe("Logs", () => {
     localStorage.setItem("rig.pc", "demo-pebble");
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("recorded");
     await screen.findByText(/No background log on Pebble/);
     screen.getByText(/No recordings yet/);
     screen.getByRole("button", { name: "Start recording" });
@@ -197,7 +198,7 @@ describe("Logs", () => {
     localStorage.setItem("rig.tempUnit", "f");
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("recorded");
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     const found = await screen.findByText("What Rig found");
     const page = found.closest(".page")!;
@@ -214,12 +215,68 @@ describe("Logs", () => {
     fireEvent.change(search, { target: { value: "crashes" } });
     screen.getByRole("button", { name: /^Windows events In Logs: what went wrong/ });
     fireEvent.change(search, { target: { value: "sensors" } });
-    screen.getByRole("button", { name: /^Logs Everything Rig recorded/ });
+    screen.getByRole("button", { name: /^Logs Every reading and log entry as it comes in/ });
+    screen.getByRole("button", { name: /^Recorded logs In Logs: everything Rig recorded/ });
     fireEvent.change(search, { target: { value: "while you play" } });
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     await waitFor(() => expect(location.hash).toBe("#logs"));
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
     await screen.findByText("What Rig found");
+  });
+
+  it("opens on what's happening now: readings that move as they come in, and every log entry", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    // Readings that came in on Home are already drawn when Logs opens; nobody waits for the chart to fill.
+    await act(() => new Promise((r) => setTimeout(r, 4500)));
+    await open("logs");
+    expect(within(screen.getByRole("navigation", { name: "Logs" })).getByRole("link", { name: "Live" }).getAttribute("aria-current")).toBe("page");
+    const readings = screen.getByRole("region", { name: "Readings" });
+    const temps = await within(readings).findByRole("img", { name: "Temperatures" }, { timeout: 500 });
+    within(readings).getByText(/New reading every 2 s/);
+    // The line moves with each new reading.
+    const line = () => [...temps.querySelectorAll("path")].map((p) => p.getAttribute("d")).join("|");
+    const before = line();
+    await waitFor(() => expect(line()).not.toBe(before), { timeout: 4000 });
+
+    const log = screen.getByRole("region", { name: "Log" });
+    within(log).getAllByText("The graphics driver stopped and recovered");
+    within(log).getByText(/Discord's memory and processor use/);
+    fireEvent.click(within(log).getByRole("button", { name: /^Problems/ }));
+    expect(within(log).queryByText(/Discord's memory and processor use/)).toBeNull();
+    within(log).getAllByText("The graphics driver stopped and recovered");
+  }, 15000);
+
+  it("redraws today's readings when the background log gets a newer reading, even when its count stays the same", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
+    try {
+      const client = new DemoClient();
+      const watch = client.watchRecordings.bind(client);
+      let send!: (list: RecordingInfo[]) => void;
+      let list: RecordingInfo[] = [];
+      client.watchRecordings = (id, cb) => { send = cb; return watch(id, (l) => { list = l; cb(l); }); };
+      const read = client.recording.bind(client);
+      let reads = 0;
+      // The first read of today is a reading short, the way it is just before its newest reading lands.
+      client.recording = async (id, rid) => {
+        const r = await read(id, rid);
+        if (!r || !rid.startsWith("bg-d-")) return r;
+        reads++;
+        return reads === 1 ? { ...r, samples: r.samples.slice(0, -1) } : r;
+      };
+      render(<RigApp client={client} />);
+      await screen.findByText(/Things to look at/i);
+      await open("recorded");
+      await screen.findByRole("heading", { name: "Today" });
+      const readings = screen.getByRole("region", { name: "Readings" });
+      const span = await within(readings).findByText(/ to /);
+      const before = span.textContent;
+      // A day keeps a set number of readings, so the newest one replaces an old one: same count, later finish.
+      const today = list.filter((r) => r.id.startsWith("bg-d-")).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))[0];
+      await act(async () => { send(list.map((r) => (r.id === today.id ? { ...r, finishedAt: (r.finishedAt ?? 0) + 30_000 } : r))); });
+      await waitFor(() => expect(within(readings).getByText(/ to /).textContent).not.toBe(before));
+    } finally { vi.useRealTimers(); }
   });
 
   it("shows a day of the background log: what happened first, then every sensor", async () => {
@@ -228,7 +285,7 @@ describe("Logs", () => {
     try {
       render(<RigApp client={new DemoClient()} />);
       await screen.findByText(/Things to look at/i);
-      await open("logs");
+      await open("recorded");
       await screen.findByRole("heading", { name: "Today" });
       fireEvent.click(screen.getByRole("button", { name: "Day before" }));
       await screen.findByRole("heading", { name: "Yesterday" });
@@ -260,7 +317,7 @@ describe("Logs", () => {
   it("opens a custom log with its highest readings and a chart of them", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    await open("logs");
+    await open("recorded");
     const custom = await screen.findByRole("region", { name: "Custom logs" });
     fireEvent.click(within(custom).getByRole("button", { name: /Discord's memory/ }));
     await screen.findByRole("heading", { level: 1, name: /Discord's memory and processor use/ });
