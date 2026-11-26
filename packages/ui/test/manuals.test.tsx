@@ -78,6 +78,20 @@ describe("Manuals", () => {
     expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
   });
 
+  it("lists each part's manual as a row, with no Ready badge and one box for opening a manual", async () => {
+    await show("manuals");
+    const list = within(await screen.findByRole("region", { name: "Manuals" }));
+    const board = await card(/^Motherboard:/);
+    expect(board.getByRole("heading", { level: 3 }).textContent).toBe("MSI MAG B650 TOMAHAWK WIFI");
+    expect(board.getByText("Motherboard")).toBeTruthy();
+    expect(board.queryByText("Ready")).toBeNull();
+    expect(board.getByRole("button", { name: "Open manual" }).className).toContain("primary");
+    const gpu = await card(/^Graphics card:/);
+    expect(gpu.getByText("Rig needs the card's exact model to find its manual.")).toBeTruthy();
+    expect(gpu.getByRole("button", { name: "Find manual" }).className).not.toContain("primary");
+    expect(list.getAllByRole("listitem").at(-1)!.textContent).toMatch(/^Add a manual/);
+  });
+
   it("opens Atlas's board manual from its name or the icon beside it, with Replace and Remove under the dots", async () => {
     await partTab("Motherboard");
     const board = await card(/^Motherboard:/);

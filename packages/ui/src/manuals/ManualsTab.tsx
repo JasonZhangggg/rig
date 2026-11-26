@@ -47,15 +47,18 @@ export const ManualsTab = memo(function ManualsTab() {
       <section aria-labelledby="mt-h">
         <h2 id="mt-h" className="mt-h">Manuals</h2>
         {state.manuals == null ? <p className="muted" role="status">Loading manuals…</p> : (
-          <div className="mt-grid">
-            {state.loadError && <p className="callout warn">{state.loadError}</p>}
-            {rows.map((r) => <ManualCard key={r.target.part} row={r} store={state.store} />)}
-            <div className="mt-add">
-              {adding
-                ? <AddManual kinds={addable} intro="A monitor, a cooler or anything else Windows can't see. Tell Rig the model and it finds the maker's manual." onDone={() => setAdding(false)} />
-                : <button type="button" className="mt-add-btn" onClick={() => setAdding(true)}><b>Add a manual</b><span className="muted">For your monitor, case, cooler or anything else</span></button>}
-            </div>
-          </div>
+          <>
+            {state.loadError && <p className="callout warn mt-error">{state.loadError}</p>}
+            <ul className="mt-list">
+              {rows.map((r) => <ManualCard key={r.target.part} row={r} store={state.store} />)}
+              <li className="mn-row mt-add">
+                {adding
+                  ? <AddManual kinds={addable} intro="A monitor, a cooler or anything else Windows can't see. Tell Rig the model and it finds the maker's manual." onDone={() => setAdding(false)} />
+                  : <button type="button" className="btn ghost sm mt-add-btn" onClick={() => setAdding(true)}>Add a manual<span className="sr-only">, for your monitor, case, cooler or anything else</span></button>}
+                {!adding && <span className="mt-add-hint" aria-hidden="true">For your monitor, case, cooler or anything else</span>}
+              </li>
+            </ul>
+          </>
         )}
       </section>
 
@@ -81,8 +84,8 @@ function Drivers() {
           const newer = !!d.latest && d.latest !== d.installed;
           return (
             <Row key={id} name={p.name} title={p.name}
-              meta={bios ? `${d.installed}.` : `${p.type} driver, ${d.installed}.`}
-              tag={newer ? <span className="chip warn">{d.latest} is out</span> : d.latest ? <span className="chip ok">Up to date</span> : null}
+              meta={<span className="mn-meta">{bios ? <><span>BIOS</span><span>{d.installed.replace(/^BIOS\s*/, "")}</span></> : <><span>{p.type} driver</span><span>{d.installed}</span></>}</span>}
+              tag={newer ? <span className="chip warn">{d.latest} is out</span> : null}
               action={maker ? <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>
                 : <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>} />
           );
