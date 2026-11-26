@@ -355,14 +355,14 @@ function Readings({ part, id }: { part: Part; id: string }) {
         <span key={Math.round(part.temp)} className="big live-tick">{temp(part.temp)}</span>
         {part.limit ? (
           <span className="live-meter" role="img" aria-label={limitWords(part.temp, part.limit, unit)}>
-            <i style={{ width: `${Math.min(100, (part.temp / part.limit) * 100)}%` }} /><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
+            <i><b style={{ transform: `translateX(${Math.min(100, (part.temp / part.limit) * 100) - 100}%)` }} /></i><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
           </span>
         ) : null}
       </div>,
     );
   }
   if (part.tempMax !== undefined) tiles.push(<div key="m" className="live"><span className="label">Highest today</span><span className="big">{temp(part.tempMax)}</span></div>);
-  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span key={part.load} className="big live-tick">{part.load}%</span><span className="bar live-load" aria-hidden="true"><i style={{ width: `${part.load}%` }} /></span></div>);
+  if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span key={part.load} className="big live-tick">{part.load}%</span><span className="bar live-load" aria-hidden="true"><i style={{ transform: `translateX(${part.load - 100}%)` }} /></span></div>);
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
   return (

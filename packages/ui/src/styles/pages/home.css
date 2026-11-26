@@ -498,14 +498,14 @@
 .pl-tl.grow .pl-tl-bar::before,
 .pl-tl.grow .pl-tl-pill { animation: pl-run 380ms var(--ease-out) backwards; animation-delay: calc(var(--i) * 24ms); }
 .pl-tl.grow .pl-tl-label,
-.pl-big.grow .pl-big-day { animation: pl-fade 300ms ease-out backwards; animation-delay: calc(var(--i) * 24ms + 120ms); }
+.pl-big.grow .pl-big-day { animation: pl-fade 300ms var(--ease-out) backwards; animation-delay: calc(var(--i) * 24ms + 120ms); }
 @media (prefers-reduced-motion: reduce) {
   .pl-caps.grow .pl-cap-stack,
   .pl-rt.grow .pl-rt-plot,
   .pl-tl.grow .pl-tl-bar::before,
   .pl-tl.grow .pl-tl-pill,
   .pl-tl.grow .pl-tl-label,
-  .pl-big.grow .pl-big-day { animation: pl-fade 200ms ease-out backwards; animation-delay: 0ms; }
+  .pl-big.grow .pl-big-day { animation: pl-fade 200ms var(--ease-out) backwards; animation-delay: 0ms; }
 }
 
 /* ----- Storage ----- */
@@ -647,7 +647,7 @@
 }
 
 /* The phone's options sheet dims the page behind it; a press on the dimmed page closes the sheet. */
-.dpop-scrim { position: fixed; inset: 0; z-index: 69; background: var(--scrim); animation: dpop-scrim .2s ease-out; }
+.dpop-scrim { position: fixed; inset: 0; z-index: 69; background: var(--scrim); animation: dpop-scrim .2s var(--ease-out); }
 @keyframes dpop-scrim { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .dpop-scrim { animation: none; }

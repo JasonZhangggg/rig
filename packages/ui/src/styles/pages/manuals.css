@@ -24,7 +24,7 @@
 .mn-confirm { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .mn-progress { display: flex; flex-direction: column; gap: 8px; color: var(--text-2); font-size: 13.5px; }
 .mn-progress .bar { height: 6px; }
-.mn-progress .bar i { background: var(--good-mark); transition: width 200ms linear; }
+.mn-progress .bar i { background: var(--good-mark); transition: transform 200ms linear; }
 
 /* The title, with a three-dots menu for replacing or removing the manual. */
 .mn-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -168,7 +168,8 @@
 .mn-ask:focus-within { box-shadow: 0 0 0 1.5px var(--text-2), 0 10px 28px -16px rgba(27, 27, 31, .28); }
 .mn-ask textarea { flex: 1; min-width: 0; height: 42px; padding: 10px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--text); font: inherit; font-size: 15px; line-height: 22px; }
 .mn-ask textarea::placeholder { color: var(--text-3); }
-.mn-ask-send { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border: 0; border-radius: 13px; background: var(--primary); color: var(--primary-text); cursor: pointer; transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out); }
+.mn-ask-send { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border: 0; border-radius: 13px; background: var(--primary); color: var(--primary-text); cursor: pointer; transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), transform 160ms var(--ease-out); }
+.mn-ask-send:not(:disabled):active { transform: scale(.94); }
 .mn-ask-send svg { width: 18px; height: 18px; }
 .mn-ask-send:disabled { background: var(--surface-2); color: var(--text-3); cursor: default; }
 @media (hover: hover) and (pointer: fine) { .mn-ask-send:not(:disabled):hover { background: var(--graphite-2); } }
