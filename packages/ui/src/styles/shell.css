@@ -70,6 +70,9 @@
 .fp-me small { margin-left: auto; color: var(--text-3); font-weight: 600; font-size: 12px; }
 .fp-me-caret { width: 16px; height: 16px; flex: none; color: var(--text-3); }
 .fp-me[aria-expanded="true"] { background: color-mix(in srgb, var(--text) 6%, transparent); }
+/* On Settings the account is where you are, marked the way the current page is in the list above. */
+.fp-me[aria-current="page"] { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.fp-me[aria-current="page"] span { background: var(--graphite); color: #FFFFFF; }
 
 /* The narrow sidebar is for wide screens only: on a phone the menu opens full screen with its words. */
 @media (min-width: 761px) {
