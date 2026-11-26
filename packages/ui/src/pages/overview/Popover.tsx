@@ -14,7 +14,7 @@ const zoomOf = (el: Element) => (el as Element & { currentCSSZoom?: number }).cu
  */
 export function Popover({ anchor, label, onClose, children, width = 360 }: { anchor: HTMLElement; label: string; onClose: () => void; children: ReactNode; width?: number }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number; up: boolean } | null>(null);
   const [sheet, setSheet] = useState(false);
 
   useLayoutEffect(() => {
@@ -35,11 +35,11 @@ export function Popover({ anchor, label, onClose, children, width = 360 }: { anc
       const down = below >= Math.min(h, 420) || below >= above;
       const maxHeight = Math.max(240, down ? below : above);
       const top = down ? a.bottom + 8 : Math.max(MARGIN, a.top - 8 - Math.min(h, maxHeight));
-      const key = `${Math.round(top)} ${Math.round(left)} ${Math.round(maxHeight)}`;
+      const key = `${Math.round(top)} ${Math.round(left)} ${Math.round(maxHeight)} ${down}`;
       if (key === last) return;
       last = key;
       setSheet(false);
-      setPos({ top, left, maxHeight });
+      setPos({ top, left, maxHeight, up: !down });
     };
     // The control can move with no scroll or resize (a tile gliding to its new place), so the panel looks every frame it's open.
     const loop = () => { place(); frame = requestAnimationFrame(loop); };
@@ -82,7 +82,7 @@ export function Popover({ anchor, label, onClose, children, width = 360 }: { anc
     <>
       {sheet && <div className="dpop-scrim" aria-hidden="true" onClick={onClose} />}
       <div
-        ref={ref} role="dialog" aria-modal={sheet || undefined} aria-label={label} className={`dpop${sheet ? " sheet" : ""}`}
+        ref={ref} role="dialog" aria-modal={sheet || undefined} aria-label={label} className={`dpop${sheet ? " sheet" : ""}`} data-up={pos?.up || undefined}
         style={sheet ? undefined : { top: pos?.top ?? -9999, left: pos?.left ?? 0, width, maxHeight: pos?.maxHeight }}
       >
         <div className="dpop-head">

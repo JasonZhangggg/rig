@@ -3,7 +3,7 @@
   display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - 28px);
   background: var(--band); border-radius: calc(var(--r) + 2px); overflow: clip;
   box-shadow: 0 30px 60px -44px rgba(27, 27, 31, .3);
-  transition: grid-template-columns .28s cubic-bezier(.2, .8, .2, 1);
+  transition: grid-template-columns .28s var(--ease-drawer);
 }
 .shell-fpanel.mini .fp-frame { grid-template-columns: 84px minmax(0, 1fr); }
 #main:focus { outline: none; }
@@ -35,8 +35,12 @@
 .fp-item {
   display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: var(--r-pill);
   border: 0; background: transparent; color: var(--text); text-decoration: none; font: 500 14.5px var(--font);
-  cursor: pointer; white-space: nowrap; text-align: left; transition: background .15s, color .15s;
+  cursor: pointer; white-space: nowrap; text-align: left; transition: background-color 150ms ease, color 150ms ease;
 }
+.fp-item:not([aria-current="page"]):active { background: var(--sel); }
+:is(.fp-brand-btn, .fp-me, .fp-close, .fp-menu-btn, .fp-collapse, .fp-skip, .fp-next) { transition: background-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out); }
+:is(.fp-close, .fp-menu-btn, .fp-collapse, .fp-skip, .fp-next):active { transform: scale(.94); }
+:is(.fp-brand-btn, .fp-me):active { background: var(--sel); }
 .fp-item svg { width: 19px; height: 19px; flex: none; color: var(--text-2); }
 .fp-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fp-item[aria-current="page"] { background: var(--graphite); color: #FFFFFF; }
@@ -49,20 +53,20 @@
 .fp-setup { margin-top: auto; background: var(--surface); border-radius: calc(var(--r-sm) + 6px); padding: 16px; display: grid; gap: 6px; box-shadow: 0 0 0 1px var(--line), 0 10px 24px -18px rgba(0, 0, 0, .4); }
 .fp-setup-ico { width: 34px; height: 34px; border-radius: 11px; background: var(--surface-2); color: var(--text); display: grid; place-items: center; margin-bottom: 4px; }
 .fp-setup-ico svg { width: 18px; height: 18px; }
-.fp-setup b { font-size: 14.5px; font-weight: 800; }
+.fp-setup b { font-size: 14.5px; font-weight: 600; }
 .fp-setup p { font-size: 13px; line-height: 1.45; color: var(--text-2); margin: 0 0 6px; }
 .fp-setup-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); font-weight: 600; }
 .fp-ring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--graphite) var(--p), var(--surface-2) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
 .fp-skip,
-.fp-next { height: 32px; padding: 0 14px; border-radius: var(--r-pill); border: 0; font: 700 13px var(--font); cursor: pointer; }
+.fp-next { height: 32px; padding: 0 14px; border-radius: var(--r-pill); border: 0; font: 600 13px var(--font); cursor: pointer; }
 .fp-skip { margin-left: auto; background: transparent; color: var(--text-2); }
 .fp-next { background: var(--graphite); color: #FFFFFF; }
 
 .fp-foot { position: relative; flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
 .fp-foot .sh-menu { left: 12px; right: 12px; }
 .fp-me { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px; border: 0; border-radius: 14px; background: transparent; color: var(--text); font: 13.5px var(--font); text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; }
-.fp-me span { width: 32px; height: 32px; flex: none; border-radius: 50%; background: #DDD9D2; color: var(--graphite); display: grid; place-items: center; font-weight: 800; }
-.fp-me b { font-weight: 700; }
+.fp-me span { width: 32px; height: 32px; flex: none; border-radius: 50%; background: #DDD9D2; color: var(--graphite); display: grid; place-items: center; font-weight: 600; }
+.fp-me b { font-weight: 600; }
 .fp-me small { margin-left: auto; color: var(--text-3); font-weight: 600; font-size: 12px; }
 .fp-me-caret { width: 16px; height: 16px; flex: none; color: var(--text-3); }
 .fp-me[aria-expanded="true"] { background: color-mix(in srgb, var(--text) 6%, transparent); }
@@ -83,8 +87,9 @@
 @media (hover: hover) and (pointer: fine) {
   :is(.fp-brand-btn, .fp-me, .fp-close, .fp-menu-btn):hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
   .fp-collapse:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
-  .fp-item:not([aria-current="page"]):hover { background: rgba(27, 27, 31, .06); }
+  .fp-item:not([aria-current="page"]):hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .fp-skip:hover { color: var(--text); }
+  .fp-next:hover { background: var(--graphite-2); }
 }
 @media (max-width: 760px) {
   .shell-fpanel { padding: 0; }

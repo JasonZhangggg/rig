@@ -1,6 +1,7 @@
 .set-layout { display: grid; grid-template-columns: 168px minmax(0, 760px); align-items: start; gap: 36px; }
 .set-nav { position: sticky; top: 22px; display: flex; flex-direction: column; gap: 2px; }
-.set-nav button { padding: 8px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: 500 14px var(--font); text-align: left; cursor: pointer; }
+.set-nav button { padding: 8px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: 500 14px var(--font); text-align: left; cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
+.set-nav button:active { background: var(--sel); }
 .set-nav-label { margin: 14px 12px 4px; color: var(--text-3); font-size: 12.5px; font-weight: 500; }
 .set-list { display: flex; flex-direction: column; gap: 36px; }
 
@@ -18,7 +19,7 @@
 .set-text p, .set-text .muted { max-width: 58ch; font-size: 13px; line-height: 1.45; }
 .set-control { flex: none; display: flex; align-items: center; gap: 8px; }
 .set-me { min-width: 0; display: flex; align-items: center; gap: 12px; }
-.set-me > span { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--graphite); font-weight: 700; }
+.set-me > span { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--graphite); font-weight: 600; }
 .set-danger { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; padding: 16px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--text); font-size: 13px; }
 .set-danger ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .set-danger .input { max-width: 260px; background: var(--surface); }
@@ -73,7 +74,8 @@
 .look-ring .look-ring-track { stroke: rgba(255, 255, 255, .12); }
 
 .look-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
-.look-preset { position: relative; display: flex; align-items: center; gap: 12px; padding: 7px 12px 7px 7px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.look-preset { position: relative; display: flex; align-items: center; gap: 12px; padding: 7px 12px 7px 7px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); text-align: left; cursor: pointer; transition: border-color 150ms ease, box-shadow 150ms ease, transform 160ms var(--ease-out); }
+.look-preset:active { transform: scale(.98); }
 .look-preset[aria-pressed="true"] { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
 .look-preset[aria-pressed="true"]::after { content: ""; position: absolute; top: 50%; right: 10px; margin-top: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M5 9.2l2.6 2.6L13 6.4' fill='none' stroke='%23111' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 18px no-repeat; box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
 .look-preset-pv { flex: none; display: grid; grid-template-columns: 44px 52px; height: 44px; overflow: hidden; border-radius: calc(var(--r-sm) - 4px); }
@@ -91,7 +93,8 @@
 .look-preset-text small { color: var(--text-3); font-size: 12.5px; line-height: 1.35; }
 
 .look-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.look-swatch { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 6px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13.5px; cursor: pointer; }
+.look-swatch { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 6px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13.5px; cursor: pointer; transition: border-color 150ms ease, box-shadow 150ms ease, transform 160ms var(--ease-out); }
+.look-swatch:active { transform: scale(.97); }
 .look-swatch i { width: 26px; height: 26px; border-radius: 50%; }
 .look-swatch i.light { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .look-swatch[aria-pressed="true"] { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }

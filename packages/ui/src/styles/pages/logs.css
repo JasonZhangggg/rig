@@ -30,7 +30,7 @@
 @keyframes lg-fade { from { opacity: 0; } }
 
 .rec-list { list-style: none; margin: 0 -12px; padding: 0; }
-.rec-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: 4px 12px; padding: 14px 12px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.rec-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: 4px 12px; padding: 14px 12px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background-color 150ms ease; }
 .rec-list li:first-child .rec-row { padding-top: 4px; border-top-color: transparent; }
 @media (hover: hover) and (pointer: fine) { .rec-row:hover { border-radius: var(--r-sm); border-top-color: transparent; background: var(--surface-2); } }
 @media (hover: hover) and (pointer: fine) { .rec-list li:hover + li .rec-row { border-top-color: transparent; } }
@@ -132,8 +132,15 @@
 
 /* The Logs page's views: events, temperatures and games. */
 .lg-head { display: grid; gap: 16px; }
-/* Like .tabs: the line is a shadow, so the row never overflows and shows scroll arrows. */
-.lg-views { display: flex; gap: 22px; box-shadow: inset 0 -1px 0 var(--line); overflow: auto hidden; scrollbar-width: none; }
+/* Like .tabs: the line is painted, not a border, so the row never overflows and shows scroll arrows. */
+.lg-views {
+  display: flex; gap: 22px; overflow: auto hidden; scrollbar-width: none;
+  /* 4px of room on every side so a tab's focus ring isn't cut off by the scrolling row; the margin gives it back, and the
+     line is drawn inside that room where the shadow used to be. */
+  padding: 4px; margin: -4px; background: linear-gradient(var(--line), var(--line)) 4px calc(100% - 4px) / calc(100% - 8px) 1px no-repeat;
+}
+.lg-views a { transition: color 150ms ease; }
+.lg-views a:focus-visible { border-radius: 4px; }
 /* The views' underline already separates them from what follows, so the first block under it drops its own line. */
 .lg-head + .card,
 .lg-views a { padding: 10px 0; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap; }
