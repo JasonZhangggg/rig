@@ -6,6 +6,7 @@
 
 import { checkScript, textOnNeverList } from "./check";
 import { gpuApp, gpuSetting, GPU_VENDORS, type GpuVendor } from "./gpu";
+import { checkLogRead, logTaints, logWhat, type LogRead } from "./logReads";
 import { screenApp, screenNeverName, screenWords, type ScreenLookReply } from "./screen";
 import rulesJson from "./rules/reads.json";
 
@@ -29,7 +30,9 @@ export type PcReadSpec =
    * the settings on Rig's list with their values now and the ones Rig may set, the security chip (TPM), Secure Boot,
    * drive encryption on the system drive, and whether Windows can open firmware setup at a restart.
    */
-  | { kind: "firmware" };
+  | { kind: "firmware" }
+  /** A log: any event log channel, the events about one kind of change, crash dumps, crash reports, Reliability Monitor, a named log file, a maker's logs or firmware update status (logReads.ts). */
+  | LogRead;
 
 /** A read the server asks the PC for. `id` ties the answer to the model's tool call. */
 export type PcRead = PcReadSpec & { id: string };
@@ -122,6 +125,8 @@ export function readTaints(r: PcReadSpec): boolean {
     // Only the table's settings, with values the table knows; anything else reads as a fixed "not one Rig knows".
     case "firmware":
       return false;
+    case "log":
+      return logTaints(r);
     default:
       return true;
   }
@@ -138,7 +143,7 @@ function hiveKey(key: string): string | null {
 
 /** Checks a read the model asked for. Returns the read with only its own fields, or why it can't be done, in plain words. */
 export function checkRead(raw: unknown): PcReadSpec | string {
-  if (!raw || typeof raw !== "object") return "A read needs a kind: registry, cim, cmdlet, script, gpu or firmware.";
+  if (!raw || typeof raw !== "object") return "A read needs a kind: registry, cim, cmdlet, script, gpu, firmware or log.";
   const r = raw as Record<string, unknown>;
   switch (r.kind) {
     case "registry": {
@@ -211,8 +216,10 @@ export function checkRead(raw: unknown): PcReadSpec | string {
     }
     case "firmware":
       return { kind: "firmware" };
+    case "log":
+      return checkLogRead(r);
     default:
-      return "A read needs a kind: registry, cim, cmdlet, script, gpu or firmware.";
+      return "A read needs a kind: registry, cim, cmdlet, script, gpu, firmware or log.";
   }
 }
 
@@ -226,5 +233,6 @@ export function readWhat(r: PcReadSpec): string {
     case "gpu": return `${r.vendor} graphics settings${r.app ? ` for ${r.app}` : ""}`;
     case "screen": return `${r.app}: ${r.goal.join(" › ")}`;
     case "firmware": return "firmware settings";
+    case "log": return logWhat(r);
   }
 }

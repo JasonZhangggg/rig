@@ -1,0 +1,262 @@
+{
+  "version": 1,
+  "about": "What the chat's log reads (read_pc kind log) may look at. One table for the server, the app (packages/core/src/logReads.ts) and the helper (helper/RigHelper/LogReads.cs). Every log is read only and needs no approval, so any event log channel can be read; what keeps a read small is `limits`. `topics`: for each kind of change Rig can make (`for`, the step kinds in propose_change), the event log queries that show it happening or going wrong, and the other log sources (`also`) worth reading with it. A query names a `channel` and may narrow it to `providers`, event `ids` and `levels` (1 critical, 2 error, 3 warning, 4 info, 5 verbose). `files`: log files by key, at a fixed `path`, or the newest file matching `match` in a `folder`; %windir%, %ProgramData%, %ProgramFiles%, %SystemDrive% and %LocalAppData% (the person's own, never the helper's) are filled in on the PC, and `format` setupapi reads it as one install per section. `vendors`: folders where graphics and PC makers' tools keep their logs; only files ending in one of `vendorExtensions` are listed or read. `bugchecks`: stop codes' names, for crash dumps. `esrtStatus`: what a firmware update's LastAttemptStatus means. Reads that count as clean (not outside text) are only `clean` sources: their answers are numbers, times and names Windows itself writes.",
+  "limits": {
+    "defaultHours": 72,
+    "defaultLongHours": 720,
+    "maxHours": 2160,
+    "defaultMax": 30,
+    "maxEvents": 100,
+    "maxFiles": 40,
+    "defaultLines": 60,
+    "maxLines": 200,
+    "messageChars": 300,
+    "lineChars": 300,
+    "textChars": 7500,
+    "scanBytes": 8388608,
+    "examine": 3000,
+    "providers": 8,
+    "ids": 24,
+    "containsChars": 100
+  },
+  "sources": {
+    "events": { "says": "one event log channel, any of Windows' or an app's, newest first", "clean": false },
+    "topic": { "says": "the events that show one kind of change happening or going wrong, from every channel that logs it", "clean": false },
+    "channels": { "says": "the event log channels whose names hold a word, with how many events each has and whether it's on", "clean": false },
+    "crashes": { "says": "blue screen dumps (C:\\Windows\\Minidump and MEMORY.DMP) and live kernel reports (driver hangs and graphics resets Windows recovered from), with each one's stop code", "clean": true },
+    "wer": { "says": "Windows Error Reporting's reports of apps that crashed or hung, with the faulting module and exception", "clean": false },
+    "reliability": { "says": "Reliability Monitor's records (installs, crashes, failed updates) and its stability index", "clean": false },
+    "file": { "says": "a log file Rig knows by name", "clean": false },
+    "vendor": { "says": "the log files a graphics or PC maker's tools keep, listed newest first, or one of them read", "clean": false },
+    "esrt": { "says": "the firmware (BIOS) and device firmware versions Windows can update, with how the last update went", "clean": true }
+  },
+  "topics": {
+    "crashes": {
+      "says": "blue screens, unexpected restarts, and app crashes and hangs",
+      "for": ["fix", "recipe", "registry", "service", "policy", "device", "driver", "app", "gpu", "fileEdit", "firmware", "command"],
+      "queries": [
+        { "channel": "System", "providers": ["Microsoft-Windows-WER-SystemErrorReporting"], "ids": [1001] },
+        { "channel": "System", "providers": ["Microsoft-Windows-Kernel-Power"], "ids": [41] },
+        { "channel": "System", "providers": ["EventLog"], "ids": [6008] },
+        { "channel": "Application", "providers": ["Application Error", "Application Hang", "Windows Error Reporting", ".NET Runtime"], "ids": [1000, 1001, 1002, 1026] }
+      ],
+      "also": ["crashes", "wer", "reliability"]
+    },
+    "gpu": {
+      "says": "graphics driver resets, timeouts and errors",
+      "for": ["gpu", "driver", "app", "screen"],
+      "queries": [
+        { "channel": "System", "providers": ["Display"], "ids": [4101] },
+        { "channel": "System", "providers": ["nvlddmkm", "amdkmdag", "amdwddmg", "atikmdag", "igfx", "igfxn", "dxgkrnl", "Microsoft-Windows-DxgKrnl"] },
+        { "channel": "Microsoft-Windows-DxgKrnl-Admin" },
+        { "channel": "Microsoft-Windows-DxgKrnl-Operational", "levels": [1, 2, 3] }
+      ],
+      "also": ["crashes", "vendor"]
+    },
+    "drivers": {
+      "says": "driver and device installs, devices failing to start or turned off and on, and drivers Windows blocked",
+      "for": ["driver", "device", "gpu"],
+      "queries": [
+        { "channel": "System", "providers": ["Microsoft-Windows-UserPnp"], "ids": [20001, 20003] },
+        { "channel": "Microsoft-Windows-Kernel-PnP/Configuration" },
+        { "channel": "Microsoft-Windows-DeviceSetupManager/Admin" },
+        { "channel": "Microsoft-Windows-CodeIntegrity/Operational", "levels": [1, 2, 3] },
+        { "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational", "levels": [1, 2, 3] }
+      ],
+      "also": ["setupapi"]
+    },
+    "updates": {
+      "says": "Windows updates found, installed or failed, and Windows feature installs",
+      "for": ["command", "app", "driver", "firmware"],
+      "queries": [
+        { "channel": "System", "providers": ["Microsoft-Windows-WindowsUpdateClient", "Microsoft-Windows-Servicing"] },
+        { "channel": "Microsoft-Windows-WindowsUpdateClient/Operational" },
+        { "channel": "Setup" }
+      ],
+      "also": ["reportingevents", "cbs", "dism"]
+    },
+    "apps": {
+      "says": "app installs, updates and uninstalls (Windows Installer and Store apps)",
+      "for": ["app", "command"],
+      "queries": [
+        { "channel": "Application", "providers": ["MsiInstaller"], "ids": [1033, 1034, 1035, 1036, 11707, 11708, 11724, 11728] },
+        { "channel": "Microsoft-Windows-AppXDeploymentServer/Operational", "levels": [1, 2, 3] }
+      ],
+      "also": ["winget", "wer"]
+    },
+    "services": {
+      "says": "services that failed or stopped, had how they start changed, or were added",
+      "for": ["service", "recipe", "command", "protection"],
+      "queries": [
+        { "channel": "System", "providers": ["Service Control Manager"], "ids": [7000, 7001, 7009, 7011, 7022, 7023, 7024, 7026, 7031, 7032, 7034, 7040, 7045] }
+      ],
+      "also": []
+    },
+    "firewall": {
+      "says": "firewall rules added, changed or removed, firewall settings changed, and blocked connections when auditing is on",
+      "for": ["firewall", "protection", "command"],
+      "queries": [
+        { "channel": "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall" },
+        { "channel": "Security", "ids": [4946, 4947, 4948, 4950, 5025, 5030, 5152, 5157] }
+      ],
+      "also": ["pfirewall"]
+    },
+    "protection": {
+      "says": "Defender's protection turned off or on, its settings changed and threats it found, SmartScreen, and Security Center",
+      "for": ["protection", "policy", "registry", "command"],
+      "queries": [
+        { "channel": "Microsoft-Windows-Windows Defender/Operational", "ids": [1006, 1007, 1015, 1116, 1117, 1118, 1119, 5000, 5001, 5004, 5007, 5008, 5010, 5012] },
+        { "channel": "Microsoft-Windows-SmartScreen/Debug" },
+        { "channel": "Application", "providers": ["SecurityCenter"] }
+      ],
+      "also": []
+    },
+    "power": {
+      "says": "shutdowns, restarts, sleep and wake, power plan changes, and slow starts and shutdowns",
+      "for": ["fix", "recipe", "firmware", "command"],
+      "queries": [
+        { "channel": "System", "providers": ["Microsoft-Windows-Kernel-Power"], "ids": [41, 42, 105, 107, 109, 172, 506, 507] },
+        { "channel": "System", "providers": ["Microsoft-Windows-Kernel-General"], "ids": [1, 12, 13] },
+        { "channel": "System", "providers": ["Microsoft-Windows-Power-Troubleshooter"], "ids": [1] },
+        { "channel": "System", "providers": ["Microsoft-Windows-UserModePowerService"], "ids": [12] },
+        { "channel": "System", "providers": ["User32"], "ids": [1074] },
+        { "channel": "System", "providers": ["EventLog"], "ids": [6005, 6006, 6008] },
+        { "channel": "Microsoft-Windows-Diagnostics-Performance/Operational", "ids": [100, 101, 102, 103, 106, 109, 200, 203] }
+      ],
+      "also": []
+    },
+    "firmware": {
+      "says": "what the firmware reported at start-up: Secure Boot, the security chip (TPM), drive encryption asking for its recovery key, and firmware errors",
+      "for": ["firmware"],
+      "queries": [
+        { "channel": "System", "providers": ["Microsoft-Windows-Kernel-Boot", "Microsoft-Windows-TPM-WMI", "TPM", "Microsoft-Windows-WHEA-Logger", "ACPI"] },
+        { "channel": "Microsoft-Windows-Kernel-Boot/Operational", "levels": [1, 2, 3] },
+        { "channel": "Microsoft-Windows-BitLocker/BitLocker Management" }
+      ],
+      "also": ["esrt", "vendor"]
+    },
+    "hardware": {
+      "says": "hardware errors the processor, memory or PCIe reported (fixed or not), and Windows' memory test results",
+      "for": ["firmware", "fix", "gpu"],
+      "queries": [
+        { "channel": "System", "providers": ["Microsoft-Windows-WHEA-Logger", "Microsoft-Windows-MemoryDiagnostics-Results"] },
+        { "channel": "Microsoft-Windows-Kernel-WHEA/Errors" }
+      ],
+      "also": ["crashes"]
+    },
+    "storage": {
+      "says": "disk, file system and storage controller errors and retries",
+      "for": ["command", "fix", "driver"],
+      "queries": [
+        { "channel": "System", "providers": ["disk", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "stornvme", "storahci", "iaStorAC", "Microsoft-Windows-StorPort"] },
+        { "channel": "Microsoft-Windows-Storage-Storport/Operational", "levels": [1, 2, 3] },
+        { "channel": "Microsoft-Windows-Ntfs/Operational", "levels": [1, 2, 3] }
+      ],
+      "also": []
+    },
+    "settings": {
+      "says": "Group Policy applying or failing, and scheduled tasks added, changed or failing",
+      "for": ["registry", "policy", "recipe", "fileEdit", "screen", "command"],
+      "queries": [
+        { "channel": "Microsoft-Windows-GroupPolicy/Operational", "levels": [1, 2, 3] },
+        { "channel": "System", "providers": ["Microsoft-Windows-GroupPolicy"] },
+        { "channel": "Microsoft-Windows-TaskScheduler/Operational", "ids": [101, 103, 106, 140, 141, 142, 201, 202, 203] }
+      ],
+      "also": []
+    },
+    "network": {
+      "says": "network adapter, Wi-Fi, address and name lookup trouble, and networks switching between public and private",
+      "for": ["firewall", "command", "device", "driver"],
+      "queries": [
+        { "channel": "System", "providers": ["Tcpip", "Microsoft-Windows-Dhcp-Client", "Microsoft-Windows-DNS-Client", "Microsoft-Windows-NDIS"], "levels": [1, 2, 3] },
+        { "channel": "Microsoft-Windows-WLAN-AutoConfig/Operational", "levels": [1, 2, 3] },
+        { "channel": "Microsoft-Windows-NetworkProfile/Operational" }
+      ],
+      "also": []
+    }
+  },
+  "files": {
+    "setupapi": { "says": "every driver and device install: which driver Windows picked, from where, and whether it worked", "path": "%windir%\\INF\\setupapi.dev.log", "format": "setupapi" },
+    "setupapi-app": { "says": "driver installs that came with an app's own installer", "path": "%windir%\\INF\\setupapi.app.log", "format": "setupapi" },
+    "cbs": { "says": "Windows' servicing log: updates and Windows features installed, and repairs (sfc)", "path": "%windir%\\Logs\\CBS\\CBS.log" },
+    "dism": { "says": "DISM's log of Windows image checks and repairs", "path": "%windir%\\Logs\\DISM\\dism.log" },
+    "reportingevents": { "says": "Windows Update's history: each update, when, and its result code", "path": "%windir%\\SoftwareDistribution\\ReportingEvents.log" },
+    "panther": { "says": "Windows upgrades and feature updates (setup's own log)", "path": "%windir%\\Panther\\setupact.log" },
+    "srt": { "says": "Startup Repair's last run", "path": "%windir%\\System32\\LogFiles\\Srt\\SrtTrail.txt" },
+    "pfirewall": { "says": "the firewall's own log of dropped and allowed connections, when its logging is on", "path": "%windir%\\System32\\LogFiles\\Firewall\\pfirewall.log" },
+    "winget": { "says": "winget's newest log: app installs, updates and uninstalls Rig ran, and why one failed", "folder": "%LocalAppData%\\Packages\\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\\LocalState\\DiagOutputDir", "match": ".log" },
+    "rig": { "says": "the Rig app's own log on this PC: the helper, sensors, sync and updates", "path": "%LocalAppData%\\app.rig.desktop\\logs\\Rig.log" }
+  },
+  "vendors": {
+    "nvidia": { "name": "NVIDIA", "folders": ["%ProgramData%\\NVIDIA Corporation", "%ProgramData%\\NVIDIA", "%LocalAppData%\\NVIDIA Corporation", "%LocalAppData%\\NVIDIA"] },
+    "amd": { "name": "AMD", "folders": ["%SystemDrive%\\AMD", "%ProgramFiles%\\AMD\\CIM\\Log", "%ProgramData%\\AMD", "%LocalAppData%\\AMD"] },
+    "intel": { "name": "Intel", "folders": ["%ProgramData%\\Intel", "%SystemDrive%\\Intel\\Logs", "%LocalAppData%\\Intel"] },
+    "dell": { "name": "Dell", "folders": ["%ProgramData%\\Dell", "%ProgramData%\\Dell Inc"] },
+    "hp": { "name": "HP", "folders": ["%ProgramData%\\HP", "%ProgramData%\\Hewlett-Packard"] },
+    "lenovo": { "name": "Lenovo", "folders": ["%ProgramData%\\Lenovo", "%LocalAppData%\\Lenovo"] }
+  },
+  "vendorExtensions": [".log", ".txt"],
+  "vendorDepth": 5,
+  "bugchecks": {
+    "0x0000000A": "IRQL_NOT_LESS_OR_EQUAL",
+    "0x00000019": "BAD_POOL_HEADER",
+    "0x0000001A": "MEMORY_MANAGEMENT",
+    "0x0000001E": "KMODE_EXCEPTION_NOT_HANDLED",
+    "0x00000024": "NTFS_FILE_SYSTEM",
+    "0x0000003B": "SYSTEM_SERVICE_EXCEPTION",
+    "0x00000050": "PAGE_FAULT_IN_NONPAGED_AREA",
+    "0x0000007A": "KERNEL_DATA_INPAGE_ERROR",
+    "0x0000007B": "INACCESSIBLE_BOOT_DEVICE",
+    "0x0000007E": "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
+    "0x0000007F": "UNEXPECTED_KERNEL_MODE_TRAP",
+    "0x0000009C": "MACHINE_CHECK_EXCEPTION",
+    "0x0000009F": "DRIVER_POWER_STATE_FAILURE",
+    "0x000000A0": "INTERNAL_POWER_ERROR",
+    "0x000000A5": "ACPI_BIOS_ERROR",
+    "0x000000BE": "ATTEMPTED_WRITE_TO_READONLY_MEMORY",
+    "0x000000C2": "BAD_POOL_CALLER",
+    "0x000000C4": "DRIVER_VERIFIER_DETECTED_VIOLATION",
+    "0x000000C5": "DRIVER_CORRUPTED_EXPOOL",
+    "0x000000D1": "DRIVER_IRQL_NOT_LESS_OR_EQUAL",
+    "0x000000E2": "MANUALLY_INITIATED_CRASH",
+    "0x000000ED": "UNMOUNTABLE_BOOT_VOLUME",
+    "0x000000EF": "CRITICAL_PROCESS_DIED",
+    "0x000000F4": "CRITICAL_OBJECT_TERMINATION",
+    "0x000000FC": "ATTEMPTED_EXECUTE_OF_NOEXECUTE_MEMORY",
+    "0x00000101": "CLOCK_WATCHDOG_TIMEOUT",
+    "0x00000109": "CRITICAL_STRUCTURE_CORRUPTION",
+    "0x00000113": "VIDEO_DXGKRNL_FATAL_ERROR",
+    "0x00000116": "VIDEO_TDR_FAILURE",
+    "0x00000117": "VIDEO_TDR_TIMEOUT_DETECTED",
+    "0x00000119": "VIDEO_SCHEDULER_INTERNAL_ERROR",
+    "0x00000124": "WHEA_UNCORRECTABLE_ERROR",
+    "0x0000012B": "FAULTY_HARDWARE_CORRUPTED_PAGE",
+    "0x00000133": "DPC_WATCHDOG_VIOLATION",
+    "0x00000139": "KERNEL_SECURITY_CHECK_FAILURE",
+    "0x0000013A": "KERNEL_MODE_HEAP_CORRUPTION",
+    "0x00000141": "VIDEO_ENGINE_TIMEOUT_DETECTED",
+    "0x00000144": "BUGCODE_USB3_DRIVER",
+    "0x0000014F": "PDC_WATCHDOG_TIMEOUT",
+    "0x00000154": "UNEXPECTED_STORE_EXCEPTION",
+    "0x0000015F": "CONNECTED_STANDBY_WATCHDOG_TIMEOUT_LIVEDUMP",
+    "0x00000189": "BAD_OBJECT_HEADER",
+    "0x00000193": "VIDEO_DXGKRNL_LIVEDUMP",
+    "0x000001A1": "WIN32K_CALLOUT_WATCHDOG_LIVEDUMP",
+    "0x000001A2": "WIN32K_CALLOUT_WATCHDOG_BUGCHECK",
+    "0x000001C8": "MANUALLY_INITIATED_POWER_BUTTON_HOLD",
+    "0x000001CA": "SYNTHETIC_WATCHDOG_TIMEOUT",
+    "0x000001D5": "DRIVER_PNP_WATCHDOG"
+  },
+  "esrtStatus": {
+    "0": "the last update worked",
+    "1": "the last update didn't work",
+    "2": "the last update ran out of memory",
+    "3": "the last update was refused: wrong version",
+    "4": "the last update was refused: not a valid firmware file",
+    "5": "the last update was refused: it wasn't signed right",
+    "6": "the last update waited for the charger",
+    "7": "the last update waited for more battery",
+    "8": "the last update needed another update first"
+  },
+  "esrtType": { "0": "unknown", "1": "system firmware (BIOS)", "2": "device firmware", "3": "UEFI driver" }
+}

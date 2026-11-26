@@ -56,6 +56,7 @@ public static class Reads
             "gpu" => worker != null ? worker(Gpu.Request(req!)) : throw new RigException("Rig can't read graphics settings here."),
             "cim" => CimRead(req!),
             "firmware" => Firmware.Read(),
+            "log" => LogReads.Read(req!, owner),
             "cmdlet" or "script" => throw new RigException("Rig can't run PowerShell reads on this PC yet. Look with a registry or CIM read instead, or answer from what Rig already knows."),
             _ => throw new RigException("Rig's helper doesn't know that kind of read."),
         };
