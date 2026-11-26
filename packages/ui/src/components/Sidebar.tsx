@@ -177,7 +177,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
   const ui = useUI();
   // Only what the sidebar shows, so a new reading doesn't draw it (or the page inside it) again.
   const { name, nickname, issues, changes, recording } = useAppSelector((c) => ({
-    name: c.pc.name, nickname: c.pc.nickname, issues: c.pc.issues, changes: c.data.changes.length, recording: c.data.recordings.some((x) => x.state === "recording"),
+    name: c.pc.name, nickname: c.pc.nickname, issues: c.pc.issues, changes: c.data.unseenChanges, recording: c.data.recordings.some((x) => x.state === "recording"),
   }));
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
@@ -185,7 +185,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
   const mini = ui.sideMini;
   const warn = (issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
   const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count">{warn}</em>
-    : r === "changes" && changes ? <em className="fp-count">{changes}</em>
+    : r === "changes" && changes > 0 ? <em className="fp-count" title={changes === 1 ? "1 change you haven't seen" : `${changes} changes you haven't seen`}>{changes}</em>
     : r === "logs" && recording ? <em className="fp-count" title="Recording now">●</em> : null;
   return (
     <div className={`shell-fpanel${mini ? " mini" : ""}`}>

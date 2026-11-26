@@ -92,12 +92,30 @@ export interface Data {
   answering: boolean;
   /** The on-screen PC's recordings, newest first, kept live. */
   recordings: RecordingInfo[];
+  /** Changes made on the on-screen PC that you haven't seen: not made in this window, and since you last opened Changes. */
+  unseenChanges: number;
 }
 
 const storage = {
   get(k: string) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
 };
+
+/**
+ * What you've seen of one PC's changes, kept on this device: the newest change there was when you last opened Changes,
+ * and the changes made in this window since then. You approved those yourself, so they never count as new.
+ */
+interface SeenChanges { at: string; ids: string[] }
+const seenKey = (pcId: string) => `rig.changesSeen.${pcId}`;
+const time = (iso: string) => Date.parse(iso) || 0;
+const newestAt = (list: Change[]) => list.reduce((at, c) => (time(c.at) > time(at) ? c.at : at), new Date(0).toISOString());
+function readSeen(pcId: string): SeenChanges | null {
+  try {
+    const s = JSON.parse(storage.get(seenKey(pcId)) ?? "null");
+    return s && typeof s.at === "string" && Array.isArray(s.ids) ? { at: s.at, ids: s.ids.filter((x: unknown) => typeof x === "string") } : null;
+  } catch { return null; }
+}
+const unseenOf = (list: Change[], s: SeenChanges) => list.filter((c) => time(c.at) > time(s.at) && !s.ids.includes(c.id)).length;
 
 function routeFromHash(): Route {
   const h = location.hash.replace("#", "") as Route;
@@ -298,7 +316,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     review: null, toast: null, palette: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
-  const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [] });
+  const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0 });
   const [loaded, setLoaded] = useState(false);
   /** Why the first read failed or stalled, or null while it hasn't. */
   const [failed, setFailed] = useState<string | null>(null);
@@ -329,21 +347,50 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     return () => { live = false; clearTimeout(stalled); };
   }, [client, attempt, stallMs]);
 
+  /**
+   * The chosen PC's first read of its changes and the ids in it. Any other change that turns up later was made in this
+   * window. Null until that read; `shown` once the list on screen is that read or newer.
+   */
+  const firstRead = useRef<{ list: Change[]; known: Set<string>; shown?: true } | null>(null);
+
   // Live view of the chosen PC, its changes and a fresh chat
   useEffect(() => {
     if (!ui.pcId) return;
     storage.set("rig.pc", ui.pcId);
     const id = ui.pcId;
-    setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: client.conversation?.(id) ?? [], recordings: [] }));
+    firstRead.current = null;
+    setData((d) => ({ ...d, pc: d.pcs.find((p) => p.id === id && p.parts) ?? null, changes: [], chat: client.conversation?.(id) ?? [], recordings: [], unseenChanges: 0 }));
     setUI((u) => ({ ...u, recordingId: null }));
     const stop = client.watch(id, (next) => setData((d) => {
       const pc = keepUnchanged(d.pc?.id === next.id ? d.pc : null, next);
       return pc === d.pc ? d : { ...d, pc, pcs: d.pcs.map((p) => (p.id === pc.id ? pc : p)) };
     }));
     const stopRecordings = client.watchRecordings(id, (recordings) => setData((d) => ({ ...d, recordings })));
-    client.changes(id).then((changes) => setData((d) => ({ ...d, changes }))).catch(() => {});
-    return () => { stop(); stopRecordings(); };
+    let live = true;
+    client.changes(id).then((changes) => { if (!live) return; firstRead.current = { list: changes, known: new Set(changes.map((c) => c.id)) }; setData((d) => ({ ...d, changes })); }).catch(() => {});
+    return () => { live = false; stop(); stopRecordings(); };
   }, [client, ui.pcId]);
+
+  // The Changes badge counts only what you haven't seen, and opening Changes clears it.
+  const onChanges = ui.route === "changes";
+  useEffect(() => {
+    const id = ui.pcId, read = firstRead.current, list = data.changes;
+    if (!id || !read) return;
+    if (!read.shown) { if (list !== read.list) return; read.shown = true; }
+    const { known } = read;
+    // The first time, everything already there is old news.
+    let seen = readSeen(id) ?? { at: newestAt(list), ids: [] };
+    if (onChanges) seen = { at: newestAt(list), ids: [] };
+    else {
+      const here = list.filter((c) => !known.has(c.id));
+      for (const c of here) known.add(c.id);
+      const add = here.filter((c) => time(c.at) > time(seen.at) && !seen.ids.includes(c.id)).map((c) => c.id);
+      if (add.length) seen = { ...seen, ids: [...seen.ids, ...add] };
+    }
+    storage.set(seenKey(id), JSON.stringify(seen));
+    const unseen = unseenOf(list, seen);
+    setData((d) => (d.unseenChanges === unseen ? d : { ...d, unseenChanges: unseen }));
+  }, [data.changes, ui.pcId, onChanges]);
   // The chosen PC can be watched before the list arrives (it's the one opened last), so fill it from the list if its live view hasn't.
   useEffect(() => {
     if (data.pc || !ui.pcId) return;
