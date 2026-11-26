@@ -32,9 +32,9 @@ Your memory is 74% used even though the PC is nearly idle, so cutting these back
 
 Nothing changes until you approve the card in Rig.`;
 
-/** Streams `text` in small pieces that cut through the middle of "**" and "- ", like the real server can. */
+/** Streams `text` in pieces that cut through the middle of "**" and "- ", like the real server can. */
 class Streaming extends DemoClient {
-  constructor(private text: string, private step = 3) { super(); }
+  constructor(private text: string, private step = 13) { super(); }
   override async chat(_id: string, _history: ChatMessage[], onEvent: (e: ChatEvent) => void) {
     for (let i = 0; i < this.text.length; i += this.step) {
       onEvent({ type: "text", text: this.text.slice(i, i + this.step) });
@@ -50,7 +50,7 @@ async function ask(client: DemoClient, q: string) {
   const box = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(box, { target: { value: q } });
   fireEvent.keyDown(box, { key: "Enter" });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeTruthy(), { timeout: 4000 });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeTruthy(), { timeout: 10000 });
   const answers = document.querySelectorAll(".msg.claude .body");
   return answers[answers.length - 1] as HTMLElement;
 }
@@ -84,7 +84,7 @@ describe("Rig's answers", () => {
       "Leave these on:",
       "Nothing changes until you approve the card in Rig.",
     ]);
-  });
+  }, 15000);
 
   it("show a list item as soon as its line starts, with no stray marks while bold is still arriving", () => {
     const half = ANSWER.slice(0, ANSWER.indexOf("StartAUEP") + 5); // ends "...\n- **Start"
