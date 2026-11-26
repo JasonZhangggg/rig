@@ -21,9 +21,6 @@ export const jumpGroups: [string, DiagramKind[]][] = [
   ["About the board", ["board-layout", "rear-io", "specs", "dimensions"]],
 ];
 
-/** What most people open a manual for, first. */
-const keyOrder: DiagramKind[] = ["board-layout", "front-panel", "fan-headers", "memory-slots", "power-connectors", "m2-slots", "usb-headers", "rgb-headers", "installation", "rear-io", "specs", "dimensions"];
-
 /** Each section once: diagrams with the same name are one section with all its pages. */
 export function manualJumps(diagrams: ManualDiagram[]): Jump[] {
   const out: Jump[] = [];
@@ -34,12 +31,6 @@ export function manualJumps(diagrams: ManualDiagram[]): Jump[] {
   }
   out.forEach((j) => j.pages.sort((a, b) => a - b));
   return out;
-}
-
-/** The few sections to show before "All sections": the ones this part needs first, then the usual ones. */
-export function keyJumps(jumps: Jump[], prefer: DiagramKind[] = [], count = 4): Jump[] {
-  const rank = (k: DiagramKind) => { const p = prefer.indexOf(k); return p >= 0 ? p : prefer.length + keyOrder.indexOf(k); };
-  return [...jumps].sort((a, b) => rank(a.kind) - rank(b.kind) || a.pages[0] - b.pages[0]).slice(0, count);
 }
 
 /** Every section under its group, in page order within the group. */

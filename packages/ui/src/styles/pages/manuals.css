@@ -29,8 +29,7 @@
 /* The dots button is taller than the title line; it overlaps the space around it rather than pushing the page down. */
 .mn-title-row .more { margin: -7px -6px -7px 0; }
 
-/* A part's manual as a row of the Manuals tab: its name in bold, one grey line, the buttons on the right of the name,
-   and the sections to jump to under it, two to a line where there's room. */
+/* A part's manual as a row of the Manuals tab: its name in bold, one grey line, the buttons on the right of the name. */
 .mn-row { padding: 16px 0; }
 .mn-row .mn-card { gap: 10px; padding: 0; }
 .mn-row-main { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 16px; }
@@ -39,12 +38,6 @@
 .mn-row .mn-meta { color: var(--text-3); font-size: 13px; }
 .mn-row-acts { flex: none; display: flex; align-items: center; gap: 6px; }
 .mn-row-acts .more { margin-right: -6px; }
-/* The sections sit in a soft panel, so they read as part of this manual's row and not the next one. */
-.mn-row .mn-jumps { max-width: 560px; padding: 10px 14px 12px; border-radius: var(--r-sm); background: var(--surface-2); }
-.mn-row .mn-jump-list { margin: 0 -8px; }
-.mn-row .mn-jump { padding: 6px 8px; }
-@media (hover: hover) and (pointer: fine) { .mn-row .mn-jump:hover { background: var(--surface); } }
-.mn-row .mn-jump-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); column-gap: 20px; }
 .mn-row .mn-form, .mn-row .mn-confirm { max-width: 640px; }
 .mn-bar { max-width: 320px; height: 4px; }
 .mn-bar i { background: var(--good-mark); transition: transform 200ms linear; }
@@ -55,19 +48,6 @@
 /* Under 860px a row's buttons go under its grey line, as in the Changes list. */
 @media (max-width: 860px) { .mn-row-body { flex-basis: 100%; } }
 
-/* Sections to jump to: a short list, one line each, its page on the right. */
-.mn-jumps { display: flex; flex-direction: column; gap: 4px; }
-.mn-jump-group { display: flex; flex-direction: column; gap: 2px; }
-.mn-jump-group + .mn-jump-group { margin-top: 10px; }
-.mn-jump-h { font-size: 12.5px; font-weight: 500; color: var(--text-3); }
-.mn-jump-list { list-style: none; margin: 0 -10px; padding: 0; }
-.mn-jump {
-  width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 10px;
-  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
-}
-.mn-jump-p { flex: none; color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-@media (hover: hover) and (pointer: fine) { .mn-jump:hover { background: var(--surface-2); } }
-.mn-jump-more { align-self: flex-start; margin-top: 4px; font-size: 13.5px; }
 
 .mn-form { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .mn-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px; }

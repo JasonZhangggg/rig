@@ -69,8 +69,7 @@ describe("Manuals", () => {
     const board = await card(/^Motherboard:/);
     expect(board.getByText("12 pages")).toBeTruthy();
     expect(board.getByRole("button", { name: "Open manual" })).toBeTruthy();
-    fireEvent.click(board.getByRole("button", { name: "All 11 sections" }));
-    expect(board.getAllByRole("list").map((l) => l.getAttribute("aria-label")?.split(",")[0])).toEqual(["Plugging things in", "Fitting parts", "About the board"]);
+    expect(board.queryByRole("list")).toBeNull();
     expect(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" })).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search the manuals" }), { target: { value: "F_PANEL" } });
     const hit = await screen.findByRole("button", { name: /Page 9/ });

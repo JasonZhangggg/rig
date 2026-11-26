@@ -5,7 +5,7 @@ import { MoreMenu } from "../components/MoreMenu";
 import { openManual } from "./viewerState";
 import { ManualSections, OpenManualIcon } from "./ManualOutline";
 import type { ManualStore } from "./useManuals";
-import { busy, groupedJumps, jobText, jumpPages, keyJumps, manualJumps, modelName, pagesText, partName, type Jump, type Row } from "./words";
+import { busy, jobText, modelName, pagesText, partName, type Row } from "./words";
 
 /** A hidden file input for PDFs, and a way to open it from any button or menu item. */
 function usePdfPicker(onPick: (f: File) => void): [() => void, ReactNode] {
@@ -40,45 +40,6 @@ export function ModelForm({ target, intro, cta = "Find manual", onFind, onCancel
         <button className="btn ghost sm" type="button" onClick={onCancel}>Cancel</button>
       </div>
     </form>
-  );
-}
-
-/** One section of a manual: its name, and the page it opens at. */
-function JumpRow({ manual, jump }: { manual: Manual; jump: Jump }) {
-  return (
-    <li>
-      <button type="button" className="mn-jump" aria-label={`${jump.label}, ${jump.pages.length > 1 ? "pages" : "page"} ${jump.pages.join(" and ")}`} onClick={() => openManual(manual.id, jump.pages[0])}>
-        <span>{jump.label}</span><span className="mn-jump-p">{jumpPages(jump)}</span>
-      </button>
-    </li>
-  );
-}
-
-/**
- * The manual's sections to jump to: the few this part needs first, and every other one,
- * grouped, a click away. Each section shows once, even when it's on two pages.
- */
-export function ManualJumps({ manual, only, prefer, count = 4, heading = "Jump to a section" }: { manual: Manual; only?: DiagramKind[]; prefer?: DiagramKind[]; count?: number; heading?: string | null }) {
-  const [all, setAll] = useState(false);
-  const jumps = manualJumps(manual.diagrams.filter((d) => !only || only.includes(d.kind)));
-  if (!jumps.length) return null;
-  const more = jumps.length > count;
-  const name = `Sections of the ${manual.title}`;
-  return (
-    <div className="mn-jumps">
-      {all && more ? groupedJumps(jumps).map(([group, list]) => (
-        <div key={group} className="mn-jump-group">
-          <span className="mn-jump-h">{group}</span>
-          <ul className="mn-jump-list" aria-label={`${group}, in the ${manual.title}`}>{list.map((j) => <JumpRow key={`${j.kind}-${j.label}`} manual={manual} jump={j} />)}</ul>
-        </div>
-      )) : (
-        <>
-          {heading && <span className="mn-jump-h">{heading}</span>}
-          <ul className="mn-jump-list" aria-label={name}>{keyJumps(jumps, prefer, count).map((j) => <JumpRow key={`${j.kind}-${j.label}`} manual={manual} jump={j} />)}</ul>
-        </>
-      )}
-      {more && <button type="button" className="linkish mn-jump-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "Show fewer" : `All ${jumps.length} sections`}</button>}
-    </div>
   );
 }
 
@@ -151,7 +112,6 @@ export function ManualCard({ row, store, compact, prefer, outline }: { row: Row;
           {!m.indexed && !fileElsewhere && <button type="button" className="btn ghost sm" onClick={() => void store.read(m)}>Read it</button>}
         </>
       );
-      below = <ManualJumps manual={m} prefer={prefer} />;
     }
   } else {
     const canFind = !!client.findManual;
