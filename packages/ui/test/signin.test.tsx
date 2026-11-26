@@ -47,9 +47,10 @@ describe("Sign-in screen", () => {
     expect(onSkip).toHaveBeenCalled();
   });
 
-  it("shows one quiet line beside the art", () => {
+  it("shows a headline and one line about Rig beside the form", () => {
     const client = { kind: "web", signInEmail: vi.fn() } as unknown as RigClient;
     render(<SignIn client={client} onDone={() => {}} />);
-    expect(screen.getByText("See inside your PC.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "See inside your PC." })).toBeTruthy();
+    expect(screen.getByText("Live temperatures for every part, problems in plain words, and fixes you approve.")).toBeTruthy();
   });
 });

@@ -1,14 +1,24 @@
-import { useState } from "react";
-import type { Account, RigClient } from "@rig/core";
-import { AsciiField } from "../components/AsciiField";
+import { useEffect, useState } from "react";
+import type { Account, PC, RigClient } from "@rig/core";
+import { DemoClient } from "@rig/core/demo";
+import { PCPreview } from "../components/PCPreview";
 
-/** The left half of sign-in screens: a large PC in thermal characters that warms under the pointer, with one quiet line. */
+/** The left half of sign-in screens: the demo PC from Home, large and swaying slowly on graphite, over a headline. */
 export function SignInArt() {
+  const [pc, setPC] = useState<PC | null>(null);
+  useEffect(() => {
+    let live = true;
+    void new DemoClient().machines().then((all) => { if (live) setPC(all.find((p) => p.parts) ?? null); }, () => {});
+    return () => { live = false; };
+  }, []);
   return (
     <div className="signin-art tone-dark">
-      <AsciiField fit={{ size: 0.78 }} />
       <div className="brand"><span className="brand-mark" />Rig</div>
-      <p className="art-note">See inside your PC.</p>
+      <div className="signin-pc">{pc && <PCPreview pc={pc} className="signin-pc-canvas" />}</div>
+      <div className="art-copy">
+        <h2>See inside your PC.</h2>
+        <p>Live temperatures for every part, problems in plain words, and fixes you approve.</p>
+      </div>
     </div>
   );
 }
