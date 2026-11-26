@@ -71,7 +71,7 @@ describe("Scripts from the chat", () => {
     await screen.findByText(/Things to look at/i);
     await act(async () => { location.hash = "settings"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
     const sw = await screen.findByRole("switch", { name: /GPU heat/ });
-    expect(sw.textContent).toMatch(/Asked for by Rig's chat/);
+    expect(screen.getByText(/Asked for by Rig's chat/)).toBeTruthy();
     fireEvent.click(sw);
     await waitFor(() => expect(edits).toEqual([{ op: "pause", id: "c-old" }]));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { probeWhen, type ProbeStatus, type RecorderStatus } from "@rig/core";
 import { useActions } from "../../state";
+import { SettingRow } from "./parts";
 
 const mb = (bytes: number) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
 const ago = (t: number) => {
@@ -51,14 +52,15 @@ function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () =
   return (
     <div className="custom-logs">
       <h4>Custom logs</h4>
-      {list.map((p) => (
-        <div key={p.id} className="custom-log-row">
-          <button type="button" className="switch" role="switch" aria-checked={p.state !== "paused"} disabled={busy === p.id} onClick={() => void edit(p.id, p.state === "paused" ? "resume" : "pause")}>
-            <span><b>{p.label}</b><small>{probeLine(p)}</small></span><i />
-          </button>
-          <button type="button" className="btn ghost sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Remove</button>
-        </div>
-      ))}
+      {list.map((p) => {
+        const id = `custom-log-${p.id}`;
+        return (
+          <SettingRow key={p.id} id={id} title={p.label} body={probeLine(p)}>
+            <button type="button" className="switch set-toggle" role="switch" aria-checked={p.state !== "paused"} aria-labelledby={id} disabled={busy === p.id} onClick={() => void edit(p.id, p.state === "paused" ? "resume" : "pause")}><i /></button>
+            <button type="button" className="btn ghost sm" disabled={busy === p.id} onClick={() => void edit(p.id, "remove")}>Remove</button>
+          </SettingRow>
+        );
+      })}
       {status.probes?.problems?.map((x) => <p key={x} className="faint">{x}</p>)}
     </div>
   );
@@ -112,17 +114,14 @@ export function AppSection() {
   };
 
   return (
-    <div className="switch-list set-switches">
-      <button type="button" className="switch" role="switch" aria-checked={!!on} disabled={on == null || starting} onClick={flip}>
-        <span><b>Start Rig with Windows</b><small>Rig opens when you sign in to Windows. Windows asks for permission each time, as it does when you open Rig.{starting ? " Waiting for Windows…" : ""}</small></span><i />
-      </button>
+    <>
+      <SettingRow id="app-autostart" title="Start Rig with Windows" body={`Rig opens when you sign in to Windows. Windows asks for permission each time, as it does when you open Rig.${starting ? " Waiting for Windows…" : ""}`}>
+        <button type="button" className="switch set-toggle" role="switch" aria-checked={!!on} aria-labelledby="app-autostart" disabled={on == null || starting} onClick={flip}><i /></button>
+      </SettingRow>
       {rec && status?.supported && (
-        <button type="button" className="switch" role="switch" aria-checked={recording} disabled={busy} onClick={() => (recording ? setAsking(true) : void flipRecorder())}>
-          <span>
-            <b>Keep a log while Rig is closed</b>
-            <small>A small background recorder writes down temperatures, usage, crashes, restarts and power loss, so Logs can show what happened even when Rig wasn't open. It stays on this PC and changes nothing on it.{recording ? " Turning it off deletes what it wrote." : ""} {busy ? "Waiting for Windows…" : recorderLine(status)}</small>
-          </span><i />
-        </button>
+        <SettingRow id="app-recorder" title="Keep a log while Rig is closed" body={`A small background recorder writes down temperatures, usage, crashes, restarts and power loss, so Logs can show what happened even when Rig wasn't open. It stays on this PC and changes nothing on it.${recording ? " Turning it off deletes what it wrote." : ""} ${busy ? "Waiting for Windows…" : recorderLine(status)}`}>
+          <button type="button" className="switch set-toggle" role="switch" aria-checked={recording} aria-labelledby="app-recorder" disabled={busy} onClick={() => (recording ? setAsking(true) : void flipRecorder())}><i /></button>
+        </SettingRow>
       )}
       {asking && (
         <div className="set-danger" role="group" aria-labelledby="rec-off-h">
@@ -135,6 +134,6 @@ export function AppSection() {
         </div>
       )}
       {rec && status?.supported && <CustomLogs status={status} refresh={() => void refresh()} />}
-    </div>
+    </>
   );
 }
