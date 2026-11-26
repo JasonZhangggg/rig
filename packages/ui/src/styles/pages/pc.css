@@ -261,7 +261,9 @@
 .mt-h { margin: 0 0 6px; font: var(--t-title); letter-spacing: -.02em; }
 .mt-error { margin: 0 0 8px; }
 .mt-list { list-style: none; margin: 0; padding: 0; }
-.mt-list > li + li { border-top: 1px solid var(--line); }
+/* Both lists on this page draw a firmer line between rows than Changes does, since a manual's row can run tall. */
+:is(.mt-list > li + li, .mt .rows > .row + .row) { border-top: 1px solid var(--line-strong); }
+.mt .rows > .row { padding: 16px 0; }
 /* "Add a manual" is the list's last row: a plain text button whose words line up with the names above it. */
 .mt-add { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
 .mt-add-btn { margin-left: -13px; font-weight: 600; }
