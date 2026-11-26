@@ -26,8 +26,11 @@ public static class LogReads
     public sealed record Vendor(string Name, string[] Folders);
     public sealed record Limits(int DefaultHours, int DefaultLongHours, int MaxHours, int DefaultMax, int MaxEvents, int MaxFiles, int DefaultLines, int MaxLines,
         int MessageChars, int LineChars, int TextChars, long ScanBytes, int Examine, int Providers, int Ids, int ContainsChars);
+    public sealed record FactField(string Key, string[] From, string Type);
+    public sealed record FactRule(string Provider, int[] Ids, string Says, FactField[] Fields);
     public sealed record Table(Limits Limits, Dictionary<string, bool> Sources, Dictionary<string, Topic> Topics, Dictionary<string, FileRule> Files,
-        Dictionary<string, Vendor> Vendors, string[] VendorExtensions, int VendorDepth, Dictionary<string, string> Bugchecks, Dictionary<string, string> EsrtStatus, Dictionary<string, string> EsrtType);
+        Dictionary<string, Vendor> Vendors, string[] VendorExtensions, int VendorDepth, Dictionary<string, string> Bugchecks, Dictionary<string, string> EsrtStatus, Dictionary<string, string> EsrtType,
+        FactRule[] FactRules, Dictionary<string, FactRule> Facts);
 
     static readonly Lazy<Table> table = new(Load);
     public static Table Rules => table.Value;
@@ -52,8 +55,12 @@ public static class LogReads
             kv.Value["queries"]!.AsArray().Select(q => new Query(q!["channel"]!.GetValue<string>(), List(q["providers"]), Ints(q["ids"]), Ints(q["levels"]))).ToArray(), List(kv.Value["also"])));
         var files = o["files"]!.AsObject().ToDictionary(kv => kv.Key, kv => new FileRule(kv.Value!["path"]?.GetValue<string>(), kv.Value["folder"]?.GetValue<string>(), kv.Value["match"]?.GetValue<string>(), kv.Value["format"]?.GetValue<string>()));
         var vendors = o["vendors"]!.AsObject().ToDictionary(kv => kv.Key, kv => new Vendor(kv.Value!["name"]!.GetValue<string>(), List(kv.Value["folders"])));
+        var factRules = (o["facts"] as JsonArray ?? []).Select(f => new FactRule(f!["provider"]!.GetValue<string>(), Ints(f["ids"]), f["says"]!.GetValue<string>(),
+            (f["fields"] as JsonObject ?? []).Select(kv => new FactField(kv.Key, List(kv.Value!["from"]), kv.Value["type"]!.GetValue<string>())).ToArray())).ToArray();
+        var facts = new Dictionary<string, FactRule>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in factRules) foreach (int id in r.Ids) facts.TryAdd($"{r.Provider}|{id}", r);
         return new Table(limits, sources, topics, files, vendors, List(o["vendorExtensions"]), (int)Json.Num(o["vendorDepth"], 4),
-            new Dictionary<string, string>(Map(o["bugchecks"]), StringComparer.OrdinalIgnoreCase), Map(o["esrtStatus"]), Map(o["esrtType"]));
+            new Dictionary<string, string>(Map(o["bugchecks"]), StringComparer.OrdinalIgnoreCase), Map(o["esrtStatus"]), Map(o["esrtType"]), factRules, facts);
     }
 
     static string? Text(JsonObject o, string key) => o[key] is JsonValue v && v.TryGetValue(out string? s) ? s : null;
@@ -145,7 +152,31 @@ public static class LogReads
 
     // ----- Event logs -----
 
-    record Found(DateTime T, string Channel, string Source, int Id, string Level, string Message);
+    record Found(DateTime T, string Channel, string Source, int Id, string Level, string? What, JsonObject? Facts, string? Message);
+
+    /// Whether a read asked for each event's message, which counts as outside text. Without it, an event is its facts only.
+    static bool WantsText(JsonObject req) => req["text"] is JsonValue v && v.TryGetValue(out bool b) && b;
+
+    /// An event's facts from the table: only values that fit their type, so none can carry an app's own sentence.
+    static (string? What, JsonObject? Facts) FactsOf(EventRecord rec, string provider)
+    {
+        if (!Rules.Facts.TryGetValue($"{provider}|{rec.Id}", out var rule)) return (null, null);
+        if (rule.Fields.Length == 0) return (rule.Says, null);
+        string xml;
+        try { xml = rec.ToXml(); } catch (EventLogException) { return (rule.Says, null); }
+        var values = LogParse.EventValues(xml);
+        var facts = new JsonObject();
+        foreach (var f in rule.Fields)
+        {
+            string? raw = f.From.Select(n => values.GetValueOrDefault(n)).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+            if (LogParse.FactValue(f.Type, raw) is not string fact) continue;
+            // A stop code of 0 means there was no blue screen.
+            if (f.Type == "stop" && fact == "0x00000000") continue;
+            facts[f.Key] = fact;
+            if (f.Type == "stop" && Rules.Bugchecks.TryGetValue(fact, out var name)) facts[f.Key + "Name"] = name;
+        }
+        return (rule.Says, facts.Count > 0 ? facts : null);
+    }
 
     static int[] LevelsOf(JsonObject req)
     {
@@ -154,7 +185,7 @@ public static class LogReads
     }
 
     /// Up to `max` events newest first, looking through at most `examine` of them. Notes why a channel couldn't be read.
-    static List<Found> Events(Query q, DateTime from, DateTime to, int max, string? contains, List<string> notes)
+    static List<Found> Events(Query q, DateTime from, DateTime to, int max, string? contains, bool text, List<string> notes)
     {
         var L = Rules.Limits;
         if (!LogParse.Channel.IsMatch(q.Channel)) throw new RigException("That isn't an event log's name.");
@@ -179,10 +210,13 @@ public static class LogReads
                 using var rec = reader.ReadEvent();
                 if (rec == null) break;
                 if (rec.TimeCreated is not DateTime at) continue;
-                string message = Message(rec);
                 string provider = rec.ProviderName ?? "Unknown";
+                // The message is only formatted when it's asked for or searched in; contains looks in it either way.
+                string? message = text || contains != null ? Message(rec) : null;
                 if (!Holds($"{provider} {message}", contains)) continue;
-                list.Add(new Found(at.ToUniversalTime(), q.Channel, provider, rec.Id, Level(rec.Level), LogParse.Cut(message, L.MessageChars)));
+                var (what, facts) = FactsOf(rec, provider);
+                list.Add(new Found(at.ToUniversalTime(), q.Channel, text || LogParse.Provider.IsMatch(provider) ? provider : "(left out)", rec.Id, Level(rec.Level),
+                    what, facts, text && message != null ? LogParse.Cut(message, L.MessageChars) : null));
                 // Forward reads keep going to reach the newest; the list keeps only the last `max` of them.
                 if (reverse && list.Count >= max) break;
                 if (!reverse && list.Count > max) list.RemoveAt(0);
@@ -212,7 +246,10 @@ public static class LogReads
         {
             var o = new JsonObject { ["t"] = LogParse.Iso(f.T) };
             if (withChannel) o["log"] = f.Channel;
-            o["source"] = f.Source; o["id"] = f.Id; o["level"] = f.Level; o["message"] = f.Message;
+            o["source"] = f.Source; o["id"] = f.Id; o["level"] = f.Level;
+            if (f.What != null) o["what"] = f.What;
+            if (f.Facts != null) o["facts"] = f.Facts.DeepClone();
+            if (f.Message != null) o["message"] = f.Message;
             return (JsonNode)o;
         }), Rules.Limits.TextChars, used);
         answer["events"] = events;
@@ -231,7 +268,7 @@ public static class LogReads
         var (from, to, _) = Window(req, L.DefaultHours);
         int max = Max(req, L.MaxEvents, L.DefaultMax);
         var notes = new List<string>();
-        var found = Events(new Query(channel, providers, ids, LevelsOf(req)), from, to, max, Contains(req), notes);
+        var found = Events(new Query(channel, providers, ids, LevelsOf(req)), from, to, max, Contains(req), WantsText(req), notes);
         var answer = new JsonObject { ["log"] = channel, ["from"] = LogParse.Iso(from), ["to"] = LogParse.Iso(to) };
         if (found.Count == 0 && notes.Count == 0) answer["found"] = "no events in this window";
         return EventList(found, false, answer, notes);
@@ -246,7 +283,8 @@ public static class LogReads
         int max = Max(req, L.MaxEvents, L.DefaultMax);
         string? contains = Contains(req);
         var notes = new List<string>();
-        var found = topic.Queries.SelectMany(q => Events(q, from, to, max, contains, notes)).OrderByDescending(f => f.T).Take(max).ToList();
+        bool text = WantsText(req);
+        var found = topic.Queries.SelectMany(q => Events(q, from, to, max, contains, text, notes)).OrderByDescending(f => f.T).Take(max).ToList();
         var answer = new JsonObject { ["topic"] = key, ["shows"] = topic.Says, ["from"] = LogParse.Iso(from), ["to"] = LogParse.Iso(to) };
         if (topic.Also.Length > 0) answer["alsoRead"] = new JsonArray(topic.Also.Select(a => (JsonNode)a).ToArray());
         if (found.Count == 0) answer["found"] = "no events in this window";
@@ -364,12 +402,15 @@ public static class LogReads
             string all = string.Join(" ", new[] { wer.GetValueOrDefault("EventType"), wer.GetValueOrDefault("AppName"), wer.GetValueOrDefault("AppPath"), wer.GetValueOrDefault("FriendlyEventName") }.Concat(sig.Select(s => s.Value)));
             if (!Holds(all, contains)) continue;
             var row = new JsonObject { ["t"] = LogParse.Iso(t) };
-            foreach (var (key, name) in new[] { ("EventType", "type"), ("FriendlyEventName", "what"), ("AppName", "app"), ("AppPath", "path") })
-                if (wer.TryGetValue(key, out var v) && v.Length > 0) row[name] = LogParse.Cut(v, 200);
+            // Only values that fit a fact's type: an app's file name, never its folder, and short names and codes.
+            foreach (var (key, name, type) in new[] { ("EventType", "type", "id"), ("AppName", "app", "file"), ("AppPath", "app", "file") })
+                if (!row.ContainsKey(name) && LogParse.FactValue(type, wer.GetValueOrDefault(key)) is string v) row[name] = v;
             if (sig.Count > 0)
             {
                 var s = new JsonObject();
-                foreach (var (n, v) in sig) if (!s.ContainsKey(n)) s[LogParse.Cut(n, 60)] = LogParse.Cut(v, 150);
+                foreach (var (n, v) in sig)
+                    if (LogParse.FactValue("name", n) is string k && !s.ContainsKey(k))
+                        s[k] = LogParse.FactValue("version", v) is string ver && ver == v.Trim() ? ver : LogParse.FactValue("name", v) ?? LogParse.FactValue("id", v) ?? "(left out)";
                 row["signature"] = s;
             }
             reports.Add((t, row));
@@ -391,6 +432,7 @@ public static class LogReads
         var (from, to, _) = Window(req, L.DefaultLongHours);
         int max = Max(req, L.MaxEvents, L.DefaultMax);
         string? contains = Contains(req);
+        bool text = WantsText(req);
         string f = ManagementDateTimeConverter.ToDmtfDateTime(from.ToLocalTime()), t = ManagementDateTimeConverter.ToDmtfDateTime(to.ToLocalTime());
         var opts = new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(20), ReturnImmediately = true, Rewindable = false };
         var found = new List<(DateTime T, JsonObject Row)>();
@@ -408,9 +450,10 @@ public static class LogReads
                     string message = Regex.Replace(mo["Message"]?.ToString() ?? "", @"\s+", " ").Trim();
                     string product = mo["ProductName"]?.ToString() ?? "", src = mo["SourceName"]?.ToString() ?? "";
                     if (!Holds($"{src} {product} {message}", contains)) continue;
-                    var row = new JsonObject { ["t"] = LogParse.Iso(at), ["source"] = LogParse.Cut(src, 100), ["id"] = long.TryParse(mo["EventIdentifier"]?.ToString(), out long n) ? n : 0 };
-                    if (product.Length > 0) row["product"] = LogParse.Cut(product, 120);
-                    row["message"] = LogParse.Cut(message, L.MessageChars);
+                    var row = new JsonObject { ["t"] = LogParse.Iso(at), ["source"] = text || LogParse.Provider.IsMatch(src) ? LogParse.Cut(src, 100) : "(left out)", ["id"] = long.TryParse(mo["EventIdentifier"]?.ToString(), out long n) ? n : 0 };
+                    if (LogParse.FactValue("name", product) is string p) row["product"] = p;
+                    else if (text && product.Length > 0) row["product"] = LogParse.Cut(product, 120);
+                    if (text) row["message"] = LogParse.Cut(message, L.MessageChars);
                     found.Add((at, row));
                 }
         }
@@ -630,10 +673,18 @@ public static class LogReads
         foreach (var (topic, t) in Rules.Topics)
             foreach (var q in t.Queries)
                 if (!LogParse.Channel.IsMatch(q.Channel) || q.Providers.Any(p => !LogParse.Provider.IsMatch(p))) yield return $"topic {topic} has a channel or source name the checks refuse";
+        foreach (var f in Rules.FactRules)
+        {
+            if (!LogParse.Provider.IsMatch(f.Provider) || f.Ids.Length == 0) yield return $"the facts for {f.Provider} name a source or ids the checks refuse";
+            foreach (var field in f.Fields) if (!LogParse.IsFactType(field.Type) || field.From.Length == 0) yield return $"the {field.Key} fact of {f.Provider} has no type or place to read";
+        }
         static string? Fails(Func<string> f, out string text) { text = ""; try { text = f(); return null; } catch (Exception e) { return e.Message; } }
         var reads = new (string Name, JsonObject Req)[]
         {
             ("System events", new JsonObject { ["source"] = "events", ["channel"] = "System", ["hours"] = 168, ["max"] = 5 }),
+            ("System events with their messages", new JsonObject { ["source"] = "events", ["channel"] = "System", ["hours"] = 168, ["max"] = 5, ["text"] = true }),
+            ("a crashes topic", new JsonObject { ["source"] = "topic", ["topic"] = "crashes", ["hours"] = 720 }),
+            ("Reliability Monitor", new JsonObject { ["source"] = "reliability", ["max"] = 5 }),
             ("a Defender topic", new JsonObject { ["source"] = "topic", ["topic"] = "protection", ["hours"] = 168 }),
             ("every topic", new JsonObject { ["source"] = "topic", ["topic"] = "power", ["max"] = 3 }),
             ("channels", new JsonObject { ["source"] = "channels", ["find"] = "Kernel" }),
@@ -648,6 +699,8 @@ public static class LogReads
         {
             if (Fails(() => Read(req, owner), out var text) is string why) { yield return $"the {name} log read failed: {why}"; continue; }
             if (text.Length > Rules.Limits.TextChars + 1000) yield return $"the {name} log read came back with {text.Length} characters";
+            // Without text, no event, record or report carries a message.
+            if (req["text"] == null && text.Contains("\"message\":", StringComparison.Ordinal)) yield return $"the {name} log read gave a message without text";
         }
         // A missing channel says so instead of failing.
         if (Fails(() => Read(new JsonObject { ["source"] = "events", ["channel"] = "Rig-No-Such-Log/Operational" }, owner), out var missing) != null || !missing.Contains("no such event log", StringComparison.Ordinal))
