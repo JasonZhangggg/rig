@@ -1,17 +1,8 @@
 import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
-import { AsciiField } from "../components/AsciiField";
+import { SignInArt } from "./SignInArt";
 
-/** The left half of sign-in screens: a large PC in thermal characters that warms under the pointer, with one quiet line. */
-export function SignInArt() {
-  return (
-    <div className="signin-art tone-dark">
-      <AsciiField fit={{ size: 0.78 }} />
-      <div className="brand"><span className="brand-mark" />Rig</div>
-      <p className="art-note">See inside your PC.</p>
-    </div>
-  );
-}
+export { SignInArt };
 
 /** Sign-in for the website (email or Google) and the desktop app (a code approved in the browser). */
 export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; onDone: (a: Account) => void; onSkip?: () => void; note?: string }) {
