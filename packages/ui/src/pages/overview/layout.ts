@@ -2,7 +2,8 @@
 // Stored per account on this device, parsed defensively so an old or broken copy never breaks Home.
 export const LAYOUT_VERSION = 2;
 
-export type Kind = "pc" | "health" | "todo" | "asks" | "temps" | "fans" | "evenings" | "storage" | "live" | "parts";
+export type Kind = "pc" | "health" | "todo" | "asks" | "temps" | "fans" | "evenings" | "storage" | "live" | "parts"
+  | "trend" | "drives" | "changes" | "events" | "games" | "upgrade" | "drivers" | "logs" | "manuals";
 export type SizeName = "s" | "m" | "l" | "wide" | "tall" | "full";
 export type Tone = "light" | "dark";
 export type Frame = "tile" | "open";
@@ -161,6 +162,87 @@ export const KINDS: Record<Kind, KindMeta> = {
       { key: "off", label: "Readings to show", type: "set", value: [], source: "stats" },
     ],
   },
+  trend: {
+    title: "Last hour", blurb: "Temperatures or load as a live chart, the way Logs draws them.",
+    sizes: { s: [4, 3], m: [5, 4], wide: [8, 3], l: [7, 5], full: [12, 4] }, size: "wide", min: [3, 3], max: [12, 7],
+    styles: [["temps", "Temperatures"], ["load", "Load"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "span", label: "Time", type: "choice", value: "60", choices: [["10", "10 minutes"], ["30", "30 minutes"], ["60", "1 hour"]] },
+      { key: "cpu", label: "Show the processor", type: "toggle", value: true },
+      { key: "gpu", label: "Show the graphics card", type: "toggle", value: true },
+      { key: "legend", label: "Show the key", type: "toggle", value: true },
+    ],
+  },
+  drives: {
+    title: "Drive health", blurb: "How each drive is holding up: wear, errors and heat.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5] }, size: "m", min: [3, 3], max: [12, 7],
+    styles: [["list", "List"], ["meters", "Life left bars"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "temps", label: "Show temperatures", type: "toggle", value: true },
+      { key: "free", label: "Show free space", type: "toggle", value: true },
+    ],
+  },
+  changes: {
+    title: "Changes", blurb: "The latest changes to the PC, and whether each is still on.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5], l: [6, 5] }, size: "m", min: [3, 3], max: [12, 8],
+    styles: [["list", "List"], ["count", "Big number"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "undone", label: "Include undone changes", type: "toggle", value: true },
+      { key: "who", label: "Show who made each one", type: "toggle", value: true },
+    ],
+  },
+  events: {
+    title: "Windows events", blurb: "Crashes, driver resets and other problems Windows logged.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5], l: [6, 5] }, size: "m", min: [3, 3], max: [12, 8],
+    styles: [["kinds", "By kind"], ["latest", "Latest first"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "days", label: "Days", type: "choice", value: "7", choices: [["7", "7 days"], ["3", "3 days"], ["1", "24 hours"]] },
+      { key: "installs", label: "Include updates and installs", type: "toggle", value: false },
+    ],
+  },
+  games: {
+    title: "Games", blurb: "What you played most, for how long, and how hot it ran.",
+    sizes: { s: [3, 3], m: [4, 4], wide: [6, 4], tall: [4, 6], l: [6, 5] }, size: "m", min: [3, 3], max: [12, 8],
+    styles: [["list", "List"], ["top", "Most played"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "range", label: "Time", type: "choice", value: "7d", choices: [["7d", "This week"], ["30d", "This month"]] },
+      { key: "temps", label: "Show the hottest moment", type: "toggle", value: true },
+      { key: "fps", label: "Show frame rates", type: "toggle", value: true },
+    ],
+  },
+  upgrade: {
+    title: "Next upgrade", blurb: "Rig's pick for what to upgrade first, and what it gets you.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 6], l: [6, 5] }, size: "m", min: [3, 3], max: [12, 8],
+    styles: [["pick", "Rig's pick"], ["list", "Every idea"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "why", label: "Show why", type: "toggle", value: true },
+      { key: "price", label: "Show the price", type: "toggle", value: true },
+    ],
+  },
+  drivers: {
+    title: "Drivers", blurb: "The graphics driver and BIOS versions, and how old they are.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5] }, size: "m", min: [3, 3], max: [12, 6],
+    styles: [["list", "List"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "dates", label: "Show when each was installed", type: "toggle", value: true },
+      { key: "ask", label: "Show the check for updates link", type: "toggle", value: true },
+    ],
+  },
+  logs: {
+    title: "Logs", blurb: "Logs Rig recorded and what each one found.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5], l: [6, 5] }, size: "m", min: [3, 3], max: [12, 8],
+    styles: [["list", "List"], ["compact", "Compact"]], tone: "light", frame: "tile", hidden: true,
+    options: [
+      { key: "daily", label: "Include Rig's daily logs", type: "toggle", value: false },
+      { key: "found", label: "Show what each found", type: "toggle", value: true },
+    ],
+  },
+  manuals: {
+    title: "Manuals", blurb: "The manuals Rig found for your parts, one tap away.",
+    sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5] }, size: "m", min: [3, 3], max: [12, 6],
+    styles: [["list", "List"]], tone: "light", frame: "tile", hidden: true,
+    options: [{ key: "pages", label: "Show page counts", type: "toggle", value: true }],
+  },
   parts: {
     title: "Parts", blurb: "Every part Rig found, by kind.",
     sizes: { m: [4, 4], tall: [4, 6], wide: [8, 3] }, size: "wide", min: [4, 3], max: [12, 7],
@@ -173,7 +255,7 @@ export const KINDS: Record<Kind, KindMeta> = {
 };
 
 /** Default order: the PC leads, then what needs attention, then the week, then the rest. Storage, a card, sits above Ask Rig, whose short list then ends the column instead of leaving a gap above the card. */
-export const KIND_ORDER: Kind[] = ["pc", "health", "todo", "temps", "fans", "evenings", "storage", "asks", "live", "parts"];
+export const KIND_ORDER: Kind[] = ["pc", "health", "todo", "temps", "fans", "evenings", "storage", "asks", "live", "parts", "trend", "drives", "changes", "events", "games", "upgrade", "drivers", "logs", "manuals"];
 
 const isKind = (k: unknown): k is Kind => typeof k === "string" && k in KINDS;
 export const kindOf = (i: string): Kind => (isKind(i) ? i : "storage");
