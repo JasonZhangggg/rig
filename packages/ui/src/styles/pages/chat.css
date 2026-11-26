@@ -71,6 +71,12 @@
 @media (hover: hover) and (pointer: fine) { .source-link:hover { color: var(--text); text-decoration-color: currentColor; } }
 .steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0 0 0 22px; line-height: 1.55; }
 .steps li::marker { color: var(--text-3); font-weight: 600; }
+.answer-list { display: flex; flex-direction: column; gap: 8px; margin: -4px 0 0; padding: 0 0 0 22px; }
+.answer-list li { padding-left: 2px; }
+.answer-list li::marker { color: var(--text-3); }
+.msg.claude .body strong { font-weight: 600; color: var(--text); }
+.msg.claude .body code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.88em; padding: 1px 5px; border-radius: 5px; background: var(--surface-2); overflow-wrap: anywhere; }
+.answer-head { font-weight: 600; }
 /* What Rig offers to do: set off by a rule on its left, not a box. */
 .proposal { padding-left: 18px; border-left: 2px solid var(--line-strong); line-height: 1.5; font-size: 15px; }
 .proposal-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 0 8px; }
