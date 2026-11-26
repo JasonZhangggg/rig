@@ -24,8 +24,55 @@
 .glimpse-frame { position: absolute; left: 34px; top: 300px; width: 900px; perspective: 2600px; animation: art-in .9s var(--ease-out) .05s both; }
 .glimpse-frame img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(27, 27, 31, .08), 0 2px 4px rgba(27, 27, 31, .04), 0 40px 90px -20px rgba(27, 27, 31, .3); transform: rotateX(5deg) rotateY(-7deg); transform-origin: 0 0; user-select: none; }
 
+
+/* Exploded: the PC pulled apart, glowing with heat, on graphite. */
+.art-exploded { background: radial-gradient(65% 50% at 50% 44%, #33261F, #1F1C1C 58%, var(--graphite) 80%) !important; }
+.art-exploded .art-pc-stage { inset: 40px -40px 150px; }
+.art-exploded .art-copy h2 span { color: var(--look); }
+
+/* Number: one reading, poster size; brass while it's cool, rust once it climbs. */
+.signin-art.art-number { --tint: var(--good); --ink: var(--graphite); background: var(--tint); color: var(--ink); transition: background-color .9s var(--ease-in-out), color .9s var(--ease-in-out); }
+.signin-art.art-number[data-hot] { --tint: var(--look); }
+.art-number .brand { color: var(--ink); transition: color .9s var(--ease-in-out); }
+.art-number .brand-mark { background: var(--ink) !important; transition: background-color .9s var(--ease-in-out); }
+.art-number .brand-mark::before { color: var(--tint) !important; }
+.number-label { position: absolute; top: 118px; left: 34px; margin: 0; display: flex; align-items: center; gap: 10px; font: 600 clamp(17px, 1.3vw, 21px)/1 var(--font); letter-spacing: -.01em; }
+.number-live { width: 10px; height: 10px; border-radius: 50%; background: currentColor; animation: number-blink 1.6s var(--ease-in-out) infinite alternate; }
+@keyframes number-blink { from { opacity: .3; } }
+.number-big { position: absolute; left: 20px; top: 158px; margin: 0; font: 650 clamp(13rem, 29vw, 29rem)/.86 var(--font); letter-spacing: -.07em; font-variant-numeric: tabular-nums; animation: number-in .7s var(--ease-out) both; white-space: nowrap; }
+.number-big span { font-weight: 400; margin-left: -.04em; }
+@keyframes number-in { from { opacity: 0; transform: translateY(14%); filter: blur(10px); } }
+.art-number .art-copy p { color: color-mix(in srgb, var(--ink) 72%, transparent); }
+
+/* Bento: Home in colored tiles. */
+.art-bento { background: var(--ground) !important; }
+.bento { position: absolute; inset: 90px 22px 22px; display: grid; grid-template-columns: 1.25fr 1fr; grid-template-rows: 1.15fr 1fr .8fr; gap: 12px; }
+.bt { position: relative; overflow: hidden; border-radius: 22px; padding: 20px 22px; background: var(--surface); animation: art-in .7s var(--ease-out) both; }
+.bt:nth-child(2) { animation-delay: .05s; } .bt:nth-child(3) { animation-delay: .1s; } .bt:nth-child(4) { animation-delay: .15s; } .bt:nth-child(5) { animation-delay: .2s; }
+.bt-cap { position: absolute; left: 22px; bottom: 18px; font: 600 15px/1.2 var(--font); letter-spacing: -.01em; }
+.bt-cap b { font-size: 22px; letter-spacing: -.03em; margin: 0 2px 0 4px; }
+.bt-pc { grid-row: 1 / 3; padding: 0; background: linear-gradient(180deg, #FFFFFF, #F4F2EE); }
+.bt-pc .art-pc-canvas { inset: 0 0 30px; }
+.bt-health { display: grid; place-items: center; }
+.bt-health svg { width: min(62%, 150px); transform: rotate(-90deg); }
+.bt-health circle { fill: none; stroke: rgba(255, 255, 255, .12); stroke-width: 7; }
+.bt-health .ring { stroke: var(--good); stroke-linecap: round; animation: ring-in 1.4s var(--ease-out) .2s both; }
+@keyframes ring-in { from { stroke-dasharray: 0 999; } }
+.bt-health b { position: absolute; inset: 0; display: grid; place-items: center; font: 600 clamp(2.4rem, 3.4vw, 3.4rem)/1 var(--font); letter-spacing: -.05em; padding-bottom: 6px; }
+.bt-health .bt-cap { color: var(--text-2); }
+.bt-temp { background: var(--look); color: #FFF8EE; }
+.bt-temp b { display: block; font: 650 clamp(4rem, 6.6vw, 6.6rem)/.9 var(--font); letter-spacing: -.06em; }
+.bt-fans { background: var(--good); color: var(--graphite); }
+.dots { display: grid; grid-template-columns: repeat(14, 14px); gap: 9px; }
+.dots i { width: 14px; height: 14px; border-radius: 50%; background: rgba(27, 27, 31, .14); }
+.dots i.on { background: var(--graphite); animation: dot-wave 2.8s var(--ease-in-out) infinite; animation-delay: calc(var(--c) * -.2s); }
+@keyframes dot-wave { 50% { opacity: .45; } }
+.bt-copy { background: var(--graphite); color: #F4F3F0; display: flex; align-items: flex-end; }
+.bt-copy h2 { margin: 0; font: 600 clamp(1.6rem, 2.2vw, 2.2rem)/1 var(--font); letter-spacing: -.045em; }
+
 @media (prefers-reduced-motion: reduce) {
-  .art-copy, .art-pc-stage, .glimpse-frame { animation: none; }
+  .art-copy, .art-pc-stage, .glimpse-frame, .number-big, .number-live, .bt, .bt-health .ring, .dots i.on { animation: none; }
+  .art-number, .art-number .brand, .art-number .brand-mark { transition: none; }
 }
 
 @media (max-width: 860px) {
@@ -35,4 +82,17 @@
   .art-pc-stage { inset: 10px 0 0; }
   .glimpse-frame { left: 20px; top: 70px; width: 720px; }
   .glimpse-frame img { border-radius: 14px; }
+  .art-exploded .art-pc-stage { inset: 0; }
+  .number-label { top: auto; bottom: 18px; left: 20px; font-size: 15px; }
+  .number-big { top: auto; bottom: 34px; right: 18px; left: auto; font-size: 150px; }
+  .bento { inset: 62px 12px 12px; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr; gap: 8px; }
+  .bt-pc, .bt-copy { display: none; }
+  .bt { border-radius: 16px; padding: 12px; }
+  .bt-cap { left: 12px; bottom: 10px; font-size: 12px; }
+  .bt-cap b { font-size: 15px; }
+  .bt-health svg { width: 64%; margin-top: -14px; }
+  .bt-health b { font-size: 1.6rem; padding-bottom: 20px; }
+  .bt-temp b { font-size: 2.8rem; }
+  .dots { grid-template-columns: repeat(14, 4px); gap: 3px; }
+  .dots i { width: 4px; height: 4px; }
 }
