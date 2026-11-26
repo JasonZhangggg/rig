@@ -22,7 +22,7 @@ export function Progress({ r }: { r: RecordingInfo }) {
   const left = Math.max(0, Math.ceil((r.endsAt - now) / 60_000));
   return (
     <div className="rec-progress">
-      <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(done * 100)} aria-label="Recording progress"><i style={{ width: `${done * 100}%` }} /></div>
+      <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(done * 100)} aria-label="Recording progress"><i style={{ transform: `translateX(${done * 100 - 100}%)` }} /></div>
       <span className="num">Ends at {clock(r.endsAt)} · {left <= 1 ? "less than a minute left" : `${left} minutes left`} · {r.sampleCount} {r.sampleCount === 1 ? "reading" : "readings"}</span>
     </div>
   );

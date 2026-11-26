@@ -106,7 +106,7 @@ export function ManualCard({ row, store, compact, prefer, outline }: { row: Row;
     state = (
       <div className="mn-progress" role="status">
         <span>{jobText(j)}</span>
-        {j.step === "reading" && j.total > 0 && <div className="bar"><i style={{ width: `${(j.done / j.total) * 100}%` }} /></div>}
+        {j.step === "reading" && j.total > 0 && <div className="bar"><i style={{ transform: `translateX(${(j.done / j.total) * 100 - 100}%)` }} /></div>}
       </div>
     );
   } else if (form) {

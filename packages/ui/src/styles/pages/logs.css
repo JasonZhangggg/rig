@@ -21,7 +21,7 @@
 /* The list's head: its count, the filters in force and what the picked count means. */
 .lg-ev-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 28px; }
 .lg-ev-head .num { margin-left: 2px; font-weight: 500; }
-.lg-chip { gap: 8px; padding: 0 6px 0 10px; border: 0; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; animation: lg-in .18s ease-out; }
+.lg-chip { gap: 8px; padding: 0 6px 0 10px; border: 0; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; animation: lg-in .18s var(--ease-out); }
 .lg-chip span { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: var(--text-3); font-size: 14px; line-height: 1; }
 @media (hover: hover) and (pointer: fine) { .lg-chip:hover span { background: var(--line); color: var(--text); } }
 .lg-events-body { display: flex; flex-direction: column; }
@@ -51,7 +51,7 @@
 .lg-all { display: flex; flex-direction: column; gap: 10px; }
 .lg-all-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: -6px; padding: 6px 10px 6px 6px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
 @media (hover: hover) and (pointer: fine) { .lg-all-toggle:hover { background: var(--surface-2); } }
-.lg-all-toggle svg { width: 18px; height: 18px; color: var(--text-3); transition: rotate .15s ease; }
+.lg-all-toggle svg { width: 18px; height: 18px; color: var(--text-3); transition: rotate .15s var(--ease-out); }
 .lg-all-toggle[aria-expanded="true"] svg { rotate: 90deg; }
 .lg-all-toggle .num { font-weight: 500; }
 
@@ -69,7 +69,7 @@
 .ev-day[aria-pressed="true"] .ev-dots { border-bottom-color: var(--text); }
 .ev-tick { height: 16px; color: var(--text-3); font-size: 11px; white-space: nowrap; }
 .ev-day[aria-pressed="true"] .ev-tick { color: var(--text); }
-.ev-tip { position: absolute; bottom: calc(100% + 6px); z-index: 2; display: flex; flex-direction: column; gap: 2px; max-width: 260px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--text); color: var(--bg); font-size: 12px; white-space: nowrap; translate: -50% 0; pointer-events: none; animation: lg-fade .12s ease-out; }
+.ev-tip { position: absolute; bottom: calc(100% + 6px); z-index: 2; display: flex; flex-direction: column; gap: 2px; max-width: 260px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--text); color: var(--bg); font-size: 12px; white-space: nowrap; translate: -50% 0; pointer-events: none; animation: lg-fade .12s var(--ease-out); }
 .ev-tip.start { translate: -12px 0; }
 .ev-tip.end { translate: calc(-100% + 12px) 0; }
 .ev-tip span { overflow: hidden; text-overflow: ellipsis; }
@@ -88,7 +88,7 @@
 .rec-now-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .rec-progress { display: flex; flex-direction: column; gap: 8px; color: var(--text-2); font-size: 13px; }
 .rec-progress .bar { background: var(--s-track); }
-.rec-progress .bar i { background: var(--s-a); transition: width 1s linear; }
+.rec-progress .bar i { background: var(--s-a); transition: transform 1s linear; }
 .rec-live::before { animation: rec-pulse 1.6s infinite ease-in-out; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 @media (hover: hover) and (pointer: fine) { .lg-tile:not([aria-pressed="true"]):hover { background: color-mix(in srgb, var(--surface-2) 70%, var(--line)); } }

@@ -90,7 +90,8 @@ button.row { width: 100%; border: 0; text-align: left; cursor: pointer; }
 [aria-checked="true"] > .switch::after { transform: translateX(18px); }
 
 .meter { height: 8px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
-.meter i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--graphite); transition: width .4s var(--ease-out); }
+/* The fill is always full width and slides in from the left, so the bar moves on the GPU and keeps its round end. */
+.meter i { display: block; height: 100%; border-radius: inherit; background: var(--graphite); transform: translateX(-100%); transition: transform .4s var(--ease-out); }
 .step { margin-top: 14px; display: grid; gap: 2px; }
 .step b { font-size: 15px; font-weight: 600; }
 .step small { color: var(--text-3); font-size: 13px; font-weight: 500; }
@@ -206,7 +207,7 @@ function screen(v) {
       return `<h1>${title}</h1>
         <p class="lede">${install ? "This usually takes under a minute." : "This takes a few seconds."}</p>
         <div class="work">
-          <div class="meter" role="progressbar" aria-label="${title}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v.progress * 100)}"><i style="width:${Math.max(3, v.progress * 100).toFixed(1)}%"></i></div>
+          <div class="meter" role="progressbar" aria-label="${title}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v.progress * 100)}"><i style="transform:translateX(${(Math.max(3, v.progress * 100) - 100).toFixed(1)}%)"></i></div>
           <div class="step"><b>${esc(s[0])}</b><small>${esc(s[1])}</small></div>
         </div>
         <div class="body"></div>
@@ -259,7 +260,7 @@ function show(v) {
     const s = STEPS[v.step] || STEPS.files;
     const m = main.querySelector(".meter");
     m.setAttribute("aria-valuenow", String(Math.round(v.progress * 100)));
-    m.firstElementChild.style.width = Math.max(3, v.progress * 100).toFixed(1) + "%";
+    m.firstElementChild.style.transform = `translateX(${(Math.max(3, v.progress * 100) - 100).toFixed(1)}%)`;
     main.querySelector(".step b").textContent = s[0];
     main.querySelector(".step small").textContent = s[1];
     return;
