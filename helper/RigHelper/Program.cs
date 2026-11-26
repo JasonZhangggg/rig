@@ -44,6 +44,7 @@ public static class Program
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
+            problems.AddRange(LogReads.SelfChecks(null));
             var (gpuChecks, gpuProblems) = Gpu.SelfTest();
             all["gpu"] = gpuChecks;
             problems.AddRange(gpuProblems);

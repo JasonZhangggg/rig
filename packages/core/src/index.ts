@@ -7,6 +7,7 @@ export * from "./screen";
 export * from "./fileEdit";
 export * from "./shorthand";
 export * from "./reads";
+export * from "./logReads";
 export * from "./gpu";
 export * from "./firmware";
 export * from "./protection";
