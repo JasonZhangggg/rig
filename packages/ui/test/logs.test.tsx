@@ -12,6 +12,7 @@ const { LineChart } = await import("../src/chart");
 const { highlights } = await import("../src/pages/logs/summary");
 const { cleanEvents, eventTitle } = await import("@rig/core");
 const { kindWord } = await import("../src/pages/logs/words");
+const { Lanes } = await import("../src/pages/logs/Lanes");
 
 // jsdom has no PointerEvent; the strip's tip shows only for a mouse, so the test needs one that carries pointerType.
 if (typeof window.PointerEvent === "undefined") {
@@ -411,6 +412,30 @@ describe("Logs", () => {
     within(key).getByText("Memory, highest");
     screen.getByRole("img", { name: "Memory" });
     screen.getByText("Every entry");
+  });
+
+  it("fits a chart to its readings, so a few degrees of change fill it", () => {
+    const t0 = Date.now() - 60_000;
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [61 + (k % 4), 20 + (k % 3) * 2] }));
+    const lanes = [
+      { title: "Temperatures", type: "temperature" as const, limit: 95, series: [{ i: 0, cls: "c-ink", name: "Processor" }] },
+      { title: "Usage", type: "load" as const, series: [{ i: 1, cls: "c-ink", name: "Processor" }] },
+    ];
+    render(<Lanes points={points} lanes={lanes} t0={t0} t1={t0 + 60_000} cursor={null} onCursor={() => {}} />);
+    const ticks = (name: string) => [...screen.getByRole("img", { name }).querySelectorAll("text.chart-tick")].map((t) => Number.parseFloat(t.textContent ?? ""));
+    const temps = ticks("Temperatures");
+    // Readings from 61° to 64° get an axis a few degrees wide, not one from 60° up past the 95° limit.
+    expect(Math.min(...temps)).toBeGreaterThanOrEqual(55);
+    expect(Math.max(...temps)).toBeLessThanOrEqual(70);
+    const usage = ticks("Usage");
+    expect(Math.min(...usage)).toBeGreaterThan(0);
+    expect(Math.max(...usage)).toBeLessThanOrEqual(40);
+    // The limit is left off when the readings are far below it, and drawn when they come near.
+    expect(screen.getByRole("img", { name: "Temperatures" }).querySelector(".chart-limit")).toBeNull();
+    cleanup();
+    const hot = points.map((p) => ({ ...p, v: [p.v[0]! + 26, p.v[1]] }));
+    render(<Lanes points={hot} lanes={lanes} t0={t0} t1={t0 + 60_000} cursor={null} onCursor={() => {}} />);
+    expect(screen.getByRole("img", { name: "Temperatures" }).querySelector(".chart-limit")).not.toBeNull();
   });
 
   it("labels the start and end of a chart with only a few readings", () => {

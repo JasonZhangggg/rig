@@ -71,24 +71,57 @@ function pathOf(points: readonly RecordedPoint[], i: number, x: (t: number) => n
   return d;
 }
 
-function scale(type: LaneType, vals: number[], limit?: number) {
-  const top = Math.max(0, ...vals, limit ?? 0);
-  if (type === "mb") { const step = top > 1500 ? 1024 : top > 400 ? 256 : 64; return { lo: 0, hi: Math.ceil(top / step) * step || step, step }; }
-  if (type === "plain") { const step = top <= 10 ? Math.max(1, Math.ceil(top / 3)) : 10 ** Math.floor(Math.log10(top)); return { lo: 0, hi: Math.ceil(top / step) * step || step, step }; }
-  if (percent(type)) return top < 20 ? { lo: 0, hi: Math.max(5, Math.ceil(top / 5) * 5), step: 5 } : { lo: 0, hi: 100, step: 50 };
-  if (type === "fan") { const step = top > 2000 ? 1000 : 500; return { lo: 0, hi: Math.ceil(top / step) * step || step, step }; }
-  if (type === "power") { const step = top > 150 ? 100 : top > 40 ? 50 : 10; return { lo: 0, hi: Math.ceil(top / step) * step || step, step }; }
-  const lo = Math.floor(Math.min(...vals, top) / 20) * 20;
-  return { lo, hi: Math.max(lo + 20, Math.ceil((top + 2) / 20) * 20), step: 20 };
+/** The least a lane spans, so a steady reading still draws as a line with room around it, not a scribble. */
+const leastSpan: Record<LaneType, number> = {
+  temperature: 6, load: 10, level: 10, control: 10, fan: 300, power: 10, clock: 200, voltage: 0.05, current: 0.5, data: 1, throughput: 1e5, mb: 64, plain: 2,
+};
+
+/** A round step that cuts a span into about this many parts. */
+function niceStep(span: number, parts: number) {
+  const raw = span / parts, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
 }
 
-function gridLabel(type: LaneType, v: number) {
+/**
+ * The values a lane spans: fitted to its readings, with a little room, so small changes show. A limit just above the
+ * readings is taken in, so you can see how close they came to it. The edges snap to a quarter of a grid step, so a live
+ * chart doesn't shift with every reading.
+ */
+export function scale(type: LaneType, vals: number[], limit?: number, parts = 4) {
+  if (!vals.length) return { lo: 0, hi: 1, step: 1 };
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const least = leastSpan[type];
+  if (limit != null && limit > hi && limit - hi <= least * 1.5) hi = limit;
+  if (hi - lo < least) { const mid = (lo + hi) / 2; lo = mid - least / 2; hi = mid + least / 2; }
+  const room = (hi - lo) * 0.1;
+  lo -= room; hi += room;
+  if (lo < 0) { hi -= lo; lo = 0; }
+  if (percent(type) && hi > 100) { lo = Math.max(0, lo - (hi - 100)); hi = 100; }
+  const step = niceStep(hi - lo, parts), snap = step / 4;
+  return { lo: Math.floor(lo / snap) * snap, hi: Math.min(percent(type) ? 100 : Infinity, Math.ceil(hi / snap) * snap), step };
+}
+
+/** The values a lane draws grid lines at: the round steps inside it. */
+function gridOf(sc: { lo: number; hi: number; step: number }) {
+  const first = Math.ceil(sc.lo / sc.step - 1e-9), last = Math.floor(sc.hi / sc.step + 1e-9);
+  return Array.from({ length: Math.max(0, last - first + 1) }, (_, k) => Number(((first + k) * sc.step).toPrecision(6)));
+}
+
+/** A tidy number, without the float noise from dividing a grid value. */
+const tidy = (x: number) => Number(x.toPrecision(4));
+
+function gridLabel(temp: Temp, type: LaneType, v: number) {
   if (type === "mb") return v >= 1024 ? `${Math.round(v / 1024 * 10) / 10} GB` : `${v} MB`;
-  if (type === "plain") return `${v}`;
+  if (type === "temperature") return temp(v, { mark: "degree" });
   if (percent(type)) return `${v}%`;
-  if (type === "fan") return v >= 1000 ? `${v / 1000}k` : `${v}`;
+  if (type === "fan") return v >= 1000 ? `${tidy(v / 1000)}k` : `${v}`;
   if (type === "power") return `${v} W`;
-  return `${v}°`;
+  if (type === "clock") return v >= 1000 ? `${tidy(v / 1000)} GHz` : `${v} MHz`;
+  if (type === "voltage") return `${v} V`;
+  if (type === "current") return `${v} A`;
+  if (type === "data") return v >= 1000 ? `${tidy(v / 1000)} TB` : `${v} GB`;
+  if (type === "throughput") return v >= 1e9 ? `${tidy(v / 1e9)} GB/s` : v >= 1e6 ? `${tidy(v / 1e6)} MB/s` : `${tidy(v / 1e3)} KB/s`;
+  return `${v}`;
 }
 
 /** Times along the axis; `fine` allows ticks every 15 or 30 seconds, for the live view, where labels carry seconds. */
@@ -169,20 +202,20 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
     const h = lane.h ?? (compact ? 76 : 96);
     const vals: number[] = [];
     for (const p of points) if (p.t >= t0 && p.t <= t1) for (const s of lane.series) { const v = p.v[s.i]; if (v != null) vals.push(v); }
-    const sc = scale(lane.type, vals, lane.limit);
+    // A short lane gets fewer grid lines, so their labels don't crowd.
+    const sc = scale(lane.type, vals, lane.limit, h >= 100 ? 4 : 3);
     const y = (v: number) => 6 + (h - 12) * (1 - (v - sc.lo) / (sc.hi - sc.lo || 1));
-    const grid: number[] = [];
-    for (let v = sc.lo; v <= sc.hi; v += sc.step) grid.push(v);
+    const grid = gridOf(sc);
     // Live lines start a little before the left edge, so sliding left never shows an empty strip there.
     const from = live ? t0 - (t1 - t0) / 10 : t0;
     const paths = lane.series.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, t1, iw, gap) }));
-    return { lane, h, y, grid, paths };
+    return { lane, h, y, grid, paths, sc };
   }), [points, lanes, t0, t1, w, compact, gap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!points.length) return null;
   return (
     <div ref={ref} className="ln" onPointerMove={move} onPointerDown={move} onPointerLeave={() => onCursor(null)}>
-      {drawn.map(({ lane, h, y, grid, paths }, li) => (
+      {drawn.map(({ lane, h, y, grid, paths, sc }, li) => (
         <div key={lane.title} className="ln-lane">
           <div className="ln-head" style={{ paddingLeft: pad.l }}>
             <span className="ln-title">{lane.title}</span>
@@ -204,10 +237,10 @@ export function Lanes({ points, lanes, t0, t1, cursor, onCursor, bands = [], mar
             {grid.map((v) => (
               <g key={v}>
                 <line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} className="chart-grid" />
-                <text x={pad.l - 6} y={y(v) + 4} className="chart-tick" textAnchor="end">{gridLabel(lane.type, v)}</text>
+                <text x={pad.l - 6} y={y(v) + 4} className="chart-tick" textAnchor="end">{gridLabel(temp, lane.type, v)}</text>
               </g>
             ))}
-            {lane.limit != null && <line x1={pad.l} x2={w - pad.r} y1={y(lane.limit)} y2={y(lane.limit)} className="chart-limit" />}
+            {lane.limit != null && lane.limit >= sc.lo && lane.limit <= sc.hi && <line x1={pad.l} x2={w - pad.r} y1={y(lane.limit)} y2={y(lane.limit)} className="chart-limit" />}
             {shown.map((m) => <line key={m.t} x1={x(m.t)} x2={x(m.t)} y1={0} y2={h} className={`ln-mark${m.look ? " look" : ""}`} />)}
             <g clipPath={live ? `url(#${clip}-${li})` : undefined}>
               <g className="ln-move">{[...paths].reverse().map((p) => <path key={p.i} d={p.d} className={`ln-line ${p.cls}`} />)}</g>

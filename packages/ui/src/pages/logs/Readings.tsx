@@ -102,7 +102,7 @@ export function Readings() {
       const since = live[0] && live[0].t > from + 30_000 ? live[0].t : null;
       // Until then the chart starts where the readings do, so they fill it instead of sitting at its right edge.
       return {
-        r: r && r.sensors.length ? r : null, whole, from: since ? Math.min(since, to - MIN) : from, to, title, live: full.online,
+        r: r && r.sensors.length ? r : null, whole, from: since ? Math.min(since, to - 20_000) : from, to, title, live: full.online,
         source: !full.online ? (last ? `Offline since ${clock(last.t)}` : "Offline") : every ? `A reading every ${every} s` : "Waiting for the next reading",
         note: since ? `Readings start at ${clock(since)}, when Rig opened. For earlier ones, pick 6 hours.` : undefined,
         empty: !full.online ? `${pc.name} is offline, so there's nothing live to show. Pick 6 hours or longer for what it logged.` : "Readings draw here as they come in.",
