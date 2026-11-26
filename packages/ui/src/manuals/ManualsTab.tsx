@@ -30,7 +30,7 @@ export const ManualsTab = memo(function ManualsTab() {
   const rows = state.manuals ? manualRows(pc, state) : [];
   const ready = state.manuals?.filter((m) => m.indexed).length ?? 0;
   return (
-    <div className="mt">
+    <div className="mt" data-look={new URLSearchParams(location.search).get("look") ?? undefined}>
       <section className="mt-search" aria-label="Search the manuals">
         <input className="input mt-q" type="search" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder={ready ? 'Like "front panel" or "M.2"' : "Search the manuals"} aria-label="Search the manuals" />
