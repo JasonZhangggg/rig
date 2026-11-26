@@ -1,86 +1,38 @@
-/* Preview: calmer looks for the left half of sign-in (SignInArt.tsx, ?art=). */
+/* Preview: looks for the left half of sign-in (SignInArt.tsx, ?art=). */
 
-/* Pulse: the mark alone, its dot breathing like a sleeping PC's power light. */
-.art-pulse { display: grid; place-items: center; background: radial-gradient(60% 50% at 50% 46%, var(--graphite-2), var(--graphite) 70%); }
-.pulse-stage { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 32px; }
-.pulse-mark { position: relative; width: 132px; height: 132px; border-radius: 38px; display: grid; place-items: center; background: linear-gradient(180deg, #2C2C32, #212126); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 0 0 1px rgba(255, 255, 255, .06), 0 30px 60px rgba(0, 0, 0, .35); }
-.pulse-r { color: #F4F3F0; font: 700 64px/1 var(--font); letter-spacing: -.04em; transform: translate(-6px, -2px); }
-.pulse-dot { position: absolute; right: 28px; bottom: 30px; width: 17px; height: 17px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 0%, transparent); animation: pulse-breathe 4.2s var(--ease-in-out) infinite alternate; }
-@keyframes pulse-breathe {
-  from { opacity: .5; box-shadow: 0 0 4px 0 color-mix(in srgb, var(--good) 20%, transparent); }
-  to { opacity: 1; box-shadow: 0 0 22px 4px color-mix(in srgb, var(--good) 45%, transparent); }
-}
-.pulse-title { margin: 44px 0 0; color: var(--text); font: var(--t-page); font-size: clamp(2rem, 2.6vw, 2.75rem); letter-spacing: -.035em; }
-.pulse-sub { margin: 12px 0 0; color: var(--text-2); font-size: 16px; }
-.pulse-mark, .pulse-title, .pulse-sub { animation: pulse-in .7s var(--ease-out) both; }
-.pulse-title { animation-delay: .08s; }
-.pulse-sub { animation-delay: .16s; }
-.pulse-dot { animation: pulse-breathe 4.2s var(--ease-in-out) .7s infinite alternate both; }
-@keyframes pulse-in { from { opacity: 0; transform: translateY(8px); filter: blur(4px); } }
-.pulse-mark { animation-name: pulse-in-mark; }
-@keyframes pulse-in-mark { from { opacity: 0; transform: scale(.96); filter: blur(4px); } }
+/* An inset panel with the app's own corners, so sign-in reads as part of Rig. */
+.signin-art.art-inset { margin: 14px 0 14px 14px; min-height: calc(100dvh - 28px); border-radius: var(--r); background: var(--band); color: var(--text); }
+.signin-art.art-inset.tone-dark { background: radial-gradient(70% 55% at 52% 42%, #2B2B31, var(--graphite) 72%); }
+.art-inset .brand { top: 30px; left: 34px; }
+.art-inset:not(.tone-dark) .brand-mark { background: var(--graphite); }
+.art-inset:not(.tone-dark) .brand-mark::before { color: #FFFFFF; }
 
-/* Lines: three readings drawn live and slow. */
-.lines-stage { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 30px; padding: 0 clamp(36px, 7vw, 96px); }
-.line-lane { --c: color-mix(in srgb, var(--text) 82%, transparent); }
-.line-lane[data-tone="good"] { --c: var(--good); }
-.line-lane[data-tone="expected"] { --c: var(--expected); }
-.line-head { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.line-name { color: var(--text-2); font-size: 14px; font-weight: 500; }
-.line-value { color: var(--text); font: var(--t-figure); font-size: 30px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.line-value small { margin-left: 4px; color: var(--text-3); font-size: 14px; font-weight: 500; letter-spacing: 0; }
-.line-plot { position: relative; height: 72px; margin-top: 14px; }
-.line-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; -webkit-mask-image: linear-gradient(90deg, transparent, #000 38%); mask-image: linear-gradient(90deg, transparent, #000 38%); }
-.line-plot path { fill: none; stroke: var(--c); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
-.line-dot { position: absolute; right: -4px; top: calc(50% - 4px); width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent); }
-.lines-stage .line-lane { animation: pulse-in .7s var(--ease-out) both; }
-.lines-stage .line-lane:nth-child(2) { animation-delay: .07s; }
-.lines-stage .line-lane:nth-child(3) { animation-delay: .14s; }
+.art-copy { position: absolute; z-index: 1; left: 34px; right: 34px; bottom: 32px; max-width: 30rem; pointer-events: none; animation: art-in .7s var(--ease-out) .12s both; }
+.art-copy h2 { margin: 0; font: 600 clamp(2.25rem, 3.3vw, 3.4rem)/1 var(--font); letter-spacing: -.045em; text-wrap: balance; }
+.art-copy p { margin: 14px 0 0; color: var(--text-2); font-size: clamp(15px, 1.05vw, 17px); line-height: 1.5; text-wrap: pretty; }
+@keyframes art-in { from { opacity: 0; transform: translateY(8px); filter: blur(4px); } }
 
-/* Drawing: an ink side view of a PC, light on the band tone. */
-.art-drawing { display: grid; place-items: center; background: var(--band); color: var(--text); }
-.art-drawing .brand { color: var(--text); }
-.art-drawing .brand-mark { background: var(--graphite); }
-.art-drawing .brand-mark::before { color: #FFFFFF; }
-.art-drawing .art-note { color: var(--text-2); }
-.drawing { width: min(94%, 860px); height: auto; max-height: 80%; overflow: visible; animation: pulse-in .8s var(--ease-out) both; }
-.drawing * { vector-effect: non-scaling-stroke; }
-.dr-case { fill: var(--surface); stroke: var(--graphite); stroke-width: 1.75; }
-.dr-thin { fill: none; stroke: var(--line-strong); stroke-width: 1; }
-.dr-foot { fill: var(--graphite); }
-.dr-board { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1; }
-.dr-hole { fill: none; stroke: var(--line-strong); stroke-width: 1; }
-.dr-part { fill: var(--surface); stroke: var(--graphite); stroke-width: 1.25; }
-.dr-part.warm { fill: var(--good-bg); }
-.dr-bracket { fill: var(--surface-2); stroke: var(--graphite); stroke-width: 1.25; }
-.dr-fin { stroke: var(--line-strong); stroke-width: 1; }
-.dr-cable { fill: none; stroke: var(--expected); stroke-width: 3; stroke-linecap: round; opacity: .55; }
-.dr-ring { fill: var(--surface); stroke: var(--graphite); stroke-width: 1.25; }
-.dr-blade { fill: color-mix(in srgb, var(--good) 55%, var(--surface)); stroke: var(--graphite); stroke-width: 1; stroke-linejoin: round; }
-.dr-hub { fill: var(--graphite); }
-.dr-fan { transform-box: fill-box; transform-origin: center; animation: dr-spin 9s linear infinite; }
-@keyframes dr-spin { to { transform: rotate(360deg); } }
-.dr-label polyline { fill: none; stroke: var(--text-3); stroke-width: 1; }
-.dr-label circle { fill: var(--graphite); }
-.dr-label text { font: 500 15px var(--font); letter-spacing: -.005em; }
-.dr-name { fill: var(--text); }
-.dr-val { fill: var(--good-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Studio and Night: the Home PC, big. */
+.art-pc-stage { position: absolute; inset: 64px 12px 170px; animation: art-in .9s var(--ease-out) both; }
+.art-pc-canvas { position: absolute; inset: 0; --labels: picked; }
+.art-pc-canvas > * { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; }
+.art-pc-canvas .scene-labels { display: none; }
+.art-pc.tone-dark .art-pc-stage::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: 2%; height: 10%; border-radius: 50%; background: radial-gradient(closest-side, rgba(230, 211, 163, .16), transparent); pointer-events: none; }
+
+/* Glimpse: Home itself, set back and bleeding off the corner. */
+.art-glimpse .art-copy { top: 118px; bottom: auto; }
+.glimpse-frame { position: absolute; left: 34px; top: 300px; width: 900px; perspective: 2600px; animation: art-in .9s var(--ease-out) .05s both; }
+.glimpse-frame img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 0 0 1px rgba(27, 27, 31, .08), 0 2px 4px rgba(27, 27, 31, .04), 0 40px 90px -20px rgba(27, 27, 31, .3); transform: rotateX(5deg) rotateY(-7deg); transform-origin: 0 0; user-select: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse-dot, .dr-fan { animation: none; }
-  .pulse-dot { opacity: .9; }
+  .art-copy, .art-pc-stage, .glimpse-frame { animation: none; }
 }
 
 @media (max-width: 860px) {
-  .pulse-mark { width: 84px; height: 84px; border-radius: 24px; }
-  .pulse-r { font-size: 40px; transform: translate(-4px, -1px); }
-  .pulse-dot { right: 17px; bottom: 19px; width: 11px; height: 11px; }
-  .pulse-title, .pulse-sub { display: none; }
-  .lines-stage { padding: 76px 20px 30px; justify-content: flex-end; }
-  .line-lane:not(:first-child) { display: none; }
-  .line-head { padding-bottom: 4px; }
-  .line-value { font-size: 20px; }
-  .line-plot { height: 52px; margin-top: 10px; }
-  .drawing { width: auto; height: 84%; max-height: none; }
-  .dr-label { display: none; }
+  .signin-art.art-inset { margin: 10px 10px 0; min-height: 0; }
+  .art-inset .brand { top: 18px; left: 20px; }
+  .art-copy { display: none; }
+  .art-pc-stage { inset: 10px 0 0; }
+  .glimpse-frame { left: 20px; top: 70px; width: 720px; }
+  .glimpse-frame img { border-radius: 14px; }
 }
