@@ -7,7 +7,8 @@ import { arrowKeys, focusFirstItem, useModal } from "./modal";
 
 const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
-const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "logs"]], ["Fix problems", ["chat", "changes"]], ["", ["settings"]]];
+// Settings isn't here: it opens from the account menu at the bottom.
+const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "logs"]], ["Fix problems", ["chat", "changes"]]];
 
 function useOutside(open: boolean, close: () => void) {
   const box = useRef<HTMLDivElement>(null);
@@ -89,16 +90,17 @@ function SetupCard() {
 
 const Caret = () => <svg className="fp-me-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 8 10 5l3 3M7 12l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 
-/** Account pinned to the bottom of the sidebar. */
-function AccountBlock() {
+/** Account pinned to the bottom of the sidebar. Its menu is the way to Settings. */
+function AccountBlock({ pick }: { pick: (e: ClickEvent, r: Route) => void }) {
   const { client, go, toast } = useActions();
   const ui = useUI();
+  const onSettings = ui.route === "settings";
   const a = useAppSelector((c) => c.data.account);
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
   return (
     <div className="fp-foot" ref={box}>
-      <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={a ? `Account, ${a.name}` : "Account, not signed in"} title={ui.sideMini ? a?.name ?? "Not signed in" : undefined}>
+      <button type="button" className="fp-me" onClick={() => setOpen(!open)} aria-expanded={open} aria-current={onSettings ? "page" : undefined} aria-haspopup="menu" aria-label={a ? `Account, ${a.name}` : "Account, not signed in"} title={ui.sideMini ? a?.name ?? "Not signed in" : undefined}>
         <span aria-hidden="true">{a ? a.name[0]?.toUpperCase() : "?"}</span>
         <b>{a ? a.name : "Not signed in"}</b>
         <small>{!a ? "Sign in" : client.kind === "demo" ? "Demo" : "Synced"}</small>
@@ -109,7 +111,7 @@ function AccountBlock() {
           {a && <><div className="sh-menu-head" role="presentation"><b>{a.name}</b><span>{a.email}</span></div><hr /></>}
           {!a && <a href="#signin" role="menuitem" onClick={() => setOpen(false)}>Sign in</a>}
           {a && <a href="#web" role="menuitem" onClick={() => setOpen(false)}>All your PCs</a>}
-          <a href="#settings" role="menuitem" onClick={() => setOpen(false)}>Settings</a>
+          <a href="#settings" role="menuitem" aria-current={onSettings ? "page" : undefined} onClick={(e) => { setOpen(false); pick(e, "settings"); }}>Settings{onSettings && <Check />}</a>
           {a && client.kind !== "demo" && <button type="button" role="menuitem" onClick={() => { setOpen(false); client.signOut().then(() => { go("signin"); location.reload(); }, () => toast("Couldn't sign out just now. Check your internet connection and try again.")); }}>Sign out</button>}
         </div>
       )}
@@ -228,7 +230,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
             </button>
             <SetupCard />
           </div>
-          <AccountBlock />
+          <AccountBlock pick={phone.pick} />
         </aside>
         {/* Home is a dashboard of tiles on a warm ground. Every other page reads as one flat sheet. */}
         <main className={`fp-main${ui.route === "overview" ? "" : " flat"}`} id="main" tabIndex={-1}>{children}</main>

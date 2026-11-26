@@ -16,16 +16,51 @@ describe("navigation", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; });
   afterEach(() => cleanup());
 
-  it("groups the pages by what you came to do, with Settings in reach", async () => {
+  it("groups the pages by what you came to do, and keeps Settings in the account menu", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     const nav = (name: string) => screen.getByRole("link", { name: new RegExp(`^${name}`) });
-    for (const name of ["Home", "My PC", "Ask", "Logs", "Changes", "Settings"]) expect(nav(name)).toBeTruthy();
+    for (const name of ["Home", "My PC", "Ask", "Logs", "Changes"]) expect(nav(name)).toBeTruthy();
     // Folded into other pages: upgrades and manuals on My PC, performance and games in Logs.
     for (const name of ["Performance", "Games", "Upgrades", "Manuals"]) expect(screen.queryByRole("link", { name: new RegExp(`^${name}`) })).toBeNull();
     expect(screen.getByText("Fix problems")).toBeTruthy();
-    expect(nav("Settings").getAttribute("href")).toBe("#settings");
     expect(screen.queryByRole("link", { name: /^Overview/ })).toBeNull();
+    // Settings shows up only once you open your account.
+    expect(screen.queryByRole("link", { name: /^Settings/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Settings/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Account, You/ }));
+    const settings = screen.getByRole("menuitem", { name: /^Settings/ });
+    expect(settings.getAttribute("href")).toBe("#settings");
+    fireEvent.click(settings);
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+    expect(screen.queryByRole("menu")).toBeNull();
+    // On Settings, the account is marked as where you are, in the sidebar and in its menu.
+    const account = screen.getByRole("button", { name: /^Account, You/ });
+    expect(account.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(account);
+    expect(screen.getByRole("menuitem", { name: /^Settings/ }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("opens Settings from the account menu on a phone, and Back then leaves Settings", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("max-width: 760px"), media: q, addEventListener() {}, removeEventListener() {} }));
+    try {
+      render(<RigApp client={new DemoClient()} />);
+      await screen.findByText(/Things to look at/i);
+      const before = history.length;
+      fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+      const menu = within(await screen.findByRole("dialog", { name: "Main" }));
+      fireEvent.click(menu.getByRole("button", { name: /^Account, You/ }));
+      fireEvent.click(menu.getByRole("menuitem", { name: /^Settings/ }));
+      await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+      expect(location.hash).toBe("#settings");
+      expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Main" })).toBeNull();
+      // The page took the open menu's place in history, so Back goes to the page before, not the menu.
+      expect(history.length).toBe(before + 1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("finds a page from everyday words and opens it", async () => {
