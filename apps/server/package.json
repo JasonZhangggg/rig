@@ -1,7 +1,7 @@
 {
   "name": "@rig/server",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "Rig's server: accounts, PC sync and chat. Runs on Cloudflare Workers with Postgres.",
   "scripts": {
