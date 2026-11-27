@@ -1,24 +1,14 @@
-import { useEffect, useState } from "react";
-import type { Account, PC, RigClient } from "@rig/core";
-import { DemoClient } from "@rig/core/demo";
-import { PCPreview } from "../components/PCPreview";
+import { useState } from "react";
+import type { Account, RigClient } from "@rig/core";
+import { AsciiArt, type AsciiArtData } from "../components/AsciiArt";
+import fans from "../art/fans-ink.json";
 
-/** The left half of sign-in screens: the demo PC from Home, large and swaying slowly on graphite, over a headline. */
+/** The left half of sign-in screens: the logo, and the PC's fans drawn in text characters, still and tilted. */
 export function SignInArt() {
-  const [pc, setPC] = useState<PC | null>(null);
-  useEffect(() => {
-    let live = true;
-    void new DemoClient().machines().then((all) => { if (live) setPC(all.find((p) => p.parts) ?? null); }, () => {});
-    return () => { live = false; };
-  }, []);
   return (
-    <div className="signin-art tone-dark">
+    <div className="signin-art">
       <div className="brand"><span className="brand-mark" />Rig</div>
-      <div className="signin-pc">{pc && <PCPreview pc={pc} className="signin-pc-canvas" />}</div>
-      <div className="art-copy">
-        <h2>See inside your PC.</h2>
-        <p>Live temperatures for every part, problems in plain words, and fixes you approve.</p>
-      </div>
+      <AsciiArt art={fans as AsciiArtData} className="signin-ink" />
     </div>
   );
 }

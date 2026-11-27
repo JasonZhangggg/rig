@@ -47,10 +47,11 @@ describe("Sign-in screen", () => {
     expect(onSkip).toHaveBeenCalled();
   });
 
-  it("shows a headline and one line about Rig beside the form", () => {
+  it("shows only the logo and the art beside the form, with no headline", () => {
     const client = { kind: "web", signInEmail: vi.fn() } as unknown as RigClient;
     render(<SignIn client={client} onDone={() => {}} />);
-    expect(screen.getByRole("heading", { name: "See inside your PC." })).toBeTruthy();
-    expect(screen.getByText("Live temperatures for every part, problems in plain words, and fixes you approve.")).toBeTruthy();
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["Sign in"]);
+    expect(screen.queryByText("See inside your PC.")).toBeNull();
+    expect(screen.queryByText("Live temperatures for every part, problems in plain words, and fixes you approve.")).toBeNull();
   });
 });
