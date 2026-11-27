@@ -32,7 +32,7 @@ A tag with a hyphen, like `v0.2.0-beta.1`, is published as a pre-release.
 4. Publishes the release `Rig 0.2.0` with `Rig-Setup-0.2.0-x64.exe` (Rig Setup) and `SHA256SUMS.txt`. The updater signature isn't on the release: it belongs to the plain installer inside Rig Setup, which only the `update` job sends. The notes start with how to install, then list the merged pull requests, sorted by label ([`.github/release.yml`](../.github/release.yml): `feature` or `enhancement` under New, `bug` or `fix` under Fixes, `skip-changelog` left out).
 5. Sends a full release to installed copies (see Updates).
 
-The app shows its version in Settings, About, along with the server it signs in to. The website shows it at the bottom of the landing page. Both come from the root `package.json` at build time.
+The app shows its version in Settings, About, along with the server it signs in to. The website shows it at the bottom of the install page. Both come from the root `package.json` at build time.
 
 ## Updates
 
@@ -59,7 +59,7 @@ The `CLOUDFLARE_API_TOKEN` secret needs Workers R2 Storage: Edit for the bucket.
 
 Windows shows "Windows protected your PC" for an installer without a code-signing certificate. The release notes tell people to choose More info, then Run anyway.
 
-The repository is private, so only people with access to it can download the release files. To give the installer to anyone else, put it somewhere public and set `VITE_DOWNLOAD_URL` for the website's Download button.
+The website's home page is the install page. Its Download button points at Rig Setup on this version's release, then asks GitHub for the latest full release and switches to that one, so the button keeps working when the site and a release go out at different times (`apps/web/src/download.ts`). Pre-releases are never offered there.
 
 ## Later
 

@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 
 const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
 
-// Two pages: the landing page at / and the app at /app/.
+// Two pages: the install page at / and the app at /app/ (plus the 3D prototype at /proto/).
 // In development, /api goes to the Rig server (pnpm dev:server).
 export default defineConfig({
   plugins: [react()],

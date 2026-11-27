@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fixedOffset, gameLibrary, heatBands, heatLevel, heatTrend, minutesUntilHot, sessionHeat, type GameSession, type HistoryPoint } from "../src";
 import { DemoClient } from "../src/demo";
 
@@ -82,7 +82,12 @@ describe("heatTrend", () => {
     expect(heatTrend([warming(12, 75, 0), warming(12, 78, 1)], "gpu", 88).story).toEqual({ kind: "cool", sessions: 2 });
   });
 
+  afterEach(() => { vi.useRealTimers(); });
+
   it("finds heat arriving sooner in the demo, where dust builds up over the month", async () => {
+    // The demo's game sessions follow the clock, and late in the day (UTC) the newest one tells a different story, so this runs at a fixed midday.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-25T12:00:00Z"));
     const client = new DemoClient();
     const now = Date.now();
     const points = await client.history("demo-atlas", "30d");
