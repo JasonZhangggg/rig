@@ -12,6 +12,7 @@ const { LineChart } = await import("../src/chart");
 const { highlights } = await import("../src/pages/logs/summary");
 const { cleanEvents, eventTitle } = await import("@rig/core");
 const { kindWord } = await import("../src/pages/logs/words");
+const { Lanes, AllSensors } = await import("../src/pages/logs/Lanes");
 
 // jsdom has no PointerEvent; the strip's tip shows only for a mouse, so the test needs one that carries pointerType.
 if (typeof window.PointerEvent === "undefined") {
@@ -441,6 +442,65 @@ describe("Logs", () => {
     within(key).getByText("Memory, highest");
     screen.getByRole("img", { name: "Memory" });
     screen.getByText("Every entry");
+  });
+
+  it("fits a chart to its readings, so a few degrees of change fill it", () => {
+    const t0 = Date.now() - 60_000;
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [61 + (k % 4), 20 + (k % 3) * 2] }));
+    const lanes = [
+      { title: "Temperatures", type: "temperature" as const, limit: 95, series: [{ i: 0, cls: "c-ink", name: "Processor" }] },
+      { title: "Usage", type: "load" as const, series: [{ i: 1, cls: "c-ink", name: "Processor" }] },
+    ];
+    render(<Lanes points={points} lanes={lanes} t0={t0} t1={t0 + 60_000} cursor={null} onCursor={() => {}} />);
+    const ticks = (name: string) => [...screen.getByRole("img", { name }).querySelectorAll("text.chart-tick")].map((t) => Number.parseFloat(t.textContent ?? ""));
+    const temps = ticks("Temperatures");
+    // Readings from 61° to 64° get an axis a few degrees wide, not one from 60° up past the 95° limit.
+    expect(Math.min(...temps)).toBeGreaterThanOrEqual(55);
+    expect(Math.max(...temps)).toBeLessThanOrEqual(70);
+    const usage = ticks("Usage");
+    expect(Math.min(...usage)).toBeGreaterThan(0);
+    expect(Math.max(...usage)).toBeLessThanOrEqual(40);
+    // The limit is left off when the readings are far below it, and drawn when they come near.
+    expect(screen.getByRole("img", { name: "Temperatures" }).querySelector(".chart-limit")).toBeNull();
+    cleanup();
+    const hot = points.map((p) => ({ ...p, v: [p.v[0]! + 26, p.v[1]] }));
+    render(<Lanes points={hot} lanes={lanes} t0={t0} t1={t0 + 60_000} cursor={null} onCursor={() => {}} />);
+    expect(screen.getByRole("img", { name: "Temperatures" }).querySelector(".chart-limit")).not.toBeNull();
+  });
+
+  it("draws a live line all the way to the right edge, so no gap opens before the next reading", () => {
+    const now = Date.now();
+    // A reading every 2 s, the newest one a moment ago, as the live view gets them.
+    const points = Array.from({ length: 40 }, (_, k) => ({ t: now - 300 - (39 - k) * 2000, v: [50 + (k % 5)] }));
+    const lanes = [{ title: "Temperatures", type: "temperature" as const, series: [{ i: 0, cls: "c-ink", name: "Processor" }] }];
+    render(<Lanes points={points} lanes={lanes} t0={now - 60_000} t1={now} cursor={null} onCursor={() => {}} live />);
+    const d = screen.getByRole("img", { name: "Temperatures" }).querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    const xs = [...d.matchAll(/[ML](-?[\d.]+),/g)].map((m) => Number(m[1]));
+    // The chart is 900 wide with 8 to spare on the right, so the line has to reach 892.
+    expect(Math.max(...xs)).toBeGreaterThanOrEqual(892);
+  });
+
+  it("draws a part's key lines, a highest and average where nothing sums its sensors up, and the rest on request", () => {
+    const t0 = Date.now() - 60_000;
+    const cpu = (type: "temperature" | "clock", name: string) => ({ id: `${type}-${name}`, hw: "cpu" as const, hwName: "", type, name, part: "cpu" });
+    const sensors = [cpu("temperature", "CPU Package"), cpu("temperature", "Core Max"),
+      ...[1, 2, 3, 4, 5, 6].map((n) => cpu("temperature", `P-Core #${n}`)), ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => cpu("clock", `P-Core #${n}`))];
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s, i) => (s.type === "clock" ? (k + i) % 2 ? 800 : 5300 : 50 + ((k + i) % 6))) }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
+    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    const lines = (name: string) => screen.getByRole("img", { name }).querySelectorAll("path.ln-line").length;
+    // Temperatures: the package and the hottest core, not all eight.
+    expect(lines("Temperatures")).toBe(2);
+    // Speeds has no line that sums up its cores, so it draws their highest and average.
+    expect(lines("Speeds")).toBe(2);
+    const speeds = screen.getByRole("img", { name: "Speeds" }).parentElement!;
+    within(speeds).getByText("Highest");
+    within(speeds).getByText("Average");
+    fireEvent.click(within(speeds).getByRole("button", { name: "Show all 10" }));
+    expect(lines("Speeds")).toBe(10);
+    fireEvent.click(within(speeds).getByRole("button", { name: "Show fewer" }));
+    expect(lines("Speeds")).toBe(2);
   });
 
   it("labels the start and end of a chart with only a few readings", () => {
