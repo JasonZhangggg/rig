@@ -5,7 +5,11 @@
 import type { PCKind } from "../telemetry";
 
 /** How hard each part works, from 0 at rest to 1 flat out (a little over 1 pushes it past its usual), and the game in front, if any. */
-export interface Activity { cpu: number; gpu: number; game: string | null }
+export interface Activity {
+  cpu: number; gpu: number; game: string | null;
+  /** Minutes since this stretch began, so a game's first hour can warm up. Missing means long enough to be warm through. */
+  since?: number;
+}
 
 /** Something the PC does from one local hour to another. Hours past 24 run into the next morning. */
 interface Stretch extends Activity { from: number; to: number }
@@ -44,6 +48,8 @@ export function activityAt(kind: PCKind, t: number): Activity {
   const hour = d.getHours() + d.getMinutes() / 60;
   const today = weeks[kind][d.getDay()];
   const yesterday = weeks[kind][(d.getDay() + 6) % 7];
-  const now = today.find((s) => s.from <= hour && hour < s.to) ?? yesterday.find((s) => s.from <= hour + 24 && hour + 24 < s.to);
-  return now ? { cpu: now.cpu, gpu: now.gpu, game: now.game } : rest;
+  const now = today.find((s) => s.from <= hour && hour < s.to);
+  const late = now ? null : yesterday.find((s) => s.from <= hour + 24 && hour + 24 < s.to);
+  const on = now ?? late;
+  return on ? { cpu: on.cpu, gpu: on.gpu, game: on.game, since: ((now ? hour : hour + 24) - on.from) * 60 } : rest;
 }
