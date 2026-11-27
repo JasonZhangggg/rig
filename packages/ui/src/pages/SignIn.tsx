@@ -1,14 +1,14 @@
 import { useState } from "react";
 import type { Account, RigClient } from "@rig/core";
 import { AsciiArt, type AsciiArtData } from "../components/AsciiArt";
-import fans from "../art/fans-ink.json";
+import board from "../art/board.json";
 
-/** The left half of sign-in screens: the logo, and the PC's fans drawn in text characters, still and tilted. */
+/** The left half of sign-in screens: the logo, and a black motherboard drawn in text characters, the same drawing as the website's. */
 export function SignInArt() {
   return (
     <div className="signin-art">
       <div className="brand"><span className="brand-mark" />Rig</div>
-      <AsciiArt art={fans as AsciiArtData} className="signin-ink" />
+      <AsciiArt art={board as AsciiArtData} className="signin-ink" />
     </div>
   );
 }
