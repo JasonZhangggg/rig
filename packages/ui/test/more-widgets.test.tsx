@@ -8,6 +8,7 @@ vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => (
 vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
+const { KIND_ORDER } = await import("../src/pages/overview/layout");
 
 const KEY = "rig.dashboard.v1:demo";
 const NEW = ["Last hour", "Drive health", "Changes", "Windows events", "Games", "Next upgrade", "Drivers", "Logs", "Manuals"];
@@ -15,7 +16,7 @@ const kinds = ["trend", "drives", "changes", "events", "games", "upgrade", "driv
 
 /** A saved Home that shows only these widgets, in this order. */
 const showOnly = (shown: string[]) =>
-  localStorage.setItem(KEY, JSON.stringify({ v: 1, widgets: shown.map((kind) => ({ id: kind, kind, hidden: false, size: "m" })) }));
+  localStorage.setItem(KEY, JSON.stringify({ v: 1, widgets: [...shown, ...KIND_ORDER.filter((k) => !shown.includes(k))].map((kind) => ({ id: kind, kind, hidden: !shown.includes(kind), size: "m" })) }));
 
 describe("widgets for every part of Rig", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; });
