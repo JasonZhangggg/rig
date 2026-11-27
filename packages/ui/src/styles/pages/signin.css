@@ -1,12 +1,12 @@
-.signin { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; background: var(--bg); }
+.signin { display: grid; grid-template-columns: minmax(0, 1fr) clamp(400px, 34%, 640px); min-height: 100dvh; background: var(--bg); }
 
-/* The left half is the website's black motherboard: graphite, with the board drawn in text filling it edge to edge. */
+/* Most of the page is the website's black motherboard: graphite, with the board drawn in text filling it edge to edge. The form gets a narrow column on the right. */
 .signin-art { position: relative; min-height: 100dvh; overflow: hidden; background: var(--graphite); color: #F4F3F0; }
 .signin-art .brand { position: absolute; z-index: 1; top: 30px; left: 34px; color: #F4F3F0; pointer-events: none; }
 .signin-art .brand-mark { width: 36px; height: 36px; border-radius: 11px; background: #F4F3F0; }
 .signin-art .brand-mark::before { color: var(--graphite); font-size: 17px; }
 .signin-art .brand-mark::after { right: 7px; bottom: 8px; width: 5px; height: 5px; }
-/* The board covers the half whatever its shape (--tall is the drawing's height over its width: rows x 1.09 / cols x 0.602). */
+/* The board covers its column whatever its shape (--tall is the drawing's height over its width: rows x 1.09 / cols x 0.602). */
 .signin-ink { --tall: 1.195; position: absolute; left: 50%; top: 50%; width: max(100%, 100dvh / var(--tall)); translate: -50% -50%; }
 
 .signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); }

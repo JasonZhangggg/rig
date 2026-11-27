@@ -3,7 +3,7 @@ import type { Account, RigClient } from "@rig/core";
 import { AsciiArt, type AsciiArtData } from "../components/AsciiArt";
 import board from "../art/board.json";
 
-/** The left half of sign-in screens: the logo, and a black motherboard drawn in text characters, the same drawing as the website's. */
+/** The art side of sign-in screens: the logo, and a black motherboard drawn in text characters, the same drawing as the website's. */
 export function SignInArt() {
   return (
     <div className="signin-art">
