@@ -258,9 +258,14 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   const gap = Math.max(gapMs, 3 * every);
   const drawn = useMemo(() => lanes.map((lane) => {
     const h = lane.h ?? (compact ? 76 : 96);
-    // The rest of a lane's lines, when it's open, drawn faint behind its key ones. A row picked out stays drawn.
-    const all = open.has(lane.title) && lane.more ? [...lane.series, ...lane.more]
-      : [...lane.series, ...(lane.more ?? []).filter((s) => pinned.has(s.i)).map((s) => ({ ...s, cls: "c-look" }))];
+    // The rest of a lane's lines, when it's open, drawn faint behind its key ones. With rows, a group of like sensors
+    // that's open draws its members faint, and a row picked out is drawn.
+    const fams = familiesOf(lane.more ?? []);
+    const all = !rows ? (open.has(lane.title) && lane.more ? [...lane.series, ...lane.more] : lane.series) : [
+      ...lane.series,
+      ...fams.groups.flatMap((g) => (open.has(`${lane.title}|${g.key}`) ? g.members.map((s) => (pinned.has(s.i) ? { ...s, cls: "c-look" } : s)) : [])),
+      ...fams.singles.filter((s) => pinned.has(s.i)).map((s) => ({ ...s, cls: "c-look" })),
+    ];
     const vals: number[] = [];
     for (const p of points) if (p.t >= t0 && p.t <= end) for (const s of all) { const v = p.v[s.i]; if (v != null) vals.push(v); }
     // A short lane gets fewer grid lines, so their labels don't crowd.
@@ -270,8 +275,8 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
     // Live lines start a little before the left edge, so sliding left never shows an empty strip there.
     const from = live ? t0 - (t1 - t0) / 10 : t0;
     const paths = all.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap) }));
-    return { lane, h, y, grid, paths, sc };
-  }), [points, lanes, t0, t1, w, compact, gap, open, pinned]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { lane, h, y, grid, paths, sc, fams };
+  }), [points, lanes, t0, t1, w, compact, gap, open, pinned, rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The time along the bottom; with rows, under each lane's chart, so each one reads on its own.
   const axisAt = (key: string) => (
@@ -289,7 +294,7 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   if (!points.length) return null;
   return (
     <div ref={ref} className="ln" onPointerMove={move} onPointerDown={move} onPointerLeave={() => onCursor(null)}>
-      {drawn.map(({ lane, h, y, grid, paths, sc }, li) => (
+      {drawn.map(({ lane, h, y, grid, paths, sc, fams }, li) => (
         <div key={lane.title} className="ln-lane">
           <div className="ln-head" style={{ paddingLeft: pad.l }}>
             <span className="ln-title">{lane.title}</span>
@@ -301,7 +306,7 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
                 </span>
               ))}
               {!rows && lane.series.length > NAMED && <span className="ln-key faint">and {lane.series.length - NAMED} more</span>}
-              {!!lane.more?.length && (
+              {!rows && !!lane.more?.length && (
                 <button type="button" className="ln-more" aria-expanded={open.has(lane.title)} onClick={() => toggle(lane.title)} onPointerDown={(e) => e.stopPropagation()}>
                   {open.has(lane.title) ? "Show fewer" : `Show all ${lane.series.length + lane.more.length}${rows ? " sensors" : ""}`}
                 </button>
@@ -333,8 +338,12 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
             ))}
           </svg>
           {rows && axisAt(`a${li}`)}
-          {rows && <SensorRows lane={lane} list={paths} rows={rows} sc={sc}
-            at={at} live={live} compact={compact} pinned={pinned} onPin={pin} onHover={setHover} />}
+          {rows && <SensorRows lane={lane} drawn={paths} fams={fams} rows={rows} sc={sc} at={at} live={live} compact={compact} pinned={pinned} onPin={pin} onHover={setHover}
+            isOpen={(k) => open.has(`${lane.title}|${k}`)} onOpen={(g) => {
+              toggle(`${lane.title}|${g.key}`);
+              // Closing a group lets go of the members picked out in it.
+              if (open.has(`${lane.title}|${g.key}`)) setPinned((o) => new Set([...o].filter((i) => !g.members.some((m) => m.i === i))));
+            }} />}
         </div>
       ))}
       {!rows && axisAt("axis")}
@@ -342,18 +351,66 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   );
 }
 
+/** Sensors of one kind that differ only by a number, like a core each: listed as one row until opened. */
+interface Family { key: string; label: string; members: LaneSeries[] }
+
+/** A lane's other sensors, with three or more that differ only by a number grouped, like "Cores" for Core 1 to Core 8. */
+export function familiesOf(more: readonly LaneSeries[]): { groups: Family[]; singles: LaneSeries[] } {
+  const by = new Map<string, LaneSeries[]>();
+  for (const s of more) { const k = s.name.replace(/\d+/g, "#"); (by.get(k) ?? by.set(k, []).get(k)!).push(s); }
+  const groups: Family[] = [], singles: LaneSeries[] = [];
+  for (const [key, members] of by) {
+    if (members.length < 3 || !key.includes("#")) { singles.push(...members); continue; }
+    const name = members[0].name;
+    const label = /thread/i.test(name) ? "Threads" : name.replace(/\s?\d+/, "s");
+    const n = (x: string) => x.match(/\d+/g)!.map(Number);
+    groups.push({ key, label, members: [...members].sort((a, b) => { const p = n(a.name), q = n(b.name); for (let k = 0; k < p.length; k++) if (p[k] !== q[k]) return p[k] - q[k]; return 0; }) });
+  }
+  return { groups, singles };
+}
+
 /**
  * A lane's sensors as rows under its chart: each one's reading now, or at the pointer's moment, its lowest and highest,
- * and a small track of that span on the chart's own scale, so a row that ran hotter than the rest stands out.
+ * and a small track of that span on the chart's own scale, so a row that ran hotter than the rest stands out. Sensors
+ * that differ only by a number, like a core each, are one row until opened; sensors with no readings are left out.
  */
-function SensorRows({ lane, list, rows, sc, at, live, compact, pinned, onPin, onHover }: {
-  lane: Lane; list: { i: number; name: string; cls: string }[]; rows: readonly SensorStat[]; sc: { lo: number; hi: number };
-  at: RecordedPoint | null; live?: boolean; compact?: boolean; pinned: ReadonlySet<number>; onPin: (i: number) => void; onHover: (i: number | null) => void;
+function SensorRows({ lane, drawn, fams, rows, sc, at, live, compact, pinned, onPin, onHover, isOpen, onOpen }: {
+  lane: Lane; drawn: { i: number; cls: string }[]; fams: { groups: Family[]; singles: LaneSeries[] }; rows: readonly SensorStat[];
+  sc: { lo: number; hi: number }; at: RecordedPoint | null; live?: boolean; compact?: boolean;
+  pinned: ReadonlySet<number>; onPin: (i: number) => void; onHover: (i: number | null) => void;
+  isOpen: (key: string) => boolean; onOpen: (g: Family) => void;
 }) {
   const temp = useTemp();
   const word = at ? clock(at.t) : live ? "Now" : "Last";
+  const stat = (i: number) => rows[i] ?? { last: null, min: null, max: null };
+  const nowOf = (i: number) => (at ? at.v[i] ?? null : stat(i).last);
+  const read = (i: number) => stat(i).last != null;
   const near = (v: number | null) => lane.type === "temperature" && v != null && lane.limit != null && v >= lane.limit - 6;
   const pos = (v: number) => Math.max(0, Math.min(100, ((v - sc.lo) / (sc.hi - sc.lo || 1)) * 100));
+  const clsOf = (i: number) => drawn.find((d) => d.i === i)?.cls ?? "c-none";
+  const track = (min: number | null, max: number | null, nows: number[]) => !compact && (
+    <td className="ln-track" aria-hidden="true">
+      {min != null && max != null && <span className={near(max) ? "look" : undefined}>
+        <i className="ln-span" style={{ left: `${pos(min)}%`, width: `${Math.max(0.5, pos(max) - pos(min))}%` }} />
+        {nows.map((v, k) => <i key={k} className="ln-now" style={{ left: `${pos(v)}%` }} />)}
+      </span>}
+    </td>
+  );
+  const row = (s: LaneSeries, sub?: boolean) => {
+    const st = stat(s.i), now = nowOf(s.i);
+    return (
+      <tr key={s.i} className={[pinned.has(s.i) && "on", sub && "sub"].filter(Boolean).join(" ") || undefined} onPointerEnter={() => onHover(s.i)}>
+        <th scope="row">
+          <button type="button" aria-pressed={pinned.has(s.i)} onClick={() => onPin(s.i)}><i className={`ln-sw ${clsOf(s.i)}`} />{s.name}</button>
+        </th>
+        <td className="num">{reading(temp, lane.type, now)}</td>
+        <td className="num faint">{reading(temp, lane.type, st.min)}</td>
+        <td className={`num${near(st.max) ? " look" : " faint"}`}>{reading(temp, lane.type, st.max)}</td>
+        {track(st.min, st.max, now == null ? [] : [now])}
+      </tr>
+    );
+  };
+  const groups = fams.groups.map((g) => ({ ...g, members: g.members.filter((m) => read(m.i)) })).filter((g) => g.members.length);
   return (
     <table className="ln-rows" aria-label={`${lane.title}, every sensor`} onPointerLeave={() => onHover(null)}>
       <thead><tr>
@@ -362,28 +419,30 @@ function SensorRows({ lane, list, rows, sc, at, live, compact, pinned, onPin, on
         {!compact && <td aria-hidden="true" />}
       </tr></thead>
       <tbody>
-        {list.map((s) => {
-          const st = rows[s.i] ?? { last: null, min: null, max: null };
-          const now = at ? at.v[s.i] ?? null : st.last;
-          return (
-            <tr key={s.i} className={pinned.has(s.i) ? "on" : undefined} onPointerEnter={() => onHover(s.i)}>
+        {lane.series.filter((s) => read(s.i)).map((s) => row(s))}
+        {groups.map((g) => {
+          const open = isOpen(g.key);
+          const nows = g.members.map((m) => nowOf(m.i)).filter((v): v is number => v != null);
+          const mins = g.members.map((m) => stat(m.i).min).filter((v): v is number => v != null);
+          const maxs = g.members.map((m) => stat(m.i).max).filter((v): v is number => v != null);
+          const min = mins.length ? Math.min(...mins) : null, max = maxs.length ? Math.max(...maxs) : null;
+          return [
+            <tr key={g.key} className="ln-group">
               <th scope="row">
-                <button type="button" aria-pressed={pinned.has(s.i)} onClick={() => onPin(s.i)}><i className={`ln-sw ${s.cls}`} />{s.name}</button>
+                <button type="button" aria-expanded={open} onClick={() => onOpen(g)}>
+                  <svg className="ln-chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5 7.5 6 4 9.5" /></svg>
+                  {g.label}{" "}<span className="faint">{g.members.length}</span>
+                </button>
               </th>
-              <td className="num">{reading(temp, lane.type, now)}</td>
-              <td className="num faint">{reading(temp, lane.type, st.min)}</td>
-              <td className={`num${near(st.max) ? " look" : " faint"}`}>{reading(temp, lane.type, st.max)}</td>
-              {!compact && (
-                <td className="ln-track" aria-hidden="true">
-                  {st.min != null && st.max != null && <span className={near(st.max) ? "look" : undefined}>
-                    <i className="ln-span" style={{ left: `${pos(st.min)}%`, width: `${Math.max(0.5, pos(st.max) - pos(st.min))}%` }} />
-                    {now != null && <i className="ln-now" style={{ left: `${pos(now)}%` }} />}
-                  </span>}
-                </td>
-              )}
-            </tr>
-          );
+              <td className="num" title="The highest of them">{nows.length ? reading(temp, lane.type, Math.max(...nows)) : "–"}</td>
+              <td className="num faint">{reading(temp, lane.type, min)}</td>
+              <td className={`num${near(max) ? " look" : " faint"}`}>{reading(temp, lane.type, max)}</td>
+              {track(min, max, nows)}
+            </tr>,
+            ...(open ? g.members.map((m) => row(m, true)) : []),
+          ];
         })}
+        {fams.singles.filter((s) => read(s.i)).map((s) => row(s))}
       </tbody>
     </table>
   );
@@ -432,6 +491,25 @@ export function withSummaries(r: Recorded, pick: string): Recorded {
   return { ...r, sensors, parts, points };
 }
 
+/**
+ * A sensor's name as a part's own view shows it: without the part it's already under, "#" before numbers dropped and
+ * in sentence case, so "CPU Core #3 Thread #2" reads "Core 3, thread 2" and "GPU Hot Spot" reads "Hot spot".
+ */
+export function shortName(name: string, part: string) {
+  let n = name;
+  if (part === "cpu") n = n.replace(/^CPU\s+(?=\S)/, "");
+  if (part === "gpu") n = n.replace(/^GPU\s+(?=\S)/, "");
+  n = n.replace(/#\s*(\d+)/g, "$1").replace(/\s+Thread\s+(\d+)/, ", thread $1");
+  let inside = false;
+  return n.split(" ").map((w, k) => {
+    const was = inside;
+    if (w.startsWith("(")) inside = true;
+    if (w.endsWith(")")) inside = false;
+    if (was || w.startsWith("(")) return w;
+    return w.split("-").map((x, j) => ((k > 0 || j > 0) && /^[A-Z][a-z]+,?$/.test(x) ? x.toLowerCase() : x)).join("-");
+  }).join(" ");
+}
+
 const cycle = ["c-ink", "c-brass", "c-grey"];
 const colour = (j: number) => (j < cycle.length ? cycle[j] : "c-faint");
 
@@ -470,8 +548,8 @@ export function lanesFor(r: Recorded, pick: string, limits: { cpu?: number; gpu?
     const more = idx.filter((i) => !key.includes(i));
     return [{
       title, type, limit: type === "temperature" ? limit : undefined,
-      series: key.map((i, j) => ({ i, name: r.sensors[i].name, cls: colour(j) })),
-      more: more.map((i) => ({ i, name: r.sensors[i].name, cls: "c-faint" })),
+      series: key.map((i, j) => ({ i, name: shortName(r.sensors[i].name, p.id), cls: colour(j) })),
+      more: more.map((i) => ({ i, name: shortName(r.sensors[i].name, p.id), cls: "c-faint" })),
     }];
   }).map((l, j) => ({ ...l, h: j === 0 ? h : undefined }));
 }
@@ -514,7 +592,7 @@ function foundLanes(r: Recorded, query: string, limits: { cpu?: number; gpu?: nu
     const idx = p.sensors.filter((i) => found.has(i) && r.sensors[i].type === type);
     if (!idx.length) return [];
     const limit = type !== "temperature" ? undefined : p.id === "gpu" ? limits.gpu : p.id === "cpu" ? limits.cpu : undefined;
-    return [{ title: p.name.toLowerCase() === title.toLowerCase() ? p.name : `${p.name}, ${title.toLowerCase()}`, type, limit, series: idx.map((i, j) => ({ i, name: r.sensors[i].name, cls: colour(j) })) }];
+    return [{ title: p.name.toLowerCase() === title.toLowerCase() ? p.name : `${p.name}, ${title.toLowerCase()}`, type, limit, series: idx.map((i, j) => ({ i, name: shortName(r.sensors[i].name, p.id), cls: colour(j) })) }];
   }));
 }
 

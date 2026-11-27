@@ -12,7 +12,7 @@ const { LineChart } = await import("../src/chart");
 const { highlights } = await import("../src/pages/logs/summary");
 const { cleanEvents, eventTitle } = await import("@rig/core");
 const { kindWord } = await import("../src/pages/logs/words");
-const { Lanes, AllSensors } = await import("../src/pages/logs/Lanes");
+const { Lanes, AllSensors, shortName } = await import("../src/pages/logs/Lanes");
 
 // jsdom has no PointerEvent; the strip's tip shows only for a mouse, so the test needs one that carries pointerType.
 if (typeof window.PointerEvent === "undefined") {
@@ -334,7 +334,7 @@ describe("Logs", () => {
       await within(readings).findByRole("img", { name: "Temperatures" });
       within(readings).getByRole("img", { name: "Fans" });
       fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
-      within(readings).getByRole("rowheader", { name: "GPU Hot Spot" });
+      within(readings).getByRole("rowheader", { name: "Hot spot" });
       within(readings).getByRole("img", { name: "Power" });
 
       await open("events");
@@ -400,7 +400,7 @@ describe("Logs", () => {
       // Right under its chart.
       expect(within(readings).getByRole("img", { name: "Temperatures" }).parentElement!.contains(temps)).toBe(true);
       expect(within(temps).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Last", "Lowest", "Highest"]);
-      const hot = within(temps).getByRole("row", { name: /^GPU Hot Spot/ });
+      const hot = within(temps).getByRole("row", { name: /^Hot spot/ });
       const [last, low, high] = within(hot).getAllByRole("cell").map((c) => c.textContent ?? "");
       for (const v of [last, low, high]) expect(v).toMatch(/^\d+°C$/);
       expect(parseInt(low)).toBeLessThanOrEqual(parseInt(last));
@@ -410,7 +410,7 @@ describe("Logs", () => {
       const chart = within(readings).getByRole("img", { name: "Temperatures" });
       const lines = () => [...chart.querySelectorAll("path.ln-line")].map((l) => l.getAttribute("class") ?? "");
       expect(lines().some((c) => / (on|dim)$/.test(c))).toBe(false);
-      const row = within(hot).getByRole("button", { name: "GPU Hot Spot" });
+      const row = within(hot).getByRole("button", { name: "Hot spot" });
       fireEvent.click(row);
       expect(row.getAttribute("aria-pressed")).toBe("true");
       expect(lines().filter((c) => c.endsWith(" on"))).toHaveLength(1);
@@ -422,7 +422,7 @@ describe("Logs", () => {
       const find = within(readings).getByRole("searchbox", { name: "Find a sensor" });
       fireEvent.change(find, { target: { value: "hot spot" } });
       const found = within(readings).getByRole("table", { name: "Graphics card, temperatures, every sensor" });
-      expect(within(found).getAllByRole("rowheader").map((r) => r.textContent)).toEqual(["GPU Hot Spot"]);
+      expect(within(found).getAllByRole("rowheader").map((r) => r.textContent)).toEqual(["Hot spot"]);
       within(readings).getByRole("img", { name: "Graphics card, temperatures" });
       within(readings).getByText(/^1 of \d+$/);
       fireEvent.change(find, { target: { value: "nothing like this" } });
@@ -510,13 +510,41 @@ describe("Logs", () => {
     // Speeds has no line that sums up its cores, so it draws their highest and average.
     expect(lines("Speeds")).toBe(2);
     const speeds = screen.getByRole("img", { name: "Speeds" }).parentElement!;
-    // Each line is a row under the chart.
-    expect(within(speeds).getAllByRole("rowheader").map((r) => r.textContent)).toEqual(["Highest", "Average"]);
-    fireEvent.click(within(speeds).getByRole("button", { name: "Show all 10 sensors" }));
-    expect(within(speeds).getAllByRole("rowheader")).toHaveLength(10);
+    // Each line is a row under the chart, and the eight cores are one row that opens.
+    const names = (lane: HTMLElement) => within(lane).getAllByRole("rowheader").map((r) => r.textContent);
+    expect(names(speeds)).toEqual(["Highest", "Average", "P-cores 8"]);
+    const temps = screen.getByRole("img", { name: "Temperatures" }).parentElement!;
+    expect(names(temps)).toEqual(["Package", "Core max", "P-cores 6"]);
+    const cores = within(speeds).getByRole("button", { name: "P-cores 8" });
+    fireEvent.click(cores);
+    expect(cores.getAttribute("aria-expanded")).toBe("true");
+    expect(names(speeds)).toEqual(["Highest", "Average", "P-cores 8", ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `P-core ${n}`)]);
     expect(lines("Speeds")).toBe(10);
-    fireEvent.click(within(speeds).getByRole("button", { name: "Show fewer" }));
+    fireEvent.click(cores);
+    expect(names(speeds)).toHaveLength(3);
     expect(lines("Speeds")).toBe(2);
+  });
+
+  it("names a part's sensors without repeating the part, in plain words", () => {
+    expect(shortName("CPU Core #3 Thread #2", "cpu")).toBe("Core 3, thread 2");
+    expect(shortName("CPU Package", "cpu")).toBe("Package");
+    expect(shortName("P-Core #1", "cpu")).toBe("P-core 1");
+    expect(shortName("Core (Tctl/Tdie)", "cpu")).toBe("Core (Tctl/Tdie)");
+    expect(shortName("GPU Hot Spot", "gpu")).toBe("Hot spot");
+    expect(shortName("GPU Fan 1", "gpu")).toBe("Fan 1");
+    expect(shortName("CPU", "motherboard")).toBe("CPU");
+  });
+
+  it("leaves out a sensor with no readings, and groups threads as one row", () => {
+    const t0 = Date.now() - 60_000;
+    const cpu = (name: string) => ({ id: name, hw: "cpu" as const, hwName: "", type: "load" as const, name, part: "cpu" });
+    const sensors = [cpu("CPU Total"), cpu("CPU Core Max"), ...[1, 2].flatMap((c) => [1, 2].map((t) => cpu(`CPU Core #${c} Thread #${t}`))), cpu("CPU Memory")];
+    const points = Array.from({ length: 10 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s) => (s.name === "CPU Memory" ? null : 10 + k)) }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
+    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
+    expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
   });
 
   it("labels the start and end of a chart with only a few readings", () => {

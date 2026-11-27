@@ -216,6 +216,13 @@
 .ln-rows th[scope="row"] button { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .ln-rows tr.on th[scope="row"] button { font-weight: 600; }
 .ln-rows td.look { color: var(--look-text); font-weight: 600; }
+.ln-rows tr.sub th[scope="row"] { padding-left: 22px; }
+.ln-group th[scope="row"] button { gap: 6px; font-weight: 500; }
+.ln-group th[scope="row"] button .faint { margin-left: 2px; font-weight: 400; }
+.ln-chev { width: 12px; height: 12px; flex: none; fill: none; stroke: var(--text-2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.ln-group button[aria-expanded="true"] .ln-chev { transform: rotate(90deg); }
+.ln-sw.c-none { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-3) 35%, transparent); }
+.ln-track .ln-now { opacity: .9; }
 .ln-track { padding-left: 20px !important; }
 .ln-track > span { position: relative; display: block; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--text-3) 12%, transparent); }
 .ln-span { position: absolute; top: 3px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-2) 55%, transparent); }
