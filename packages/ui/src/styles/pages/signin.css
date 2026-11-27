@@ -1,16 +1,17 @@
-.signin { display: grid; grid-template-columns: minmax(0, 54%) minmax(0, 1fr); min-height: 100dvh; background: var(--bg); }
+.signin { display: grid; grid-template-columns: minmax(0, 54%) minmax(0, 1fr); min-height: 100dvh; overflow: clip; background: var(--bg); }
 
-/* No panel: the logo, and a graphics card drawn in text, still, its near end running off the left edge and its far end close to the form. */
-.signin-art { position: relative; min-height: 100dvh; overflow: hidden; container-type: inline-size; color: var(--text); }
+/* No panel: the logo, and a big graphics card drawn in text, still, its near end running off the left edge and its far end tucked a little under the form. */
+.signin-art { position: relative; min-height: 100dvh; color: var(--text); }
 .signin-art .brand { position: absolute; z-index: 1; top: 30px; left: 34px; color: var(--text); pointer-events: none; }
 .signin-art .brand-mark { width: 36px; height: 36px; border-radius: 11px; background: var(--graphite); }
 .signin-art .brand-mark::before { color: #F4F3F0; font-size: 17px; }
 .signin-art .brand-mark::after { right: 7px; bottom: 8px; width: 5px; height: 5px; }
-/* The angle is in the drawing itself, so there's no 3D turn here. --tall is the drawing's height over its width (rows x 1.09 / cols x 0.602): on a short window the card shrinks so its bottom always shows. */
-.signin-ink { --tall: .662; position: absolute; right: 4cqw; top: 72px; bottom: 40px; height: fit-content; margin-block: auto; width: min(132cqw, 1900px, calc((100dvh - 112px) / var(--tall))); }
+/* The angle is in the drawing itself, so there's no 3D turn here. The card is as tall as the window allows, so its bottom always shows (--tall is the drawing's height over its width: rows x 1.09 / cols x 0.602). Its far end stops 80px past where the form's text starts (the form column's middle less half of the 360px form), so the form sits over it. */
+.signin-ink { --tall: .66; position: absolute; z-index: 0; right: calc(100px - 23vw); top: 56px; bottom: 28px; height: fit-content; margin-block: auto; width: min(2400px, calc((100dvh - 84px) / var(--tall))); }
 
-.signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); background: var(--bg); }
-.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
+.signin-form { position: relative; z-index: 1; display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); }
+/* The form sits over the card's far end: plain page color 32px around it, with no edge or shadow of its own, so the card shows above and below it. */
+.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); box-shadow: 0 0 0 32px var(--bg); }
 .signin-box h1 { margin-bottom: 4px; font: var(--t-page); letter-spacing: -.035em; }
 .signin-box > .muted { margin: -6px 0 6px; line-height: 1.5; }
 .signin-small { font-size: 13px; }
@@ -32,8 +33,8 @@
   .signin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .signin-art { min-height: 0; padding: 72px 0 0; }
   .signin-art .brand { top: 18px; left: 20px; }
-  /* On a phone the card sits above the form, wider than the screen, its near end cut off on the left. */
-  .signin-ink { --w: min(150vw, 900px); position: relative; right: auto; top: auto; bottom: auto; width: var(--w); margin: 0 0 0 calc(100% - var(--w) - 5vw); }
-  .signin-form { padding-top: 32px; }
+  /* On a phone the card sits above the form, much wider than the screen, its near end cut off on the left and its bottom edge tucked under the form. */
+  .signin-ink { --w: min(175vw, 1100px); position: relative; right: auto; top: auto; bottom: auto; width: var(--w); margin: 0 0 -28px calc(100% - var(--w) - 4vw); }
+  .signin-form { padding-top: 0; align-items: start; }
 }
 :root:has(.signin) { scrollbar-gutter: auto; }
