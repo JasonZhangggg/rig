@@ -1,13 +1,13 @@
 .signin { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); min-height: 100dvh; background: var(--bg); }
 
-/* No panel: the logo, and the fans drawn in text, still and tilted, centred in the left half. The drawing starts partway along the card, so its left end is cut off. */
-.signin-art { position: relative; min-height: 100dvh; overflow: hidden; display: grid; place-items: center; padding: 72px 4% 24px 8%; color: var(--text); }
+/* No panel: the logo, and the fans drawn in text, still and tilted, running off the left edge and fading out toward the form. */
+.signin-art { position: relative; min-height: 100dvh; overflow: hidden; display: grid; place-items: center start; padding: 72px 0 24px; color: var(--text); }
 .signin-art .brand { position: absolute; z-index: 1; top: 30px; left: 34px; color: var(--text); pointer-events: none; }
 .signin-art .brand-mark { width: 36px; height: 36px; border-radius: 11px; background: var(--graphite); }
 .signin-art .brand-mark::before { color: #F4F3F0; font-size: 17px; }
 .signin-art .brand-mark::after { right: 7px; bottom: 8px; width: 5px; height: 5px; }
 /* The art is a little taller than it is wide, and the tilt brings its bottom closer, so it is sized to fit the height too, which keeps the bottom of the card whole. */
-.signin-ink { width: min(100%, 780px, calc((100dvh - 110px) / 1.2)); transform: perspective(1600px) rotateX(14deg) rotateY(12deg) rotateZ(-4deg); }
+.signin-ink { width: min(106%, 880px, calc((100dvh - 110px) / 1.2)); margin-left: -6%; transform-origin: 30% 60%; transform: perspective(1600px) rotateX(14deg) rotateY(12deg) rotateZ(-4deg); -webkit-mask-image: linear-gradient(90deg, #000 55%, transparent 96%); mask-image: linear-gradient(90deg, #000 55%, transparent 96%); }
 
 .signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); background: var(--bg); }
 .signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
@@ -32,7 +32,7 @@
   .signin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .signin-art { min-height: 0; padding: 72px 0 0; }
   .signin-art .brand { top: 18px; left: 20px; }
-  .signin-ink { width: min(72vw, 300px); }
+  .signin-ink { width: min(72vw, 300px); -webkit-mask-image: none; mask-image: none; }
   .signin-form { padding-top: 32px; }
 }
 :root:has(.signin) { scrollbar-gutter: auto; }
