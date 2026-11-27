@@ -1,18 +1,16 @@
-.signin { display: grid; grid-template-columns: minmax(0, 54%) minmax(0, 1fr); min-height: 100dvh; overflow: clip; background: var(--bg); }
+.signin { display: grid; grid-template-columns: minmax(0, 54%) minmax(0, 1fr); min-height: 100dvh; background: var(--bg); }
 
-/* No panel: the logo, and a big graphics card drawn in text, still, its near end running off the left edge and its far end tucked a little under the form. */
-.signin-art { position: relative; min-height: 100dvh; color: var(--text); }
+/* No panel: the logo, and a big graphics card drawn in text, still, its near end running off the left edge and its far end stopping short of the form. */
+.signin-art { position: relative; min-height: 100dvh; overflow: hidden; container-type: inline-size; color: var(--text); }
 .signin-art .brand { position: absolute; z-index: 1; top: 30px; left: 34px; color: var(--text); pointer-events: none; }
 .signin-art .brand-mark { width: 36px; height: 36px; border-radius: 11px; background: var(--graphite); }
 .signin-art .brand-mark::before { color: #F4F3F0; font-size: 17px; }
 .signin-art .brand-mark::after { right: 7px; bottom: 8px; width: 5px; height: 5px; }
-/* The angle is in the drawing itself, so there's no 3D turn here. The card is as tall as the window allows, so its bottom always shows (--tall is the drawing's height over its width: rows x 1.09 / cols x 0.602). Its far end runs 160px past where the form's text starts (the form column's middle less half of the 360px form), so the form sits over it. */
-.signin-ink { --tall: .807; position: absolute; z-index: 0; right: calc(20px - 23vw); top: 56px; bottom: 28px; height: fit-content; margin-block: auto; width: min(2400px, calc((100dvh - 84px) / var(--tall))); }
+/* The angle is in the drawing itself, so there's no 3D turn here. The card stays in the left column, 3% short of its edge, and is never taller than the window allows, so its bottom always shows (--tall is the drawing's height over its width: rows x 1.09 / cols x 0.602). */
+.signin-ink { --tall: .709; position: absolute; right: 3cqw; top: 64px; bottom: 32px; height: fit-content; margin-block: auto; width: min(125cqw, 2400px, calc((100dvh - 96px) / var(--tall))); }
 
-.signin-form { position: relative; z-index: 1; display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); }
-/* The form sits over the card's far end with nothing behind it: the fields and button are solid, and the words get a 4px outline of page color, traced around each letter, so they read over the drawing. */
-.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; text-shadow: 2.0px 0px 0 var(--bg), 1.4px 1.4px 0 var(--bg), 0px 2.0px 0 var(--bg), -1.4px 1.4px 0 var(--bg), -2.0px 0px 0 var(--bg), -1.4px -1.4px 0 var(--bg), 0px -2.0px 0 var(--bg), 1.4px -1.4px 0 var(--bg), 4.0px 0px 0 var(--bg), 3.7px 1.5px 0 var(--bg), 2.8px 2.8px 0 var(--bg), 1.5px 3.7px 0 var(--bg), 0px 4.0px 0 var(--bg), -1.5px 3.7px 0 var(--bg), -2.8px 2.8px 0 var(--bg), -3.7px 1.5px 0 var(--bg), -4.0px 0px 0 var(--bg), -3.7px -1.5px 0 var(--bg), -2.8px -2.8px 0 var(--bg), -1.5px -3.7px 0 var(--bg), 0px -4.0px 0 var(--bg), 1.5px -3.7px 0 var(--bg), 2.8px -2.8px 0 var(--bg), 3.7px -1.5px 0 var(--bg); }
-.signin-box .btn, .signin-box .input { text-shadow: none; }
+.signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); }
+.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
 .signin-box h1 { margin-bottom: 4px; font: var(--t-page); letter-spacing: -.035em; }
 .signin-box > .muted { margin: -6px 0 6px; line-height: 1.5; }
 .signin-small { font-size: 13px; }
@@ -34,8 +32,8 @@
   .signin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .signin-art { min-height: 0; padding: 72px 0 0; }
   .signin-art .brand { top: 18px; left: 20px; }
-  /* On a phone the card sits above the form, much wider than the screen, its near end cut off on the left and its lower part under the form. */
-  .signin-ink { --w: min(175vw, 1100px); position: relative; right: auto; top: auto; bottom: auto; width: var(--w); margin: 0 0 calc(var(--w) * -.2) calc(100% - var(--w) - 4vw); }
-  .signin-form { padding-top: 0; align-items: start; }
+  /* On a phone the card sits above the form, wider than the screen, its near end cut off on the left. */
+  .signin-ink { --w: min(160vw, 1000px); position: relative; right: auto; top: auto; bottom: auto; width: var(--w); margin: 0 0 0 calc(100% - var(--w) - 4vw); }
+  .signin-form { padding-top: 24px; }
 }
 :root:has(.signin) { scrollbar-gutter: auto; }
