@@ -7,7 +7,6 @@ import { useOpenLog } from "../Logs";
 import { LogsHead } from "./Head";
 import { AllSensors, type Band, type ChartMark } from "./Lanes";
 import { CustomLogs, NowRecording, Recordings } from "./Recordings";
-import { SensorTable } from "./SensorTable";
 import { WeekStory } from "./Story";
 import { clock, dayName, isPhone } from "./words";
 
@@ -65,7 +64,7 @@ function useDays(need: RecordingInfo[]): Recording[] | null {
 }
 
 /** What one stretch of the chart shows, and where its readings came from. */
-interface Shown { r: Recorded | null; /** Every reading, not thinned, for the table's lowest and highest. */ whole?: Recorded | null; from: number; to: number; title: string; source: string; note?: string; live?: boolean; empty?: string }
+interface Shown { r: Recorded | null; /** Every reading, not thinned, for each sensor's exact lowest and highest. */ whole?: Recorded | null; from: number; to: number; title: string; source: string; note?: string; live?: boolean; empty?: string }
 
 /** Every reading on the PC, over whatever stretch you pick: the last few minutes as they come in, back to the last month. */
 export function Readings() {
@@ -76,8 +75,7 @@ export function Readings() {
   const data = useData("recordings", "live");
   const [span, setSpan] = useState<Span>(ui.route === "recorded" ? "day" : ui.route === "history" ? "week" : "5m");
   const [pick, setPick] = useState(0);
-  const [view, setView] = useState<"chart" | "table" | "story">("chart");
-  const table = view === "table";
+  const [view, setView] = useState<"sensors" | "story">("sensors");
   // The week can also be told as a story: what stood out, and when.
   const story = view === "story" && span === "week";
   const limits = limitsOf(full);
@@ -98,7 +96,7 @@ export function Readings() {
     if (isLive(span)) {
       const live = data.live;
       const r = live.length > 1 ? liveRecorded(full.readings ?? [], thin(live, from, to - from)) : null;
-      const whole = r && table ? liveRecorded(full.readings ?? [], live.filter((p) => p.t >= from)) : null;
+      const whole = r ? liveRecorded(full.readings ?? [], live.filter((p) => p.t >= from)) : null;
       const last = live[live.length - 1];
       const every = live.length > 1 ? Math.max(1, Math.round((last.t - live[live.length - 2].t) / 1000)) : null;
       // Rig keeps readings from when it opened, so a long span may start partway.
@@ -119,7 +117,7 @@ export function Readings() {
       const first = r?.points[0]?.t ?? from, last = r?.points.at(-1)?.t ?? to;
       // A day draws from its first reading; a stretch up to now draws all of it, so a gap shows as a gap.
       return {
-        r: r && r.points.length ? r : null, title, whole: all && table ? { ...all, points: inRange } : null,
+        r: r && r.points.length ? r : null, title, whole: all ? { ...all, points: inRange } : null,
         from: dayInfo ? first : from, to: dayInfo ? Math.max(last, first + HOUR) : to,
         source: dayInfo ? `${clock(first)} to ${last >= to - MIN ? "midnight" : clock(last)}, every 30 s` : "Every sensor, every 30 s",
         empty: "Nothing logged in this stretch.",
@@ -129,11 +127,11 @@ export function Readings() {
     const points = history.filter((p) => p.t >= from && p.t <= to);
     const r = points.length ? historyRecorded(thin(points, from, to - from)) : null;
     return {
-      r, whole: r && table ? historyRecorded(points) : null, from, to, title, source: "Every 10 minutes while Rig was open",
+      r, whole: r ? historyRecorded(points) : null, from, to, title, source: "Every 10 minutes while Rig was open",
       note: span !== "month" ? "Turn on the background recorder in Settings on this PC to keep every sensor every 30 seconds, even while Rig is closed." : undefined,
       empty: `Nothing logged on ${pc.name} in the last ${span === "month" ? "30 days" : span === "week" ? "7 days" : span === "day" ? "24 hours" : "6 hours"}.`,
     };
-  }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, logged, table]);
+  }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, logged]);
 
   if (opened) return opened;
   const active = data.recordings.find(isActive);
@@ -151,11 +149,10 @@ export function Readings() {
           <div className="seg rd-spans" role="group" aria-label="How far back">
             {spanWords.map(([k, word]) => <button key={k} type="button" aria-pressed={span === k} onClick={() => { setSpan(k); setPick(0); }}>{word}</button>)}
           </div>
-          <div className="seg rd-views" role="group" aria-label="Show as">
-            {span === "week" && <button type="button" aria-pressed={story} onClick={() => setView("story")}>Story</button>}
-            <button type="button" aria-pressed={!table && !story} onClick={() => setView("chart")}>Chart</button>
-            <button type="button" aria-pressed={table} onClick={() => setView("table")}>Table</button>
-          </div>
+          {span === "week" && <div className="seg rd-views" role="group" aria-label="Show as">
+            <button type="button" aria-pressed={story} onClick={() => setView("story")}>Story</button>
+            <button type="button" aria-pressed={!story} onClick={() => setView("sensors")}>Sensors</button>
+          </div>}
         </div>
         {!story && <div className="rc-day rd-head">
           {dayInfo && <button type="button" className="btn ghost sm icon" aria-label="Day before" disabled={pick >= days.length - 1} onClick={() => setPick(pick + 1)}><Icon d="M12 4 6 10l6 6" /></button>}
@@ -167,8 +164,7 @@ export function Readings() {
           </span>
         </div>}
         {story ? <WeekStory /> : !shown.r ? <ChartNote>{shown.empty ?? "Nothing to show."}</ChartNote>
-          : table ? <SensorTable r={shown.whole ?? shown.r} from={shown.from} to={shown.to} limits={limits} live={live} />
-          : <AllSensors r={shown.r} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} />}
+          : <AllSensors r={shown.r} whole={shown.whole} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} />}
         {!story && shown.r && shown.note && <p className="faint lv-since">{shown.note}</p>}
       </section>
       <div className="rc-lower">

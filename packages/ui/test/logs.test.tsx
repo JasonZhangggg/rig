@@ -333,8 +333,8 @@ describe("Logs", () => {
       const readings = screen.getByRole("region", { name: "Readings" });
       await within(readings).findByRole("img", { name: "Temperatures" });
       within(readings).getByRole("img", { name: "Fans" });
-      fireEvent.click(within(readings).getByRole("button", { name: /^Graphics card/ }));
-      within(readings).getByText("GPU Hot Spot");
+      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
+      within(readings).getByRole("rowheader", { name: "GPU Hot Spot" });
       within(readings).getByRole("img", { name: "Power" });
 
       await open("events");
@@ -377,13 +377,13 @@ describe("Logs", () => {
       const month = await within(readings).findByRole("img", { name: "Temperatures" });
       within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ });
       // A month's axis names a date every few days, not all thirty weekdays in a row.
-      const dates = [...month.parentElement!.parentElement!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
+      const dates = [...month.parentElement!.querySelector("svg.ln-axis")!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
       expect(dates.length).toBeGreaterThan(1);
       expect(dates.length).toBeLessThan(15);
     } finally { vi.useRealTimers(); }
   });
 
-  it("lists every sensor in a table, like a hardware monitor, with its lowest and highest, and finds one by name", async () => {
+  it("lists each chart's sensors under it, like a hardware monitor, picks a line out from its row, and finds any sensor", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
     try {
@@ -393,28 +393,43 @@ describe("Logs", () => {
       await screen.findByRole("heading", { name: "Today" });
       const readings = screen.getByRole("region", { name: "Readings" });
       await within(readings).findByRole("img", { name: "Temperatures" });
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Show as" })).getByRole("button", { name: "Table" }));
-      const table = within(readings).getByRole("table", { name: "Every sensor" });
-      expect(within(readings).queryByRole("img", { name: "Temperatures" })).toBeNull();
-      expect(within(table).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Last", "Lowest", "Highest"]);
-      // Grouped by part, then by kind, like HWMonitor.
-      const gpu = within(table).getByRole("rowgroup", { name: "Graphics card" });
-      within(gpu).getByRole("rowheader", { name: "Temperatures" });
-      const hot = within(gpu).getByRole("row", { name: /^GPU Hot Spot/ });
+      // One view: no separate table to switch to.
+      expect(within(readings).queryByRole("button", { name: "Table" })).toBeNull();
+      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
+      const temps = within(readings).getByRole("table", { name: "Temperatures, every sensor" });
+      // Right under its chart.
+      expect(within(readings).getByRole("img", { name: "Temperatures" }).parentElement!.contains(temps)).toBe(true);
+      expect(within(temps).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Last", "Lowest", "Highest"]);
+      const hot = within(temps).getByRole("row", { name: /^GPU Hot Spot/ });
       const [last, low, high] = within(hot).getAllByRole("cell").map((c) => c.textContent ?? "");
       for (const v of [last, low, high]) expect(v).toMatch(/^\d+°C$/);
       expect(parseInt(low)).toBeLessThanOrEqual(parseInt(last));
       expect(parseInt(high)).toBeGreaterThanOrEqual(parseInt(last));
-      expect(within(table).getAllByRole("rowgroup").length).toBeGreaterThan(3);
 
-      fireEvent.change(within(readings).getByRole("searchbox", { name: "Find a sensor" }), { target: { value: "hot spot" } });
-      const rows = within(within(readings).getByRole("table", { name: "Every sensor" })).getAllByRole("row").filter((r) => r.querySelector("th[scope=row]"));
-      expect(rows.map((r) => r.querySelector("th")!.textContent)).toEqual(["GPU Hot Spot"]);
-      fireEvent.change(within(readings).getByRole("searchbox", { name: "Find a sensor" }), { target: { value: "nothing like this" } });
+      // Clicking a row picks its line out of the chart, and clicking again puts it back.
+      const chart = within(readings).getByRole("img", { name: "Temperatures" });
+      const lines = () => [...chart.querySelectorAll("path.ln-line")].map((l) => l.getAttribute("class") ?? "");
+      expect(lines().some((c) => / (on|dim)$/.test(c))).toBe(false);
+      const row = within(hot).getByRole("button", { name: "GPU Hot Spot" });
+      fireEvent.click(row);
+      expect(row.getAttribute("aria-pressed")).toBe("true");
+      expect(lines().filter((c) => c.endsWith(" on"))).toHaveLength(1);
+      expect(lines().filter((c) => c.endsWith(" dim")).length).toBe(lines().length - 1);
+      fireEvent.click(row);
+      expect(lines().some((c) => / (on|dim)$/.test(c))).toBe(false);
+
+      // A search finds a sensor on any part, with its own chart and row.
+      const find = within(readings).getByRole("searchbox", { name: "Find a sensor" });
+      fireEvent.change(find, { target: { value: "hot spot" } });
+      const found = within(readings).getByRole("table", { name: "Graphics card, temperatures, every sensor" });
+      expect(within(found).getAllByRole("rowheader").map((r) => r.textContent)).toEqual(["GPU Hot Spot"]);
+      within(readings).getByRole("img", { name: "Graphics card, temperatures" });
+      within(readings).getByText(/^1 of \d+$/);
+      fireEvent.change(find, { target: { value: "nothing like this" } });
       within(readings).getByText(/No sensor matches/);
-
-      fireEvent.click(within(readings).getByRole("button", { name: "Chart" }));
-      await within(readings).findByRole("img", { name: "Temperatures" });
+      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Whole PC/ }));
+      expect((find as HTMLInputElement).value).toBe("");
+      await within(readings).findByRole("table", { name: "Temperatures, every sensor" });
     } finally { vi.useRealTimers(); }
   });
 
@@ -495,9 +510,10 @@ describe("Logs", () => {
     // Speeds has no line that sums up its cores, so it draws their highest and average.
     expect(lines("Speeds")).toBe(2);
     const speeds = screen.getByRole("img", { name: "Speeds" }).parentElement!;
-    within(speeds).getByText("Highest");
-    within(speeds).getByText("Average");
-    fireEvent.click(within(speeds).getByRole("button", { name: "Show all 10" }));
+    // Each line is a row under the chart.
+    expect(within(speeds).getAllByRole("rowheader").map((r) => r.textContent)).toEqual(["Highest", "Average"]);
+    fireEvent.click(within(speeds).getByRole("button", { name: "Show all 10 sensors" }));
+    expect(within(speeds).getAllByRole("rowheader")).toHaveLength(10);
     expect(lines("Speeds")).toBe(10);
     fireEvent.click(within(speeds).getByRole("button", { name: "Show fewer" }));
     expect(lines("Speeds")).toBe(2);
