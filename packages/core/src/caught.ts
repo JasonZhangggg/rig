@@ -23,7 +23,7 @@ const ABOVE_JOIN_MS = 2 * MIN;
 const SMOOTH_MS = 60_000;
 
 /** A game's usual temperature range for one part, from its earlier sessions in history. */
-export interface UsualRange {
+export interface GameNormal {
   game: string;
   /** °C: most of its readings sat between these. */
   lo: number;
@@ -50,9 +50,9 @@ export interface Caught {
   /** The part's reading just before the event, °C. */
   at: number | null;
   /** The usual range of every game in the recording that has one. */
-  usual: UsualRange[];
+  usual: GameNormal[];
   /** The usual range for the game in front at the event. */
-  usualAt: UsualRange | null;
+  usualAt: GameNormal | null;
   /** What "above" means: the usual range, or near the part's safe limit when there's none. */
   measure: "usual" | "limit";
   above: AboveStretch[];
@@ -86,7 +86,7 @@ const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
  * stretch "hotter than usual" compares against. With too few of those, every earlier window of the game a day or more
  * before. Null when there still aren't enough.
  */
-export function usualRange(history: readonly HistoryPoint[], game: string, part: "gpu" | "cpu", before: number): UsualRange | null {
+export function gameNormal(history: readonly HistoryPoint[], game: string, part: "gpu" | "cpu", before: number): GameNormal | null {
   const mine = history.filter((p) => p.game === game && p[part] != null && p.t < before - DAY);
   const baseline = mine.filter((p) => before - p.t >= USUAL.baselineTo * DAY && before - p.t < USUAL.baselineFrom * DAY);
   const use = baseline.length >= USUAL.minWindows ? baseline : mine;
@@ -148,7 +148,7 @@ export function caughtProblem(rec: Pick<Recording, "samples" | "events" | "inter
   const before = samples.filter((s) => s.t <= event.t && s[part] != null).at(-1) ?? null;
   const game = before?.game ?? null;
   const games = [...new Set(samples.map((s) => s.game).filter((g): g is string => !!g))];
-  const usual = opts.history ? games.map((g) => usualRange(opts.history!, g, part, start)).filter((u): u is UsualRange => !!u) : [];
+  const usual = opts.history ? games.map((g) => gameNormal(opts.history!, g, part, start)).filter((u): u is GameNormal => !!u) : [];
   const usualAt = usual.find((u) => u.game === game) ?? null;
   const measure = usualAt ? "usual" : "limit";
   const rangeOf = (s: RecordingSample) => usual.find((u) => u.game === s.game);

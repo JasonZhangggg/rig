@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caughtProblem, cleanEvents, summarise, usualRange, type HistoryPoint, type RawEvent, type RecordingSample } from "../src";
+import { caughtProblem, cleanEvents, summarise, gameNormal, type HistoryPoint, type RawEvent, type RecordingSample } from "../src";
 import { DEMO_RECORDING_ID, DemoClient } from "../src/demo";
 
 const MIN = 60_000;
@@ -80,8 +80,8 @@ describe("what a recording caught", () => {
   it("takes the usual range from a few weeks before, or every earlier session when those are too few", () => {
     const old = usualHistory();
     const lately: HistoryPoint[] = Array.from({ length: 12 }, (_, i) => ({ t: T0 - 3 * DAY + i * 10 * MIN, cpu: 58, gpu: 89, busy: true, game: "Cyberpunk 2077" }));
-    expect(usualRange([...old, ...lately], "Cyberpunk 2077", "gpu", T0)).toMatchObject({ lo: 78, hi: 84, windows: 24 });
-    expect(usualRange(lately, "Cyberpunk 2077", "gpu", T0)).toMatchObject({ lo: 89, hi: 89, windows: 12 });
-    expect(usualRange(lately.slice(0, 3), "Cyberpunk 2077", "gpu", T0)).toBeNull();
+    expect(gameNormal([...old, ...lately], "Cyberpunk 2077", "gpu", T0)).toMatchObject({ lo: 78, hi: 84, windows: 24 });
+    expect(gameNormal(lately, "Cyberpunk 2077", "gpu", T0)).toMatchObject({ lo: 89, hi: 89, windows: 12 });
+    expect(gameNormal(lately.slice(0, 3), "Cyberpunk 2077", "gpu", T0)).toBeNull();
   });
 });
