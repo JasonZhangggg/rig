@@ -17,6 +17,7 @@ import { BoardCables } from "./board/BoardCables";
 import { boardStage } from "./board/boardStage";
 import { StorageMap } from "./drives/StorageMap";
 import { GpuView } from "./gpu/GpuView";
+import { TempRange, rangePart } from "./TempRange";
 import { GpuPorts } from "./gpu/GpuPorts";
 import { gpuStage } from "./gpu/gpuStage";
 
@@ -348,7 +349,11 @@ function Readings({ part, id }: { part: Part; id: string }) {
   const unit = useTempUnit();
   const inUnit = useTempText();
   const tiles: JSX.Element[] = [];
-  if (part.temp !== undefined) {
+  const ranged = rangePart(id);
+  if (part.temp !== undefined && part.limit && ranged) {
+    // A part with a limit and a history: its temperature on a ribbon from cool to the limit, against where it usually sits.
+    tiles.push(<TempRange key="t" part={{ ...part, temp: part.temp, limit: part.limit }} id={ranged} />);
+  } else if (part.temp !== undefined) {
     tiles.push(
       <div key="t" className={`live live-wide${part.warn ? " warn" : ""}`}>
         <span className="label">Temperature</span>
