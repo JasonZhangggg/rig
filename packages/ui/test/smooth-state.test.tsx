@@ -75,7 +75,7 @@ describe("Steady interactions", () => {
     window.scrollTo = ((_x: number, y: number) => { scrolls.push(y); }) as typeof window.scrollTo;
     Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
-    await screen.findByText("What Rig found");
+    await screen.findByText("Heat most likely set it off");
     expect(scrolls.at(-1)).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "Logs" }));
     await waitFor(() => expect(scrolls.at(-1)).toBe(640));

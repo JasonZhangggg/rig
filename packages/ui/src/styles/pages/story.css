@@ -1,0 +1,57 @@
+/* ---------- Logs > Readings > Week, shown as a story (pages/logs/Story.tsx) ----------
+   A sentence on what stood out with three figures beside it, the week's chart with its events flagged, then one row per event. */
+
+.ws { display: flex; flex-direction: column; gap: 18px; }
+.ws-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 40px; }
+.ws-say { min-width: 0; flex: 1 1 340px; }
+.ws-eyebrow { margin: 0 0 6px; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.ws-headline { margin: 0; max-width: 34ch; font: 500 clamp(1.45rem, 1.9vw, 1.75rem)/1.2 var(--font); letter-spacing: -0.01em; text-wrap: balance; }
+.ws-rest { display: block; color: var(--look-text); }
+
+.ws-figs { display: flex; gap: 32px; margin-top: 2px; }
+.ws-fig { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.ws-fig b { font: 500 28px/1 var(--font); }
+.ws-fig > span { color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+.ws-fig > span .num { color: var(--text-2); font-weight: 600; }
+.ws-fig.look b { color: var(--look-text); }
+
+.ws-chart { display: flex; flex-direction: column; gap: 6px; }
+.ws-key { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; color: var(--text-2); font-size: 12.5px; }
+.ws-key li { display: inline-flex; align-items: center; gap: 6px; }
+.ws-sw { width: 10px; height: 10px; border-radius: 2px; }
+.ws-sw.ws-desk { background: var(--s-a); }
+.ws-sw.ws-game { background: color-mix(in srgb, var(--s-mark-a) 62%, var(--s-a)); }
+.ws-sw.ws-hot { background: var(--look); }
+.ws-sw.ws-resting { width: 16px; height: 0; border-radius: 0; border-top: 1.5px dashed var(--text); }
+.ws-plot { width: 100%; min-width: 0; }
+.ws-plot svg { display: block; overflow: visible; }
+.ws-bar.ws-desk { fill: var(--s-a); }
+.ws-bar.ws-game { fill: color-mix(in srgb, var(--s-mark-a) 62%, var(--s-a)); }
+.ws-bar.ws-hot { fill: var(--look); }
+.ws-day { stroke: var(--line); stroke-width: 1; }
+.ws-hotline { stroke: var(--look); stroke-dasharray: 2 3; stroke-width: 1; }
+.ws-hottick { fill: var(--look-text); font-weight: 600; }
+.ws-rest-line { fill: none; stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.ws-rest-label { fill: var(--text); font: 600 12px var(--font); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.ws-dayname.today { fill: var(--text); font-weight: 600; }
+.ws-flag line { stroke: var(--text); stroke-width: 1; }
+.ws-flag rect { fill: var(--text); }
+.ws-flag text { fill: var(--text); font: 600 12px var(--font); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.ws-flag.look line { stroke: var(--look); }
+.ws-flag.look rect { fill: var(--look); }
+.ws-flag.look text { fill: var(--look-text); }
+
+.ws .rows { border-top: 1px solid var(--line); }
+.ws .row-time { display: flex; flex-direction: column; width: 108px; color: var(--text); font-weight: 600; }
+.ws .row-time span { color: var(--text-3); font-weight: 400; }
+.ws-look { color: var(--look-text); }
+
+@media (max-width: 760px) {
+  .ws-headline { max-width: none; }
+  .ws-figs { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .ws-fig b { font-size: 22px; }
+  .ws-fig > span { white-space: normal; }
+}
+@media (max-width: 560px) {
+  .ws .row-time { flex-direction: row; gap: 6px; width: 100%; }
+}
