@@ -7,11 +7,12 @@
 .signin-art .brand-mark::before { color: #F4F3F0; font-size: 17px; }
 .signin-art .brand-mark::after { right: 7px; bottom: 8px; width: 5px; height: 5px; }
 /* The angle is in the drawing itself, so there's no 3D turn here. The card is as tall as the window allows, so its bottom always shows (--tall is the drawing's height over its width: rows x 1.09 / cols x 0.602). Its far end stops 80px past where the form's text starts (the form column's middle less half of the 360px form), so the form sits over it. */
-.signin-ink { --tall: .66; position: absolute; z-index: 0; right: calc(100px - 23vw); top: 56px; bottom: 28px; height: fit-content; margin-block: auto; width: min(2400px, calc((100dvh - 84px) / var(--tall))); }
+.signin-ink { --tall: .807; position: absolute; z-index: 0; right: calc(100px - 23vw); top: 56px; bottom: 28px; height: fit-content; margin-block: auto; width: min(2400px, calc((100dvh - 84px) / var(--tall))); }
 
 .signin-form { position: relative; z-index: 1; display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); }
-/* The form sits over the card's far end: plain page color 32px around it, with no edge or shadow of its own, so the card shows above and below it. */
-.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); box-shadow: 0 0 0 32px var(--bg); }
+/* The form sits over the card's far end with nothing behind it: the fields and button are solid, and the words get a 4px outline of page color, traced around each letter, so they read over the drawing. */
+.signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; text-shadow: 2.0px 0px 0 var(--bg), 1.4px 1.4px 0 var(--bg), 0px 2.0px 0 var(--bg), -1.4px 1.4px 0 var(--bg), -2.0px 0px 0 var(--bg), -1.4px -1.4px 0 var(--bg), 0px -2.0px 0 var(--bg), 1.4px -1.4px 0 var(--bg), 4.0px 0px 0 var(--bg), 3.7px 1.5px 0 var(--bg), 2.8px 2.8px 0 var(--bg), 1.5px 3.7px 0 var(--bg), 0px 4.0px 0 var(--bg), -1.5px 3.7px 0 var(--bg), -2.8px 2.8px 0 var(--bg), -3.7px 1.5px 0 var(--bg), -4.0px 0px 0 var(--bg), -3.7px -1.5px 0 var(--bg), -2.8px -2.8px 0 var(--bg), -1.5px -3.7px 0 var(--bg), 0px -4.0px 0 var(--bg), 1.5px -3.7px 0 var(--bg), 2.8px -2.8px 0 var(--bg), 3.7px -1.5px 0 var(--bg); }
+.signin-box .btn, .signin-box .input { text-shadow: none; }
 .signin-box h1 { margin-bottom: 4px; font: var(--t-page); letter-spacing: -.035em; }
 .signin-box > .muted { margin: -6px 0 6px; line-height: 1.5; }
 .signin-small { font-size: 13px; }
