@@ -24,11 +24,11 @@ describe("The week as a story", () => {
       await screen.findByText(/Things to look at/i);
       await open("logs");
       const readings = await screen.findByRole("region", { name: "Readings" });
-      const views = within(readings).getByRole("group", { name: "Show as" });
-      // Story is one way to show the week, beside the charts, not in place of them.
-      expect(within(views).getAllByRole("button").map((b) => b.textContent)).toEqual(["Chart", "Table"]);
+      // Story is one way to show the week, beside the sensors, not in place of them; shorter spans only have the sensors.
+      expect(within(readings).queryByRole("group", { name: "Show as" })).toBeNull();
       fireEvent.click(within(within(readings).getByRole("group", { name: "How far back" })).getByRole("button", { name: "Week" }));
-      expect(within(views).getAllByRole("button").map((b) => b.textContent)).toEqual(["Story", "Chart", "Table"]);
+      const views = within(readings).getByRole("group", { name: "Show as" });
+      expect(within(views).getAllByRole("button").map((b) => b.textContent)).toEqual(["Story", "Sensors"]);
       fireEvent.click(within(views).getByRole("button", { name: "Story" }));
 
       const story = await within(readings).findByRole("region", { name: /^A normal week, except/ });
@@ -61,7 +61,8 @@ describe("The week as a story", () => {
       await open("logs");
       const again = await screen.findByRole("region", { name: "Readings" });
       fireEvent.click(within(within(again).getByRole("group", { name: "How far back" })).getByRole("button", { name: "Day" }));
-      expect(within(within(again).getByRole("group", { name: "Show as" })).queryByRole("button", { name: "Story" })).toBeNull();
+      expect(within(again).queryByRole("group", { name: "Show as" })).toBeNull();
+      await within(again).findByRole("img", { name: "Temperatures" });
     } finally { vi.useRealTimers(); }
   });
 

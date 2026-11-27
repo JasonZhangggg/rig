@@ -196,6 +196,31 @@
 .ln-key b { min-width: 3.2em; color: var(--text); font-weight: 600; text-align: right; }
 .ln-more { padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .ln-more:hover { color: var(--text); }
+.ln-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ln-find { display: flex; align-items: center; gap: 14px; }
+.ln-find .input { flex: 1; max-width: 360px; height: 36px; }
+.ln-find .faint { font-size: 13px; }
+.ln-none { margin: 0; }
+.ln-line.dim { opacity: .22; }
+.ln-line.on { stroke-width: 2.25; }
+.ln-rows { width: 100%; margin: 4px 0 6px; border-collapse: collapse; font-size: 13px; }
+.ln-rows { table-layout: fixed; }
+.ln-rows thead :is(th, td):first-child { width: 32%; }
+.ln-rows thead th:is(:nth-child(2), :nth-child(3), :nth-child(4)) { width: 78px; }
+.ln-rows th[scope="row"] { overflow: hidden; text-overflow: ellipsis; }
+.ln-rows th, .ln-rows td { padding: 3px 8px; text-align: right; white-space: nowrap; }
+.ln-rows thead th { color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+.ln-rows th[scope="row"], .ln-rows thead th:first-child { padding-left: 0; text-align: left; font-weight: 400; }
+.ln-rows tbody tr { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.ln-rows tbody tr:hover, .ln-rows tbody tr.on { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.ln-rows th[scope="row"] button { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ln-rows tr.on th[scope="row"] button { font-weight: 600; }
+.ln-rows td.look { color: var(--look-text); font-weight: 600; }
+.ln-track { padding-left: 20px !important; }
+.ln-track > span { position: relative; display: block; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--text-3) 12%, transparent); }
+.ln-span { position: absolute; top: 3px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-2) 55%, transparent); }
+.ln-now { position: absolute; top: 1px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: var(--text); }
+.ln-track .look .ln-span { background: color-mix(in srgb, var(--look) 60%, transparent); }
 .ln-sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; background: var(--c, var(--line-strong)); flex: none; }
 .ln-svg, .ln-axis { display: block; overflow: visible; }
 .ln-line { fill: none; stroke: var(--c); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
@@ -234,20 +259,6 @@
 .rd-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 .rd-views button, .rd-spans button { height: 30px; padding: 0 14px; font-size: 13px; }
 .st { display: flex; flex-direction: column; gap: 12px; }
-.st-find { display: flex; align-items: center; gap: 14px; }
-.st-find .input { flex: 1; max-width: 420px; height: 38px; }
-.st-find .faint { font-size: 13px; }
-.st-none { margin: 0; }
-.st-table { width: 100%; max-width: 900px; border-collapse: collapse; font-size: 13.5px; }
-.st-table th, .st-table td { padding: 6px 10px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
-.st-table :is(thead th, tbody th) { text-align: left; font-weight: 500; }
-.st-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); border-top: 0; color: var(--text-3); font-size: 12px; font-weight: 600; }
-.st-table th:first-child { width: 100%; padding-left: 0; white-space: normal; }
-.st-table tbody th[scope="row"] { padding-left: 16px; }
-.st-table .st-part th { padding: 18px 0 6px; border-top: 0; font: var(--t-label); font-size: 15px; }
-.st-table .st-kind th { padding: 8px 0 4px; color: var(--text-3); font-size: 12px; font-weight: 600; }
-.st-table td.look { color: var(--look-text); font-weight: 600; }
-.st-table thead th:not(:first-child) { text-align: right; }
 .rd-head { margin-top: 0; flex-wrap: wrap; }
 .rd-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-left: auto; }
 .rd-source .faint { font-size: 13px; }
@@ -258,13 +269,15 @@
   .rd-spans { flex: 1 1 100%; display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .rd-spans button { flex: 1 0 auto; padding: 0 9px; }
   .rd-source { margin-left: 0; flex-basis: 100%; }
-  .st-table th, .st-table td { padding: 6px 6px; }
-  .st-table tbody th[scope="row"] { padding-left: 8px; }
   .rc-lower { grid-template-columns: minmax(0, 1fr); }
   .rc-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rc-log h1 { font-size: 22px; }
   .ln-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .ln-rail { position: static; flex-direction: row; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+  .ln-rows th, .ln-rows td { padding: 4px 5px; }
+  .ln-rows thead :is(th, td):first-child { width: auto; }
+  .ln-rows thead th:is(:nth-child(2), :nth-child(3), :nth-child(4)) { width: 62px; }
+  .ln-find .input { max-width: none; }
   .ln-rail .pf-part { flex: 0 0 140px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "now" "spark"; }
 }
 

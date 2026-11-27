@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from "react";
-import { peakOf, sensorGroups, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
+import { findReadings, peakOf, sensorGroups, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
 
@@ -45,6 +45,37 @@ export function value(temp: Temp, type: LaneType, v: number | null | undefined):
   if (type === "voltage") return `${v.toFixed(2)} V`;
   if (type === "current") return `${v.toFixed(1)} A`;
   return `${Math.round(v * 10) / 10}`;
+}
+
+/** A reading in its unit, as precise as a hardware monitor shows it, for the rows under a chart. */
+export function reading(temp: Temp, type: LaneType, v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "–";
+  if (type === "fan") return `${Math.round(v).toLocaleString("en-US")} rpm`;
+  if (type === "power") return `${v.toFixed(1)} W`;
+  if (type === "voltage") return `${v.toFixed(3)} V`;
+  if (type === "current") return `${v.toFixed(2)} A`;
+  if (type === "data") return v >= 1000 ? `${(v / 1000).toFixed(1)} TB` : `${v.toFixed(1)} GB`;
+  if (type === "throughput") return v >= 1e9 ? `${(v / 1e9).toFixed(2)} GB/s` : v >= 1e6 ? `${(v / 1e6).toFixed(1)} MB/s` : `${Math.round(v / 1e3)} KB/s`;
+  return value(temp, type, v);
+}
+
+/** A sensor's newest, lowest and highest reading over a stretch. */
+export interface SensorStat { last: number | null; min: number | null; max: number | null }
+
+/** Each sensor's newest, lowest and highest reading between two times. */
+export function statsOf(points: readonly RecordedPoint[], count: number, from: number, to: number): SensorStat[] {
+  const out = Array.from({ length: count }, () => ({ last: null as number | null, min: Infinity, max: -Infinity }));
+  for (const p of points) {
+    if (p.t < from || p.t > to) continue;
+    p.v.forEach((v, i) => {
+      if (v == null || i >= count) return;
+      const s = out[i];
+      s.last = v;
+      if (v < s.min) s.min = v;
+      if (v > s.max) s.max = v;
+    });
+  }
+  return out.map((s) => (s.last == null ? { last: null, min: null, max: null } : s));
 }
 
 /** The reading nearest a time. */
@@ -177,14 +208,23 @@ const NAMED = 4;
  * Sensor lanes on one time axis, as the live view shows them: a lane per kind of reading, and one crosshair through them
  * all, with each named line's value at that moment in its lane's head.
  */
-export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, bands = [], marks = [], compact, gapMs = 90_000, live }: {
+export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, bands = [], marks = [], compact, gapMs = 90_000, live, rows }: {
   points: readonly RecordedPoint[]; lanes: Lane[]; t0: number; t1: number; cursor: number | null; onCursor: (t: number | null) => void;
   bands?: Band[]; marks?: ChartMark[]; compact?: boolean; gapMs?: number;
   /** The last few minutes up to now: the lines slide left as new readings come in, and the newest value shows in each lane's head. */
   live?: boolean;
+  /**
+   * Each sensor's lowest and highest over the stretch. With these, a lane lists its sensors as rows under its chart, like
+   * a hardware monitor: the reading now, or at the pointer, and its lowest and highest. Pointing at a row picks out its
+   * line, and clicking keeps it picked out.
+   */
+  rows?: readonly SensorStat[];
 }) {
   const temp = useTemp();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const [pinned, setPinned] = useState<ReadonlySet<number>>(() => new Set());
+  const [hover, setHover] = useState<number | null>(null);
+  const pin = (i: number) => setPinned((o) => { const n = new Set(o); if (n.has(i)) n.delete(i); else n.add(i); return n; });
   const toggle = (title: string) => setOpen((o) => { const n = new Set(o); if (n.has(title)) n.delete(title); else n.add(title); return n; });
   // The usual time between readings.
   const every = useMemo(() => {
@@ -207,6 +247,8 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   useGlide(ref, !!live, end, iw / (t1 - t0 || 1));
   const shown = marks.filter((m) => m.t >= t0 && m.t <= t1);
   const move = (e: PointerEvent<HTMLDivElement>) => {
+    // Over the rows, they show the reading now, not at a moment on the chart.
+    if ((e.target as Element).closest?.(".ln-rows")) { if (cursor != null) onCursor(null); return; }
     const r = e.currentTarget.getBoundingClientRect();
     const px = e.clientX - r.left - pad.l;
     if (px >= 0 && px <= iw) onCursor(t0 + (px / iw) * (t1 - t0));
@@ -216,8 +258,9 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   const gap = Math.max(gapMs, 3 * every);
   const drawn = useMemo(() => lanes.map((lane) => {
     const h = lane.h ?? (compact ? 76 : 96);
-    // The rest of a lane's lines, when it's open, drawn faint behind its key ones.
-    const all = open.has(lane.title) && lane.more ? [...lane.series, ...lane.more] : lane.series;
+    // The rest of a lane's lines, when it's open, drawn faint behind its key ones. A row picked out stays drawn.
+    const all = open.has(lane.title) && lane.more ? [...lane.series, ...lane.more]
+      : [...lane.series, ...(lane.more ?? []).filter((s) => pinned.has(s.i)).map((s) => ({ ...s, cls: "c-look" }))];
     const vals: number[] = [];
     for (const p of points) if (p.t >= t0 && p.t <= end) for (const s of all) { const v = p.v[s.i]; if (v != null) vals.push(v); }
     // A short lane gets fewer grid lines, so their labels don't crowd.
@@ -228,8 +271,21 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
     const from = live ? t0 - (t1 - t0) / 10 : t0;
     const paths = all.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap) }));
     return { lane, h, y, grid, paths, sc };
-  }), [points, lanes, t0, t1, w, compact, gap, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [points, lanes, t0, t1, w, compact, gap, open, pinned]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The time along the bottom; with rows, under each lane's chart, so each one reads on its own.
+  const axisAt = (key: string) => (
+    <svg width={w} height={22} className="ln-axis" aria-hidden="true">
+        {live && <defs><clipPath id={`${clip}-${key}`}><rect x={pad.l - 30} y={0} width={iw + 38} height={22} /></clipPath></defs>}
+        <g clipPath={live ? `url(#${clip}-${key})` : undefined}>
+          <g className="ln-move">{ticksFor(live ? t0 - (t1 - t0) / 10 : t0, t1, iw, live).map((t) => <text key={t} x={x(t)} y={14} className="chart-tick" textAnchor="middle">{live ? (t1 - t0 > 5 * 60_000 ? clock(t) : clockSec(t)).replace(/\s?[AP]M$/i, "") : tickLabel(t, t1 - t0)}</text>)}</g>
+        </g>
+        {at && <g className="ln-when"><rect x={x(at.t) - 42} y={0} width={84} height={20} rx={10} /><text x={x(at.t)} y={14} textAnchor="middle">{t1 - t0 < 30 * 60_000 ? clockSec(at.t) : clock(at.t)}</text></g>}
+      </svg>
+  );
+  // Pointing at a row, or picking rows out, draws their lines over the others.
+  const picked = (i: number) => (hover != null ? hover === i : pinned.has(i));
+  const focus = (paths: { i: number }[]) => paths.some((p) => picked(p.i));
   if (!points.length) return null;
   return (
     <div ref={ref} className="ln" onPointerMove={move} onPointerDown={move} onPointerLeave={() => onCursor(null)}>
@@ -238,16 +294,16 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
           <div className="ln-head" style={{ paddingLeft: pad.l }}>
             <span className="ln-title">{lane.title}</span>
             <span className="ln-keys">
-              {lane.series.slice(0, NAMED).map((s) => (
+              {!rows && lane.series.slice(0, NAMED).map((s) => (
                 <span key={s.i} className="ln-key">
                   <i className={`ln-sw ${s.cls}`} />{s.name}
                   {head && <b className="num">{value(temp, lane.type, head.v[s.i])}</b>}
                 </span>
               ))}
-              {lane.series.length > NAMED && <span className="ln-key faint">and {lane.series.length - NAMED} more</span>}
+              {!rows && lane.series.length > NAMED && <span className="ln-key faint">and {lane.series.length - NAMED} more</span>}
               {!!lane.more?.length && (
                 <button type="button" className="ln-more" aria-expanded={open.has(lane.title)} onClick={() => toggle(lane.title)} onPointerDown={(e) => e.stopPropagation()}>
-                  {open.has(lane.title) ? "Show fewer" : `Show all ${lane.series.length + lane.more.length}`}
+                  {open.has(lane.title) ? "Show fewer" : `Show all ${lane.series.length + lane.more.length}${rows ? " sensors" : ""}`}
                 </button>
               )}
             </span>
@@ -266,7 +322,7 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
             {lane.limit != null && lane.limit >= sc.lo && lane.limit <= sc.hi && <line x1={pad.l} x2={w - pad.r} y1={y(lane.limit)} y2={y(lane.limit)} className="chart-limit" />}
             {shown.map((m) => <line key={m.t} x1={x(m.t)} x2={x(m.t)} y1={0} y2={h} className={`ln-mark${m.look ? " look" : ""}`} />)}
             <g clipPath={live ? `url(#${clip}-${li})` : undefined}>
-              <g className="ln-move">{[...paths].reverse().map((p) => <path key={p.i} d={p.d} className={`ln-line ${p.cls}`} />)}</g>
+              <g className="ln-move">{[...paths].reverse().map((p) => <path key={p.i} d={p.d} className={`ln-line ${p.cls}${focus(paths) ? (picked(p.i) ? " on" : " dim") : ""}`} />)}</g>
             </g>
             {at && <line x1={x(at.t)} x2={x(at.t)} y1={0} y2={h} className="ln-cross" />}
             {at && paths.slice(0, NAMED).map((p) => at.v[p.i] != null && <circle key={p.i} cx={x(at.t)} cy={y(at.v[p.i]!)} r={3.5} className={`ln-dot ${p.cls}`} />)}
@@ -276,16 +332,60 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
               </g>
             ))}
           </svg>
+          {rows && axisAt(`a${li}`)}
+          {rows && <SensorRows lane={lane} list={paths} rows={rows} sc={sc}
+            at={at} live={live} compact={compact} pinned={pinned} onPin={pin} onHover={setHover} />}
         </div>
       ))}
-      <svg width={w} height={22} className="ln-axis" aria-hidden="true">
-        {live && <defs><clipPath id={`${clip}-axis`}><rect x={pad.l - 30} y={0} width={iw + 38} height={22} /></clipPath></defs>}
-        <g clipPath={live ? `url(#${clip}-axis)` : undefined}>
-          <g className="ln-move">{ticksFor(live ? t0 - (t1 - t0) / 10 : t0, t1, iw, live).map((t) => <text key={t} x={x(t)} y={14} className="chart-tick" textAnchor="middle">{live ? (t1 - t0 > 5 * 60_000 ? clock(t) : clockSec(t)).replace(/\s?[AP]M$/i, "") : tickLabel(t, t1 - t0)}</text>)}</g>
-        </g>
-        {at && <g className="ln-when"><rect x={x(at.t) - 42} y={0} width={84} height={20} rx={10} /><text x={x(at.t)} y={14} textAnchor="middle">{t1 - t0 < 30 * 60_000 ? clockSec(at.t) : clock(at.t)}</text></g>}
-      </svg>
+      {!rows && axisAt("axis")}
     </div>
+  );
+}
+
+/**
+ * A lane's sensors as rows under its chart: each one's reading now, or at the pointer's moment, its lowest and highest,
+ * and a small track of that span on the chart's own scale, so a row that ran hotter than the rest stands out.
+ */
+function SensorRows({ lane, list, rows, sc, at, live, compact, pinned, onPin, onHover }: {
+  lane: Lane; list: { i: number; name: string; cls: string }[]; rows: readonly SensorStat[]; sc: { lo: number; hi: number };
+  at: RecordedPoint | null; live?: boolean; compact?: boolean; pinned: ReadonlySet<number>; onPin: (i: number) => void; onHover: (i: number | null) => void;
+}) {
+  const temp = useTemp();
+  const word = at ? clock(at.t) : live ? "Now" : "Last";
+  const near = (v: number | null) => lane.type === "temperature" && v != null && lane.limit != null && v >= lane.limit - 6;
+  const pos = (v: number) => Math.max(0, Math.min(100, ((v - sc.lo) / (sc.hi - sc.lo || 1)) * 100));
+  return (
+    <table className="ln-rows" aria-label={`${lane.title}, every sensor`} onPointerLeave={() => onHover(null)}>
+      <thead><tr>
+        <th scope="col"><span className="sr-only">Sensor</span></th>
+        <th scope="col">{word}</th><th scope="col">Lowest</th><th scope="col">Highest</th>
+        {!compact && <td aria-hidden="true" />}
+      </tr></thead>
+      <tbody>
+        {list.map((s) => {
+          const st = rows[s.i] ?? { last: null, min: null, max: null };
+          const now = at ? at.v[s.i] ?? null : st.last;
+          return (
+            <tr key={s.i} className={pinned.has(s.i) ? "on" : undefined} onPointerEnter={() => onHover(s.i)}>
+              <th scope="row">
+                <button type="button" aria-pressed={pinned.has(s.i)} onClick={() => onPin(s.i)}><i className={`ln-sw ${s.cls}`} />{s.name}</button>
+              </th>
+              <td className="num">{reading(temp, lane.type, now)}</td>
+              <td className="num faint">{reading(temp, lane.type, st.min)}</td>
+              <td className={`num${near(st.max) ? " look" : " faint"}`}>{reading(temp, lane.type, st.max)}</td>
+              {!compact && (
+                <td className="ln-track" aria-hidden="true">
+                  {st.min != null && st.max != null && <span className={near(st.max) ? "look" : undefined}>
+                    <i className="ln-span" style={{ left: `${pos(st.min)}%`, width: `${Math.max(0.5, pos(st.max) - pos(st.min))}%` }} />
+                    {now != null && <i className="ln-now" style={{ left: `${pos(now)}%` }} />}
+                  </span>}
+                </td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -407,22 +507,53 @@ export function PartRail({ r, pick, onPick, from, to, limits, live }: {
   );
 }
 
-/** Every sensor over a stretch: the parts down the side and their lanes. */
-export function AllSensors({ r, from, to, limits, bands, marks, compact, live }: {
-  r: Recorded; from: number; to: number; limits: { cpu?: number; gpu?: number }; bands?: Band[]; marks?: ChartMark[]; compact?: boolean; live?: boolean;
+/** The sensors that match a search, a lane for each part and kind they're in, every match drawn. */
+function foundLanes(r: Recorded, query: string, limits: { cpu?: number; gpu?: number }): Lane[] {
+  const found = new Set(findReadings(r.sensors.map((s, i) => ({ ...s, i })), query).map((s) => s.i));
+  return r.parts.flatMap((p) => sensorGroups.flatMap(([type, title]): Lane[] => {
+    const idx = p.sensors.filter((i) => found.has(i) && r.sensors[i].type === type);
+    if (!idx.length) return [];
+    const limit = type !== "temperature" ? undefined : p.id === "gpu" ? limits.gpu : p.id === "cpu" ? limits.cpu : undefined;
+    return [{ title: p.name.toLowerCase() === title.toLowerCase() ? p.name : `${p.name}, ${title.toLowerCase()}`, type, limit, series: idx.map((i, j) => ({ i, name: r.sensors[i].name, cls: colour(j) })) }];
+  }));
+}
+
+/**
+ * Every sensor over a stretch, as a chart and a table in one: the parts down the side, a lane per kind of reading, and
+ * under each lane its sensors with their reading now and their lowest and highest. A search finds any sensor on the PC.
+ */
+export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, live }: {
+  r: Recorded; /** Every reading, not thinned, so the lowest and highest are exact. */ whole?: Recorded | null;
+  from: number; to: number; limits: { cpu?: number; gpu?: number }; bands?: Band[]; marks?: ChartMark[]; compact?: boolean; live?: boolean;
 }) {
   const [pick, setPick] = useState("all");
+  const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
+  const finding = query.trim();
   // Live lanes are kept short, so the log under them is in view too.
   const first = live ? (compact ? 96 : 116) : compact ? 110 : 140;
   // A part's own view adds a Highest and Average line where its sensors have nothing that sums them up.
-  const shown = useMemo(() => (pick === "all" ? r : withSummaries(r, pick)), [r, pick]);
-  const lanes = useMemo(() => lanesFor(shown, pick, limits, first).map((l, j) => (live && j > 0 ? { ...l, h: l.h ?? (compact ? 64 : 78) } : l)),
-    [shown.sensors, shown.parts, pick, limits.cpu, limits.gpu, first, live, compact]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = useMemo(() => (pick === "all" || finding ? r : withSummaries(r, pick)), [r, pick, finding]);
+  const stats = useMemo(() => {
+    const src = whole ?? r;
+    const all = pick === "all" || finding ? src : withSummaries(src, pick);
+    return statsOf(all.points, all.sensors.length, from, to);
+  }, [whole, r, pick, finding, from, to]);
+  const lanes = useMemo(() => (finding ? foundLanes(r, finding, limits)
+    : lanesFor(shown, pick, limits, first).map((l, j) => (live && j > 0 ? { ...l, h: l.h ?? (compact ? 64 : 78) } : l))),
+    [shown.sensors, shown.parts, pick, finding, limits.cpu, limits.gpu, first, live, compact]); // eslint-disable-line react-hooks/exhaustive-deps
+  const count = lanes.reduce((n, l) => n + l.series.length, 0);
   return (
     <div className="ln-grid">
-      <PartRail r={r} pick={pick} onPick={setPick} from={from} to={to} limits={limits} live={live} />
-      <Lanes points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} />
+      <PartRail r={r} pick={finding ? "" : pick} onPick={(id) => { setPick(id); setQuery(""); }} from={from} to={to} limits={limits} live={live} />
+      <div className="ln-main">
+        <div className="ln-find">
+          <input type="search" className="input" placeholder="Find a sensor, like core 3" aria-label="Find a sensor" value={query} onChange={(e) => setQuery(e.target.value)} />
+          {finding && <span className="faint num" aria-live="polite">{count} of {r.sensors.length}</span>}
+        </div>
+        {finding && !lanes.length ? <p className="muted ln-none">No sensor matches “{finding}”. Try a part, like processor, a kind, like voltage, or a sensor, like core 3.</p>
+          : <Lanes key={finding ? "find" : pick} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
+      </div>
     </div>
   );
 }
