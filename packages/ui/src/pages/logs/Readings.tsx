@@ -8,6 +8,7 @@ import { LogsHead } from "./Head";
 import { AllSensors, type Band, type ChartMark } from "./Lanes";
 import { CustomLogs, NowRecording, Recordings } from "./Recordings";
 import { SensorTable } from "./SensorTable";
+import { WeekStory } from "./Story";
 import { clock, dayName, isPhone } from "./words";
 
 const MIN = 60_000, HOUR = 36e5, DAY = 864e5;
@@ -75,8 +76,10 @@ export function Readings() {
   const data = useData("recordings", "live");
   const [span, setSpan] = useState<Span>(ui.route === "recorded" ? "day" : ui.route === "history" ? "week" : "5m");
   const [pick, setPick] = useState(0);
-  const [view, setView] = useState<"chart" | "table">("chart");
+  const [view, setView] = useState<"chart" | "table" | "story">("chart");
   const table = view === "table";
+  // The week can also be told as a story: what stood out, and when.
+  const story = view === "story" && span === "week";
   const limits = limitsOf(full);
   const days = useMemo(() => data.recordings.filter((r) => r.id.startsWith("bg-d-")).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)), [data.recordings]);
   const logged = !isLive(span) && span !== "month" && days.length > 0;
@@ -149,11 +152,12 @@ export function Readings() {
             {spanWords.map(([k, word]) => <button key={k} type="button" aria-pressed={span === k} onClick={() => { setSpan(k); setPick(0); }}>{word}</button>)}
           </div>
           <div className="seg rd-views" role="group" aria-label="Show as">
-            <button type="button" aria-pressed={!table} onClick={() => setView("chart")}>Chart</button>
+            {span === "week" && <button type="button" aria-pressed={story} onClick={() => setView("story")}>Story</button>}
+            <button type="button" aria-pressed={!table && !story} onClick={() => setView("chart")}>Chart</button>
             <button type="button" aria-pressed={table} onClick={() => setView("table")}>Table</button>
           </div>
         </div>
-        <div className="rc-day rd-head">
+        {!story && <div className="rc-day rd-head">
           {dayInfo && <button type="button" className="btn ghost sm icon" aria-label="Day before" disabled={pick >= days.length - 1} onClick={() => setPick(pick + 1)}><Icon d="M12 4 6 10l6 6" /></button>}
           <h2 id="rd-h" className={`rc-day-name${dayInfo ? "" : " alone"}`}>{shown.title}</h2>
           {dayInfo && <button type="button" className="btn ghost sm icon" aria-label="Day after" disabled={pick <= 0} onClick={() => setPick(pick - 1)}><Icon d="M8 4l6 6-6 6" /></button>}
@@ -161,11 +165,11 @@ export function Readings() {
             {isLive(span) && <span className={`lv-badge${live ? " on" : ""}`}><i aria-hidden="true" />{live ? "Live" : "Offline"}</span>}
             {shown.source && <span className="faint" aria-live="off">{shown.source}</span>}
           </span>
-        </div>
-        {!shown.r ? <ChartNote>{shown.empty ?? "Nothing to show."}</ChartNote>
+        </div>}
+        {story ? <WeekStory /> : !shown.r ? <ChartNote>{shown.empty ?? "Nothing to show."}</ChartNote>
           : table ? <SensorTable r={shown.whole ?? shown.r} from={shown.from} to={shown.to} limits={limits} live={live} />
           : <AllSensors r={shown.r} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} />}
-        {shown.r && shown.note && <p className="faint lv-since">{shown.note}</p>}
+        {!story && shown.r && shown.note && <p className="faint lv-since">{shown.note}</p>}
       </section>
       <div className="rc-lower">
         <Recordings />

@@ -140,24 +140,47 @@ describe("Logs", () => {
     expect(row.textContent).toMatch(/Found: The graphics driver stopped and recovered/);
     expect(row.textContent).toMatch(/Finished/);
     fireEvent.click(row);
-    await screen.findByText("What Rig found");
+    await screen.findByText("Heat most likely set it off");
   });
 
-  it("opens a recording with what Rig found, its charts and Ask about this", async () => {
+  it("leads a recording that caught the black screen with its most likely cause, what it ruled out and what to do", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
     await open("recorded");
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
-    await screen.findByText("What Rig found");
-    expect((await screen.findAllByText(/Graphics card ran hot for \d+ minutes/)).length).toBeGreaterThan(0);
-    screen.getByText(/Graphics card load fell from/);
-    screen.getByRole("img", { name: "Temperatures during the recording" });
-    screen.getByRole("img", { name: "Usage during the recording" });
+    await screen.findByRole("heading", { level: 1, name: "The black screen, caught" });
+    const lead = await screen.findByRole("region", { name: "Heat most likely set it off" });
+    expect(lead.textContent).toMatch(/The graphics card had been above your normal for Cyberpunk 2077 for \d+ minutes and was at \d+°C when the graphics driver reset\./);
+    // The same reset a week before, which Rig didn't record.
+    expect(lead.textContent).toMatch(/Windows logged the same reset on .+, when Rig wasn't recording\./);
+
+    // The temperature against the game's usual range from its earlier sessions, with the stretch above it and the moment.
+    const chart = screen.getByRole("region", { name: "The 45 minutes Rig recorded" });
+    within(chart).getByText(/^Your normal in Cyberpunk 2077, \d+ to \d+°C$/);
+    within(chart).getByText("Above your normal");
+    const svg = within(chart).getByRole("img", { name: /^Graphics card temperature during the recording, with black screen at/ });
+    expect(svg.textContent).toMatch(/Black screen/);
+    expect(svg.textContent).toMatch(/Goes above your normal/);
+    expect(svg.textContent).toMatch(/load fell to 4% for about \d+ seconds/);
+    within(chart).getByText("Cyberpunk 2077");
+
+    const ruled = screen.getByRole("region", { name: "What it ruled out" });
+    expect(within(ruled).getAllByRole("listitem").map((li) => li.querySelector("b")!.textContent)).toEqual(
+      ["Ruled out: Not the processor", "Ruled out: Not memory", "Ruled out: Not another app", "Ruled out: The power held"]);
+    within(ruled).getByText(/^Only Cyberpunk 2077 was busy/);
+
+    const todo = screen.getByRole("region", { name: "What to do" });
+    within(todo).getByText("It ran above your normal here. Dust is the usual cause.");
+    fireEvent.click(within(todo).getByRole("button", { name: "I cleaned it" }));
+    await within(todo).findByText("You cleaned it today. Record a game to check.");
+    fireEvent.click(within(todo).getByRole("button", { name: "Record" }));
+    await within(todo).findByText("Recording now. It shows in Logs.");
+
+    // The busiest apps and the Windows events stay one press away, and Ask reads the recording.
     expect(screen.queryByText("Cyberpunk2077.exe", { selector: "td" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Apps and Windows events" }));
     screen.getByText("Cyberpunk2077.exe", { selector: "td" });
     screen.getByText("Windows events during the recording");
-
     fireEvent.click(screen.getByRole("button", { name: "Ask about this" }));
     await waitFor(() => expect(location.hash).toBe("#chat"));
     await screen.findByText(/Found it\. At/, undefined, { timeout: 8000 });
@@ -179,6 +202,12 @@ describe("Logs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(screen.queryByText("Recording now")).toBeNull());
     await screen.findByRole("button", { name: "Start recording" });
+
+    // A recording that caught nothing keeps its plain page: what Rig found, and nothing made up about a cause.
+    fireEvent.click(screen.getByRole("button", { name: /A recording you started from Logs/ }));
+    await screen.findByText("What Rig found");
+    expect(screen.queryByText(/most likely/i)).toBeNull();
+    expect(screen.queryByRole("region", { name: "What it ruled out" })).toBeNull();
   });
 
   it("says plainly when a PC has no events and no recordings", async () => {
@@ -200,11 +229,12 @@ describe("Logs", () => {
     await screen.findByText(/Things to look at/i);
     await open("recorded");
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
-    const found = await screen.findByText("What Rig found");
+    const found = await screen.findByText("Heat most likely set it off");
     const page = found.closest(".page")!;
     await waitFor(() => expect(page.textContent).toMatch(/\d+°F/));
     expect(page.textContent).not.toMatch(/°C/);
-    expect(screen.getByRole("img", { name: "Temperatures during the recording" }).textContent).toMatch(/°F limit/);
+    expect(screen.getByRole("img", { name: /^Graphics card temperature during the recording/ }).textContent).toMatch(/\d+°F safe limit/);
+    screen.getByText(/^Your normal in Cyberpunk 2077, \d+ to \d+°F$/);
   });
 
   it("finds the Logs screen and a recording from the search palette", async () => {
@@ -221,7 +251,7 @@ describe("Logs", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Watch temperatures, load and Windows events while you play/ }));
     await waitFor(() => expect(location.hash).toBe("#logs"));
     await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
-    await screen.findByText("What Rig found");
+    await screen.findByText("Heat most likely set it off");
   });
 
   it("opens on what's happening now: readings that move as they come in, and every log entry on Events", async () => {

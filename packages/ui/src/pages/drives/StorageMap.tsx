@@ -1,5 +1,6 @@
 import { useState, type PointerEvent } from "react";
-import type { DriveFill, DriveMap } from "@rig/core";
+import { moveOne, roomFor, roomWords, type DriveFill, type DriveMap } from "@rig/core";
+import { Row, RowFigure, Rows } from "../../components/Rows";
 import { useApp, useAppSelector, useTemp } from "../../state";
 import { ago } from "../games/words";
 
@@ -45,13 +46,16 @@ export function StorageMap() {
         {measure && <button className="btn ghost sm" type="button" disabled={scanning} onClick={() => void measure()}>{scanning ? "Measuring…" : "Measure again"}</button>}
       </div>
       <ul className="sm-drives" aria-label="Drives">
-        {drives.map((d, i) => <Drive key={`${d.model}-${i}`} d={d} noAdmin={noAdmin} />)}
+        {drives.map((d, i) => <Drive key={`${d.model}-${i}`} d={d} all={drives} noAdmin={noAdmin} />)}
       </ul>
     </div>
   );
 }
 
-function Drive({ d, noAdmin }: { d: DriveMap; noAdmin: boolean }) {
+/** Past this many, the free space stays one block: the boxes would be slivers. */
+const MAX_SLOTS = 16;
+
+function Drive({ d, all, noAdmin }: { d: DriveMap; all: DriveMap[]; noAdmin: boolean }) {
   const temp = useTemp();
   const [lit, setLit] = useState<string | null>(null);
   // Only a mouse lights a share: a tap on a phone would leave it lit.
@@ -64,6 +68,12 @@ function Drive({ d, noAdmin }: { d: DriveMap; noAdmin: boolean }) {
   const free = d.fills.find((f) => f.kind === "free");
   const unscanned = shares.length === 1 && shares[0].label === "Used";
   const summary = d.fills.map((f) => `${f.label} ${size(f.gb)}`).join(", ");
+  const room = d.scanning && unscanned ? null : roomFor(d, all);
+  const words = room && roomWords(room);
+  const move = room && moveOne(d, all);
+  // The free space as one dashed box per game that fits, then what's left over.
+  const slots = room && room.count > 0 && room.count <= MAX_SLOTS ? room.count : 0;
+  const one = room?.big ? "big game" : "game";
   return (
     <li className="sm-drive">
       <div className="sm-title">
@@ -74,16 +84,43 @@ function Drive({ d, noAdmin }: { d: DriveMap; noAdmin: boolean }) {
         <span className={`chip ${d.health.sev}`}>{d.health.text}</span>
       </div>
 
+      {words && (
+        <p className="sm-room">
+          <b>{words.headline}</b>
+          <span>{words.detail}</span>
+        </p>
+      )}
+
       {total > 0 && (
         <>
           <div className={`sm-block${d.scanning && unscanned ? " is-scanning" : ""}`} role="img" aria-label={`${d.model}: ${summary}`}>
-            {d.fills.map((f) => (
+            {d.fills.map((f) => f.kind === "free" && slots ? (
+              <Slots key="free" n={slots} gb={room!.ref.gb} spare={room!.spareGb} />
+            ) : (
               <i key={f.kind + f.label} className={`${fillClass[unscanned && f.kind === "other" ? "used" : f.kind]}${lit === f.kind ? " is-lit" : ""}`}
-                style={{ flexGrow: f.gb }} {...hover(f.kind)} />
+                style={{ flexGrow: f.gb }} {...hover(f.kind)}>
+                {f.kind !== "free" && !unscanned && <span className="sm-in"><b>{f.label}</b>{size(f.gb)}</span>}
+              </i>
             ))}
           </div>
-          <p className="sm-used"><b className="num">{size(d.usedGb ?? 0)}</b> used<span className="faint"> · {size(free?.gb ?? 0)} free</span></p>
+          <p className="sm-used">
+            <span><b className="num">{size(d.usedGb ?? 0)}</b> used<span className="faint"> · {size(free?.gb ?? 0)} free</span></span>
+            {slots > 0 && <span className="sm-key faint"><i aria-hidden="true" />Room for one more {one}</span>}
+          </p>
         </>
+      )}
+
+      {move && room && (
+        <div className="sm-move">
+          <p className="sm-move-label">{room.count === 0 ? "To make room" : "If it fills up"}</p>
+          <Rows label={`Move one thing to ${move.to}`}>
+            <Row name={move.game.name}
+              title={<>Move {move.game.name} to {move.to}</>}
+              meta={[size(move.game.gb), move.speed === "slower" ? "most likely loads slower from a hard drive" : move.speed === "faster" ? "most likely loads faster from an SSD" : null].filter(Boolean).join(" · ")}
+              figure={move.gain > 0 ? <RowFigure value={`+${move.gain}`} word={move.gain === 1 ? one : `${one}s`} /> : <RowFigure value={`+${size(move.game.gb)}`} word="free" />}
+              details={<p>Move it from the launcher it came from, so the game still starts: Steam and the Xbox app have a Move button in the game's own settings. Dragging the folder yourself usually leaves the launcher looking in the old place.</p>} />
+          </Rows>
+        </div>
       )}
 
       <div className="sm-body">
@@ -120,5 +157,15 @@ function Drive({ d, noAdmin }: { d: DriveMap; noAdmin: boolean }) {
         </ul>
       )}
     </li>
+  );
+}
+
+/** The free space as dashed boxes, one per game of the drive's own size that still fits, then the spare. */
+function Slots({ n, gb, spare }: { n: number; gb: number; spare: number }) {
+  return (
+    <>
+      {Array.from({ length: n }, (_, i) => <i key={`slot${i}`} className="f-slot" style={{ flexGrow: gb }} />)}
+      {spare > 0 && <i className="f-free" style={{ flexGrow: spare }} />}
+    </>
   );
 }

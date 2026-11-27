@@ -16,8 +16,14 @@
 .sm-title .chip { flex: none; margin-top: 1px; }
 
 /* The block: one share per kind, in proportion, free space as an outline. */
-.sm-block { display: flex; gap: 2px; height: 40px; overflow: hidden; border-radius: 10px; }
-.sm-block i { min-width: 4px; background: var(--f-other); transition: filter .16s var(--ease-out), opacity .16s var(--ease-out); }
+.sm-block { display: flex; gap: 2px; height: 48px; overflow: hidden; border-radius: 10px; }
+.sm-block i { flex-basis: 0; min-width: 4px; background: var(--f-other); container-type: inline-size; transition: filter .16s var(--ease-out), opacity .16s var(--ease-out); }
+/* A share's name and size inside it, when the share is wide enough to hold them. */
+.sm-in { display: flex; flex-direction: column; gap: 1px; padding: 8px 9px 0; overflow: hidden; color: var(--s-ink); font-size: 12px; font-style: normal; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
+.sm-in b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 74px) { .sm-in { display: none; } }
+/* Free space counted in games: a dashed box per game that still fits. */
+.sm-block .f-slot { border-radius: 6px; background: transparent; outline: 1.5px dashed var(--good-mark); outline-offset: -1.5px; }
 .sm-block i:first-child { border-radius: 10px 0 0 10px; }
 .sm-block i:last-child { border-radius: 0 10px 10px 0; }
 .sm-block i:only-child { border-radius: 10px; }
@@ -34,7 +40,20 @@
 .sm-block.is-scanning .f-used { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, .28) 0 6px, transparent 6px 12px); background-size: 17px 17px; animation: sm-scan 1.2s linear infinite; }
 @keyframes sm-scan { to { background-position: 17px 0; } }
 @media (prefers-reduced-motion: reduce) { .sm-block.is-scanning .f-used { animation: none; } }
-.sm-used { margin: -2px 0 0; font-size: 13px; }
+.sm-used { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin: -2px 0 0; font-size: 13px; }
+.sm-key { display: inline-flex; align-items: center; gap: 6px; }
+.sm-key i { width: 14px; height: 10px; border-radius: 3px; outline: 1.5px dashed var(--good-mark); outline-offset: -1.5px; }
+
+/* The headline: the free space in the person's own games. */
+.sm-room { display: grid; gap: 4px; margin: 2px 0 4px; }
+.sm-room b { font-size: 24px; font-weight: 500; line-height: 1.15; letter-spacing: -.02em; text-wrap: balance; }
+.sm-room span { color: var(--text-2); font-size: 13.5px; line-height: 1.4; text-wrap: pretty; }
+
+/* One thing to move to a roomier drive, as a row. */
+.sm-move { display: grid; gap: 0; }
+.sm-move-label { margin: 0; color: var(--text-3); font: var(--t-label); }
+.sm-move .row { padding: 6px 0 8px; }
+.sm-move .row-title { font-weight: 600; }
 .sm-used b { font-weight: 600; }
 
 /* What fills it on the left, the drive's health on the right when there's room for both. */

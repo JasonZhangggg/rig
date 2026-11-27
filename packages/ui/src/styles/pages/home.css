@@ -1,4 +1,5 @@
 @import "./dash.css";
+@import "./partbypart.css";
 
 /* Home: the greeting and its controls, then a dashboard of widgets the person arranges (dash.css).
    A few type sizes used the same way everywhere, round bubbles only where you act. Series colors come from the --s-* tokens
@@ -601,6 +602,61 @@
 @container wbox (max-height: 130px) {
   .f-live .f-live-list > li > small { display: none; }
 }
+
+/* ----- Lists: drive health, Changes, events, games, upgrades, drivers, logs and manuals -----
+   Hairline rows like the Changes page: a bold title, one grey line under it, a figure on the right. Color only marks a row
+   that needs a look. */
+.f-list, .f-trend { min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+.f-list > .f-link, .f-trend > .f-link, .f-pick-links { flex: none; margin-top: auto; font-size: 14px; }
+.f-rows { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; margin: 0; padding: 0; list-style: none; }
+.f-rows > li { border-top: 1px solid var(--line); }
+.f-rows > .f-more { padding: 6px 0 0; border-top: 0; }
+.f-rows > li > button:not(.f-link) { width: calc(100% + 16px); display: flex; align-items: center; gap: 14px; margin: 0 -8px; padding: 10px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background-color 150ms ease; }
+.f-rows-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.f-rows-main > b { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; }
+.f-rows-main > b > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.f-rows-main > small { overflow: hidden; color: var(--text-3); font-size: 12.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.f-rows > li > button > em { flex: none; color: var(--text-2); font-size: 14px; font-weight: 600; font-style: normal; font-variant-numeric: tabular-nums; }
+.f-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--s-b); }
+.f-rows button:is([data-sev="warn"], [data-sev="bad"]) > em { color: var(--warn); }
+.f-rows-meter { display: block; height: 5px; margin-top: 6px; border-radius: var(--r-pill); background: var(--s-track); overflow: hidden; }
+.f-rows-meter > i { display: block; height: 100%; border-radius: inherit; background: var(--s-c); }
+.f-rows button:is([data-sev="warn"], [data-sev="bad"]) .f-rows-meter > i { background: var(--s-b); }
+@media (hover: hover) and (pointer: fine) {
+  .f-rows > li > button:not(.f-link):hover { background: var(--chip); }
+}
+.f-bignum { flex: none; display: grid; gap: 6px; }
+.f-bignum b { color: var(--text); font: 500 clamp(2.5rem, 14cqi, 4rem)/.95 var(--font); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.f-bignum span { color: var(--text-2); font-size: 14px; font-weight: 600; }
+.f-pick-main { flex: none; display: grid; gap: 6px; }
+.f-pick-main b { color: var(--text); font: 500 clamp(1.35rem, 7cqi, 2rem)/1.1 var(--font); letter-spacing: -.03em; }
+.f-pick-main span { color: var(--text-2); font-size: 14px; font-weight: 600; }
+.f-pick-main small { color: var(--text-3); font-size: 13px; font-weight: 500; line-height: 1.45; }
+.f-pick-facts { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; }
+.f-pick-facts > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+.f-pick-facts dt { color: var(--text-2); }
+.f-pick-facts dd { margin: 0; color: var(--text); text-align: right; }
+.f-pick-links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+@container wbox (max-height: 240px) {
+  .f-pick-main small, .f-bignum span { display: none; }
+}
+
+/* ----- Last hour ----- */
+.f-trend-chart { position: relative; flex: 1; min-height: 60px; }
+.f-trend-chart svg { position: absolute; inset: 0 0 0 44px; width: calc(100% - 44px); height: 100%; overflow: visible; }
+.f-trend-chart .grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.f-trend-chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.f-trend-chart .ln.cpu { stroke: var(--s-c-ink); }
+.f-trend-chart .ln.gpu { stroke: var(--s-b); }
+.f-trend-hi, .f-trend-lo { position: absolute; left: 0; color: var(--text-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.f-trend-hi { top: -2px; }
+.f-trend-lo { bottom: -2px; }
+.f-trend-key { flex: none; display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 0; padding: 0; list-style: none; }
+.f-trend-key > li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; }
+.f-trend-key i { width: 14px; height: 3px; align-self: center; border-radius: var(--r-pill); background: var(--s-c-ink); }
+.f-trend-key .gpu i { background: var(--s-b); }
+.f-trend-key span { color: var(--text-2); }
+.f-trend-key b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
 
 /* ----- Parts ----- */
 .f-parts-list { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; margin: 0 -8px; padding: 0 8px; list-style: none; }
