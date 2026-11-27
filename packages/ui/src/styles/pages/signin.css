@@ -1,13 +1,13 @@
-.signin { --art: min(1150px, calc((100dvh - 112px) / 1.1)); display: grid; grid-template-columns: minmax(0, min(55%, calc(var(--art) * .94 + 40px))) minmax(0, 1fr); min-height: 100dvh; background: var(--bg); }
+.signin { --art: min(1600px, calc((100dvh - 150px) / .6)); display: grid; grid-template-columns: minmax(0, 54%) minmax(0, 1fr); min-height: 100dvh; background: var(--bg); }
 
-/* No panel: the logo, and the fans drawn in text, still and tilted, running off the left edge and fading out toward the form. */
-.signin-art { position: relative; min-height: 100dvh; overflow: hidden; color: var(--text); }
+/* No panel: the logo, and a long three-fan card drawn in text, still and tilted, running off the left edge and reaching toward the form. */
+.signin-art { position: relative; min-height: 100dvh; overflow: hidden; container-type: inline-size; color: var(--text); }
 .signin-art .brand { position: absolute; z-index: 1; top: 30px; left: 34px; color: var(--text); pointer-events: none; }
 .signin-art .brand-mark { width: 36px; height: 36px; border-radius: 11px; background: var(--graphite); }
 .signin-art .brand-mark::before { color: #F4F3F0; font-size: 17px; }
 .signin-art .brand-mark::after { right: 7px; bottom: 8px; width: 5px; height: 5px; }
-/* As wide as the column and centred in the height below the logo. On a short window it shrinks to fit, so the bottom of the card always shows, and the column narrows with it so the form stays close; the tilt pushes the bottom edge down a little, hence the larger bottom gap. */
-.signin-ink { position: absolute; left: -6%; top: 64px; bottom: 44px; height: fit-content; margin-block: auto; width: min(100%, var(--art)); transform-origin: 30% 60%; transform: perspective(1600px) rotateX(14deg) rotateY(12deg) rotateZ(-4deg); -webkit-mask-image: linear-gradient(90deg, #000 55%, transparent 96%); mask-image: linear-gradient(90deg, #000 55%, transparent 96%); }
+/* A little wider than the column, so its near end runs off the left edge and its far end stops just short of the form. Centred in the height below the logo; on a short window it shrinks so the bottom of the card always shows (the tilt pushes the bottom edge down a little, hence the larger bottom gap). */
+.signin-ink { position: absolute; right: -6cqw; top: 64px; bottom: 44px; height: fit-content; margin-block: auto; width: min(110cqw, var(--art)); transform-origin: 60% 60%; transform: perspective(1600px) rotateX(14deg) rotateY(0deg) rotateZ(-4deg); -webkit-mask-image: linear-gradient(90deg, #000 76%, transparent 100%); mask-image: linear-gradient(90deg, #000 76%, transparent 100%); }
 
 .signin-form { display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; gap: 24px; padding: 48px max(24px, env(safe-area-inset-right, 0px)) 28px max(24px, env(safe-area-inset-left, 0px)); background: var(--bg); }
 .signin-box { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
@@ -32,7 +32,7 @@
   .signin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .signin-art { min-height: 0; padding: 72px 0 0; }
   .signin-art .brand { top: 18px; left: 20px; }
-  .signin-ink { position: relative; left: -8%; top: auto; bottom: auto; margin-block: 0; width: min(88vw, 540px); -webkit-mask-image: none; mask-image: none; }
+  .signin-ink { position: relative; left: -24vw; right: auto; top: auto; bottom: auto; margin-block: 0; width: min(120vw, 1000px); -webkit-mask-image: none; mask-image: none; }
   .signin-form { padding-top: 32px; }
 }
 :root:has(.signin) { scrollbar-gutter: auto; }
