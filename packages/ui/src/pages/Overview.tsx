@@ -78,7 +78,8 @@ export function Overview() {
   const status = open.length === 0 ? "Nothing needs a look." : open.length === 1 ? "One thing needs a look." : `${open.length} things need a look.`;
   const now = new Date();
   const views = useHeroViews();
-  const week = useWeekInsights(pc, useHistory("7d"));
+  const points = useHistory("7d");
+  const week = useWeekInsights(pc, points);
   const board = useDashboard(dashboardKey(data.account?.id ?? pc.id));
   const { dash } = board;
   const [editing, setEditing] = useState(false);
@@ -110,7 +111,7 @@ export function Overview() {
     const compact = box.size === "s" || box.rows < fullRows(w.kind);
     const o = w.opts;
     switch (w.kind as Kind) {
-      case "pc": return <PCWidget {...props} views={views} />;
+      case "pc": return <PCWidget {...props} views={views} points={points} />;
       case "health": return <HealthWidget {...props} />;
       case "todo": return <TodoWidget {...props} />;
       case "asks": return <AsksWidget {...props} />;
@@ -145,7 +146,7 @@ export function Overview() {
         />
       );
     }
-  }, [editing, views, week, pc.name, pc.fans]);
+  }, [editing, views, week, points, pc.name, pc.fans]);
 
   const list = mode === "phone";
   // Finishing puts focus back without scrolling: on the widget it was finished from (its handle, the one part of it that

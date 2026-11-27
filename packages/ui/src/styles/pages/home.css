@@ -1,4 +1,5 @@
 @import "./dash.css";
+@import "./partbypart.css";
 
 /* Home: the greeting and its controls, then a dashboard of widgets the person arranges (dash.css).
    A few type sizes used the same way everywhere, round bubbles only where you act. Series colors come from the --s-* tokens
