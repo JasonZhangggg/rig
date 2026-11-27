@@ -24,7 +24,8 @@ export function useWidth<T extends HTMLElement>(fallback: number) {
 export interface LaneSeries { i: number; cls: string; name: string }
 /** A custom log can chart things no sensor reads: memory in MB, or a plain count. */
 export type LaneType = SensorType | "mb" | "plain";
-export interface Lane { title: string; type: LaneType; series: LaneSeries[]; limit?: number; h?: number }
+/** A lane draws its key lines; `more` are the rest of its sensors, drawn only when you ask to see them all. */
+export interface Lane { title: string; type: LaneType; series: LaneSeries[]; more?: LaneSeries[]; limit?: number; h?: number }
 /** A stretch to shade: a closer look, or a game. */
 export interface Band { from: number; to: number; kind: "look" | "game" }
 /** A moment to number on the chart, matching a list beside it. */
@@ -40,6 +41,9 @@ export function value(temp: Temp, type: LaneType, v: number | null | undefined):
   if (percent(type)) return `${Math.round(v)}%`;
   if (type === "fan") return `${Math.round(v).toLocaleString("en-US")} rpm`;
   if (type === "power") return `${Math.round(v)} W`;
+  if (type === "clock") return v >= 1000 ? `${(v / 1000).toFixed(2)} GHz` : `${Math.round(v)} MHz`;
+  if (type === "voltage") return `${v.toFixed(2)} V`;
+  if (type === "current") return `${v.toFixed(1)} A`;
   return `${Math.round(v * 10) / 10}`;
 }
 
@@ -51,12 +55,12 @@ function nearest(t: number, points: readonly RecordedPoint[]) {
 }
 
 /**
- * One sensor's line, bucketed to about two pixels so a day of readings stays light. Spikes keep their peak; a stretch with
- * no readings is a gap. Buckets are fixed in time, so as a live chart slides, a reading stays in its bucket and the line
- * doesn't shimmer.
+ * One sensor's line, bucketed to about five pixels so a day of readings draws as a calm line, not a scribble. Each bucket
+ * keeps its peak, so a spike still shows, and a stretch with no readings is a gap. Buckets are fixed in time, so as a live
+ * chart slides, a reading stays in its bucket and the line doesn't shimmer.
  */
 function pathOf(points: readonly RecordedPoint[], i: number, x: (t: number) => number, y: (v: number) => number, t0: number, t1: number, w: number, gapMs: number) {
-  const size = (t1 - t0) / Math.max(20, Math.round(w / 2)) || 1;
+  const size = (t1 - t0) / Math.max(20, Math.round(w / 5)) || 1;
   const b: { k: number; t: number; v: number; gap: boolean }[] = [];
   let last = -Infinity;
   for (const p of points) {
@@ -180,6 +184,8 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   live?: boolean;
 }) {
   const temp = useTemp();
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (title: string) => setOpen((o) => { const n = new Set(o); if (n.has(title)) n.delete(title); else n.add(title); return n; });
   // The usual time between readings.
   const every = useMemo(() => {
     const steps = points.slice(1, 400).map((p, i) => p.t - points[i].t).sort((a, b) => a - b);
@@ -210,17 +216,19 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   const gap = Math.max(gapMs, 3 * every);
   const drawn = useMemo(() => lanes.map((lane) => {
     const h = lane.h ?? (compact ? 76 : 96);
+    // The rest of a lane's lines, when it's open, drawn faint behind its key ones.
+    const all = open.has(lane.title) && lane.more ? [...lane.series, ...lane.more] : lane.series;
     const vals: number[] = [];
-    for (const p of points) if (p.t >= t0 && p.t <= end) for (const s of lane.series) { const v = p.v[s.i]; if (v != null) vals.push(v); }
+    for (const p of points) if (p.t >= t0 && p.t <= end) for (const s of all) { const v = p.v[s.i]; if (v != null) vals.push(v); }
     // A short lane gets fewer grid lines, so their labels don't crowd.
     const sc = scale(lane.type, vals, lane.limit, h >= 100 ? 4 : 3);
     const y = (v: number) => 6 + (h - 12) * (1 - (v - sc.lo) / (sc.hi - sc.lo || 1));
     const grid = gridOf(sc);
     // Live lines start a little before the left edge, so sliding left never shows an empty strip there.
     const from = live ? t0 - (t1 - t0) / 10 : t0;
-    const paths = lane.series.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap) }));
+    const paths = all.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap) }));
     return { lane, h, y, grid, paths, sc };
-  }), [points, lanes, t0, t1, w, compact, gap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [points, lanes, t0, t1, w, compact, gap, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!points.length) return null;
   return (
@@ -237,6 +245,11 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
                 </span>
               ))}
               {lane.series.length > NAMED && <span className="ln-key faint">and {lane.series.length - NAMED} more</span>}
+              {!!lane.more?.length && (
+                <button type="button" className="ln-more" aria-expanded={open.has(lane.title)} onClick={() => toggle(lane.title)} onPointerDown={(e) => e.stopPropagation()}>
+                  {open.has(lane.title) ? "Show fewer" : `Show all ${lane.series.length + lane.more.length}`}
+                </button>
+              )}
             </span>
           </div>
           <svg width={w} height={h} className="ln-svg" role="img" aria-label={lane.title}>
@@ -287,6 +300,38 @@ function Spark({ points, i, from, to }: { points: readonly RecordedPoint[]; i: n
   return <svg className="pf-spark ln-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true"><path d={pathOf(points, i, x, y, from, to, w / 2, Infinity)} vectorEffect="non-scaling-stroke" /></svg>;
 }
 
+/** Sensors that sum up the rest of their kind: a package, a total, the highest or the average. */
+const summary = /package|total|\bmax\b|average|\bavg\b|highest|^usage$|^memory$|^in use$|^cpu core$/i;
+/** A part's lane draws at most this many lines until you ask to see them all. */
+const KEY = 3;
+
+/**
+ * A part's readings, with a Highest and an Average line added for any kind of sensor that has many and none that sums
+ * them up, like a clock speed per core. Those two then stand in for the rest until you show them all.
+ */
+export function withSummaries(r: Recorded, pick: string): Recorded {
+  const p = r.parts.find((x) => x.id === pick);
+  if (!p) return r;
+  const add: { type: SensorType; how: "max" | "avg"; of: number[] }[] = [];
+  for (const [type] of sensorGroups) {
+    const idx = p.sensors.filter((i) => r.sensors[i].type === type);
+    if (idx.length > KEY + 1 && !idx.some((i) => summary.test(r.sensors[i].name))) add.push({ type, how: "max", of: idx }, { type, how: "avg", of: idx });
+  }
+  if (!add.length) return r;
+  const base = r.sensors.length;
+  const sensors = [...r.sensors, ...add.map((a) => ({ ...r.sensors[a.of[0]], id: `${pick}-${a.type}-${a.how}`, name: a.how === "max" ? "Highest" : "Average" }))];
+  const points = r.points.map((pt) => ({
+    t: pt.t,
+    v: [...pt.v, ...add.map((a) => {
+      let n = 0, sum = 0, top = -Infinity;
+      for (const i of a.of) { const v = pt.v[i]; if (v == null) continue; n++; sum += v; if (v > top) top = v; }
+      return n ? (a.how === "max" ? top : sum / n) : null;
+    })],
+  }));
+  const parts = r.parts.map((x) => (x.id === pick ? { ...x, sensors: [...x.sensors, ...add.map((_, k) => base + k)] } : x));
+  return { ...r, sensors, parts, points };
+}
+
 const cycle = ["c-ink", "c-brass", "c-grey"];
 const colour = (j: number) => (j < cycle.length ? cycle[j] : "c-faint");
 
@@ -319,9 +364,15 @@ export function lanesFor(r: Recorded, pick: string, limits: { cpu?: number; gpu?
   return sensorGroups.flatMap(([type, title]): Lane[] => {
     const idx = p.sensors.filter((i) => r.sensors[i].type === type);
     if (!idx.length) return [];
-    // The part's lead first, then the rest as the recorder listed them.
-    idx.sort((a, b) => (a === p.lead ? -1 : b === p.lead ? 1 : 0));
-    return [{ title, type, limit: type === "temperature" ? limit : undefined, series: idx.map((i, j) => ({ i, name: r.sensors[i].name, cls: colour(j) })) }];
+    // The part's lead first, then the lines that sum up the rest, like a package, total, highest or average.
+    const keyed = idx.filter((i) => i === p.lead || summary.test(r.sensors[i].name)).sort((a, b) => (a === p.lead ? -1 : b === p.lead ? 1 : 0));
+    const key = idx.length <= KEY + 1 ? idx.sort((a, b) => (a === p.lead ? -1 : b === p.lead ? 1 : 0)) : (keyed.length ? keyed : idx).slice(0, KEY);
+    const more = idx.filter((i) => !key.includes(i));
+    return [{
+      title, type, limit: type === "temperature" ? limit : undefined,
+      series: key.map((i, j) => ({ i, name: r.sensors[i].name, cls: colour(j) })),
+      more: more.map((i) => ({ i, name: r.sensors[i].name, cls: "c-faint" })),
+    }];
   }).map((l, j) => ({ ...l, h: j === 0 ? h : undefined }));
 }
 
@@ -364,12 +415,14 @@ export function AllSensors({ r, from, to, limits, bands, marks, compact, live }:
   const [cursor, setCursor] = useState<number | null>(null);
   // Live lanes are kept short, so the log under them is in view too.
   const first = live ? (compact ? 96 : 116) : compact ? 110 : 140;
-  const lanes = useMemo(() => lanesFor(r, pick, limits, first).map((l, j) => (live && j > 0 ? { ...l, h: l.h ?? (compact ? 64 : 78) } : l)),
-    [r.sensors, r.parts, pick, limits.cpu, limits.gpu, first, live, compact]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A part's own view adds a Highest and Average line where its sensors have nothing that sums them up.
+  const shown = useMemo(() => (pick === "all" ? r : withSummaries(r, pick)), [r, pick]);
+  const lanes = useMemo(() => lanesFor(shown, pick, limits, first).map((l, j) => (live && j > 0 ? { ...l, h: l.h ?? (compact ? 64 : 78) } : l)),
+    [shown.sensors, shown.parts, pick, limits.cpu, limits.gpu, first, live, compact]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="ln-grid">
       <PartRail r={r} pick={pick} onPick={setPick} from={from} to={to} limits={limits} live={live} />
-      <Lanes points={r.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} />
+      <Lanes points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} />
     </div>
   );
 }

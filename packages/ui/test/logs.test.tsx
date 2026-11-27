@@ -12,7 +12,7 @@ const { LineChart } = await import("../src/chart");
 const { highlights } = await import("../src/pages/logs/summary");
 const { cleanEvents, eventTitle } = await import("@rig/core");
 const { kindWord } = await import("../src/pages/logs/words");
-const { Lanes } = await import("../src/pages/logs/Lanes");
+const { Lanes, AllSensors } = await import("../src/pages/logs/Lanes");
 
 // jsdom has no PointerEvent; the strip's tip shows only for a mouse, so the test needs one that carries pointerType.
 if (typeof window.PointerEvent === "undefined") {
@@ -448,6 +448,29 @@ describe("Logs", () => {
     const xs = [...d.matchAll(/[ML](-?[\d.]+),/g)].map((m) => Number(m[1]));
     // The chart is 900 wide with 8 to spare on the right, so the line has to reach 892.
     expect(Math.max(...xs)).toBeGreaterThanOrEqual(892);
+  });
+
+  it("draws a part's key lines, a highest and average where nothing sums its sensors up, and the rest on request", () => {
+    const t0 = Date.now() - 60_000;
+    const cpu = (type: "temperature" | "clock", name: string) => ({ id: `${type}-${name}`, hw: "cpu" as const, hwName: "", type, name, part: "cpu" });
+    const sensors = [cpu("temperature", "CPU Package"), cpu("temperature", "Core Max"),
+      ...[1, 2, 3, 4, 5, 6].map((n) => cpu("temperature", `P-Core #${n}`)), ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => cpu("clock", `P-Core #${n}`))];
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s, i) => (s.type === "clock" ? (k + i) % 2 ? 800 : 5300 : 50 + ((k + i) % 6))) }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
+    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    const lines = (name: string) => screen.getByRole("img", { name }).querySelectorAll("path.ln-line").length;
+    // Temperatures: the package and the hottest core, not all eight.
+    expect(lines("Temperatures")).toBe(2);
+    // Speeds has no line that sums up its cores, so it draws their highest and average.
+    expect(lines("Speeds")).toBe(2);
+    const speeds = screen.getByRole("img", { name: "Speeds" }).parentElement!;
+    within(speeds).getByText("Highest");
+    within(speeds).getByText("Average");
+    fireEvent.click(within(speeds).getByRole("button", { name: "Show all 10" }));
+    expect(lines("Speeds")).toBe(10);
+    fireEvent.click(within(speeds).getByRole("button", { name: "Show fewer" }));
+    expect(lines("Speeds")).toBe(2);
   });
 
   it("labels the start and end of a chart with only a few readings", () => {
