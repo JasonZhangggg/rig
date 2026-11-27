@@ -47,3 +47,4 @@ export * from "./boardUsage";
 export * from "./gpuPorts";
 export * from "./cables";
 export * from "./recorded";
+export * from "./weekStory";
