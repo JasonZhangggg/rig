@@ -23,6 +23,7 @@ export * from "./background";
 export * from "./probes";
 export * from "./insights";
 export * from "./games";
+export * from "./usualRange";
 export * from "./heatSooner";
 export * from "./alerts";
 export * from "./view";
