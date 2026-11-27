@@ -43,10 +43,15 @@ export interface Dashboard {
 /** A list the person picks from on the page, filled from the PC (its fans, its readings). Stored as the labels left out. */
 export type Source = "fans" | "stats" | "parts";
 
+/** An option's key, label and, when it only means something in some of the widget's styles, those styles. */
+type OptionBase = { key: string; label: string; styles?: string[] };
 export type OptionDef =
-  | { key: string; label: string; type: "toggle"; value: boolean }
-  | { key: string; label: string; type: "choice"; value: string; choices: [string, string][] }
-  | { key: string; label: string; type: "set"; value: string[]; source: Source };
+  | OptionBase & { type: "toggle"; value: boolean }
+  | OptionBase & { type: "choice"; value: string; choices: [string, string][] }
+  | OptionBase & { type: "set"; value: string[]; source: Source };
+
+/** The PC widget's styles that draw the PC in 3D. */
+const MODEL = ["showcase", "chips"];
 
 export interface KindMeta {
   title: string;
@@ -73,14 +78,15 @@ const days: [string, string][] = [["7", "7 days"], ["5", "5 days"], ["3", "3 day
 
 export const KINDS: Record<Kind, KindMeta> = {
   pc: {
-    title: "Your PC", blurb: "The PC in 3D with its parts and live temperatures.",
+    title: "Your PC", blurb: "Each part with how it's doing against its usual, or the PC in 3D.",
     sizes: { m: [6, 6], l: [8, 8], wide: [12, 6], full: [12, 9] }, size: "l", min: [5, 5], max: [12, 10],
-    styles: [["showcase", "Big figures"], ["chips", "Chips"]], tone: "light", frame: "open", heavy: true,
+    // Part by part comes first, so a new Home starts with it. A saved Home keeps the style it was saved with.
+    styles: [["parts", "Part by part"], ["showcase", "3D, big figures"], ["chips", "3D, chips"]], tone: "light", frame: "open", heavy: true,
     options: [
-      { key: "reads", label: "Show temperatures", type: "toggle", value: true },
+      { key: "reads", label: "Show temperatures", type: "toggle", value: true, styles: MODEL },
       { key: "specs", label: "Show part names", type: "toggle", value: true },
-      { key: "views", label: "Show heat and exploded buttons", type: "toggle", value: true },
-      { key: "spin", label: "Turn slowly", type: "toggle", value: true },
+      { key: "views", label: "Show heat and exploded buttons", type: "toggle", value: true, styles: MODEL },
+      { key: "spin", label: "Turn slowly", type: "toggle", value: true, styles: MODEL },
     ],
   },
   health: {
@@ -813,7 +819,8 @@ function parseWidget(raw: unknown): (Widget & { size: SizeName }) | null {
     size: pick(r.size, Object.keys(m.sizes) as SizeName[], m.size),
     tone: pick(r.tone, ["light", "dark"] as const, base.tone),
     frame: pick(r.frame, ["tile", "open"] as const, base.frame),
-    style: pick(r.style, m.styles.map(([s]) => s), base.style),
+    // A PC widget saved without a style was saved when the 3D view was the only one, so it stays 3D.
+    style: pick(r.style, m.styles.map(([s]) => s), r.kind === "pc" && r.style === undefined ? "showcase" : base.style),
     hidden: typeof r.hidden === "boolean" ? r.hidden : base.hidden,
     opts: parseOpts(r.kind, r.opts),
   };

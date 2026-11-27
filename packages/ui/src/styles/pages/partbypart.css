@@ -1,0 +1,90 @@
+/* ----- Your PC, part by part: a row per part, its reading now against its own usual and the point where it slows down. -----
+   Each track is drawn on that part's own scale: the usual band in the settled data color, the week's highest as a tick,
+   now as a dot, and where the part slows itself down hatched in rust. Rust anywhere else only when something went past usual. */
+.f-pbp { container: pbp / inline-size; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: 14px; }
+.pbp-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 20px; }
+.pbp-head > div { min-width: 0; }
+.pbp-head h2 { margin-top: 4px; color: var(--text); font: 600 clamp(1.25rem, 2.4cqi, 1.5rem)/1.2 var(--font); letter-spacing: -.02em; text-wrap: balance; }
+.pbp-head p { margin-top: 6px; color: var(--text-2); font-size: 14.5px; line-height: 1.45; }
+.pbp-head .look { color: var(--look-text); }
+.pbp-head .f-link { flex: none; }
+
+.pbp-cols, .pbp-row {
+  display: grid; align-items: center; column-gap: 18px;
+  grid-template-columns: minmax(0, 1.3fr) 56px minmax(100px, .85fr) minmax(0, 1.3fr);
+}
+.pbp-cols { flex: none; padding: 0 0 6px; border-bottom: 1px solid var(--line); color: var(--text-3); font: var(--t-label); }
+.pbp-cols > :nth-child(2) { text-align: right; }
+
+.pbp-list { flex: 0 1 auto; min-height: 0; display: grid; align-content: start; margin: 0 -8px; padding: 0 8px; list-style: none; }
+.pbp-list > li + li { border-top: 1px solid var(--line); }
+.pbp-list > .f-more { border-top: 0 !important; padding: 6px 0 0; }
+.pbp-row {
+  width: calc(100% + 16px); margin: 0 -8px; padding: 11px 8px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background-color 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .pbp-row:hover { background: var(--chip); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pbp-row { transition: none; }
+}
+.pbp-row > span { min-width: 0; display: grid; gap: 2px; }
+.pbp-row b { font-weight: 600; }
+.pbp-name b { overflow: hidden; font-size: 14.5px; white-space: nowrap; text-overflow: ellipsis; }
+.pbp-name small { color: var(--text-2); font-size: 13px; font-weight: 500; }
+.pbp-name > span, .pbp-state > span { overflow: hidden; color: var(--text-2); font-size: 13px; line-height: 1.35; white-space: nowrap; text-overflow: ellipsis; }
+.pbp-now { justify-items: end; text-align: right; }
+.pbp-now b { font-size: 17px; font-weight: 500; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pbp-now b small { margin-left: 1px; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.pbp-week { align-self: stretch; align-content: center; }
+.pbp-week > span:not(.pbp-track) { overflow: hidden; color: var(--text-3); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.pbp-state b { overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
+.pbp-state .look { color: var(--look-text); }
+.pbp-row.unread .pbp-now b { color: var(--text-3); }
+
+/* The track: a hairline-thin rail with the usual band on it, a tick for the week's highest and a dot for now. */
+.pbp-track { position: relative; display: block; height: 18px; }
+.pbp-track::before { content: ""; position: absolute; inset: 6px 0; border-radius: var(--r-pill); background: var(--s-track); }
+.pbp-track.none::before { inset: 8.5px 0; height: 1px; border-radius: 0; background: repeating-linear-gradient(to right, var(--line-strong) 0 3px, transparent 3px 7px); }
+.pbp-track > i { position: absolute; display: block; }
+.pbp-zone {
+  top: 6px; bottom: 6px; right: 0; border-radius: 0 var(--r-pill) var(--r-pill) 0;
+  background: repeating-linear-gradient(-45deg, var(--look) 0 1.5px, transparent 1.5px 4.5px); opacity: .75;
+}
+.pbp-band { top: 5px; bottom: 5px; border-radius: 2px; background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
+.pbp-high { top: 2px; bottom: 2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--s-mark-a); }
+.pbp-high.look { background: var(--look-text); }
+.pbp-dot { top: 4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+.dw[data-frame="open"] .pbp-dot { box-shadow: 0 0 0 2px var(--bg); }
+.pbp-dot.look { background: var(--look-text); }
+
+.pbp-key { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 12.5px; font-weight: 500; }
+.pbp-key > span { display: inline-flex; align-items: center; gap: 7px; }
+.pbp-key i { display: block; flex: none; }
+.pbp-key .k-now { width: 9px; height: 9px; border-radius: 50%; background: var(--text); }
+.pbp-key .k-high { width: 2px; height: 12px; border-radius: 1px; background: var(--s-mark-a); }
+.pbp-key .k-band { width: 18px; height: 8px; border-radius: 2px; background: var(--s-a); box-shadow: inset 0 0 0 1px var(--s-edge); }
+.pbp-key .k-zone { width: 18px; height: 8px; border-radius: 2px; background: repeating-linear-gradient(-45deg, var(--look) 0 1.5px, transparent 1.5px 4.5px); opacity: .75; }
+.pbp-key .pbp-scale { margin-left: auto; color: var(--text-3); }
+
+/* Narrower: the reading sits beside the name, and the track and how it's doing run under them, full width. */
+@container pbp (max-width: 620px) {
+  .pbp-cols { display: none; }
+  .pbp-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name now" "track track" "state state"; row-gap: 6px; padding: 11px 8px; }
+  .pbp-name { grid-area: name; }
+  .pbp-row > .pbp-now { grid-area: now; align-self: start; }
+  .pbp-week { grid-area: track; }
+  .pbp-state { grid-area: state; display: flex !important; flex-wrap: wrap; gap: 0 8px !important; }
+  .pbp-state > b, .pbp-state > span { white-space: normal; }
+  .pbp-row.unread .pbp-week { display: none; }
+  .pbp-key .pbp-scale { margin-left: 0; }
+}
+@container pbp (max-width: 420px) {
+  .pbp-head { flex-direction: column; }
+}
+
+/* In the phone's list the tile takes its content's height, not the 3D view's fixed one. */
+.dash[data-cols="1"] .dw[data-kind="pc"]:has(.f-pbp) { height: auto; }
+.dash[data-cols="1"] .f-pbp { height: auto; }
+.dash[data-cols="1"] .pbp-list { flex: none; }

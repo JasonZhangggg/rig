@@ -1,0 +1,90 @@
+// Home's PC widget, part by part: a row per part with what it does, its reading now against its usual while you play,
+// and how it's doing. New Homes start with it; a Home saved with the PC in 3D keeps the 3D view.
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DemoClient } from "@rig/core/demo";
+
+vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
+vi.mock("../src/styles/index.css", () => ({}));
+
+const { RigApp } = await import("../src/App");
+
+const KEY = "rig.dashboard.v1:demo";
+const stored = () => JSON.parse(localStorage.getItem(KEY)!);
+
+/** The widget, found by its headline, once the week's history has filled it in. */
+async function partByPart() {
+  const heading = await screen.findByRole("heading", { name: /^Right now / });
+  const widget = heading.closest("section")!;
+  await within(widget).findAllByText(/this week|still learning/);
+  return { heading, widget: within(widget) };
+}
+
+describe("Your PC, part by part", () => {
+  beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; });
+  afterEach(() => cleanup());
+
+  it("starts a new Home with each part on a line of its own, in plain words, instead of the 3D view", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const { heading, widget } = await partByPart();
+    // Thursday morning at the desktop, the day after Cyberpunk took the card to its limit.
+    expect(heading.textContent).toBe("Right now Atlas is resting, and every part is calm");
+    expect(await widget.findByText("One part ran hot this week: the graphics card, in Cyberpunk 2077.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open 3D view" })).toBeNull();
+    const rows = within(widget.getByRole("list", { name: "Parts" })).getAllByRole("button");
+    expect(rows.map((r) => r.querySelector(".pbp-name b")!.firstChild!.textContent)).toEqual(["Graphics card", "Processor", "Memory", "Main drive", "Motherboard", "Fans", "Power supply", "Case"]);
+    const card = within(rows[0]);
+    expect(card.getByText("RTX 4070 SUPER")).toBeTruthy();
+    expect(card.getByText("Draws every frame of your games")).toBeTruthy();
+    expect(card.getByText(/^usual \d+–\d+°$/)).toBeTruthy();
+    expect(card.getByText("Calm")).toBeTruthy();
+    expect(card.getByText(/^Hit \d+° in Cyberpunk 2077, [A-Z][a-z]{2} \d+$/).className).toBe("look");
+    expect(within(rows[1]).getByText(/^\d+° at most this week$/).className).toBe("");
+    expect(within(rows[6]).getByText("Rig can't read it")).toBeTruthy();
+    expect(widget.getByText("Its usual while you play")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/NaN|undefined/);
+  });
+
+  it("opens a part in My PC from its row", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    const { widget } = await partByPart();
+    fireEvent.click(widget.getByRole("button", { name: /^Processor/ }));
+    await waitFor(() => expect(location.hash).toBe("#pc"));
+    expect(await screen.findByRole("button", { name: "Reset view" })).toBeTruthy();
+  });
+
+  it("says Rig is still learning each part's usual on a PC with no history yet", async () => {
+    const client = new DemoClient();
+    client.history = async () => [];
+    render(<RigApp client={client} />);
+    const { widget } = await partByPart();
+    expect(widget.getByText(/^Rig learns each part's usual from a few days of using Atlas\.$/)).toBeTruthy();
+    expect(widget.queryByText(/^usual /)).toBeNull();
+    expect(widget.queryByText(/ran hot/)).toBeNull();
+  });
+
+  it("keeps a Home saved with the 3D view, and switches between the two from the widget's options", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ v: 2, widgets: [{ id: "pc", kind: "pc", style: "showcase" }], spacing: "normal" }));
+    render(<RigApp client={new DemoClient()} />);
+    expect(await screen.findByRole("link", { name: "Open 3D view" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /^Right now / })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Customize Home" }));
+    fireEvent.click(screen.getByRole("button", { name: "Your PC options" }));
+    const panel = within(screen.getByRole("dialog", { name: "Your PC options" }));
+    expect(panel.getByRole("switch", { name: "Turn slowly" })).toBeTruthy();
+    fireEvent.click(panel.getByRole("button", { name: "Part by part" }));
+    await partByPart();
+    expect(stored().widgets.find((w: { kind: string }) => w.kind === "pc").style).toBe("parts");
+    // The 3D view's own switches leave; part names still apply.
+    expect(panel.queryByRole("switch", { name: "Turn slowly" })).toBeNull();
+    expect(panel.queryByRole("switch", { name: "Show heat and exploded buttons" })).toBeNull();
+    fireEvent.click(panel.getByRole("switch", { name: "Show part names" }));
+    await waitFor(() => expect(screen.queryByText("RTX 4070 SUPER")).toBeNull());
+  });
+
+  it("keeps a PC widget saved before it had styles in 3D", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ v: 1, widgets: [{ id: "pc", kind: "pc", hidden: false, size: "l" }] }));
+    render(<RigApp client={new DemoClient()} />);
+    expect(await screen.findByRole("link", { name: "Open 3D view" })).toBeTruthy();
+  });
+});

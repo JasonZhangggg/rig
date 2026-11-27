@@ -1,10 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
-import { type Game, type GameLibrary, type GameNote, type GameSession, type GameStats, type TempSubject } from "@rig/core";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { heatTrend, type Game, type GameLibrary, type GameNote, type GameSession, type GameStats, type TempSubject } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { Figure } from "../../components/Figure";
-import { Row, RowFigure, Rows } from "../../components/Rows";
 import { useActions, useStillPC, useTempUnit } from "../../state";
+import { HeatSooner } from "./HeatSooner";
 import { headroomWords, sessionCount } from "./Library";
 import { Tuning } from "./Tuning";
 import { ago, cap, day, hours, longDay, moment, noteText, partName, temp, timeRange } from "./words";
@@ -30,6 +30,7 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
   // The session on the chart, and the moment its readout holds: the session's peak unless a note pointed at another.
   const [picked, setPicked] = useState<{ i: number; at?: number }>({ i: sessions.length - 1 });
   const shown = sessions[Math.min(picked.i, sessions.length - 1)];
+  const trend = useMemo(() => heatTrend(sessions, library.subject, library.limit), [sessions, library.subject, library.limit]);
   const chartRef = useRef<HTMLElement>(null);
   /** Opens the session holding a moment Rig noted, with the readout on it. */
   const showMoment = (at: number) => {
@@ -61,6 +62,9 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
         <Figure label="Safe limit" figure={temp(library.limit, unit)} note={`Above it, the ${part} slows itself down.`} />
       </div>
 
+      <HeatSooner game={game.name} trend={trend} subject={library.subject} limit={library.limit} shown={shown.from}
+        onPick={(from) => { setPicked({ i: sessions.findIndex((s) => s.from === from) }); chartRef.current?.scrollIntoView({ block: "nearest" }); }} />
+
       <section ref={chartRef} className="card card-pad gm-sessions" aria-label="Sessions chart">
         <div className="gm-sess-head">
           <h2>{longDay(shown.from)}, {timeRange(shown.from, shown.to)}</h2>
@@ -71,16 +75,6 @@ export function Detail({ game, library, tuning, when, range, onBack }: Props) {
           </div>
         </div>
         <SessionChart s={shown} subject={library.subject} limit={library.limit} at={picked.at} />
-        <div className="gm-sess-list">
-          <Rows label="Sessions">
-            {sessions.map((s, i) => ({ s, i })).reverse().map(({ s, i }) => (
-              <Row key={s.from} name={day(s.from)} title={day(s.from)} meta={`${timeRange(s.from, s.to)}, ${hours(s.hours)}.`}
-                tag={s.hot && <span className="chip warn">Ran hot</span>}
-                figure={<RowFigure value={temp(s.typical, unit)} word={`typical, peak ${temp(s.peak, unit)}`} />}
-                pick={{ pressed: s === shown, onPick: () => setPicked({ i }) }} />
-            ))}
-          </Rows>
-        </div>
         {game.notes.length > 0 && (
           <div className="gm-notes">
             <span className="label">What Rig noticed</span>

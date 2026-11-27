@@ -1,11 +1,12 @@
 import type { CSSProperties } from "react";
-import { coveredIssues, shownAlerts, shownSummary, type Issue, type PC, type Stat } from "@rig/core";
+import { coveredIssues, shownAlerts, shownSummary, type HistoryPoint, type Issue, type PC, type Stat } from "@rig/core";
 import { StageSlot } from "../../components/Stage";
 import { Warm } from "../../components/common";
 import { useAlertKindsOff, useApp, useTemp, useTempText, type Ctx } from "../../state";
 import { alertIssue, bySeverity, dustIssue, issueGo, partIcon, shortType } from "../shared";
 import type { OptValue, SizeName } from "./layout";
 import { EmptyNote, useFit } from "./parts";
+import { PartByPart } from "./PartByPart";
 
 export const Go = () => <svg className="f-go" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11.5M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 export const Arrow = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M7 5h8v8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -53,7 +54,13 @@ export interface HeroViews { heat: boolean; exploded: boolean; toggleHeat: () =>
 
 const SPEC_PARTS = ["cpu", "gpu", "ram"];
 
-export function PCWidget({ style, opts, editing, views }: WidgetProps & { views: HeroViews }) {
+export function PCWidget({ style, opts, editing, views, box, points }: WidgetProps & { views: HeroViews; points: HistoryPoint[] | null }) {
+  if (style === "parts") return <PartByPart points={points} names={on(opts, "specs")} box={box} />;
+  return <PCModel style={style} opts={opts} editing={editing} views={views} />;
+}
+
+/** The PC in 3D, its part names beside it and its temperatures large under it. */
+function PCModel({ style, opts, editing, views }: Pick<WidgetProps, "style" | "opts" | "editing"> & { views: HeroViews }) {
   const { pc, set, go } = useApp();
   const temp = useTemp();
   const specs = on(opts, "specs") ? SPEC_PARTS.flatMap((id) => { const p = pc.parts?.[id]; return p ? [{ id, type: shortType(p.type), name: p.name }] : []; }) : [];

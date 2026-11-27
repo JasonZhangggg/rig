@@ -52,7 +52,8 @@ export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (pa
   const setOpt = (key: string, v: OptValue) => onChange({ opts: { ...w.opts, [key]: v } });
   const dark = w.tone === "dark";
   const lastSeries = (key: string) => w.kind === "temps" && SERIES.includes(key) && SERIES.filter((k) => w.opts[k] !== false).length === 1 && w.opts[key] !== false;
-  const toggles = meta.options.filter((o) => o.type === "toggle");
+  const options = meta.options.filter((o) => !o.styles || o.styles.includes(w.style));
+  const toggles = options.filter((o) => o.type === "toggle");
   // A move that reaches the edge dims its own arrow, so focus steps to an arrow that still moves rather than dropping to the page.
   const move = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -83,9 +84,9 @@ export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (pa
         <Seg label="Background" value={dark ? "tile" : w.frame} options={[["tile", "Tile"], ["open", "On the page"]]} onPick={(frame) => onChange({ frame })} disabled={dark} />
         {dark && <p className="dnote">Dark widgets always sit on a tile.</p>}
       </Section>
-      {meta.options.length > 0 && (
+      {options.length > 0 && (
         <Section title="Show">
-          {meta.options.map((o) => {
+          {options.map((o) => {
             if (o.type === "choice") return <Seg key={o.key} label={o.label} value={String(w.opts[o.key])} options={o.choices} onPick={(v) => setOpt(o.key, v)} />;
             if (o.type === "set") {
               const items = sourceItems(o.source, ctx);

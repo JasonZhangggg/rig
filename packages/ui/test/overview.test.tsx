@@ -83,8 +83,12 @@ describe("Home charts", () => {
   });
 });
 
-describe("Home hero", () => {
-  beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; sceneCalls.length = 0; });
+describe("Home hero in 3D", () => {
+  // A Home saved with the PC in 3D keeps it: new Homes start part by part (part-by-part.test.tsx).
+  beforeEach(() => {
+    location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; sceneCalls.length = 0;
+    localStorage.setItem("rig.dashboard.v1:demo", JSON.stringify({ v: 2, widgets: [{ id: "pc", kind: "pc", style: "showcase" }], spacing: "normal" }));
+  });
   afterEach(() => cleanup());
   const last = (method: string) => sceneCalls.filter(([k]) => k === method).at(-1)?.[1][0];
 
