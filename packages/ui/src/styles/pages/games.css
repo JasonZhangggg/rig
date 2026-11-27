@@ -55,7 +55,6 @@
 .gm-sessions { display: flex; flex-direction: column; gap: 12px; }
 .gm-sess-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .gm-sessions .chart { height: 240px; }
-.gm-sess-list { padding-top: 4px; border-top: 1px solid var(--line); }
 
 @media (max-width: 860px) {
   .gm-empty { grid-template-columns: minmax(0, 1fr); padding: 22px 0 0; }
@@ -65,4 +64,67 @@
   .gm-go { grid-row: 1; grid-column: 3; }
   .gm-recent-row { grid-template-columns: minmax(0, 1fr) auto; }
   .gm-recent-row > .num { display: none; }
+}
+
+/* When it got hot: every session as a row of ten-minute squares, oldest at the top, with what changed beside them.
+   Denim for the readings (mist, pale, deep), rust only for hot. No boxes: rows and hairlines, like the other lists. */
+.gm-heat {
+  --hq-cool: #E2E9F0; --hq-normal: #B0C0D1; --hq-warm: #71879F; --hq-hot: var(--look);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); grid-template-areas: "main story"; gap: 24px 56px;
+  padding: 24px 0 8px; border-top: 1px solid var(--line);
+}
+.gm-heat-main { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.gm-heat-head h2 { font: var(--t-title); margin: 0; }
+.gm-heat-head p { margin: 4px 0 0; font-size: 13px; }
+
+.gm-heat-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.gm-heat-row {
+  width: calc(100% + 20px); margin: 0 -10px; display: grid; grid-template-columns: 112px minmax(0, 1fr) 52px; align-items: center; gap: 16px;
+  padding: 6px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) { .gm-heat-row:hover { background: var(--surface-2); } }
+.gm-heat-row[aria-pressed="true"] { background: var(--sel); }
+.gm-heat-when { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gm-heat-when b { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.gm-heat-when span { color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+.gm-heat-sq, .gm-heat-ticks { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 26px)); gap: 3px; min-width: 0; }
+.hq { display: block; aspect-ratio: 1; border-radius: 4px; background: var(--hq-cool); }
+.hq-normal { background: var(--hq-normal); }
+.hq-warm { background: var(--hq-warm); }
+.hq-hot { background: var(--hq-hot); }
+.hq-none { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.gm-heat-peak { justify-self: end; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.gm-heat-peak.look { color: var(--look-text); }
+
+.gm-heat-axis { display: grid; grid-template-columns: 112px minmax(0, 1fr) 52px; gap: 16px; color: var(--text-3); font-size: 12px; }
+.gm-heat-ticks span { white-space: nowrap; border-left: 1px solid var(--line-strong); padding-left: 5px; }
+.gm-heat-legend { margin-top: 6px; gap: 8px 18px; }
+.gm-heat-legend .hq { width: 11px; height: 11px; border-radius: 3px; }
+
+.gm-heat-story { grid-area: story; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.gm-heat-story .label.look { color: var(--look-text); font-weight: 600; }
+.gm-heat-h { margin: 0; font: 500 clamp(1.5rem, 1.9vw, 1.85rem)/1.12 var(--font); letter-spacing: -.02em; text-wrap: balance; }
+.gm-heat-story > p { margin: 0; text-wrap: pretty; }
+.gm-heat-compare { display: grid; grid-template-columns: auto auto auto; justify-content: start; align-items: center; gap: 6px 18px; margin-top: 4px; padding: 14px 0; border-block: 1px solid var(--line); }
+.gm-heat-compare > .label { grid-column: 1 / -1; }
+.gm-heat-fig { display: flex; flex-direction: column; gap: 3px; }
+.gm-heat-fig b { font: var(--t-figure); letter-spacing: -.03em; white-space: nowrap; }
+.gm-heat-fig span { color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+.gm-heat-fig.look b { color: var(--look-text); }
+.gm-heat-arrow { color: var(--text-3); font-size: 22px; }
+
+@media (max-width: 1100px) {
+  .gm-heat { grid-template-columns: minmax(0, 1fr); grid-template-areas: "story" "main"; }
+  .gm-heat-story { max-width: 62ch; }
+}
+@media (max-width: 760px) {
+  .gm-heat-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "when peak" "sq sq"; gap: 6px 12px; padding: 8px 10px; }
+  .gm-heat-when { grid-area: when; flex-direction: row; align-items: baseline; gap: 10px; }
+  .gm-heat-peak { grid-area: peak; }
+  .gm-heat-sq { grid-area: sq; gap: 2px; }
+  .gm-heat-axis { grid-template-columns: minmax(0, 1fr); }
+  .gm-heat-axis > span:first-child { display: none; }
+  .gm-heat-ticks { gap: 2px; }
+  .hq { border-radius: 2px; }
 }
