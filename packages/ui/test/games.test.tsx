@@ -82,11 +82,52 @@ describe("Games", () => {
       fireEvent.click(button);
       expect(button.getAttribute("aria-pressed")).toBe("true");
       const peak = button.textContent!.match(/peak (\d+°C)/)![1];
-      if (!button.closest(".gm-sessions")!.querySelector("svg.chart")) continue;
+      if (!screen.getByRole("region", { name: "Sessions chart" }).querySelector("svg.chart")) continue;
       expect(live()).toMatch(new RegExp(`Graphics card ${peak}`));
       charted++;
     }
     expect(charted).toBeGreaterThan(1);
+  });
+
+  it("shows each session as ten-minute squares and says the card gets hot sooner as dust builds up", async () => {
+    await openGames();
+    fireEvent.click(await screen.findByRole("button", { name: "Month" }));
+    await screen.findByText("Games this month");
+    fireEvent.click(within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Cyberpunk 2077"))!);
+    const heat = await screen.findByRole("region", { name: "When it got hot" });
+    expect(within(heat).getByRole("heading", { name: "Cyberpunk 2077 gets hot sooner" })).toBeTruthy();
+    expect(within(heat).getByText("Getting worse")).toBeTruthy();
+    expect(heat.textContent).toMatch(/now gets hot about \d+ minutes in\. (Two|Three|Four|Five) weeks earlier it (took about|stayed under)/);
+    expect(heat.textContent).toMatch(/most likely cooling less well/);
+
+    // One row per session, oldest first, each with its squares; the latest is the one on the chart.
+    const rows = within(within(heat).getByRole("list", { name: "Sessions" })).getAllByRole("button");
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    expect(rows[rows.length - 1].getAttribute("aria-pressed")).toBe("true");
+    const after = rows.map((r) => r.textContent!.match(/Hot after (?:(\d+) h)? ?(?:(\d+) min)?|Never hot/)!).map((m) => (m[0] === "Never hot" ? Infinity : Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0)));
+    expect(after[after.length - 1]).toBeLessThan(after[0]);
+    for (const r of rows) expect(r.querySelectorAll(".hq").length).toBeGreaterThan(6);
+    expect(rows[rows.length - 1].querySelector(".hq-hot")).toBeTruthy();
+    expect(rows[rows.length - 1].querySelector(".hq")!.classList.contains("hq-hot")).toBe(false);
+
+    // What to do comes from the readings, and asks Rig how.
+    const todo = within(heat).getByRole("list", { name: "What to do" });
+    expect(within(todo).getByText("Clean the dust filters")).toBeTruthy();
+    fireEvent.click(within(todo).getByRole("button", { name: "How" }));
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(location.hash).toBe("#chat");
+    expect(await screen.findByText(/Cyberpunk 2077 gets my graphics card hot sooner than it did/)).toBeTruthy();
+  });
+
+  it("says the card stayed cool, with no advice, for a game that never got near the limit", async () => {
+    await openGames();
+    fireEvent.click(await screen.findByRole("button", { name: "Month" }));
+    await screen.findByText("Games this month");
+    fireEvent.click(within(await screen.findByRole("list", { name: "Games" })).getAllByRole("button").find((r) => r.textContent!.includes("Baldur's Gate 3"))!);
+    const heat = await screen.findByRole("region", { name: "When it got hot" });
+    expect(within(heat).getByRole("heading", { name: "The graphics card stayed cool" })).toBeTruthy();
+    expect(within(heat).queryByRole("list", { name: "What to do" })).toBeNull();
+    expect(within(heat).getByRole("list", { name: "Sessions" }).querySelector(".hq-hot")).toBeNull();
   });
 
   it("shows no tuning for games without measurements", async () => {

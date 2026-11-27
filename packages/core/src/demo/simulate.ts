@@ -5,6 +5,8 @@ import type { Inventory, Sensor, Snapshot } from "../telemetry";
 import { activityAt, type Activity } from "./schedule";
 
 const wobble = (t: number, period: number, amp: number) => Math.sin(t / period) * amp;
+/** How fast a game warms the graphics card through, in minutes: most of the way in about an hour and a half. */
+const WARM_UP_MIN = 35;
 /**
  * Sensor ids, worked out once per PC: a PC reports its sensors in the same order every time, and the demo
  * reads every sensor thousands of times to make a month of history. The name is checked, so a different order only costs time.
@@ -64,7 +66,9 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
 
   const gpu = inv.gpus.find((g) => !g.integrated);
   if (gpu) {
-    const gt = 36 + act.gpu * 44 + dust * 9 + wobble(t, 7000, 1.5);
+    // In a game the card and the air in the case warm through over the first hour or so; dust raises where it settles.
+    const soak = act.game && act.since != null ? 1 - Math.exp(-act.since / WARM_UP_MIN) : 1;
+    const gt = 36 + act.gpu * (30 + 14 * soak) + dust * (3 + 6 * soak) + wobble(t, 7000, 1.5);
     add("gpu", gpu.name, "temperature", "GPU Core", gt);
     add("gpu", gpu.name, "temperature", "GPU Hot Spot", gt + 11);
     add("gpu", gpu.name, "temperature", "GPU Memory Junction", gt + 6 + gpuLoad * 8);
