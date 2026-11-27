@@ -60,6 +60,7 @@ const question = "My screen went black for a couple of seconds while I was playi
 /** The finished recording on Atlas: 45 minutes of Cyberpunk with the graphics card creeping up to its limit and one driver reset. */
 export function demoRecording(inv: Inventory, now: number): Recording {
   const from = hotEvening(now), minutes = 45, intervalMs = intervalFor(minutes);
+  const limits = limitsOf(buildPC(inv, null, null));
   const game: Activity = { cpu: 0.7, gpu: 1, game: "Cyberpunk 2077" };
   const samples = [];
   let cooled = 0;
@@ -68,7 +69,7 @@ export function demoRecording(inv: Inventory, now: number): Recording {
     const sinceReset = t - (from + RESET_AFTER);
     const down = sinceReset >= 0 && sinceReset < 20_000;
     const act = down ? { ...game, gpu: 0.02 } : game;
-    const s = sampleFrom(simulate(inv, t, { activity: game, dust: -0.35 + Math.min(1, p * 1.5) * 0.97 }), captureKinds, demoProcesses(inv, t, act));
+    const s = sampleFrom(simulate(inv, t, { activity: game, dust: -0.35 + Math.min(1, p * 1.5) * 1.2 }), captureKinds, demoProcesses(inv, t, act));
     if (down) { cooled = Math.min(2, cooled + 1); s.gpuLoad = 4; }
     else if (sinceReset >= 20_000) cooled = Math.max(0, cooled - 1);
     if (s.gpu != null) s.gpu -= cooled;
@@ -82,6 +83,8 @@ export function demoRecording(inv: Inventory, now: number): Recording {
       if (s[k] != null && near.length) s[k] = Math.round(near.reduce((a, b) => a + b, 0) / near.length + Math.sin(i * 2.399) * 0.8);
     });
   }
+  // Near its limit the card holds itself just under it, as real ones do: warmer than it used to run in this game, never over.
+  if (limits.gpu != null) samples.forEach((s, i) => { if (s.gpu != null && s.gpu >= limits.gpu! - 1) s.gpu = limits.gpu! - (Math.sin(i * 1.7) > 0.2 ? 2 : 1); });
   const req: RecordingRequest = {
     id: DEMO_RECORDING_ID, by: "rig", minutes, capture: captureKinds, question,
     reason: "Watch temperatures, load and Windows events while you play, to catch the black screen.",
@@ -91,7 +94,7 @@ export function demoRecording(inv: Inventory, now: number): Recording {
     ...req, pcId: inv.machine.id, state: "done", intervalMs, startedAt: from, endsAt: from + minutes * MIN, finishedAt: from + minutes * MIN,
     samples, events: cleanEvents(demoEvents("tower", now, from).filter((e) => e.t <= from + minutes * MIN)), sampleCount: 0, eventCount: 0,
   };
-  r.headline = summarise(r, limitsOf(buildPC(inv, null, null))).headline;
+  r.headline = summarise(r, limits).headline;
   return { ...r, ...toInfo(r) };
 }
 
