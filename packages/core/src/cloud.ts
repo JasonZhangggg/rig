@@ -31,7 +31,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * stops asking, and reads again the moment it's shown. A failed read is skipped; the next one tries again.
  */
 function poll<T>(read: () => Promise<T>, cb: (v: T) => void) {
-  const doc = (globalThis as { document?: Pick<Document, "visibilityState" | "addEventListener" | "removeEventListener"> }).document;
+  const doc = (globalThis as { document?: { visibilityState: string; addEventListener(type: "visibilitychange", f: () => void): void; removeEventListener(type: "visibilitychange", f: () => void): void } }).document;
   const hidden = () => doc?.visibilityState === "hidden";
   let stopped = false;
   let reading = false;
