@@ -12,8 +12,8 @@ export interface NativeChange { place: string; before: string; after: string }
  * what the helper found in an app's window, for a screen step whose proposal carries it.
  */
 interface NativePart<O extends NativeOp> {
-  /** Rig's own sentence on what it does, made from the op, for a kind whose op carries no sentence of Claude's. */
-  does?(op: O): string;
+  /** Rig's own sentence on what it does, made from the op, for a kind whose op carries no sentence of Claude's, or one Rig offers itself. */
+  does?(op: O): string | undefined;
   /** The card's heading, like a command card's: "Changes Vertical sync for game.exe". */
   title(op: O, look?: ScreenLook): string;
   /** What it changes and where, above the values, from the op and the helper's read. `note` says whose words the value is. */
@@ -125,6 +125,8 @@ export const sealedLine = "Drive encryption (BitLocker) is on. Windows may ask f
 export const recoveryKey = "I have my BitLocker recovery key.";
 
 const firmware: NativePart<FirmwareOp> = {
+  // A setting Rig offers itself (the battery charge limit) has its own sentence in the table, shown in place of Claude's.
+  does: (op) => firmwareSetting(op.setting)?.does?.[op.value],
   title: (op) => {
     const s = firmwareSetting(op.setting);
     return s ? `Changes ${s.name} in firmware` : "Changes a firmware setting";

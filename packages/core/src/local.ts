@@ -8,6 +8,7 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import { searchPages } from "./manualSearch";
 import { describeCall, needsRead, NOT_READ, nowFromUndo, powerSettings, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
 import { SAVER_SETTINGS, type PowerNow } from "./battery";
+import { chargeReadable, chargeReadOf, type ChargeRead } from "./chargeLimit";
 import { openRevert, protectionRow, revertResult, type OpenRevert } from "./protection";
 import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
@@ -72,6 +73,9 @@ export interface HelperLink {
 export const APPROVE_DECLINED = "Windows didn't give permission, so the change isn't approved.";
 /** The helper stored a step this app fingerprints differently, so the card would show one change and run another. */
 export const STEP_DIFFERS = "Rig's helper read this change differently than the Rig app did, so there is nothing to approve. Update Rig, then ask again.";
+
+/** The battery charge limit is read this often at most: a firmware read asks the maker's class, which can be slow. */
+const CHARGE_READ_MS = 30 * 60_000;
 
 /** How many times one answer can stop to read the PC and go on. The server's round cap stops it first. */
 const MAX_READ_HOPS = 8;
@@ -156,6 +160,9 @@ export class LocalClient implements RigClient {
   private window: HistoryWindow | null = null;
   /** A laptop's power settings the battery savers look at, read with the facts (they aren't in them). */
   private power: PowerNow = {};
+  /** A Dell or HP laptop's battery charge limit, from the helper's firmware read, and when it was read. */
+  private charge: ChargeRead | null = null;
+  private chargeAt = 0;
   /** When the busiest apps were last read for the history window, while on battery. */
   private appsAt = 0;
   /**
@@ -238,7 +245,7 @@ export class LocalClient implements RigClient {
       this.invAt = this.o.now();
       // Settings aren't needed to show the PC, so a slow read doesn't hold it up: the next tick tries again.
       this.facts = await this.stage(`reading this ${this.word}'s settings`, () => this.link.facts()).catch(() => null);
-      if (this.facts) { this.factsAt = this.o.now(); await this.readPower(); }
+      if (this.facts) { this.factsAt = this.o.now(); await this.readPower(); await this.readCharge(); }
       await this.stage("opening Rig's saved history", async () => {
         this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
         this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
@@ -314,7 +321,7 @@ export class LocalClient implements RigClient {
     try {
       const now = this.o.now();
       // Settings and parts only feed the screens too: while hidden they wait, and the first read after showing catches up.
-      if (!this.quiet && now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; await this.readPower(); }
+      if (!this.quiet && now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; await this.readPower(); await this.readCharge(); }
       if (!this.quiet && now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
       if (this.lastError) this.o.log("info", "sensors: reading again");
@@ -375,7 +382,7 @@ export class LocalClient implements RigClient {
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan, power: this.power, sleep: this.bg.sleep });
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan, power: this.power, sleep: this.bg.sleep, charge: this.charge });
     const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
@@ -814,6 +821,18 @@ export class LocalClient implements RigClient {
     this.power = out;
   }
 
+  /**
+   * Reads the battery charge limit through the helper's firmware read, on a Dell or HP laptop, at most every half hour
+   * or at once after a change (`fresh`). It's a read of the maker's own class: nothing changes. A failed read keeps what was there.
+   */
+  private async readCharge(fresh = false) {
+    if (!this.inv || !chargeReadable(this.inv) || !this.link.read) return;
+    if (!fresh && this.chargeAt && this.o.now() - this.chargeAt < CHARGE_READ_MS) return;
+    this.chargeAt = this.o.now();
+    const text = await this.link.read({ kind: "firmware" }).catch(() => null);
+    if (text != null) this.charge = chargeReadOf(text);
+  }
+
   private async freshFacts() {
     this.facts = await this.link.facts();
     this.factsAt = this.o.now();
@@ -979,6 +998,7 @@ export class LocalClient implements RigClient {
       reply = await helper("step.apply", { nonce });
     } finally {
       await this.freshFacts().catch(() => {});
+      if (held.step.kind === "native" && held.step.op.name === "firmware") await this.readCharge(true);
       this.emit();
     }
     this.o.log("info", `change: ${held.step.kind} ${reply.outcome}`);
@@ -1003,6 +1023,7 @@ export class LocalClient implements RigClient {
       reply = await this.helperUndo(undoId, force);
     } finally {
       await this.freshFacts().catch(() => {});
+      if (c.applied.some((a) => a.step.kind === "native" && a.step.op.name === "firmware")) await this.readCharge(true);
       this.emit();
     }
     this.o.log("info", `change: undo ${reply.outcome}${force ? " (put back anyway)" : ""}`);

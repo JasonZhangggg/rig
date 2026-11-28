@@ -6,7 +6,7 @@ const verdict = (op: Record<string, unknown>, tainted = false) => checkStep(step
 
 describe("the firmware table", () => {
   it("loads, and every value it won't set says why", () => {
-    expect(Object.keys(FIRMWARE_SETTINGS).sort()).toEqual(["fanMode", "secureBoot", "tpm", "virtualization", "vtd", "wakeOnLan"]);
+    expect(Object.keys(FIRMWARE_SETTINGS).sort()).toEqual(["chargeLimit", "fanMode", "secureBoot", "tpm", "virtualization", "vtd", "wakeOnLan"]);
     for (const [key, s] of Object.entries(FIRMWARE_SETTINGS)) {
       for (const v of s.allow) expect(s.values, key).toHaveProperty(v);
       for (const v of Object.keys(s.values).filter((x) => !s.allow.includes(x))) expect(s.refuse?.[v], `${key} ${v}`).toBeTruthy();

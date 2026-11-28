@@ -2,8 +2,8 @@
   "version": 1,
   "about": [
     "Firmware (BIOS) settings Rig offers, by maker. One table for the server, the app (packages/core/src/firmware.ts) and the helper (helper/RigHelper/Firmware.cs). A step names a setting by its key here and a value by its key in `values`; the helper turns them into the maker's exact attribute name and value text for this PC's maker, and nothing else is ever sent to the firmware.",
-    "`allow`: the values a step may set. A value in `values` that isn't allowed has words in `refuse`, and is refused as never. `sealed`: BitLocker and device encryption measure it. No firmware change, and no restart into firmware setup, is made while drive encryption is on for the system drive or Rig can't tell. `undo: false`: Rig won't set the old value back (that would be a refused value), and says so. `windows`: what Windows itself can read after the restart to tell whether it took (tpm, secureBoot, virtualization); without it, Rig reads the maker's value again.",
-    "Per maker: `attribute` is the exact name the maker's class uses and `values` the exact value text for each Rig value. `fromWindows: false` means the maker doesn't let Windows change it without a firmware password, which Rig never uses: it is read only, and `why` says so. `asks`: the firmware asks the person to confirm at the next start.",
+    "`allow`: the values a step may set. A value in `values` that isn't allowed has words in `refuse`, and is refused as never. `sealed`: BitLocker and device encryption measure it. No firmware change, and no restart into firmware setup, is made while drive encryption is on for the system drive or Rig can't tell. `undo: false`: Rig won't set the old value back (that would be a refused value), and says so. `windows`: what Windows itself can read after the restart to tell whether it took (tpm, secureBoot, virtualization); without it, Rig reads the maker's value again. `does`: Rig's own sentence for each value, shown on the card in place of Claude's, for a setting Rig offers itself (the battery charge limit, from a laptop's Battery life tab).",
+    "Per maker: `attribute` is the exact name the maker's class uses and `values` the exact value text for each Rig value. `fromWindows: false` means the maker doesn't let Windows change it without a firmware password, which Rig never uses: it is read only, and `why` says so. `asks`: the firmware asks the person to confirm at the next start. `stopsAt`: the charge level the maker's value stops at, when the maker documents one.",
     "`makers`: how a PC's maker is found (`match`, folded, against Win32_ComputerSystem.Manufacturer's start). `never`: words that are never a setting Rig changes, matched against a step's setting and against every attribute name here (folded, letters and digits only)."
   ],
   "makers": {
@@ -54,6 +54,17 @@
       "makers": {
         "dell": { "attribute": "ThermalManagement", "values": { "quiet": "Quiet", "balanced": "Optimized", "cool": "Cool", "performance": "UltraPerformance" } },
         "lenovo": { "attribute": "AdaptiveThermalManagementAC", "values": { "balanced": "Balanced", "performance": "MaximizePerformance" } }
+      }
+    },
+    "chargeLimit": {
+      "name": "Battery charge limit",
+      "says": "A battery kept at 100% on the charger wears fastest; most makers let it stop at about 80%.",
+      "does": { "on": "Stops charging short of full while it's plugged in, so the battery wears more slowly.", "off": "Charges the battery to full again." },
+      "values": { "on": "On", "off": "Off" },
+      "allow": ["on", "off"],
+      "makers": {
+        "dell": { "attribute": "PrimaryBattChargeCfg", "values": { "on": "PrimAcUse", "off": "Standard" } },
+        "hp": { "attribute": "Battery Health Manager", "values": { "on": "Maximize my battery health", "off": "Let HP manage my battery charging" }, "stopsAt": 80 }
       }
     },
     "tpm": {

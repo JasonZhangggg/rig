@@ -21,6 +21,8 @@ export interface FirmwareMakerRow {
   why?: string;
   /** The firmware asks the person to confirm at the next start. */
   asks?: string;
+  /** The charge level the maker's value stops at, when the maker documents one (the battery charge limit). */
+  stopsAt?: number;
 }
 
 export interface FirmwareSetting {
@@ -34,6 +36,8 @@ export interface FirmwareSetting {
   /** Rig won't set the old value back. */
   undo?: false;
   windows?: "tpm" | "secureBoot" | "virtualization";
+  /** Rig's own sentence for each value, shown on the card in place of Claude's: for a setting Rig offers itself. */
+  does?: Record<string, string>;
   makers: Partial<Record<FirmwareMaker, FirmwareMakerRow>>;
 }
 
@@ -53,6 +57,12 @@ export interface FirmwareOp {
 
 /** Restarts this PC in a minute into its firmware setup. It takes nothing from the model: the app draws its button. */
 export interface RestartFirmwareOp { name: "restartToFirmware" }
+
+/** The maker's key for a Win32_ComputerSystem.Manufacturer, or null for any other maker. Same matching as FirmwareTable.MakerOf in the helper. */
+export function firmwareMakerOf(manufacturer: string | undefined): FirmwareMaker | null {
+  const m = (manufacturer ?? "").trim().toLowerCase();
+  return FIRMWARE_MAKERS.find((k) => table.makers[k].match.some((x) => m === x || m.startsWith(`${x} `) || m.startsWith(`${x},`) || m.startsWith(`${x}.`))) ?? null;
+}
 
 const fold = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 

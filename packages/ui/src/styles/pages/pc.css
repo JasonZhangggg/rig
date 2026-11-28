@@ -286,6 +286,16 @@
 .batt-how { font-size: 14px; }
 .batt { display: flex; flex-direction: column; gap: 20px; }
 .batt-story { max-width: 60ch; color: var(--text-2); line-height: 1.5; }
+.batt-top { display: flex; flex-direction: column; gap: 6px; }
+.batt-top > p { margin: 0; }
+/* Whether charging stops short of full: one quiet line under today's story. */
+.batt-cap { font-size: 14px; color: var(--text-3); }
+.batt-card { list-style: none; padding: 4px 0 12px; }
+/* The firmware step's card sits in the part panel's narrow column, so it stacks the way it does on a phone. */
+.batt-card .cc-glance { grid-template-columns: minmax(0, 1fr); }
+.batt-card .cc-glance > div + div { border-left: 0; border-top: 1px solid var(--line); }
+.batt-card :is(.cc-touch, .cc-edit) { grid-template-columns: minmax(0, 1fr); }
+.batt-card .cc-values { grid-column: 1; }
 .batt-savers, .batt-sleeps { display: flex; flex-direction: column; gap: 2px; }
 :is(.batt-savers, .batt-sleeps) .label { margin-bottom: 2px; }
 /* The heavy night's next step, under its why: a plain text button lined up with the words above. */

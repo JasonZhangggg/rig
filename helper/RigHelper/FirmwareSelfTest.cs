@@ -54,6 +54,7 @@ public static class FirmwareSelfTest
         Check("restart into firmware setup: the preview reads OsIndicationsSupported and never restarts", () => RestartPreview(notes));
         Check("with a stand-in maker class: preview, approve, apply, the check after the restart, undo", StandIn);
         Check("a firmware password or the never list stops a change", PasswordAndNever);
+        Check("the battery charge limit: read, set and put back on a stand-in Dell, read on a stand-in HP", ChargeLimit);
         Check("drive encryption on or not known stops a firmware change and the restart into firmware setup", () => Encryption(notes));
         int passed = checks.Count(c => c?["ok"]?.GetValue<bool>() == true);
         return (new JsonObject { ["passed"] = passed, ["failed"] = checks.Count - passed, ["checks"] = checks, ["seen"] = notes }, problems);
@@ -63,7 +64,7 @@ public static class FirmwareSelfTest
     {
         var t = FirmwareTable.Rules;
         if (t.Version < 1) yield return "the table has no version";
-        if (t.Settings.Count != 6) yield return $"the table has {t.Settings.Count} settings, not 6";
+        if (t.Settings.Count != 7) yield return $"the table has {t.Settings.Count} settings, not 7";
         foreach (var s in t.Settings.Values)
         {
             foreach (var v in s.Allow) if (!s.Values.ContainsKey(v)) yield return $"{s.Key} allows {v}, which isn't one of its values";
@@ -211,6 +212,47 @@ public static class FirmwareSelfTest
             // Dell lets Windows change the security chip only with a password, so it is refused with Dell's own words.
             var tpm = Verdict(rig, Step("tpm", "on"));
             if (tpm?["refused"]?.ToString() != FirmwareTable.Rules.Settings["tpm"].Makers["dell"].Why) yield return $"Dell's security chip: {tpm?.ToJsonString()}";
+        }
+        finally
+        {
+            Firmware.TestOnlyBios = null;
+            Firmware.TestOnlyEncryption = null;
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    /// The battery charge limit, which a laptop's Battery life tab reads and offers: Rig reads it in its own words, sets the
+    /// maker's exact value and puts the old one back; with drive encryption on, the read says why Rig won't change it.
+    static IEnumerable<string> ChargeLimit()
+    {
+        if (!Native.IsAdmin()) { yield return $"{Skip}the self-test has no admin rights"; yield break; }
+        var hp = new MemoryBios("hp", new() { ["Battery Health Manager"] = "Let HP manage my battery charging" });
+        Firmware.TestOnlyBios = hp;
+        Firmware.TestOnlyEncryption = "off";
+        string root = Root("firmware-charge");
+        try
+        {
+            JsonObject? Row() => (JsonNode.Parse(Firmware.Read())?["settings"] as JsonArray)?.FirstOrDefault(r => r?["setting"]?.ToString() == "chargeLimit") as JsonObject;
+            var row = Row();
+            if (row?["now"]?.ToString() != "Off" || row["canSet"]?.ToJsonString() != "[\"on\",\"off\"]") yield return $"HP's charge limit reads {row?.ToJsonString()}";
+            Firmware.TestOnlyEncryption = "on";
+            row = Row();
+            if (row?["canSet"] != null || row?["why"]?.ToString() != "Drive encryption is on, so Rig won't change it.") yield return $"with drive encryption on it reads {row?.ToJsonString()}";
+            Firmware.TestOnlyEncryption = "off";
+
+            var dell = new MemoryBios("dell", new() { ["PrimaryBattChargeCfg"] = "Standard" });
+            Firmware.TestOnlyBios = dell;
+            var store = new CommandStore(root, secured: true);
+            var rig = new Commands(store, Environment.ProcessId, restorePoints: false) { TestOnlyElevatedApp = false };
+            var p = rig.Handle("step.preview", new JsonObject { ["step"] = Step("chargeLimit", "on") });
+            if (p["read"]?.ToString()?.StartsWith("Battery charge limit: Off\n", StringComparison.Ordinal) != true) { yield return $"the preview reads {p.ToJsonString()}"; yield break; }
+            string file = Path.Combine(store.Work, "approve.json");
+            File.WriteAllText(file, new JsonObject { ["nonce"] = p["nonce"]?.ToString(), ["owner"] = Person.Find(Environment.ProcessId).Sid }.ToJsonString());
+            if (Commands.ApproveFromFile(file, p["hash"]?.ToString(), store) != RecorderSetup.Ok) { yield return "it couldn't be approved"; yield break; }
+            var a = rig.Handle("step.apply", new JsonObject { ["nonce"] = p["nonce"]?.ToString() });
+            if (a["outcome"]?.ToString() != "applied" || dell.Now("PrimaryBattChargeCfg") != "PrimAcUse") yield return $"the apply: {a.ToJsonString()}, the stand-in reads {dell.Now("PrimaryBattChargeCfg")}";
+            var u = rig.Handle("step.undo", new JsonObject { ["id"] = a["undo"]?["id"]?.ToString() });
+            if (u["outcome"]?.ToString() != "undone" || dell.Now("PrimaryBattChargeCfg") != "Standard") yield return $"the undo: {u.ToJsonString()}, the stand-in reads {dell.Now("PrimaryBattChargeCfg")}";
         }
         finally
         {
