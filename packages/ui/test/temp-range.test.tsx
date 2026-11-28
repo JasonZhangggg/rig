@@ -21,10 +21,11 @@ async function openPart(name: RegExp) {
   location.hash = "pc";
   render(<RigApp client={new DemoClient()} />);
   fireEvent.click(await screen.findByRole("button", { name }, { timeout: 10000 }));
-  return screen.findByRole("region", { name: "Temperature" }, { timeout: 10000 });
+  // The first part page waits on the demo's month of history: under a second here, past 10 seconds on a busy CI runner.
+  return screen.findByRole("region", { name: "Temperature" }, { timeout: 25000 });
 }
 
-describe("Temperature range", { timeout: 25000 }, () => {
+describe("Temperature range", { timeout: 40000 }, () => {
   it("shows the graphics card against its limit and where it usually sits this week", async () => {
     const box = await openPart(/^Graphics card/);
     // Atlas's card hit 90°C in Cyberpunk this week, past the 88°C where it slows itself down: the room left says so.

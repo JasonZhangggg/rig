@@ -126,6 +126,30 @@ function yearMonth(s?: string): string | undefined {
 const shortCpu = (n: string) => n.replace(/^(AMD|Intel\(R\)|Intel)\s+/i, "").replace(/^Ryzen \d\s+/i, "").trim() || n;
 const shortGpu = (n: string) => n.replace(/^(NVIDIA|AMD|Intel)\s+/i, "").replace(/^GeForce\s+/i, "").replace(/^Radeon\s+/i, "").trim() || n;
 
+// SMBIOS memory types for LPDDR to LPDDR5: low-power memory is soldered, never a stick.
+const lpddr = new Set([27, 28, 29, 30, 35]);
+// Windows' FormFactor for chips on the board (TSOP, SMD, BGA, FPBGA), and for the two kinds of stick (DIMM, SO-DIMM).
+const chipForm = new Set([9, 14, 21, 22]);
+const stickForm = new Set([8, 12]);
+// DDR3, DDR4 and DDR5: the kinds that come on sticks.
+const stickType = new Set([24, 26, 34]);
+
+/**
+ * Whether the memory is soldered to the board, so no stick fits: "reported" when the modules' own form and type
+ * say so, "likely" for a laptop with one module and no slot count (it almost always has it on the board), and
+ * undefined when it isn't, or Rig can't tell.
+ */
+export function solderedMemory(inv: Inventory): "reported" | "likely" | undefined {
+  const { modules, slotsTotal } = inv.memory;
+  const said = modules.map((m) =>
+    (m.smbiosType != null && lpddr.has(m.smbiosType)) || (m.formFactor != null && chipForm.has(m.formFactor)) ? true
+      : m.formFactor != null && stickForm.has(m.formFactor) && m.smbiosType != null && stickType.has(m.smbiosType) ? false
+        : undefined);
+  if (said.length && said.every((s) => s === true)) return "reported";
+  if (said.some((s) => s === false)) return undefined;
+  return inv.machine.kind === "laptop" && !slotsTotal && modules.length <= 1 ? "likely" : undefined;
+}
+
 export function hardwareFacts(inv: Inventory): HardwareFacts {
   const laptop = inv.machine.kind === "laptop";
   const m = inv.memory;
@@ -147,8 +171,7 @@ export function hardwareFacts(inv: Inventory): HardwareFacts {
     memory: {
       ddr, slotsTotal: m.slotsTotal, used: m.modules.length, stickGb: first ? Math.round(first.capacityMb / 1024) : undefined,
       totalGb: Math.round(m.totalMb / 1024), speed, partNumber: first?.partNumber,
-      // Thin laptops with one module and no slot count almost always have it on the board.
-      soldered: laptop && !m.slotsTotal && m.modules.length <= 1,
+      soldered: !!solderedMemory(inv),
     },
     storage: {
       nvme: inv.disks.filter((d) => d.media === "nvme").length,
@@ -186,7 +209,7 @@ export function fitOf(item: ShopItem, f: HardwareFacts, psuW?: number): Fit {
   switch (item.category) {
     case "memory": {
       const m = f.memory;
-      if (m.soldered) return fit("no", `${pc}'s memory is built into the board, like most thin laptops.`);
+      if (m.soldered) return fit("no", `${pc}'s memory is built into the board${f.laptop ? ", like most thin laptops" : ""}.`);
       if (is.sodimm && !f.laptop) return fit("no", "This is laptop memory (SO-DIMM). It doesn't fit a desktop board.");
       if (!is.sodimm && f.laptop) return fit("no", "This is desktop memory. Laptops take the smaller SO-DIMM sticks.");
       if (m.ddr && is.ddr && is.ddr !== m.ddr) return fit("no", `DDR${is.ddr} doesn't fit ${pc}'s DDR${m.ddr} board.`);
@@ -214,7 +237,7 @@ export function fitOf(item: ShopItem, f: HardwareFacts, psuW?: number): Fit {
       return fit("check", "Every M.2 slot is in use, so this would replace a drive.");
     }
     case "gpu": {
-      if (f.laptop) return fit("no", `${pc}'s graphics are built into its processor.`);
+      if (f.laptop) return fit("no", f.gpu ? `${pc}'s ${f.gpu.short} is soldered to the board.` : `${pc}'s graphics are built into its processor.`);
       const need = drawWith(item, f);
       const length = "Card length varies by maker, so check it against your case.";
       if (psuW == null) return fit("check", `Needs about ${need} W in all. Tell Rig your power supply's wattage to check it.`, [length]);
@@ -291,7 +314,7 @@ export function categoryState(key: ShopCategory, f: HardwareFacts, psuW?: number
       const free = f.board.m2Slots != null ? f.board.m2Slots - f.storage.nvme : undefined;
       return { key, label, open: true, have: f.storage.drive ?? `${+f.storage.totalTb.toFixed(1)} TB`, room: f.laptop ? "One M.2 slot, so a swap" : free == null ? undefined : free ? `${free} of ${f.board.m2Slots} M.2 slots free` : "Every M.2 slot in use" };
     }
-    case "gpu": return f.laptop || !f.gpu ? closed("Built into the processor") : { key, label, open: true, have: f.gpu.short, room: f.gpu.vramGb ? `${f.gpu.vramGb} GB of video memory` : undefined };
+    case "gpu": return !f.gpu ? closed("Built into the processor") : f.laptop ? closed(`${f.gpu.short}, soldered`) : { key, label, open: true, have: f.gpu.short, room: f.gpu.vramGb ? `${f.gpu.vramGb} GB of video memory` : undefined };
     case "cpu": return f.laptop ? closed(`${f.cpu.short}, soldered`) : { key, label, open: true, have: f.cpu.name.replace(/^(AMD|Intel)\s+/i, ""), room: f.cpu.socket && `${f.cpu.socket} socket` };
     case "cooler": return f.laptop ? closed("Built in") : { key, label, open: true, have: "Windows can't see it" };
     case "fans": return f.laptop ? closed("Built in") : { key, label, open: true, have: "Windows can't see them" };

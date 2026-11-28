@@ -11,7 +11,8 @@
 // can show it in °F with differences scaled but not offset.
 
 import { WEAR_CRITICAL, WEAR_LOW } from "./diagnose";
-import { cpuLimit, cpuTemp, gpuLimit, gpuTemp, summaryLine } from "./health";
+import { cpuLimit, cpuTemp, gpuLimit, gpuTemp, limitByDesign, summaryLine } from "./health";
+import { throttlingHard } from "./limits";
 import { tempsInText, type TempUnit } from "./units";
 import { HISTORY_WINDOW_MS, type Alert, type AlertKind, type HistoryPoint, type PC, type Severity } from "./model";
 import { findSensor, type Inventory, type Sensor, type Snapshot } from "./telemetry";
@@ -72,11 +73,18 @@ const tooHot: AlertRule = {
     const id = `too-hot:${p.key}`;
     const t = p.temp?.value;
     if (t == null || !over(t, p.limit, p.limit - LIMIT_MARGIN, holding.has(id))) return [];
-    const cause = p.key === "gpu" ? "Dust on the intake filters is the usual cause." : "Check that the cooler's fan spins and the vents aren't blocked.";
+    // A processor built to run at its limit under load (every laptop's) is only worth an alert once it loses real speed there.
+    const slow = p.key === "cpu" ? throttlingHard(snap) : null;
+    if (p.key === "cpu" && !slow && limitByDesign(inv, findSensor(snap, "cpu", "load", /total/i)?.value)) return [];
+    const laptop = inv.machine.kind === "laptop";
+    const cause = p.key === "gpu"
+      ? laptop ? "Dust in the fans or blocked vents is the usual cause." : "Dust on the intake filters is the usual cause."
+      : laptop ? "Keep the vents clear and use it on a hard, flat surface." : "Check that the cooler's fan spins and the vents aren't blocked.";
+    const speed = slow ? ` It's down to ${(slow.now / 1000).toFixed(1)} GHz, from ${(slow.top / 1000).toFixed(1)} GHz.` : "";
     return [{
       id, part: p.key, severity: "bad",
       title: `${p.name} is staying at its ${p.limit}°C limit`,
-      detail: `It's at ${round(t)}°C, so it slows itself down to cool off. ${cause}`,
+      detail: `It's at ${round(t)}°C, so it slows itself down to cool off, which is called throttling.${speed} ${cause}`,
       ask: `My ${p.name.toLowerCase()} has been at ${round(t)}°C for a while. What should I do?`,
       covers: [`${p.key}-hot`, `${p.key}-warm`],
     }];
@@ -222,7 +230,7 @@ const hotterThanUsual: AlertRule = {
   check: ({ inv, history, now, holding }) => watched(inv, null).flatMap((p): AlertFinding[] => {
     const id = `hotter-than-usual:${p.key}`;
     const need = holding.has(id) ? USUAL.clear : USUAL.warmer;
-    return usualFor(history, `${p.key}|${need}`, inv, now, () => compareUsual(p, id, need, history, now));
+    return usualFor(history, `${p.key}|${need}`, inv, now, () => compareUsual(p, id, need, history, now, inv.machine.kind === "laptop"));
   }),
 };
 
@@ -242,7 +250,7 @@ function usualFor(history: readonly HistoryPoint[], key: string, inv: Inventory,
   return found;
 }
 
-function compareUsual(p: Watched, id: string, need: number, history: readonly HistoryPoint[], now: number): AlertFinding[] {
+function compareUsual(p: Watched, id: string, need: number, history: readonly HistoryPoint[], now: number, laptop: boolean): AlertFinding[] {
   const read = (x: HistoryPoint) => x[p.key]!;
   const games = new Map<string, { recent: HistoryPoint[]; before: HistoryPoint[] }>();
   for (const x of history) {
@@ -265,7 +273,7 @@ function compareUsual(p: Watched, id: string, need: number, history: readonly Hi
   return [{
     id, part: p.key, severity: "warn",
     title: `${p.name} runs hotter than it used to`,
-    detail: `In ${best.game} it's been at ${lately}°C lately, up from its usual ${usual}°C. Dust on the filters and fans is the usual cause.`,
+    detail: `In ${best.game} it's been at ${lately}°C lately, up from its usual ${usual}°C. ${laptop ? "Dust in the fans and vents is the usual cause." : "Dust on the filters and fans is the usual cause."}`,
     ask: `My ${p.name.toLowerCase()} runs at ${lately}°C in ${best.game}, up from ${usual}°C a few weeks ago. Why, and what should I do?`,
     since: warmSince(best.recent, read, best.usual + need),
   }];
