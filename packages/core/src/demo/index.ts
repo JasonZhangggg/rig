@@ -19,6 +19,7 @@ import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts, demoNow, demoSaverPower } from "./apply";
 import { batteryView } from "../battery";
+import { demoSleepLog } from "./battery";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
@@ -169,14 +170,16 @@ export class DemoClient implements RigClient {
     if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now, (from) => sampled(from).some((at) => activityAt(weekFor(p.inv), at).game)) };
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
-    const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
+    // A laptop's last week of sleeps, as its background recorder would have logged them.
+    const sleep = demoSleepLog(p.inv, now);
+    const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan, sleep });
     // The battery page reads today's history (and the hour before, for a stretch that started late last night) and the
     // power settings, which the rest of the demo view goes without. Only laptops have one, and only today's windows are worked out.
     if (p.inv.machine.kind === "laptop" && (!p.today || now - p.today.at > HISTORY_WINDOW_MS)) {
       const midnight = new Date(now).setHours(0, 0, 0, 0);
       p.today = { at: now, points: this.points(p, Math.min(midnight, now - 3 * 36e5) - 36e5, now) };
     }
-    const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now });
+    const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now, sleep });
     return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: `Demo ${machineWord(pc.kind)}` }, alerts);
   }
 

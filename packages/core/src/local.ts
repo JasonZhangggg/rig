@@ -375,7 +375,7 @@ export class LocalClient implements RigClient {
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan, power: this.power });
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan, power: this.power, sleep: this.bg.sleep });
     const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;

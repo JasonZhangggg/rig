@@ -7,6 +7,7 @@ import type { ActionCall } from "./actions";
 import { powerSettings } from "./actions";
 import type { HistoryPoint } from "./model";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
+import { sleepsOf, type SleepLog, type SleepView } from "./sleeps";
 
 /** What the battery is doing, as LibreHardwareMonitor's battery sensors say. */
 export interface BatteryNow {
@@ -195,7 +196,9 @@ export function drainStory(history: readonly HistoryPoint[], now: number, live?:
 export type PowerNow = Partial<Record<string, { ac: number; dc: number }>>;
 
 /** The power settings the savers look at, which the facts don't hold: the desktop and the demo read them for laptops. */
-export const SAVER_SETTINGS = ["displayOffAfter", "sleepAfter"] as const;
+export const SAVER_SETTINGS = ["displayOffAfter", "sleepAfter", "hibernateAfter"] as const;
+/** After a heavy sleep, hibernating after this long asleep on battery is offered: hibernation uses no battery. */
+const HIBERNATE_AFTER = 3 * 3600;
 
 export interface BatterySaver {
   id: string;
@@ -220,9 +223,14 @@ function onBattery(id: string, now: { ac: number; dc: number }, dc: number): Act
  * best first. Each is only offered when it would change something: a setting already where it would go isn't listed.
  * Desktops get none.
  */
-export function batterySavers(inv: Inventory, facts: SystemFacts | null, power: PowerNow = {}): BatterySaver[] {
+export function batterySavers(inv: Inventory, facts: SystemFacts | null, power: PowerNow = {}, sleeps: readonly SleepView[] = []): BatterySaver[] {
   if (inv.machine.kind !== "laptop" || !facts) return [];
   const out: BatterySaver[] = [];
+  // A sleep that used a lot: hibernating after a few hours asleep stops a long night draining it, whatever kept it awake.
+  const hib = power.hibernateAfter;
+  if (hib && sleeps.some((s) => s.heavy) && (hib.dc === 0 || hib.dc > HIBERNATE_AFTER)) {
+    out.push({ id: "hibernate", title: "Hibernate after 3 hours asleep on battery", meta: "A long sleep then uses almost no battery. It takes a few seconds longer to wake.", fix: [onBattery("hibernateAfter", hib, HIBERNATE_AFTER)] });
+  }
   const cap = facts.maxProcessorState;
   if (cap.dc === 100) {
     out.push({
@@ -258,11 +266,13 @@ export interface BatteryView {
   time?: TimeLeft;
   /** Today on battery, in a sentence or two. */
   story?: string;
+  /** The last week's sleeps on battery, newest first, with how much each used (sleeps.ts). */
+  sleeps?: SleepView[];
   savers: BatterySaver[];
 }
 
 /** Everything the battery section shows, or undefined for a PC without a battery. */
-export function batteryView(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, more: { history?: readonly HistoryPoint[]; power?: PowerNow; now?: number } = {}): BatteryView | undefined {
+export function batteryView(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, more: { history?: readonly HistoryPoint[]; power?: PowerNow; now?: number; sleep?: SleepLog } = {}): BatteryView | undefined {
   if (inv.machine.kind !== "laptop") return undefined;
   const live = readBattery(snap);
   if (!live && !inv.battery) return undefined;
@@ -270,12 +280,14 @@ export function batteryView(inv: Inventory, snap: Snapshot | null, facts: System
   const history = more.history ?? [];
   const time = live ? timeLeft(live, inv.battery?.fullWh, live.state === "discharging" ? recordedDrain(history, now) : null) : null;
   const story = drainStory(history, now, live);
+  const sleeps = sleepsOf(inv.machine.kind, more.sleep, history, now);
   return {
     ...(live?.level != null ? { level: Math.round(live.level) } : {}),
     ...(live?.state ? { state: live.state } : {}),
     ...(live?.watts != null ? { watts: Math.round(live.watts * 10) / 10 } : {}),
     ...(time ? { time } : {}),
     ...(story ? { story } : {}),
-    savers: batterySavers(inv, facts, more.power),
+    ...(sleeps.length ? { sleeps } : {}),
+    savers: batterySavers(inv, facts, more.power, sleeps),
   };
 }

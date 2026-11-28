@@ -286,8 +286,10 @@
 .batt-how { font-size: 14px; }
 .batt { display: flex; flex-direction: column; gap: 20px; }
 .batt-story { max-width: 60ch; color: var(--text-2); line-height: 1.5; }
-.batt-savers { display: flex; flex-direction: column; gap: 2px; }
-.batt-savers .label { margin-bottom: 2px; }
+.batt-savers, .batt-sleeps { display: flex; flex-direction: column; gap: 2px; }
+:is(.batt-savers, .batt-sleeps) .label { margin-bottom: 2px; }
+/* The heavy night's next step, under its why: a plain text button lined up with the words above. */
+.batt-ask { margin-left: calc(-1 * var(--hang)); }
 .batt-foot { margin-top: 6px; font-size: 13px; }
 /* ---------- Safety tab ---------- */
 /* Four rows, read like the Manuals tab's lists and as wide: what was read in grey, a chip only for what needs a look. */

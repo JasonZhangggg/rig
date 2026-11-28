@@ -9,8 +9,11 @@ import { SAVER_SETTINGS, type PowerNow } from "../battery";
 const demoPower: Record<string, [number, number]> = {
   usbSelectiveSuspend: [1, 1], pcieLinkState: [0, 2], sleepAfter: [1800, 900], displayOffAfter: [600, 300], hibernateAfter: [0, 10800], processorMin: [5, 5], coolingPolicy: [1, 0],
 };
-/** Pebble's battery side was never tuned: the screen stays on 15 minutes and it sleeps after an hour, so the battery page has savers to show. */
-const laptopPower: Record<string, [number, number]> = { ...demoPower, sleepAfter: [1800, 3600], displayOffAfter: [600, 900] };
+/**
+ * Pebble's battery side was never tuned: the screen stays on 15 minutes and it sleeps after an hour, so the battery page has
+ * savers to show. Neither laptop hibernates on its own, so after the gaming laptop's bad night that's offered too.
+ */
+const laptopPower: Record<string, [number, number]> = { ...demoPower, sleepAfter: [1800, 3600], displayOffAfter: [600, 900], hibernateAfter: [0, 0] };
 
 const settings = new WeakMap<SystemFacts, Map<string, { ac: number; dc: number }>>();
 function settingsOf(inv: Inventory, f: SystemFacts) {
