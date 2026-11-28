@@ -10,9 +10,10 @@ import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
 import { formatTemp, resolveBuild, type PC, type Part, type TempUnit } from "@rig/core";
 import { reducedMotion } from "./appearance";
 import { createSceneLabels, type LabelPoint } from "./sceneLabels";
-import { FAN_FPS, fanHitArea, fanSpeed, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MatOpts } from "./parts3d";
+import { FAN_FPS, fanHitArea, fanSpeed, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MakeMat, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
+import { LAPTOP, makeLaptopBody } from "./laptop3d";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -573,104 +574,81 @@ export function createScene(
   }
 
   // ---------- laptop ----------
-  function screenTexture(accent: string, th: SceneTheme) {
-    const c = document.createElement("canvas");
-    c.width = 1024; c.height = 640;
-    const g = c.getContext("2d")!;
-    g.fillStyle = th.screenBg; g.fillRect(0, 0, 1024, 640);
-    g.fillStyle = th.screenPanel; g.fillRect(0, 0, 200, 640);
-    g.fillStyle = accent; g.fillRect(40, 48, 120, 18);
-    for (let i = 0; i < 6; i++) { g.fillStyle = th.screenLine; g.fillRect(40, 110 + i * 46, 110, 12); }
-    for (let i = 0; i < 3; i++) { g.fillStyle = th.screenPanel; g.fillRect(240 + i * 255, 60, 230, 150); g.fillStyle = i === 0 ? accent : th.screenLine; g.fillRect(260 + i * 255, 150, 120 - i * 20, 26); }
-    g.strokeStyle = accent; g.lineWidth = 6; g.beginPath();
-    for (let x = 0; x <= 740; x += 20) { const y = 470 - Math.sin(x / 70) * 50 - (x / 740) * 60; x === 0 ? g.moveTo(250 + x, y) : g.lineTo(250 + x, y); }
-    g.stroke();
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  }
-
   function buildLaptop(pc: PC, th: SceneTheme): Framing {
-    const W = 3.12, D = 2.2;
     const accent = th.accent ?? pc.accent;
-    const shellMat = () => M(th.laptopShell);
+    // The body is drawn in real materials, brushed aluminium and glass that catch the light like a product photo,
+    // and keeps the ink outline of the ink look, so it sits with the parts inside and with every other PC.
+    // The screen lights itself, so it takes the plain ink material: real lighting over that much of the view would
+    // halve the frame rate on a slow laptop for no visible gain.
+    const outline = th.finish !== "real" ? { thickness: 0.0042, color: new THREE.Color(th.trim).toArray(), visible: true } : { visible: false };
+    const real: MakeMat = (color, o = {}) => {
+      const m = realMaterial(color, o);
+      m.userData.outlineParameters = o.emissive ? { visible: false } : outline;
+      m.userData.glow = !!o.emissive;
+      m.userData.baseEmissive = m.emissive.clone();
+      m.userData.baseEI = m.emissiveIntensity;
+      m.userData.baseOpacity = m.opacity;
+      return m;
+    };
+    const body = makeLaptopBody(real, { shell: th.laptopShell, keys: th.keys, trackpad: th.trackpad, screenBg: th.screenBg, screenPanel: th.screenPanel, screenLine: th.screenLine }, accent, M);
+    // The bottom cover stays on the turntable when the laptop is opened up; everything else lifts off it in layers.
+    add(body.bottom, "chassis");
 
-    // Bottom cover
-    const bottom = roundBox(W, 0.04, D, 0.12, shellMat(), 0, 0.02, 0);
-    for (const [fx, fz] of [[-1.2, -0.85], [1.2, -0.85], [-1.2, 0.85], [1.2, 0.85]]) bottom.add(box(0.5, 0.02, 0.06, M(th.trim), fx, -0.03, fz));
-    add(bottom, "chassis", [0, -1.1, 0]);
-
-    // Internals
-    const board = box(1.9, 0.015, 0.9, M(th.board), 0.1, 0.01, -0.5);
-    const boardG = new THREE.Group(); boardG.add(board);
-    add(boardG, "board", [0, 0.7, 0]);
+    // Inside, between the bottom cover and the top case: the board and cooling at the back, the battery under the palm rest.
+    const floor = LAPTOP.cover;
+    // The board fills the back between the two fans, with a few small chips of its own.
+    const boardG = new THREE.Group();
+    boardG.add(box(1.72, 0.012, 0.9, M(th.board), 0.05, floor + 0.008, -0.5));
+    const smd = M(th.heatsink);
+    for (const [x, z, w, d] of [[-0.62, -0.8, 0.12, 0.08], [0.42, -0.82, 0.16, 0.1], [-0.6, -0.2, 0.1, 0.1], [0.5, -0.12, 0.2, 0.06]]) boardG.add(box(w, 0.01, d, smd, x, floor + 0.018, z));
+    add(boardG, "board", [0, 0.42, 0.4]);
+    // The processor: dies on a small green package, soldered to the board.
     const cpu = new THREE.Group();
-    cpu.add(box(0.28, 0.03, 0.22, M(th.chip), 0.1, 0.03, -0.5));
-    const pipeMat = M(th.copper);
-    for (const dz of [-0.06, 0.06]) {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.1, 10), pipeMat);
-      p.rotation.z = Math.PI / 2; p.position.set(0.1, 0.06, -0.5 + dz);
-      cpu.add(p);
-    }
-    add(cpu, "cpu", [0, 0.95, 0]);
+    cpu.add(box(0.3, 0.008, 0.22, M(th.ssd), 0.1, floor + 0.018, -0.5));
+    cpu.add(box(0.15, 0.006, 0.12, M(th.chip), 0.07, floor + 0.025, -0.5));
+    cpu.add(box(0.06, 0.006, 0.12, M(th.chip), 0.2, floor + 0.025, -0.5));
+    add(cpu, "cpu", [0, 0.78, 0.4]);
+    // Memory soldered beside the processor, as on a thin laptop.
     const ram = new THREE.Group();
-    for (let i = 0; i < 4; i++) ram.add(box(0.14, 0.02, 0.16, M(th.chip), -0.35 + (i % 2) * 0.18, 0.025, -0.68 + Math.floor(i / 2) * 0.36));
-    add(ram, "ram", [0, 0.85, 0]);
+    const ramMat = M(th.chip);
+    for (let i = 0; i < 4; i++) ram.add(box(0.13, 0.012, 0.14, ramMat, -0.36 + (i % 2) * 0.16, floor + 0.02, -0.58 + Math.floor(i / 2) * 0.17));
+    add(ram, "ram", [0, 0.62, 0.4]);
     const lfans = new THREE.Group();
-    for (const x of [-1.15, 1.25]) {
-      const f = fan(0.62, th.fanFrame, th.fanFrame, { thick: 0.08, glow: 0 });
+    for (const x of [-1.12, 1.22]) {
+      const f = fan(0.56, th.fanFrame, th.fanFrame, { thick: 0.03, glow: 0 });
       f.rotation.x = -Math.PI / 2;
-      f.position.set(x, 0.06, -0.6);
+      f.position.set(x, floor + 0.022, -0.6);
       lfans.add(f);
       state.rotors.push({ rotor: f.userData.rotor, partId: "fans" });
     }
-    add(lfans, "fans", [0, 1.1, 0]);
-    const bat = roundBox(2.5, 0.06, 0.82, 0.05, M(th.battery), 0, 0.04, 0.55);
-    add(bat, "battery", [0, 0.5, 0.25]);
-    const ssd = box(0.22, 0.02, 0.8, M(th.ssd), 0.85, 0.03, -0.45);
-    ssd.rotation.y = Math.PI / 2;
-    add(ssd, "ssd", [0.2, 0.8, 0.55]);
-
-    // Deck with keyboard, and the lid (move together when exploded)
-    const deck = new THREE.Group();
-    deck.add(roundBox(W, 0.15, D, 0.12, shellMat(), 0, 0.115, 0));
-    const keyMat = M(th.keys);
-    const keyGeo = new THREE.BoxGeometry(0.16, 0.02, 0.15);
-    const keys = new THREE.InstancedMesh(keyGeo, keyMat, 6 * 14);
-    const dummy = new THREE.Object3D();
-    let k = 0;
-    for (let r = 0; r < 6; r++) for (let c = 0; c < 14; c++) {
-      dummy.position.set(-1.2 + c * 0.185, 0.2, -0.82 + r * 0.19);
-      dummy.updateMatrix();
-      keys.setMatrixAt(k++, dummy.matrix);
+    // Two heatpipes carry the processor's heat out to both fans.
+    const pipeMat = M(th.copper);
+    for (const dz of [-0.05, 0.05]) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 2.0, 10), pipeMat);
+      p.rotation.z = Math.PI / 2; p.position.set(0.1, floor + 0.03, -0.5 + dz);
+      lfans.add(p);
     }
-    keys.castShadow = true;
-    deck.add(keys);
-    deck.add(box(1.15, 0.01, 0.62, M(th.trackpad), 0, 0.194, 0.62));
-    // Lid
-    const hinge = new THREE.Group();
-    hinge.position.set(0, 0.19, -D / 2 + 0.02);
-    const lid = new THREE.Group();
-    lid.add(roundBox(W, 0.06, D, 0.12, shellMat(), 0, 0, D / 2));
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.22, D - 0.26), new THREE.MeshBasicMaterial({ map: screenTexture(accent, th), toneMapped: false }));
-    screen.rotation.x = Math.PI / 2;
-    screen.position.set(0, -0.031, D / 2 + 0.02);
-    lid.add(screen);
-    // Accent identity: a small light on the lid back
-    lid.add(box(0.42, 0.012, 0.42, M(accent, { emissive: accent, ei: 0.5 }), 0, 0.035, D / 2));
-    hinge.add(lid);
-    hinge.rotation.x = -1.92;
-    deck.add(hinge);
-    add(deck, "chassis", [0, 1.85, 0]);
+    add(lfans, "fans", [0, 0.92, 0.4]);
+    const bat = roundBox(2.4, 0.034, 0.8, 0.05, M(th.battery), 0, floor + 0.022, 0.55);
+    add(bat, "battery", [0, 0.22, 0.4]);
+    // An M.2 drive (22 by 80 mm) between the processor and the right fan.
+    const ssd = box(0.22, 0.008, 0.8, M(th.ssd), 0.72, floor + 0.022, -0.45);
+    // Its controller and two flash chips.
+    for (const [z, d] of [[-0.25, 0.14], [0, 0.2], [0.24, 0.2]]) ssd.add(box(0.16, 0.006, d, M(th.chip), 0, 0.006, z));
+    add(ssd, "ssd", [0.2, 0.62, 0.6]);
 
-    addLabel("cpu", cpu, [0.1, 0.15, -0.5]);
-    addLabel("ram", ram, [-0.3, 0.12, -0.6]);
-    addLabel("battery", bat, [0.6, 0.1, 0.1]);
-    addLabel("ssd", ssd, [0, 0.1, 0]);
-    addLabel("fans", lfans, [-1.15, 0.15, -0.6]);
-    addLabel("board", boardG, [0.7, 0.05, -0.2]);
+    // The top case lifts away with the lid when the laptop is opened up.
+    add(body.deck, "chassis", [0, 1.9, -1.1]);
 
-    return { target: new THREE.Vector3(0, 0.75, 0), cam: new THREE.Vector3(4.4, 4.2, 6.2), camExploded: new THREE.Vector3(5.6, 5.4, 7.4) };
+    // Markers spread across the width, so on a phone their numbered dots don't sit on top of each other.
+    addLabel("cpu", cpu, [0.12, floor + 0.04, -0.5]);
+    addLabel("ram", ram, [-0.28, floor + 0.03, -0.42]);
+    addLabel("battery", bat, [0.95, 0, 0.05]);
+    addLabel("ssd", ssd, [0, 0.01, 0.2]);
+    addLabel("fans", lfans, [-1.12, floor + 0.03, -0.6]);
+    addLabel("board", boardG, [-0.66, floor + 0.02, -0.15]);
+
+    return { target: new THREE.Vector3(0, 0.62, -0.2), cam: new THREE.Vector3(4.2, 3.9, 6.4), camExploded: new THREE.Vector3(5.3, 9.8, 7.6) };
   }
 
   // ---------- build / theme ----------
