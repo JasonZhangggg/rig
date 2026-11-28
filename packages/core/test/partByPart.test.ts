@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { USUAL_MIN_WINDOWS, partByPart, type HistoryPoint, type Part, type PC, type Reading } from "../src";
+import { USUAL_MIN_WINDOWS, partByPart, usualRange, type HistoryPoint, type Part, type PC, type Reading } from "../src";
 
 const NOW = Date.parse("2026-11-26T21:00:00Z");
 const HOUR = 36e5;
@@ -64,6 +64,15 @@ describe("partByPart", () => {
     expect(gpu.scale.max).toBeGreaterThan(88);
     const cpu = partByPart(tower(), week, NOW).rows[1];
     expect(cpu).toMatchObject({ now: 44, usual: { lo: 62, hi: 62 }, ranHot: false });
+  });
+
+  it("gives a part the same usual band in games as its own page's range does", () => {
+    // Uneven play, so a band cut anywhere but the middle half would show.
+    const games = Array.from({ length: 40 }, (_, i) => windows(90 - i, 1 / 6, play(60 + i))).flat();
+    const quiet = windows(150, 10, {});
+    const row = partByPart(tower(), [...quiet, ...games], NOW).rows[0];
+    const range = usualRange([...quiet, ...games], "gpu", NOW).busy!;
+    expect(row.usual).toEqual({ lo: range.low, hi: range.high });
   });
 
   it("follows memory in percent with no slow-down point, and the fastest fan in rpm, the card's own included", () => {

@@ -50,4 +50,16 @@ describe("Two screens, one figure", { timeout: 30000 }, () => {
       expect(Math.abs(degrees(tile.querySelector(".big")!.textContent) - home)).toBeLessThanOrEqual(1);
     });
   }
+
+  for (const pc of ["demo-pebble", "demo-comet", "demo-atlas"]) {
+    it(`gives ${pc}'s processor the same usual range in games on Home as on its own page`, async () => {
+      await open(pc);
+      const usual = (await homeRow(/^Processor$/)).textContent ?? "";
+      const [, lo, hi] = /usual (\d+)–(\d+)°/.exec(usual)!;
+      await openPart(/^Processor/);
+      const ribbon = await screen.findByRole("img", { name: /^Now / }, { timeout: 10000 });
+      const [, plo, phi] = /Usually (\d+)°C to (\d+)°C (in games|when busy)/.exec(ribbon.getAttribute("aria-label")!)!;
+      expect([plo, phi]).toEqual([lo, hi]);
+    });
+  }
 });
