@@ -99,7 +99,9 @@
   .fp-frame,
   .shell-fpanel.mini .fp-frame { grid-template-columns: 1fr; border-radius: 0; }
   /* On a phone the menu hides behind a button in the top bar and opens over the whole screen. */
-  .fp-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 11px; padding: 10px 8px 10px 16px; background: var(--band); border-bottom: 1px solid var(--line); }
+  /* The top bar's height, so a page's own sticky bar can sit under it (the chat's). */
+  :root { --top-bar: 65px; }
+  .fp-top { position: sticky; top: 0; z-index: 20; box-sizing: border-box; min-height: var(--top-bar); display: flex; align-items: center; gap: 11px; padding: 10px 8px 10px 16px; background: var(--band); border-bottom: 1px solid var(--line); }
   .fp-top .fp-logo { width: 36px; height: 36px; border-radius: calc(var(--r-sm) + 1px); font-size: 16px; }
   .fp-top .fp-brand-txt { flex: 1; }
   .fp-side { display: none; }
