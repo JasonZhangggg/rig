@@ -197,7 +197,8 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const fans: FanReading[] = fanSensors.map((s) => ({ label: s.hw === "gpu" ? "Graphics" : s.name.replace(/^Fan #?/, "Fan "), rpm: Math.round(s.value!), max: Math.max(2000, Math.round(s.max ?? 0)) }));
   parts.fans = {
     name: laptop ? "Laptop fans" : "Case fans", type: "Cooling", modelSource: "generic",
-    fan: fans.length ? Math.round(fans.reduce((n, f) => n + f.rpm, 0) / fans.length) : undefined,
+    // The fastest fan, as Home and Logs count the fans, so the figure agrees wherever it shows.
+    fan: fans.length ? Math.max(...fans.map((f) => f.rpm)) : undefined,
     specs: fans.length ? fans.map((f) => [f.label, `${f.rpm.toLocaleString("en-US")} rpm`] as [string, string]) : [["Fans", "No fan speeds reported"]],
     manual: [],
   };

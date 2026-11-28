@@ -47,4 +47,17 @@ describe("Laptop polish", { timeout: 25000 }, () => {
       fireEvent.click(screen.getByRole("button", { name: "All parts" }));
     }
   });
+
+  it("gives the fans the same figure on their page as their row on Home: the fastest fan", async () => {
+    await open("demo-pebble");
+    const row = (await screen.findAllByRole("button", { name: /^Fans/ })).find((b) => b.closest(".pbp-list"))!;
+    const home = row.querySelector(".pbp-now b")!.textContent!.replace(/\D/g, "");
+    await act(async () => { location.hash = "pc"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    fireEvent.click(await screen.findByRole("button", { name: /^Cooling/ }, { timeout: 10000 }));
+    await screen.findByRole("tab", { name: "Specs" }, { timeout: 10000 });
+    const tile = [...document.querySelectorAll(".live")].find((t) => t.querySelector(".label")?.textContent === "Fan")!;
+    const fans = [...document.querySelectorAll("td, dd, .spec-value")].map((e) => e.textContent ?? "").filter((t) => / rpm$/.test(t)).map((t) => Number(t.replace(/\D/g, "")));
+    expect(Number(tile.querySelector(".big")!.textContent!.replace(/\D/g, ""))).toBe(Math.max(...fans));
+    expect(Math.max(...fans)).toBe(Number(home));
+  });
 });
