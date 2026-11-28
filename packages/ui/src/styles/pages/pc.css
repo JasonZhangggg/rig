@@ -275,8 +275,14 @@
 .mt-add .mn-form { flex: 1; max-width: 640px; padding: 4px 0; }
 .mt-note { margin: 10px 0 0; font-size: 13px; }
 
+/* A laptop's battery: the charge and the time left as figures, then today's story and ways to stretch it (pages/battery). */
+.batt-how { font-size: 14px; }
+.batt { display: flex; flex-direction: column; gap: 20px; }
+.batt-story { max-width: 60ch; color: var(--text-2); line-height: 1.5; }
+.batt-savers { display: flex; flex-direction: column; gap: 2px; }
+.batt-savers .label { margin-bottom: 2px; }
+.batt-foot { margin-top: 6px; font-size: 13px; }
 /* ---------- Safety tab ---------- */
-/* Four rows, read like the Manuals tab's lists: what was read in grey, a chip only for what needs a look. */
-.safety { max-width: 820px; }
+/* Four rows, read like the Manuals tab's lists and as wide: what was read in grey, a chip only for what needs a look. */
 .safety-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
 .safety-age { font-size: 13px; }

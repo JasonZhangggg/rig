@@ -63,6 +63,15 @@ describe("alerts in Things to look at", () => {
     expect(await rows()).toEqual([full.title]);
   });
 
+  it("opens what's safe to clear, not the chat, when a drive is nearly full", async () => {
+    render(<RigApp client={demoWith([full])} />);
+    const row = await (await todo()).findByText(full.title);
+    fireEvent.click(row);
+    expect(await screen.findByRole("heading", { name: "Free up space" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Drives", selected: true })).toBeTruthy();
+    expect(screen.queryByText(/What can I safely remove/)).toBeNull();
+  });
+
   it("asks Rig about an alert when it's opened", async () => {
     render(<RigApp client={demoWith([hot])} />);
     fireEvent.click(await (await todo()).findByText(hot.title));

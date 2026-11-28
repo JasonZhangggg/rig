@@ -6,7 +6,8 @@
 
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import { searchPages } from "./manualSearch";
-import { describeCall, needsRead, NOT_READ, nowFromUndo, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
+import { describeCall, needsRead, NOT_READ, nowFromUndo, powerSettings, validateCall, type ActionCall, type FixApplied, type FixNow } from "./actions";
+import { SAVER_SETTINGS, type PowerNow } from "./battery";
 import { openRevert, protectionRow, revertResult, type OpenRevert } from "./protection";
 import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
@@ -24,6 +25,8 @@ import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec
 import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
+import { cleanSizes, playedFrom, type CleanupRead, type CleanupSizes } from "./freeSpace";
+import type { NetworkCheckReply, NetworkCheckState } from "./network";
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -48,6 +51,14 @@ export interface HelperLink {
    * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
    */
   storage?(fresh?: boolean): Promise<StorageScan>;
+  /** How much the usual safe-to-clear places hold now. Read-only, answers within a few seconds, and never throws for a place it can't read. Missing on older helpers. */
+  cleanupSizes?(): Promise<CleanupSizes>;
+  /**
+   * The connection check: `start` begins one on the helper's own thread (unless one is running) and answers at once, so
+   * readings keep coming while it pings; later calls say whether it's still running, and give the last one it finished.
+   * Read-only; missing on helpers before the check.
+   */
+  network?(start: boolean): Promise<NetworkCheckState>;
   /** One read the chat asked for: a registry key, CIM instances, or a command or script that checks as a read. Returns what it found as text. Missing on helpers before live reads. */
   read?(req: PcReadSpec): Promise<string>;
   /** Command and native steps: check, preview, apply, undo and read (StepRpc). Missing on helpers before general commands. */
@@ -64,6 +75,9 @@ const MAX_READ_HOPS = 8;
 
 /** The folder scan is asked for this often, and every few seconds while one runs, so the map fills in when it's done. */
 export const SCAN_ASK_MS = 30 * 60_000;
+/** How often the app asks whether the connection check is done, and how long it waits before giving up. */
+export const NETWORK_POLL_MS = 400;
+export const NETWORK_WAIT_MS = 20_000;
 export const SCAN_RUNNING_ASK_MS = 15_000;
 
 /** Small on-disk store kept by the desktop shell (SQLite). */
@@ -114,6 +128,8 @@ type SyncPart = (typeof syncParts)[number];
 const UNSYNCED_MAX = 720;
 const BACKGROUND_PAGES = 30;
 const EVENTS_EVERY_MS = 5 * 60_000;
+/** On battery, the busiest apps are read for the history this often. */
+const APPS_EVERY_MS = 2 * 60_000;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const dayKey = (t: number) => new Date(t).toDateString();
@@ -135,6 +151,10 @@ export class LocalClient implements RigClient {
   private dayMax: DayMax = {};
   private day = "";
   private window: HistoryWindow | null = null;
+  /** A laptop's power settings the battery savers look at, read with the facts (they aren't in them). */
+  private power: PowerNow = {};
+  /** When the busiest apps were last read for the history window, while on battery. */
+  private appsAt = 0;
   /**
    * The time of the newest history point the account has. Every point is on disk already, in history, so the points the
    * account is behind on are the ones after this: kept as one number, not a growing list rewritten every ten minutes.
@@ -195,6 +215,7 @@ export class LocalClient implements RigClient {
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
     if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
     if (!link.storage) (this as Partial<Record<"measureDrives", unknown>>).measureDrives = undefined;
+    if (!link.cleanupSizes) (this as Partial<Record<"cleanupSizes", unknown>>).cleanupSizes = undefined;
   }
 
   /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
@@ -211,7 +232,7 @@ export class LocalClient implements RigClient {
       this.invAt = this.o.now();
       // Settings aren't needed to show the PC, so a slow read doesn't hold it up: the next tick tries again.
       this.facts = await this.stage("reading this PC's settings", () => this.link.facts()).catch(() => null);
-      if (this.facts) this.factsAt = this.o.now();
+      if (this.facts) { this.factsAt = this.o.now(); await this.readPower(); }
       await this.stage("opening Rig's saved history", async () => {
         this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
         this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
@@ -287,7 +308,7 @@ export class LocalClient implements RigClient {
     try {
       const now = this.o.now();
       // Settings and parts only feed the screens too: while hidden they wait, and the first read after showing catches up.
-      if (!this.quiet && now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; }
+      if (!this.quiet && now - this.factsAt > this.o.factsEveryMs) { this.facts = await this.link.facts().catch(() => this.facts); this.factsAt = now; await this.readPower(); }
       if (!this.quiet && now - this.invAt > this.o.inventoryEveryMs) { this.inv = await this.link.inventory(); this.invAt = now; }
       this.snap = await this.link.snapshot();
       if (this.lastError) this.o.log("info", "sensors: reading again");
@@ -318,6 +339,12 @@ export class LocalClient implements RigClient {
   private async record(now: number) {
     const w = this.window ??= new HistoryWindow(now);
     if (this.snap) w.add(this.snap);
+    // On battery, what kept the processor busy, so the battery page can say what drained it. One read every couple of minutes.
+    if (w.onBattery && this.link.processes && now - this.appsAt >= APPS_EVERY_MS) {
+      this.appsAt = now;
+      const top = await this.link.processes().catch(() => null);
+      if (top) w.addApps(cleanProcesses(top));
+    }
     if (now - w.from >= this.o.historyEveryMs) {
       const p = w.point();
       this.window = null;
@@ -342,7 +369,7 @@ export class LocalClient implements RigClient {
   /** The live view of this PC. */
   view(): PC {
     if (!this.inv) throw new Error("Rig hasn't read this PC yet.");
-    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan });
+    const { findings: _f, ...built } = buildPC(this.inv, this.snap, this.facts, this.identity, this.dayMax, { events: this.eventLog?.list, history: this.recent, now: this.o.now(), scan: this.scan, power: this.power });
     const pc = withAlerts({ ...built, id: this.id }, this.alerts);
     if (this.lastError && !this.snap) pc.summary = `Rig can't read the sensors right now. ${this.lastError}`;
     return pc;
@@ -606,10 +633,33 @@ export class LocalClient implements RigClient {
       .finally(() => { this.scanReading = null; });
   }
 
+  async checkNetwork(id: string): Promise<NetworkCheckReply> {
+    if (!(await this.isLocal(id))) return { kind: "unsupported", reason: "elsewhere" };
+    const network = this.link.network?.bind(this.link);
+    if (!network) return { kind: "unsupported", reason: "update" };
+    const began = performance.now();
+    let s = await network(true);
+    while (s.running) {
+      if (performance.now() - began > NETWORK_WAIT_MS) throw new Error("The check took too long. Try again.");
+      await new Promise((r) => setTimeout(r, NETWORK_POLL_MS));
+      s = await network(false);
+    }
+    if (!s.reading) throw new Error("Rig couldn't check the connection. Try again.");
+    this.o.log("info", `network: checked in ${Math.round(performance.now() - began)} ms (${s.reading.adapter?.kind ?? "not connected"})`);
+    return { kind: "done", reading: s.reading };
+  }
+
   async measureDrives(id: string) {
     if (!(await this.isLocal(id))) throw new Error("Open Rig on that PC to measure its drives.");
     await this.readStorage(this.o.now(), true);
     this.emit();
+  }
+
+  async cleanupSizes(id: string): Promise<CleanupRead> {
+    if (!(await this.isLocal(id))) throw new Error("Open Rig on that PC to see what's safe to clear there.");
+    const sizes = cleanSizes(await this.link.cleanupSizes!());
+    // The whole history this PC keeps (90 days), so a game can be called unplayed only when the history reaches back that far.
+    return { sizes, ...playedFrom(await this.store.history(0)) };
   }
 
   /** Reads what the background recorder added since the last read, at most once a minute (on every call while its first read runs). */
@@ -742,6 +792,20 @@ export class LocalClient implements RigClient {
     if (!(await this.isLocal(id))) throw new Error("Changes are made from the Rig app on that PC.");
   }
 
+  /** Reads the power settings the battery savers look at, on a laptop whose helper can read them. A failed read keeps what was there. */
+  private async readPower() {
+    if (this.inv?.machine.kind !== "laptop" || !this.link.readFix) return;
+    const out: PowerNow = {};
+    for (const id of SAVER_SETTINGS) {
+      const info = powerSettings.find((p) => p.id === id)!;
+      const now = await this.link.readFix({ kind: "power.setting", subgroup: info.subgroup, setting: info.setting, ac: 0, dc: 0 }).catch(() => null);
+      const was = this.power[id];
+      if (now) out[id] = { ac: now.ac, dc: now.dc };
+      else if (was) out[id] = was;
+    }
+    this.power = out;
+  }
+
   private async freshFacts() {
     this.facts = await this.link.facts();
     this.factsAt = this.o.now();
@@ -778,6 +842,7 @@ export class LocalClient implements RigClient {
       throw new Error(`${e instanceof Error ? e.message : String(e)} Nothing was changed.`);
     } finally {
       await this.freshFacts().catch(() => {});
+      await this.readPower();
       this.inv = await this.link.inventory().catch(() => this.inv);
       this.emit();
     }

@@ -15,6 +15,8 @@ export const partIcon: Record<string, JSX.Element> = {
   windows: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 5 6v5.5c0 4.3 2.9 7.8 7 9.5 4.1-1.7 7-5.2 7-9.5V6z" /></svg>,
 };
 partIcon.motherboard = partIcon.board;
+/** The connection, for the "Is it my PC or my internet?" check. */
+partIcon.network = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.5a7.5 7.5 0 0 1 11 0M9.5 15.5a3 3 0 0 1 5 0" /><circle cx="12" cy="18.6" r="1" fill="currentColor" stroke="none" /></svg>;
 
 export const shortType = (t: string) => t.replace(" and cooler", "");
 
@@ -25,10 +27,23 @@ export const shopCatOf: Record<string, string> = { ram: "memory", ssd: "storage"
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
   if (i.fix) { ctx.review(fixSteps(i.fix), { by: "you", why: i.title }); return; }
   if (i.open === "startup") { ctx.set({ startupApps: true }); return; }
-  if (i.ask) { ctx.ask(i.ask); return; }
+  // A full drive opens the storage map's Free up space list where the PC has a map, and asks Rig where it doesn't.
+  const map = i.tab === "drives" && !!pc.drives?.length;
+  if (i.ask && !map) { ctx.ask(i.ask); return; }
   if (i.part && i.go === "upgrades") ctx.set({ shopCat: shopCatOf[i.part] ?? null });
-  else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
+  else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: i.tab ?? (pc.parts?.[i.part]?.driver ? "drivers" : "live") });
   ctx.go(i.go);
+  if (map) revealWhenShown(FREE_SPACE_ID);
+}
+
+/** The storage map's Free up space list, which a full drive's finding opens at. */
+export const FREE_SPACE_ID = "free-up-space";
+
+/** Scrolls to an element once the page that holds it has drawn it, giving up after about a second. */
+function revealWhenShown(id: string, tries = 60) {
+  const el = document.getElementById(id);
+  if (el) { el.scrollIntoView?.({ block: "start", behavior: "smooth" }); return; }
+  if (tries > 0) requestAnimationFrame(() => revealWhenShown(id, tries - 1));
 }
 
 /** How often Rig suggests cleaning the dust out, in days. */
@@ -70,9 +85,11 @@ export function sinceText(iso: string, now = new Date()): string {
   return dateText(d, { month: "short", day: "numeric" });
 }
 
-/** An alert as a row in Things to look at. Opening it asks Rig about it. */
+/** An alert as a row in Things to look at. Opening it asks Rig about it, except a full drive, which opens what's safe to clear (issueGo). */
 export function alertIssue(a: Alert, now = new Date()): Issue {
-  return { id: `alert-${a.id}`, severity: a.severity, part: a.part, go: "chat", ask: a.ask, action: "Ask about it", title: a.title, body: `Since ${sinceText(a.since, now)}. ${a.detail}` };
+  const row = { id: `alert-${a.id}`, severity: a.severity, part: a.part, title: a.title, body: `Since ${sinceText(a.since, now)}. ${a.detail}` };
+  if (a.kind === "drive-full") return { ...row, go: "pc", tab: "drives", ask: a.ask, action: "See what to clear" };
+  return { ...row, go: "chat", ask: a.ask, action: "Ask about it" };
 }
 
 const severityOrder: Record<Severity, number> = { bad: 0, warn: 1, info: 2, ok: 3 };

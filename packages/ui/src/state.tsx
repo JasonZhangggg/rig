@@ -76,6 +76,8 @@ export interface UI {
   review: Review | null;
   toast: ToastState | null;
   palette: boolean;
+  /** The "Is it my PC or my internet?" check is open (components/NetCheck.tsx). */
+  netCheck: boolean;
   /** "Why is it slow or loud?" is open (components/SlowLoud.tsx). */
   slowLoud: boolean;
   /** The startup apps dialog is open. */
@@ -181,6 +183,8 @@ export interface Ctx {
   toggleChange: (id: string) => Promise<void>;
   /** The protections that are off for now because of a change here, after asking the helper which are back on. */
   openReverts: () => Promise<OpenRevert[]>;
+  /** Reads the PC's changes again, after a step a page applied on its own card. */
+  refreshChanges: () => Promise<void>;
   pickPC: (id: string) => void;
   /** Starts recording readings on the PC. Nothing changes there, so there's no review. */
   startRecording: (minutes: number, reason: string) => Promise<void>;
@@ -253,7 +257,7 @@ let lastStill: StillPC | null = null;
 export function stillOf(pc: PC): StillPC {
   const hit = stillCache.get(pc);
   if (hit) return hit;
-  const { health: _h, seenAt: _s, lastSync: _l, online: _o, stats: _st, breakdown: _b, fans: _f, alerts: _a, readings: _r, drives: _d, parts, ...rest } = pc;
+  const { health: _h, seenAt: _s, lastSync: _l, online: _o, stats: _st, breakdown: _b, fans: _f, alerts: _a, readings: _r, drives: _d, battery: _bt, parts, ...rest } = pc;
   const still: StillPC = { ...rest };
   if (parts) {
     still.parts = {};
@@ -343,7 +347,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, selected: null, tab: "live", shopCat: null, range: "7d",
-    review: null, toast: null, palette: false, slowLoud: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
+    review: null, toast: null, palette: false, slowLoud: false, netCheck: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0, live: [] });
@@ -704,6 +708,11 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }
       }),
+
+      refreshChanges: async () => {
+        const changes = await client.changes(pcId).catch(() => null);
+        if (changes) setData((d) => ({ ...d, changes }));
+      },
 
       openReverts: async () => {
         const before = dataNow.current.changes;

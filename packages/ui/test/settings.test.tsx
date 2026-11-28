@@ -99,7 +99,8 @@ describe("Settings", () => {
     expect(within(data).queryByRole("button", { name: "Download my data" })).toBeNull();
     fireEvent.click(within(data).getByRole("button", { name: /^Your data/ }));
     fireEvent.click(within(data).getByRole("button", { name: "Download my data" }));
-    await screen.findByText(/^Saved rig-data-\d{4}-\d{2}-\d{2}\.json\.$/);
+    // The demo builds a month of history for the file: about half a second here, longer on a busy CI runner.
+    await screen.findByText(/^Saved rig-data-\d{4}-\d{2}-\d{2}\.json\.$/, {}, { timeout: 10000 });
     expect(click).toHaveBeenCalledTimes(1);
     const text = await new Promise<string>((done) => { const r = new FileReader(); r.onload = () => done(r.result as string); r.readAsText(saved!); });
     const out = JSON.parse(text) as DataExport;

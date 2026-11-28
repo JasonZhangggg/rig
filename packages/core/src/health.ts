@@ -59,11 +59,11 @@ export function findings(input: HealthInput): Finding[] {
     else if (gt.value >= lim - 6) add({ id: "gpu-warm", category: "Temperatures", weight: 12, severity: "warn", confidence: "sure", evidence, title: `Graphics card runs warm at ${Math.round(gt.value)}°C`, body: `${Math.round(lim - gt.value)}° under its limit. If it's warmer than it used to be at the same settings, dust is the usual cause.`, action: "Ask about it", part: "gpu", go: "chat", ask: `My graphics card runs at ${Math.round(gt.value)}°C while gaming. Is that okay?` });
   }
 
-  // Storage
+  // Storage: each opens the storage map's Free up space list.
   for (const v of inv.volumes) {
     const free = pct(v.freeGb, v.sizeGb);
-    if (free < 10) add({ id: `vol-${v.letter}`, category: "Storage", weight: 25, severity: "warn", title: `Drive ${v.letter} is nearly full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB. Windows slows down and updates can fail below 10% free.`, action: "Ask how to free space", go: "chat", ask: `Drive ${v.letter} only has ${Math.round(v.freeGb)} GB free. What can I safely remove?` });
-    else if (free < 15) add({ id: `vol-${v.letter}`, category: "Storage", weight: 8, severity: "info", title: `Drive ${v.letter} is getting full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB.`, action: "Ask how to free space", go: "chat", ask: `How can I free up space on drive ${v.letter}?` });
+    if (free < 10) add({ id: `vol-${v.letter}`, category: "Storage", weight: 25, severity: "warn", title: `Drive ${v.letter} is nearly full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB. Windows slows down and updates can fail below 10% free.`, action: "See what to clear", part: "ssd", go: "pc", tab: "drives", ask: `Drive ${v.letter} only has ${Math.round(v.freeGb)} GB free. What can I safely remove?` });
+    else if (free < 15) add({ id: `vol-${v.letter}`, category: "Storage", weight: 8, severity: "info", title: `Drive ${v.letter} is getting full`, body: `${Math.round(v.freeGb)} GB free of ${Math.round(v.sizeGb)} GB.`, action: "See what to clear", part: "ssd", go: "pc", tab: "drives", ask: `How can I free up space on drive ${v.letter}?` });
   }
   // Life left as the drive reports it. 80% left still means years of use, so only the last fifth counts.
   for (const d of inv.disks) {
