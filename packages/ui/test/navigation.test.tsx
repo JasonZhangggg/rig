@@ -85,7 +85,7 @@ describe("navigation", () => {
     const search = palette.getByRole("textbox", { name: "Search" });
     // Drivers live with the manuals; asking for them the other way round still finds that page.
     fireEvent.change(search, { target: { value: "bios drivers" } });
-    expect(palette.getByRole("button", { name: /^Manuals On My PC/ })).toBeTruthy();
+    expect(palette.getByRole("button", { name: /^Manuals and drivers On My PC/ })).toBeTruthy();
     // Rig's own log file, asked for in plain words, leads to where its folder opens.
     fireEvent.change(search, { target: { value: "open logs folder" } });
     fireEvent.click(palette.getByRole("button", { name: /^About Settings/ }));
