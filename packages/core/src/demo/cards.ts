@@ -30,7 +30,7 @@ interface DemoBase {
 }
 
 export interface DemoCard extends DemoBase {
-  key: "registry" | "firewall" | "uninstall" | "refused" | "rollback" | "recipe";
+  key: "registry" | "firewall" | "uninstall" | "refused" | "rollback" | "recipe" | "storageSense";
   cmd: Command;
   /** The recipe the chat proposes; `cmd` is what it compiles to. */
   recipe?: RecipeStep;
@@ -40,6 +40,7 @@ export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "sc
 export type AnyDemoCard = DemoCard | DemoNativeCard;
 
 const extensions: RecipeStep = { kind: "recipe", id: "fileExtensions", params: { state: "show" } };
+const storageSense: RecipeStep = { kind: "recipe", id: "storageSense", params: { state: "on" } };
 
 const seconds = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
 const secondsPath = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
@@ -119,6 +120,13 @@ export const demoCards: DemoCard[] = [
     title: "Show file extensions",
     recipe: extensions, cmd: recipeCommand(extensions) as Command,
     read: "1", values: [["1", "0"]], after: "0",
+  },
+  {
+    key: "storageSense", ask: "Let Windows free up space by itself", asks: /storage sense|free up space by itself/,
+    says: "Storage Sense is Windows' own cleaner: when the drive runs low it clears temporary files and Recycle Bin items older than 30 days. This is one of Rig's own recipes: one value in your own settings, and Rig saves the old value first.",
+    title: "Turn on Storage Sense",
+    recipe: storageSense, cmd: recipeCommand(storageSense) as Command,
+    read: "0", values: [["0", "1"]], after: "1",
   },
 ];
 

@@ -185,6 +185,8 @@ export interface Ctx {
   toggleChange: (id: string) => Promise<void>;
   /** The protections that are off for now because of a change here, after asking the helper which are back on. */
   openReverts: () => Promise<OpenRevert[]>;
+  /** Reads the PC's changes again, after a step a page applied on its own card. */
+  refreshChanges: () => Promise<void>;
   pickPC: (id: string) => void;
   /** Starts recording readings on the PC. Nothing changes there, so there's no review. */
   startRecording: (minutes: number, reason: string) => Promise<void>;
@@ -708,6 +710,11 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }
       }),
+
+      refreshChanges: async () => {
+        const changes = await client.changes(pcId).catch(() => null);
+        if (changes) setData((d) => ({ ...d, changes }));
+      },
 
       openReverts: async () => {
         const before = dataNow.current.changes;

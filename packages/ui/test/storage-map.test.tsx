@@ -1,5 +1,5 @@
 // The storage map on My PC: each drive split by what fills it, with its health, and what Windows doesn't say.
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
 
@@ -69,5 +69,62 @@ describe("Storage map", () => {
     fireEvent.click(move.getByRole("button", { name: "Details: Baldur's Gate 3" }));
     expect(move.getByText(/Move it from the launcher it came from/)).toBeTruthy();
     expect(screen.queryAllByRole("list", { name: /^Move one thing to/ })).toHaveLength(1);
+  });
+});
+
+describe("Free up space", () => {
+  it("lists what's safe to clear under the drives, with what each frees and the steps behind Details", async () => {
+    await openStorage();
+    const section = within((await screen.findByRole("heading", { name: "Free up space" })).closest("section")!);
+    expect(await section.findByText("You could free about 38 GB")).toBeTruthy();
+    expect(section.getByText(/Games you haven't played and old downloads hold 321 GB more\./)).toBeTruthy();
+    const safe = within(section.getByRole("list", { name: "Safe to clear" }));
+    expect(safe.getAllByRole("listitem").map((li) => li.querySelector(".row-title")?.textContent)).toEqual([
+      "Previous version of Windows", "Temporary files", "Windows Update files", "Delivery Optimization files", "Recycle Bin", "Crash reports", "Picture previews", "Let Windows clear these by itself",
+    ]);
+    expect(safe.getByText("18 GB")).toBeTruthy();
+    fireEvent.click(safe.getByRole("button", { name: "Details: Previous version of Windows" }));
+    expect(safe.getByText(/you can't go back to the previous version of Windows/)).toBeTruthy();
+    const how = within(safe.getByRole("list", { name: "How to clear Previous version of Windows" }));
+    expect(how.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Open Settings, then go to System > Storage > Temporary files.", "Tick Previous Windows installation(s), then choose Remove files.",
+    ]);
+  });
+
+  it("lists games not played in months as uninstalls from their launcher, never as files to delete", async () => {
+    await openStorage();
+    const look = within(await screen.findByRole("list", { name: "Look first" }));
+    expect(look.getAllByRole("listitem").map((li) => li.querySelector(".row-title")?.textContent)).toEqual(["Microsoft Flight Simulator", "Red Dead Redemption 2", "Old downloads"]);
+    expect(look.getByText("Last played 7 months ago")).toBeTruthy();
+    expect(look.getByText("121 GB")).toBeTruthy();
+    fireEvent.click(look.getByRole("button", { name: "Details: Red Dead Redemption 2" }));
+    expect(within(look.getByRole("list", { name: "How to uninstall Red Dead Redemption 2" })).getByText(/choose Uninstall/)).toBeTruthy();
+    expect(look.getAllByText(/rather than deleting its folder/).length).toBeGreaterThan(0);
+  });
+
+  it("turns on Storage Sense only through its own card: read first, applied once approved, and in Changes after", async () => {
+    const client = await openStorage();
+    const before = (await client.changes("demo-atlas")).length;
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on…" }));
+    const review = await screen.findByRole("button", { name: "Review" });
+    // Nothing has changed yet: the card shows what's there now and waits.
+    expect(await client.changes("demo-atlas")).toHaveLength(before);
+    fireEvent.click(review);
+    const apply = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    await waitFor(() => expect(apply.disabled).toBe(false));
+    fireEvent.click(apply);
+    expect(await screen.findByText("Storage Sense is on")).toBeTruthy();
+    const made = await client.changes("demo-atlas");
+    expect(made).toHaveLength(before + 1);
+    expect(made[0]).toMatchObject({ by: "you", status: "applied" });
+    expect(screen.getByRole("button", { name: /Undo/ })).toBeTruthy();
+  });
+
+  it("says where it works on the website, and offers to ask instead", async () => {
+    const client = new DemoClient();
+    (client as { cleanupSizes?: unknown }).cleanupSizes = undefined;
+    await openStorage(client);
+    expect(await screen.findByText("Rig sees what's safe to clear only in the Rig app on Atlas.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ask Rig" })).toBeTruthy();
   });
 });
