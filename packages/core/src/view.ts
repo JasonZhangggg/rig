@@ -9,6 +9,7 @@ import { cardChip, chipSensorName, gpuAsleep, gpuLoad, gpuSensor, graphicsCard }
 import { driveMaps } from "./drives";
 import { batteryView, type PowerNow } from "./battery";
 import { isSetting, sensorName } from "./sensors";
+import { solderedMemory } from "./shop";
 import type { Picks } from "./build";
 
 /** What the person set for a PC in Rig: its name and color, the last dust clean, and the models they picked for parts Windows can't name. */
@@ -137,15 +138,20 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const memUsed = findSensor(snap, "memory", "data", /used/i);
   const memTemp = findSensor(snap, "memory", "temperature");
   const speed = m.modules.find((x) => x.speedMhz)?.speedMhz;
+  // Soldered memory is one amount: Windows can list it as several modules, but none of them is a stick.
+  // Only memory the modules themselves say is soldered gets the callout; a guess stays an upgrade idea to check.
+  const onBoard = solderedMemory(inv);
+  const soldered = !!onBoard;
   parts.ram = {
-    name: m.modules.length > 1 && m.modules.every((x) => x.capacityMb === m.modules[0].capacityMb)
+    name: !soldered && m.modules.length > 1 && m.modules.every((x) => x.capacityMb === m.modules[0].capacityMb)
       ? `${m.modules.length} × ${gb(m.modules[0].capacityMb)} GB${m.modules[0].manufacturer ? ` ${m.modules[0].manufacturer}` : ""}`
       : `${gb(m.totalMb)} GB`,
     type: "Memory", modelSource: "generic", temp: round(memTemp?.value), load: round(memLoad?.value),
+    ...(onBoard === "reported" ? { soldered: true } : {}),
     specs: [
       ["Total", `${gb(m.totalMb)} GB`],
       ...(speed ? [["Speed", `${speed} MT/s`] as [string, string]] : []),
-      ...(m.slotsTotal ? [["Slots used", `${m.modules.length} of ${m.slotsTotal}`] as [string, string]] : []),
+      ...(m.slotsTotal && !soldered ? [["Slots used", `${m.modules.length} of ${m.slotsTotal}`] as [string, string]] : []),
       ...(memUsed?.value != null ? [["In use", `${memUsed.value.toFixed(1)} GB`] as [string, string]] : []),
     ],
     manual: [],

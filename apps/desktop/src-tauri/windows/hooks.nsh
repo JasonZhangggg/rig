@@ -15,6 +15,11 @@
 ; (see helper/RigHelper/PawnIOSetup.cs). Uninstalling removes PawnIO only if
 ; Rig installed it and no other Rig install remains.
 ;
+; It also sets up the task that starts Rig's helper with admin rights when Rig
+; opens (--helper-task, see helper/RigHelper/HelperTask.cs), so this is the only
+; time Windows asks: not again each time Rig opens. Uninstalling removes it. An
+; update keeps it, and the new installer's prompt points it at the new helper.
+;
 ; Rig's own setup window (apps/setup) runs this installer silently. When the
 ; build has it (tools/setup.mjs puts it in src-tauri/setup), a copy goes into
 ; Rig's folder and Settings, Apps opens it to uninstall, so uninstalling looks
@@ -77,7 +82,7 @@
 
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Setting up Rig's background recorder and PawnIO..."
-  ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--install-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
+  ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--install-recorder --helper-task --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
   !if /FileExists "${RIG_SETUP_EXE}"
     File "/oname=$INSTDIR\rig-setup.exe" "${RIG_SETUP_EXE}"
     WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" '"$INSTDIR\rig-setup.exe" --uninstall'
@@ -87,11 +92,11 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "Removing Rig's background recorder..."
-  ; An update reinstalls Rig straight after, so it keeps PawnIO.
+  ; An update reinstalls Rig straight after, so it keeps PawnIO and the helper's task.
   ${If} $UpdateMode = 1
     ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR"' SW_HIDE
   ${Else}
-    ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
+    ExecShellWait "runas" "$INSTDIR\RigHelper.exe" '--uninstall-recorder --helper-task --app-dir "$INSTDIR" --pawnio "$INSTDIR\pawnio\PawnIO_setup.exe"' SW_HIDE
   ${EndIf}
 !macroend
 

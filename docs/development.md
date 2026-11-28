@@ -65,6 +65,6 @@ Start-Process -Wait -Verb RunAs apps\desktop\src-tauri\binaries\RigHelper-x86_64
 
 Drop `-Verb RunAs` to see what it reads without admin rights.
 
-**How the helper runs.** The app starts the helper once, through the Windows admin prompt. If the person says No, the helper runs without admin rights, and CPU temperatures and some fans are missing. The two talk over a private named pipe. Each call has 20 seconds. A call that runs out returns an error, and three in a row restart the helper. Calls go one at a time.
+**How the helper runs.** The app starts the helper with admin rights through the task the installer set up (`RigHelper-<SID>` in Task Scheduler, running `%ProgramFiles%\Rig\Helper\RigHelper.exe`), so there's no prompt. Without that task, or when its copy is another build than the one next to Rig.exe (as with `pnpm desktop`, unless the copy is the same build), it falls back to the Windows admin prompt; the log says which (`helper: started by Rig's task` or `helper: no task ... so Windows asks`). If the person says No, the helper runs without admin rights, and CPU temperatures and some fans are missing. The two talk over a private named pipe. Each call has 20 seconds. A call that runs out returns an error, and three in a row restart the helper. Calls go one at a time.
 
 **Known fixes.** `NU1100` on restore was a machine with no NuGet source; `nuget.config` fixes it. Vite crashing with `EBUSY` on `src-tauri\target` was the file watcher; `vite.config.ts` now ignores `src-tauri`. If either comes back, check those two files.
