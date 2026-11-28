@@ -11,12 +11,12 @@ vi.mock("../src/styles/index.css", () => ({}));
 
 const { RigApp } = await import("../src/App");
 
-async function openFromSearch(client = new DemoClient()) {
+async function openFromSearch(client = new DemoClient(), word = "PC") {
   render(<RigApp client={client} />);
   await screen.findByText(/Things to look at/i);
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
   await screen.findByRole("textbox", { name: "Search" });
-  fireEvent.click(screen.getByRole("button", { name: /^Is it my PC or my internet\? Checks \w+'s connection, your router and the internet/ }));
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^Is it my ${word} or my internet\\? Checks \\w+'s connection, your router and the internet`) }));
   return screen.getByRole("dialog");
 }
 
@@ -44,7 +44,9 @@ describe("Is it my PC or my internet?", () => {
 
   it("finds Pebble's weak Wi-Fi, says what to do, and asks Rig about it", async () => {
     localStorage.setItem("rig.pc", "demo-pebble");
-    const dialog = await openFromSearch();
+    const dialog = await openFromSearch(new DemoClient(), "laptop");
+    // Pebble is a laptop, so the check asks about the laptop, not a PC.
+    expect(within(dialog).getByText("Pebble · Is it my laptop or my internet?")).toBeTruthy();
     expect(await within(dialog).findByRole("heading", { name: "The Wi-Fi signal is weak (34%), which is the likely cause" })).toBeTruthy();
     const found = within(within(dialog).getByRole("list", { name: "What Rig found" }));
     expect(found.getAllByRole("listitem").map((li) => li.querySelector(".row-title")?.textContent)).toEqual(["Wi-Fi signal is weak: 34%", "Connected on 2.4 GHz", "Network driver is from 2023"]);

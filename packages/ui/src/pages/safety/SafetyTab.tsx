@@ -18,7 +18,7 @@ export const SafetyTab = memo(function SafetyTab() {
   const { ask } = useActions();
   const sec = pc.security;
   const now = Date.now();
-  const rows = safetyRows(sec, now);
+  const rows = safetyRows(sec, now, pc.kind);
   return (
     <div className="mt safety">
       <section aria-labelledby="safety-h">

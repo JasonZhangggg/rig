@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, type MouseEvent as ClickEvent, type ReactNode } from "react";
 import type { Route } from "@rig/core";
-import { useActions, useApp, useAppSelector, useUI } from "../state";
+import { useActions, useApp, useAppSelector, useMachineWord, useUI } from "../state";
 import { Icon } from "./common";
-import { homeOf, navItems } from "./Shell";
+import { homeOf, navItems, navLabel } from "./Shell";
 import { arrowKeys, focusFirstItem, useModal } from "./modal";
 
-const label = (r: Route) => navItems.find(([id]) => id === r)?.[1] ?? r;
 const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
 // Settings isn't here: it opens from the account menu at the bottom.
-const groups: [string, Route[]][] = [["Your PC", ["overview", "pc", "logs"]], ["Fix problems", ["chat", "changes"]]];
+const groups = (word: string): [string, Route[]][] => [[`Your ${word}`, ["overview", "pc", "logs"]], ["Fix problems", ["chat", "changes"]]];
 
 function useOutside(open: boolean, close: () => void) {
   const box = useRef<HTMLDivElement>(null);
@@ -58,12 +57,13 @@ function PCMenu({ onPick }: { onPick: () => void }) {
 /** Setup steps that are still open, worked out from the PC itself. */
 function useSetup() {
   const { client, go, set } = useActions();
-  const { issues, kind, name, account } = useAppSelector((c) => ({ issues: c.pc.issues, kind: c.pc.kind, name: c.pc.name, account: c.data.account }));
+  const { issues, name, account } = useAppSelector((c) => ({ issues: c.pc.issues, name: c.pc.name, account: c.data.account }));
+  const word = useMachineWord();
   const [skipped, setSkipped] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("rig.setupSkipped") ?? "[]"); } catch { return []; } });
   const steps: { id: string; title: string; body: string; cta: string; run: () => void; done: boolean }[] = [
     { id: "sensors", title: "Allow temperature readings", body: issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "Ask how", run: () => go("chat"), done: !issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
-    { id: "name", title: `Name ${kind === "laptop" ? "your laptop" : "your PC"}`, body: "Pick a name and a color. It marks this PC everywhere you see it.", cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: name !== "My PC" },
-    { id: "account", title: "Sign in to sync", body: "See this PC from any browser and keep its history if you reinstall.", cta: "Sign in", run: () => go("signin"), done: !!account || client.kind === "demo" },
+    { id: "name", title: `Name your ${word}`, body: `Pick a name and a color. It marks this ${word} everywhere you see it.`, cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: name !== "My PC" },
+    { id: "account", title: "Sign in to sync", body: `See this ${word} from any browser and keep its history if you reinstall.`, cta: "Sign in", run: () => go("signin"), done: !!account || client.kind === "demo" },
   ];
   const open = steps.filter((s) => !s.done && !skipped.includes(s.id));
   const skip = (id: string) => { const next = [...skipped, id]; setSkipped(next); try { localStorage.setItem("rig.setupSkipped", JSON.stringify(next)); } catch { /* storage unavailable */ } };
@@ -184,6 +184,8 @@ export function Sidebar({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const box = useOutside(open, () => setOpen(false));
   const phone = usePhoneMenu();
+  const word = useMachineWord();
+  const label = (r: Route) => navLabel(r, word);
   const mini = ui.sideMini;
   const warn = (issues ?? []).filter((i) => i.severity === "warn" || i.severity === "bad").length;
   const count = (r: Route) => r === "overview" && warn > 0 ? <em className="fp-count">{warn}</em>
@@ -203,7 +205,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
         <aside className={`fp-side${phone.shown ? " open" : ""}`} aria-label="Main" ref={phone.side} {...(phone.shown ? { role: "dialog", "aria-modal": true } : {})}>
           <div className="fp-nav">
             <div className="fp-brand" ref={box}>
-              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Rig, ${name}, switch PC`}>
+              <button type="button" className="fp-brand-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Rig, ${name}, switch ${word}`}>
                 <span className="fp-logo">R<i /></span>
                 <span className="fp-brand-txt"><b>Rig</b><small>{name} · {nickname}</small></span>
               </button>
@@ -215,7 +217,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
               </button>
               {open && <PCMenu onPick={() => setOpen(false)} />}
             </div>
-            {groups.map(([g, ids]) => (
+            {groups(word).map(([g, ids]) => (
               <div key={g || ids[0]} className="fp-group">
                 {g && <div className="fp-label">{g}</div>}
                 {ids.map((r) => (

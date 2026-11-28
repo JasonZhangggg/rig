@@ -3,11 +3,12 @@
 // Opened from Ctrl K and the Ask page's starters, through `ui.netCheck`.
 import { useEffect, useRef, useState } from "react";
 import { networkAnswer, type NetworkAnswer, type NetworkCheckReply } from "@rig/core";
-import { useActions, useAppSelector, useUI } from "../state";
+import { useActions, useAppSelector, useMachineWord, useUI } from "../state";
 import { useModal } from "./modal";
 import { Row, Rows } from "./Rows";
 
-export const NET_CHECK_QUESTION = "Is it my PC or my internet?";
+/** The check's question, with the machine's own noun: "Is it my laptop or my internet?" on a laptop. */
+export const netCheckQuestion = (word: string) => `Is it my ${word} or my internet?`;
 
 export function NetCheck() {
   return useUI().netCheck ? <OpenNetCheck /> : null;
@@ -21,7 +22,8 @@ type Shown =
 
 function OpenNetCheck() {
   const { client, set, ask } = useActions();
-  const pc = useAppSelector((c) => ({ id: c.pc.id, name: c.pc.name }));
+  const pc = useAppSelector((c) => ({ id: c.pc.id, name: c.pc.name, kind: c.pc.kind }));
+  const word = useMachineWord();
   const [shown, setShown] = useState<Shown>({ kind: "checking" });
   const runs = useRef(0);
   const box = useRef<HTMLDivElement>(null);
@@ -34,7 +36,7 @@ function OpenNetCheck() {
     const check = client.checkNetwork;
     const reply: Promise<NetworkCheckReply> = check ? check.call(client, pc.id) : Promise.resolve({ kind: "unsupported", reason: "elsewhere" });
     reply.then(
-      (r) => { if (n === runs.current) setShown(r.kind === "done" ? { kind: "answer", answer: networkAnswer(r.reading) } : { kind: "unsupported", reason: r.reason }); },
+      (r) => { if (n === runs.current) setShown(r.kind === "done" ? { kind: "answer", answer: networkAnswer(r.reading, pc.kind) } : { kind: "unsupported", reason: r.reason }); },
       (e) => { if (n === runs.current) setShown({ kind: "failed", message: e instanceof Error ? e.message : "Try again in a moment." }); },
     );
   };
@@ -52,14 +54,14 @@ function OpenNetCheck() {
     : shown.kind === "answer" ? { h: shown.answer.headline, p: shown.answer.sub }
     : shown.kind === "unsupported" ? (shown.reason === "update"
       ? { h: `Update Rig on ${pc.name} to run this check`, p: "This version of Rig's helper can't check the connection yet. Settings, Updates has the newest version." }
-      : { h: `Run this check from the Rig app on ${pc.name}`, p: "It pings your router and the internet from the PC itself, so it runs in the Rig app there." })
+      : { h: `Run this check from the Rig app on ${pc.name}`, p: `It pings your router and the internet from the ${word} itself, so it runs in the Rig app there.` })
     : { h: "Rig couldn't check the connection", p: shown.message };
 
   return (
     <div className="scrim" ref={box} onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="sheet net-check" role="dialog" aria-modal="true" aria-labelledby="net-check-h" aria-describedby="net-check-p" aria-busy={shown.kind === "checking"}>
         <div className="sheet-head">
-          <span className="label">{pc.name} · {NET_CHECK_QUESTION}</span>
+          <span className="label">{pc.name} · {netCheckQuestion(word)}</span>
           <h2 id="net-check-h" className="plain-h" aria-live="polite">{head.h}</h2>
           <p id="net-check-p" className="muted">{head.p}</p>
           {shown.kind === "checking" && <p className="typing" aria-hidden="true"><i /><i /><i /></p>}

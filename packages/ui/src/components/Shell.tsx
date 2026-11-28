@@ -20,6 +20,9 @@ export const navItems: [Route, string, string][] = [
   ["settings", "Settings", "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4"],
 ];
 
+/** A page's name as the sidebar and Ctrl K show it: My PC is My laptop on a laptop. */
+export const navLabel = (r: Route, word: string) => (r === "pc" ? `My ${word}` : navItems.find(([id]) => id === r)?.[1] ?? r);
+
 /** The page a route lives on in the sidebar: upgrades, manuals and safety are on My PC, games and events are views of Logs. */
 export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" || r === "safety" ? "pc" : r === "history" || r === "games" || r === "events" || r === "recorded" ? "logs" : r);
 

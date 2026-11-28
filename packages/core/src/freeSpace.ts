@@ -130,7 +130,7 @@ const KINDS: Record<Exclude<SpotKind, "userTemp" | "windowsTemp"> | "temp", Omit
   },
   deliveryOptimization: {
     title: "Delivery Optimization files",
-    what: "Pieces of updates Windows keeps to share with other PCs. Nothing on this PC needs them.",
+    what: "Pieces of updates Windows keeps to share with other PCs. Nothing here needs them.",
     safety: "safe",
     how: { kind: "steps", steps: [settingsTemp, tick("Delivery Optimization Files")] },
   },

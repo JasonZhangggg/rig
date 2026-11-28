@@ -47,18 +47,18 @@ describe("Background log", () => {
       { k: "e", t: T0 + 5 * MIN, log: "Application", source: "Application Error", id: 1000, level: "error", message: "Faulting application name: game.exe, version 1.0" },
     ]);
     const { problems, power } = log.cleanEvents();
-    expect(problems.map((e) => [e.kind, eventTitle(e)])).toEqual([["shutdown", "The PC stopped suddenly"], ["crash", "game.exe crashed"]]);
+    expect(problems.map((e) => [e.kind, eventTitle(e)])).toEqual([["shutdown", "Windows stopped suddenly"], ["crash", "game.exe crashed"]]);
     expect(problems[0].t).toBe(T0 + 10 * MIN);
     expect(problems[0].message).toMatch(/lost power, froze or crashed/);
-    expect(power.map(eventTitle)).toEqual(["Windows started", "The PC woke up", "The PC went to sleep", "Plugged in"]);
+    expect(power.map(eventTitle)).toEqual(["Windows started", "Woke up", "Went to sleep", "Plugged in"]);
     expect(power.every((e) => e.kind === "power" && e.level === "info")).toBe(true);
   });
 
-  it("names who restarted the PC", () => {
+  it("names who restarted Windows, without calling a laptop a PC", () => {
     const log = new BackgroundLog();
     log.ingest([{ k: "e", t: T0, log: "System", source: "User32", id: 1074, level: "info",
       message: "The process C:\\Windows\\System32\\svchost.exe (PC) has initiated the restart of computer PC on behalf of user NT AUTHORITY\\SYSTEM for the following reason: Operating System: Service pack (Planned)" }]);
-    expect(eventTitle(log.cleanEvents().power[0])).toBe("svchost.exe restarted the PC");
+    expect(eventTitle(log.cleanEvents().power[0])).toBe("svchost.exe restarted Windows");
   });
 
   it("makes a recording for each closer look, from a few minutes before it, and one per day", () => {

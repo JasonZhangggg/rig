@@ -81,10 +81,10 @@ describe("Logs", () => {
     const strip = await screen.findByRole("group", { name: "Last 30 days" });
     const days = within(strip).getAllByRole("button");
     expect(days).toHaveLength(30);
-    const day = within(strip).getByRole("button", { name: /1 entry: The PC turned off without shutting down/ });
+    const day = within(strip).getByRole("button", { name: /1 entry: Turned off without shutting down/ });
 
     fireEvent.pointerEnter(day, { pointerType: "mouse" });
-    expect(within(strip).getByRole("tooltip").textContent).toMatch(/The PC turned off without shutting down/);
+    expect(within(strip).getByRole("tooltip").textContent).toMatch(/Turned off without shutting down/);
     fireEvent.pointerLeave(day, { pointerType: "mouse" });
     expect(within(strip).queryByRole("tooltip")).toBeNull();
 

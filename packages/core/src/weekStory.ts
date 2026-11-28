@@ -10,6 +10,7 @@ import { describeChange } from "./changes";
 import { gameLibrary } from "./games";
 import { HOT_MARGIN, highest, median, tempSubject, values, type InsightContext, type TempSubject, type UtcOffset } from "./insights";
 import { HISTORY_WINDOW_MS, type HistoryPoint } from "./model";
+import { machineWord } from "./machineWord";
 import { eventTitle, type PCEvent, type RecordingInfo } from "./recordings";
 
 const MIN = 60_000;
@@ -230,7 +231,7 @@ export function weekStory(input: StoryInput, ctx: InsightContext): WeekStory {
     clauses.push(`the graphics driver reset${weekResets.length > 1 ? ` ${times(weekResets.length)}` : alone ? ` ${onDay(weekResets[0].t, ctx)}` : ""}`);
   }
   const offs = count("shutdown");
-  if (offs.length) clauses.push(`the PC turned off suddenly ${offs.length > 1 ? times(offs.length) : onDay(offs[0].t, ctx)}`);
+  if (offs.length) clauses.push(`the ${machineWord(ctx.kind)} turned off suddenly ${offs.length > 1 ? times(offs.length) : onDay(offs[0].t, ctx)}`);
   if (count("hardware").some((e) => e.level !== "warning")) clauses.push("Windows logged a hardware error");
   if (risen) clauses.push(`the ${partWord(subject)} rested ${restNow! - restBefore!}° warmer than the week before`);
 

@@ -141,8 +141,8 @@ export class BackgroundLog {
           const charge = pct != null ? ` (${pct}% charged)` : "";
           const ev = (id: number, message: string) => this.events.push({ t, log: "System", source: SOURCE, id, level: "info", message });
           if (r.atStart) break;
-          if (r.what === "sleep") ev(RIG_EVENT.sleep, "The PC went to sleep.");
-          else if (r.what === "wake") ev(RIG_EVENT.wake, "The PC woke up.");
+          if (r.what === "sleep") ev(RIG_EVENT.sleep, "Went to sleep.");
+          else if (r.what === "wake") ev(RIG_EVENT.wake, "Woke up.");
           else if (r.what === "ac") ev(RIG_EVENT.plugged, `Plugged in${charge}.`);
           else if (r.what === "battery") ev(RIG_EVENT.battery, `Unplugged, running on battery${charge}.`);
           break;
@@ -157,8 +157,8 @@ export class BackgroundLog {
           this.events.push({
             t: at, log: "System", source: SOURCE, id: RIG_EVENT.unclean, level: "critical",
             message: asleep
-              ? `The PC was asleep at ${dayClock(at)} and next started fresh at ${dayClock(t)}, so it lost power while asleep (a flat battery, or it was unplugged).`
-              : `Rig's recorder last heard from the PC at ${dayClock(at)} and it next started at ${dayClock(t)} without shutting down: it lost power, froze or crashed then.`,
+              ? `It was asleep at ${dayClock(at)} and next started fresh at ${dayClock(t)}, so it lost power while asleep (a flat battery, or it was unplugged).`
+              : `Rig's recorder last wrote at ${dayClock(at)} and Windows next started at ${dayClock(t)} without shutting down: it lost power, froze or crashed then.`,
           });
           break;
         }

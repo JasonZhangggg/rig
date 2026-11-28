@@ -111,6 +111,13 @@ describe("weekStory", () => {
     expect(s.marks.map((m) => m.kind)).toEqual(["hot", "shutdown", "driver"]);
   });
 
+  it("says the laptop turned off, not the PC, on a laptop", () => {
+    const events = cleanEvents([event("2026-11-23T07:55", { source: "Microsoft-Windows-Kernel-Power", id: 41, level: "critical", message: "The system has rebooted without cleanly shutting down first." })]);
+    const points = [...lastWeek, ...thisWeek];
+    expect(weekStory({ points, events }, { ...ctx, kind: "laptop" }).headline.rest).toMatch(/the laptop turned off suddenly/i);
+    expect(weekStory({ points, events }, ctx).headline.rest).toMatch(/the PC turned off suddenly/i);
+  });
+
   it("says when nothing was logged, and reads a laptop's processor", () => {
     expect(weekStory({ points: lastWeek }, ctx).headline).toEqual({ lead: "Nothing logged this week", rest: null });
     const laptop = weekStory({ points: windows("2026-11-26T08:00", "2026-11-26T10:00", { gpu: null }) }, { ...ctx, kind: "laptop" });

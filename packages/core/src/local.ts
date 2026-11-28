@@ -28,6 +28,7 @@ import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry"
 import { cleanSizes, playedFrom, type CleanupRead, type CleanupSizes } from "./freeSpace";
 import type { NetworkCheckReply, NetworkCheckState } from "./network";
 import { suggestUpgrades } from "./upgrades";
+import { machineWord } from "./machineWord";
 import type { GameRequirements } from "./canItRun";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -232,7 +233,7 @@ export class LocalClient implements RigClient {
       this.inv = await this.stage("reading this PC's parts", () => this.link.inventory());
       this.invAt = this.o.now();
       // Settings aren't needed to show the PC, so a slow read doesn't hold it up: the next tick tries again.
-      this.facts = await this.stage("reading this PC's settings", () => this.link.facts()).catch(() => null);
+      this.facts = await this.stage(`reading this ${this.word}'s settings`, () => this.link.facts()).catch(() => null);
       if (this.facts) { this.factsAt = this.o.now(); await this.readPower(); }
       await this.stage("opening Rig's saved history", async () => {
         this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
@@ -386,6 +387,8 @@ export class LocalClient implements RigClient {
     this.listeners.forEach((cb) => cb(pc));
   }
   /** Waits for this PC's parts first: until then its id isn't known, and a saved id would look like another PC's. */
+  /** "laptop" or "PC" for this machine, once its parts are read. */
+  private get word() { return machineWord(this.inv?.machine.kind); }
   private async isLocal(id: string) { await this.start().catch(() => {}); return id === this.id; }
   /** Subscribes to this PC or the account's copy of another, once it's known which the id is. */
   private follow(id: string, here: () => () => void, there: () => () => void) {
@@ -1168,7 +1171,7 @@ export class LocalClient implements RigClient {
       const asked = reads as Extract<ChatEvent, { type: "reads" }> | null;
       if (!asked || signal?.aborted) return;
       if (hop >= MAX_READ_HOPS) {
-        onEvent({ type: "error", message: "Rig kept asking to look at the PC, so it stopped. Ask again." });
+        onEvent({ type: "error", message: `Rig kept asking to look at the ${this.word}, so it stopped. Ask again.` });
         onEvent({ type: "done" });
         return;
       }
