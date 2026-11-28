@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { HOT_MARGIN, cpuLimitByDesign, type BatteryView, type PCKind, type PartsView, type Recorded, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
-import { ASLEEP, batteryWord, partJob } from "../overview/PartByPart";
+import { ASLEEP, bandAt, batteryWord, partJob } from "../overview/PartByPart";
 import { value } from "./Lanes";
 import { clock, clockSec } from "./words";
 import { dateText } from "../../dateText";
@@ -101,7 +101,7 @@ function Track({ l }: { l: PartLine }) {
   return (
     <span className="pbp-track" aria-hidden="true">
       {l.limit != null && l.limit < l.scale.max && <i className="pbp-zone" style={{ left: pos(l.limit) }} />}
-      {l.usual && <i className="pbp-band" style={{ left: pos(l.usual.lo), width: `max(4px, ${share(l, l.usual.hi) - share(l, l.usual.lo)}%)` } as CSSProperties} />}
+      {l.usual && <i className="pbp-band" style={bandAt(share(l, l.usual.lo), share(l, l.usual.hi))} />}
       <i className="pbp-span" style={{ left: pos(l.lo), width: `max(2px, ${share(l, l.hi) - share(l, l.lo)}%)` } as CSSProperties} />
       {l.id !== "battery" && <i className={`pbp-high${l.hiHot ? " look" : ""}`} style={{ left: pos(l.hi) }} />}
       {l.now != null && <i className={`pbp-dot${l.state === "hot" || l.state === "slowing" ? " look" : ""}`} style={{ left: pos(l.now) }} />}

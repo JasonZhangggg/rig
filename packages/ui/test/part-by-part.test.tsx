@@ -85,6 +85,18 @@ describe("Your PC, part by part", () => {
     expect(widget.queryByText("No sensor Windows can read")).toBeNull();
   });
 
+  it("keeps a battery's usual 100% inside the end of its track", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    render(<RigApp client={new DemoClient()} />);
+    const { widget } = await partByPart();
+    const row = within(widget.getByRole("list", { name: "Parts" })).getAllByRole("button").find((r) => r.textContent?.startsWith("Battery"))!;
+    expect(within(row).getByText("usual 100%")).toBeTruthy();
+    // Its band is 4px at least, so at the very end it grows back from the end instead of past it.
+    const band = row.querySelector<HTMLElement>(".pbp-band")!;
+    expect(band.style.right).toBe("0%");
+    expect(band.style.left).toBe("");
+  });
+
   it("says a battery held at one charge all week once, not three times", async () => {
     localStorage.setItem("rig.pc", "demo-comet");
     // Without the night off its charger, which the row would say instead (battery.test.tsx).
