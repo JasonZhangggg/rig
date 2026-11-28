@@ -76,6 +76,8 @@ export interface UI {
   review: Review | null;
   toast: ToastState | null;
   palette: boolean;
+  /** "Why is it slow or loud?" is open (components/SlowLoud.tsx). */
+  slowLoud: boolean;
   /** The startup apps dialog is open. */
   startupApps: boolean;
   sideMini: boolean;
@@ -341,7 +343,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, selected: null, tab: "live", shopCat: null, range: "7d",
-    review: null, toast: null, palette: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
+    review: null, toast: null, palette: false, slowLoud: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0, live: [] });

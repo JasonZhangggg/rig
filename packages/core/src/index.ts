@@ -54,3 +54,4 @@ export * from "./recorded";
 export * from "./partByPart";
 export * from "./caught";
 export * from "./weekStory";
+export * from "./slowLoud";

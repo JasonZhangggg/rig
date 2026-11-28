@@ -29,6 +29,10 @@
 /* The verdict on the PC is what the page is for, so it reads in full ink, right under the greeting. */
 .f-head p { margin-top: 8px; color: var(--text); font-size: 17px; font-weight: 500; line-height: 1.45; }
 .f-head-tools { display: flex; align-items: center; gap: 8px; }
+/* The one-tap "why is it slow or loud?" check: a quiet line under the verdict, not another button. */
+.f-check { display: block; margin-top: 6px; padding: 2px 0; border: 0; background: none; color: var(--text-2); font: 500 14px/1.4 var(--font); text-align: left; cursor: pointer; }
+.f-check span { color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); transition: text-decoration-color 150ms ease; }
+@media (hover: hover) and (pointer: fine) { .f-check:hover span { text-decoration-color: currentColor; } }
 .f-date { display: flex; align-items: center; gap: 11px; height: 52px; }
 .f-date b { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; font: 500 18px/1 var(--font); letter-spacing: -.02em; }
 .f-date span { color: var(--text-2); font-size: 12.5px; font-weight: 500; line-height: 1.3; }

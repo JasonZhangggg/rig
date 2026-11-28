@@ -336,6 +336,7 @@ export function Overview() {
         <div className="f-head-text">
           <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
           <p>{pc.online ? `${known ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}.` : `Rig is getting to know ${pc.name}.`} ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
+          <button type="button" className="f-check" onClick={() => set({ slowLoud: true })}>Slow or loud? <span>Check now</span></button>
         </div>
         <div className="f-head-tools">
           <div className="f-date"><b>{now.getDate()}</b><span>{dateText(now, { weekday: "short" })},<br />{dateText(now, { month: "long" })}</span></div>

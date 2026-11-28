@@ -7,6 +7,7 @@ import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
 import { CardAsk } from "./pages/gpu/CardPick";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
+import { SlowLoudSheet } from "./components/SlowLoud";
 import { StartupApps } from "./components/StartupApps";
 import { sceneThemeFor } from "./themes";
 import type { SceneTheme } from "./scene";
@@ -190,6 +191,7 @@ function Root() {
       <ReviewSheet />
       <CardAsk />
       <ManualViewer />
+      <SlowLoudSheet />
       <Palette />
       <UpdateNotice />
       <Toast />

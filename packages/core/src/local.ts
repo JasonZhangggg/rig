@@ -22,11 +22,12 @@ import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, typ
 import { CustomLog, customRecordings, type ProbeStatus } from "./probes";
 import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec } from "./reads";
 import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
-import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
+import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
+import { SLOW_LOUD_APPS } from "./slowLoud";
 
 /** The elevated Windows helper (or a stand-in), one call at a time. */
 export interface HelperLink {
@@ -536,6 +537,12 @@ export class LocalClient implements RigClient {
       await this.eventRead;
     }
     return this.eventLog!.list;
+  }
+
+  /** The busiest apps, from the helper. Only for this PC: another PC's apps aren't synced. */
+  async processes(id: string): Promise<ProcessUse[] | null> {
+    if (!(await this.isLocal(id)) || !this.link.processes) return null;
+    return cleanProcesses(await this.link.processes(), SLOW_LOUD_APPS);
   }
 
   /** Windows' event log, plus what the background recorder caught: power events, and anything Windows has since dropped. */

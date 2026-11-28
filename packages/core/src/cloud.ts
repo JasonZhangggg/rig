@@ -207,6 +207,8 @@ export class CloudClient implements RigClient {
   games(id: string) { return this.req<Game[]>(paths.games(id)); }
   async changes(id: string): Promise<Change[]> { return (await this.req<StoredChange[]>(paths.changes(id))).map(changeOf); }
 
+  /** The busiest apps are read on the PC itself and never synced, so the website can't list them. */
+  async processes(_id: string): Promise<null> { return null; }
   events(id: string) { return this.req<PCEvent[]>(paths.events(id)); }
   recording(id: string, rid: string) { return this.req<Recording | null>(paths.recording(id, rid)).catch(() => null); }
 
