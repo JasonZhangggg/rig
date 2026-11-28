@@ -140,7 +140,7 @@
 }
 @media (max-width: 760px) {
   .page.chat-page { min-height: calc(100dvh - 22px); }
-  .chat-bar { gap: 8px 12px; padding: 12px 26px; }
+  .chat-bar { top: var(--top-bar); gap: 8px 12px; padding: 12px 26px; }
   .chat-page.is-empty .chat-main { padding: 28px 0 32px; }
 }
 @media (max-width: 560px) {

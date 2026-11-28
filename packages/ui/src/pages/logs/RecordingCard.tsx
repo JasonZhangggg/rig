@@ -45,7 +45,8 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
     <div className="proposal rec-card">
       <div className="proposal-head">
         <h3>{finished ? "Recording finished" : state === "failed" ? "Recording didn't work" : `Recording for ${minutes(request.minutes)}`}</h3>
-        <StateChip state={state} />
+        {/* The heading already says when it finished or failed; the chip is for the states it doesn't name. */}
+        {!finished && state !== "failed" && <StateChip state={state} />}
       </div>
       <div className="rec-card-body">
         <p>{request.reason}</p>
