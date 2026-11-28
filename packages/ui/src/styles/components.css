@@ -175,6 +175,8 @@
 @starting-style { .sheet { opacity: 0; transform: scale(.96); } }
 .sheet-head { display: flex; flex-direction: column; gap: 6px; padding: 20px 22px 8px; }
 .sheet-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px; }
+/* A plain text button at the edge hangs its padding, so its word lines up with the rows above (as .row-acts does). */
+.sheet-foot > .btn.ghost:not(.sm):last-child { margin-right: calc(-1 * var(--hang-lg)); }
 .sheet .diff-wrap { margin: 10px 22px; }
 .sheet .note { margin: 0 22px; }
 /* Why is it slow or loud: what Rig found as rows, or what it checked when nothing looks wrong. */
@@ -188,16 +190,14 @@
 .sl-checked span { color: var(--text-2); }
 .sl-checked b { font-weight: 600; text-align: right; }
 .sl-note { font-size: 13px; }
-/* On narrow screens a row's buttons drop under it: line their words up with the title's. */
-@media (max-width: 860px) { .sl-body .row-acts { margin-left: -13px; } }
 /* Startup apps: the list scrolls between the heading and the buttons, a switch on the right of each row on any width. */
 .sheet.su-sheet { display: flex; flex-direction: column; overflow: hidden; outline: none; }
-.su-suggest { align-self: flex-start; margin: 4px 0 0 -10px; }
+.su-suggest { align-self: flex-start; margin: 4px 0 0 calc(-1 * var(--hang)); }
 .su-list { flex: 1 1 auto; min-height: 0; overflow: auto; margin-top: 4px; padding: 0 22px; }
 .su-list .row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 11px 0; }
 .su-list .row-acts { margin-left: 16px; }
 .sheet .su-note { margin-top: 12px; }
-.su-ask { margin-right: auto; }
+.su-ask { margin-right: auto; margin-left: calc(-1 * var(--hang-lg)); }
 .scrim.su-behind { visibility: hidden; }
 /* On a phone the two closing buttons stay together, and Ask goes under them. */
 @media (max-width: 560px) { .su-ask { order: 3; } }
