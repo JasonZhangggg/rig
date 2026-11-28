@@ -1,6 +1,7 @@
 // Days of the background log drawn as one chart.
 import { describe, expect, it } from "vitest";
-import { historyRecorded, joinRecordings, recorded } from "../src/recorded";
+import { historyRecorded, joinRecordings, liveRecorded, recorded, type LiveSample } from "../src/recorded";
+import type { Reading } from "../src/model";
 import type { SensorRef } from "../src/recordings";
 
 const cpu: SensorRef = { id: "cpu/0/temp", hw: "cpu", hwName: "Ryzen", type: "temperature", name: "Tctl" };
@@ -51,5 +52,19 @@ describe("recorded, memory", () => {
     const ram = r.parts.find((p) => p.id === "ram")!;
     expect(r.sensors[ram.lead].name).toBe("Memory");
     expect(r.points[0].v[ram.lead]).toBe(86);
+  });
+});
+
+describe("liveRecorded", () => {
+  const reading = (id: string, part: string, value: number) => ({ id, part, type: "temperature", name: id, value }) as Reading;
+  const samples: LiveSample[] = [{ t: 1, vals: { a: 40, b: 50, c: 60 } }, { t: 2, vals: { a: 41, b: 51, c: 61 } }];
+
+  it("lines each reading up with the sensors the PC lists now, when the list changes between ticks", () => {
+    const before = liveRecorded([reading("a", "cpu", 41), reading("b", "gpu", 51)], samples);
+    expect(before.points.map((p) => p.v)).toEqual([[40, 50], [41, 51]]);
+    const after = liveRecorded([reading("c", "cpu", 61), reading("a", "gpu", 41)], samples);
+    expect(after.sensors.map((s) => s.id)).toEqual(["c", "a"]);
+    expect(after.points.map((p) => p.v)).toEqual([[60, 40], [61, 41]]);
+    expect(liveRecorded([reading("a", "cpu", 41), reading("b", "gpu", 51)], [...samples, { t: 3, vals: { a: 42 } }]).points.map((p) => p.v)).toEqual([[40, 50], [41, 51], [42, null]]);
   });
 });

@@ -485,7 +485,7 @@ export class LocalClient implements RigClient {
   }
 
   async shop(id: string) {
-    if (!this.isLocal(id)) return this.cloud?.shop(id) ?? null;
+    if (!(await this.isLocal(id))) return this.cloud?.shop(id) ?? null;
     await this.start();
     return this.inv ? shopFor(this.inv) : null;
   }

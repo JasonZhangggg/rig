@@ -6,6 +6,7 @@ import { diagnose, STABILITY, WEAR_CRITICAL, WEAR_LOW, type Finding, type Health
 import { boostsToLimit, cpuLimit, cpuTemp, gpuLimit, gpuTemp } from "./limits";
 import { safetyFindings } from "./safety";
 import { findSensor } from "./telemetry";
+import { suggestedOff } from "./startup";
 
 export type { Finding, HealthInput } from "./diagnose";
 export { cpuLimit, cpuTemp, gpuLimit, gpuTemp } from "./limits";
@@ -74,8 +75,14 @@ export function findings(input: HealthInput): Finding[] {
   if (mem?.value != null && mem.value >= 90) add({ id: "mem-full", category: "Startup and speed", weight: 15, severity: "warn", title: `Memory is ${Math.round(mem.value)}% full`, body: "Apps will start to slow down as Windows moves things to disk.", action: "Ask what's using it", part: "ram", go: "chat", ask: "My memory is almost full. What's using it?" });
 
   // Startup apps
+  // Eight or more, or a few Rig knows open fine when started by hand.
   const on = facts?.startupApps.filter((a) => a.enabled) ?? [];
-  if (on.length >= 8) add({ id: "startup", category: "Startup and speed", weight: 10, severity: "info", title: `${on.length} apps start with Windows`, body: "Each one slows startup a little and keeps running in the background. Rig can suggest which are safe to turn off.", action: "Review startup apps", go: "chat", ask: "Which of my startup apps can I safely turn off?" });
+  const canGo = suggestedOff(on).length;
+  if (on.length >= 8 || canGo >= 3) add({
+    id: "startup", category: "Startup and speed", weight: 10, severity: "info", title: `${on.length} apps start with Windows`,
+    body: canGo ? `Each one slows startup a little and keeps running in the background. Rig suggests turning off ${canGo} of them.` : "Each one slows startup a little and keeps running in the background.",
+    action: "Review startup apps", go: "chat", open: "startup", ask: "Which of my startup apps can I safely turn off?",
+  });
 
   // Screens below their best refresh rate
   for (const d of inv.displays) {

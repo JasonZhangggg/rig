@@ -3,7 +3,7 @@ import type { Route } from "@rig/core";
 import { useUI } from "../../state";
 
 /** The two views of the Logs page, each its own address so a link opens the right one. Older addresses open Readings. */
-export const logViews: [Route, string][] = [["logs", "Readings"], ["events", "Events"]];
+export const logViews: [Route, string][] = [["logs", "Readings"], ["events", "Events"], ["games", "Games"]];
 const viewOf = (r: Route): Route => (r === "recorded" || r === "history" ? "logs" : r);
 export const isLogView = (r: Route) => logViews.some(([v]) => v === viewOf(r));
 
