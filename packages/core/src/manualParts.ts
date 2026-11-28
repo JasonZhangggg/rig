@@ -188,7 +188,7 @@ export function driverRows(pc: StillPC): DriverRow[] {
     const installed = g.driver ? `${g.maker ?? "Driver"} ${g.driver}` : undefined;
     const href = g.maker ? chipDriverPages[g.maker] : undefined;
     return {
-      id: `graphics:${g.name}`, name: g.name, what: "Graphics driver", installed,
+      id: `graphics:${g.name}`, name: g.name.replace(/\((tm|r)\)|[®™]/gi, "").replace(/\s+/g, " ").trim(), what: "Graphics driver", installed,
       ask: { label: "Ask if there's a newer one", question: `Is there a newer driver for my ${g.name}?${installed ? ` I have ${installed}.` : ""}` },
       link: href ? { label: `${g.maker} downloads`, href } : undefined,
     };

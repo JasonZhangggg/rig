@@ -101,7 +101,7 @@ describe("Manuals", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Pebble" })).toBeTruthy();
     const drivers = within(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" }).closest("section")!);
     const rows = drivers.getAllByRole("listitem");
-    expect(rows.map((li) => li.querySelector(".row-title")?.textContent)).toEqual(["ASUS Zenbook 14 OLED UX3405MA", "Intel Arc Graphics", "ASUSTeK UX3405MA"]);
+    expect(rows.map((li) => li.querySelector(".row-title")?.textContent)).toEqual(["ASUS Zenbook 14 OLED UX3405MA", "Intel Arc Graphics", "ASUS UX3405MA"]);
 
     const laptop = within(rows[0]);
     expect(laptop.getByText("Drivers, BIOS and manual")).toBeTruthy();
