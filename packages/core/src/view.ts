@@ -12,6 +12,7 @@ import { isSetting, sensorName } from "./sensors";
 import { solderedMemory } from "./shop";
 import type { Picks } from "./build";
 import { machineWord } from "./machineWord";
+import { makerName } from "./manualParts";
 
 /** What the person set for a PC in Rig: its name and color, the last dust clean, and the models they picked for parts Windows can't name. */
 export interface Identity { name?: string; accent?: string; cleanedAt?: string; picks?: Picks }
@@ -234,12 +235,14 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const battery = batteryView(inv, snap, facts, { history: evidence.history, power, now: evidence.now });
   const issues: Issue[] = fs.length ? fs : [{ id: "all-good", severity: "ok", title: "Nothing needs a look", body: "Temperatures, storage and settings all look normal.", action: "Ask Rig anything", go: "chat" }];
 
+  // The maker the short way, as on its own site: "ASUS", not "ASUSTeK COMPUTER INC.".
+  const maker = makerName(inv.machine.manufacturer);
   return {
     id: inv.machine.id,
     name: id.name || prettyName(inv.machine.hostname, inv.machine.kind),
     kind: inv.machine.kind,
     accent: id.accent || defaultAccent,
-    nickname: laptop ? `${inv.machine.manufacturer} laptop` : "Desktop",
+    nickname: !laptop ? "Desktop" : maker ? `${maker} laptop` : "Laptop",
     os: `${inv.machine.os.name} ${inv.machine.os.version}`.trim(),
     health, breakdown,
     seenAt: snap ? new Date(snap.at).toISOString() : undefined,
