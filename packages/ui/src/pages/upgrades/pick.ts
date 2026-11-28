@@ -27,6 +27,19 @@ function need(u: Upgrade, pc: StillPC & { alerts?: PC["alerts"] }, room: Room[])
 
 export interface Pick { idea: Upgrade; why: string; pressing: boolean }
 
+/**
+ * A battery idea's detail is how much charge the battery still holds, and that's all any reason to replace it says
+ * (the health check's "Battery holds 60% of its original charge", or the detail itself), so the reason stands in for it.
+ */
+const reasonSaysDetail = (u: Upgrade) => u.part === "Battery";
+
+/** What an idea's card says: why it's Rig's pick when something on the PC presses, then the idea's own detail and gain, each said once. */
+export function ideaText(u: Upgrade, pick: Pick | null): string {
+  const why = pick?.idea === u && pick.pressing ? pick.why : "";
+  const detail = why && reasonSaysDetail(u) ? "" : u.detail;
+  return [why, detail, u.gain ? `${u.gain}.` : ""].filter(Boolean).join(" ");
+}
+
 /** The idea Rig would start with: one that answers something it read on the PC, then one that fits as it is. */
 export function bestPick(list: Upgrade[], pc: StillPC & { alerts?: PC["alerts"] }, room: Room[]): Pick | null {
   const scored = list

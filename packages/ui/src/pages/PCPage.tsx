@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { reducedMotion } from "../appearance";
-import { formatTemp, machineWord, type Part, type Route, type TempUnit } from "@rig/core";
+import { chipDriverPages, formatTemp, machineWord, type Part, type Route, type TempUnit } from "@rig/core";
 import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
 import { ManualsTab } from "../manuals/ManualsTab";
@@ -26,12 +26,6 @@ import { BatteryLife, batteryTiles } from "./battery/Battery";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
 const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals and drivers"], ["safety", "Safety"]];
-
-const driverPages: Record<string, string> = {
-  NVIDIA: "https://www.nvidia.com/en-us/drivers/",
-  AMD: "https://www.amd.com/en/support/download/drivers.html",
-  Intel: "https://www.intel.com/content/www/us/en/support/detect.html",
-};
 
 export function PCPage() {
   const { ui, pc, set } = useApp();
@@ -337,14 +331,14 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   if (tab === "life") return <BatteryTab />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
-    const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));
+    const maker = Object.keys(chipDriverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));
     return (
       <>
         <table className="kv"><tbody><tr><th>Installed</th><td className="num">{d.installed}</td></tr>{d.latest && <tr><th>Latest</th><td className="num">{d.latest}</td></tr>}</tbody></table>
         {d.note && <p className="muted">{d.note}</p>}
         <div className="detail-actions">
           <button className="btn" type="button" onClick={() => ask(`Is there a newer ${part.type.toLowerCase()} ${d.installed.startsWith("BIOS") ? "BIOS" : "driver"} for my ${part.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>
-          {maker && <a className="btn ghost" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>}
+          {maker && <a className="btn ghost" href={chipDriverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>}
         </div>
         <p className="faint detail-note">Rig never installs drivers or BIOS updates by itself.</p>
       </>

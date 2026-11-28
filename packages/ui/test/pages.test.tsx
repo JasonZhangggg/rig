@@ -2,7 +2,7 @@
 // and what each says when there's little or nothing to show yet.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PC, Upgrade } from "@rig/core";
+import type { Inventory, PC, Upgrade } from "@rig/core";
 import { DemoClient } from "@rig/core/demo";
 
 vi.mock("../src/scene", () => ({
@@ -266,6 +266,28 @@ describe("Upgrades", () => {
     expect(bestPick([{ ...list[0], fit: "later" }], pc, [])).toBeNull();
     const alert = { ...pc.issues![0], id: "gpu-hotter", title: "Graphics card runs hotter than it used to" };
     expect(bestPick(list, { ...pc, issues: [], alerts: [alert] } as unknown as PC, [])).toMatchObject({ idea: { part: "Cooling" }, why: "Graphics card runs hotter than it used to.", pressing: true });
+  });
+
+  it("says how much a worn battery holds once on its Upgrade tab", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    const client = new DemoClient();
+    // Pebble's 75 Wh battery down to 45 Wh: 60% of its original charge.
+    (client as unknown as { pcs: Record<string, { inv: Inventory }> }).pcs["demo-pebble"].inv.battery!.fullWh = 45;
+    await show("pc", client);
+    fireEvent.click(await screen.findByRole("button", { name: /^Battery/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
+    const idea = (await screen.findByRole("heading", { level: 3, name: "Replace the battery" })).closest("li")!;
+    expect(within(idea).getByText("Rig's pick")).toBeTruthy();
+    expect(idea.querySelector("p.muted")!.textContent).toBe("Battery holds 60% of its original charge. Back to full battery life.");
+  });
+
+  it("says Pebble's battery doesn't need replacing yet at 89%", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    await show("pc");
+    fireEvent.click(await screen.findByRole("button", { name: /^Battery/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
+    const idea = (await screen.findByRole("heading", { level: 3, name: "Battery replacement" })).closest("li")!;
+    expect(idea.querySelector("p.muted")!.textContent).toBe("At 89% there's no need yet. Most people replace it around 70 to 75%.");
   });
 
   it("says so before Rig has read the parts", async () => {
