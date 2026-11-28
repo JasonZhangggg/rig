@@ -15,6 +15,8 @@ export interface Activity {
   cpu: number; gpu: number; game: string | null;
   /** Minutes since this stretch began, so a game's first hour can warm up. Missing means long enough to be warm through. */
   since?: number;
+  /** On a laptop with two graphics chips, the graphics work runs on the built-in one and the graphics card sleeps. */
+  chip?: "built-in";
 }
 
 /** Something the PC does from one local hour to another. Hours past 24 run into the next morning. */

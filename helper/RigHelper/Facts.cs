@@ -27,6 +27,9 @@ public static class Facts
             gameMode = GameMode(),
             visualEffects = VisualEffects(),
             maxProcessorState = MaxProcessorState(),
+            powerMode = PowerMode(),
+            // Only the apps that have one, by file name: the full paths stay on this PC.
+            gpuPreferences = Try(AppGpuStep.Preferences),
             // Updates, virus protection, the firewall and backup: kept a while, and left out until the first read is done.
             security = Security.Read(owner),
         };
@@ -89,6 +92,25 @@ public static class Facts
         3 => "custom",
         _ => "auto",
     };
+
+    static T? Try<T>(Func<T> read) where T : class { try { return read(); } catch { return null; } }
+
+    const string PowerSchemes = @"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes";
+
+    /// Windows 11's power mode is an overlay on the plan, kept per power source; no overlay is Balanced.
+    static string Mode(object? guid) => (guid as string)?.Trim().Trim('{', '}').ToLowerInvariant() switch
+    {
+        "961cc777-2547-4f9d-8174-7d86181b8a7a" => "efficiency",
+        "ded574b5-45a0-4f42-8737-46345c09c238" => "performance",
+        _ => "balanced",
+    };
+
+    /// Power mode plugged in and on battery (Settings > System > Power), and whether Battery saver is on now. Null when it can't be read.
+    public static object? PowerMode() => Try<object>(() =>
+    {
+        using var k = Registry.LocalMachine.OpenSubKey(PowerSchemes);
+        return new { ac = Mode(k?.GetValue("ActiveOverlayAcPowerScheme")), dc = Mode(k?.GetValue("ActiveOverlayDcPowerScheme")), saver = Native.BatterySaverOn() };
+    });
 
     public static object MaxProcessorState()
     {

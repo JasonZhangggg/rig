@@ -120,12 +120,25 @@ export interface Snapshot {
 }
 
 /** Settings Rig can read and change, read from the PC on request. */
+/** Windows 11's power mode: Best power efficiency, Balanced or Best performance. */
+export type PowerMode = "efficiency" | "balanced" | "performance";
+export interface PowerModeFacts { ac: PowerMode; dc: PowerMode; /** Battery saver (Energy saver on newer Windows 11) is on now. */ saver: boolean }
+/** An app's graphics preference as Windows stores it: auto is "Let Windows decide", saving the built-in chip, high the graphics card. */
+export type AppGpu = "auto" | "saving" | "high";
+
 export interface SystemFacts {
   powerPlans: { guid: string; name: string; active: boolean }[];
   startupApps: { name: string; command: string; enabled: boolean; scope: "user" | "machine" }[];
   gameMode: boolean;
   visualEffects: "auto" | "appearance" | "performance" | "custom";
   maxProcessorState: { ac: number; dc: number };
+  /** Windows' power mode (Settings > System > Power), plugged in and on battery, and whether Battery saver is on. Missing from older helpers. */
+  powerMode?: PowerModeFacts;
+  /**
+   * Windows' graphics preference per app (Settings > System > Display > Graphics), by the program's file name in lower
+   * case: only the apps that have one. Missing from older helpers.
+   */
+  gpuPreferences?: Record<string, AppGpu>;
   /** Windows updates, virus protection, the firewall and backup (safety.ts). Missing from helpers before it was read. */
   security?: SecurityFacts;
 }

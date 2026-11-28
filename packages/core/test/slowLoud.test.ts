@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CloudClient, LocalClient, MemoryStore, appName, buildPC, cpuLimit, slowOrLoud, type HistoryPoint, type ProcessUse, type Snapshot, type SystemFacts } from "../src";
+import { CloudClient, LocalClient, MemoryStore, appName, buildPC, cardChip, cleanProcesses, cpuLimit, slowOrLoud, type HistoryPoint, type ProcessUse, type Snapshot, type SystemFacts } from "../src";
 import { DemoClient, SimulatedLink, demoProcesses, fixtures, simulate, type Activity } from "../src/demo";
 import { afterEach, vi } from "vitest";
 
@@ -190,5 +190,106 @@ describe("reading the busiest apps", () => {
     expect(a.causes.map((c) => c.title)).toEqual(["Cyberpunk 2077 keeps the graphics card at 97%", "Graphics card is at its 88°C limit", "Windows Security is scanning in the background"]);
     // Home shows the same game.
     expect(pc.parts?.gpu?.load).toBe(97);
+  });
+});
+
+describe("why is my laptop slow: on battery, and a game on the built-in graphics", () => {
+  const comet = fixtures.comet.inv;
+  const UNPLUGGED = { level: 46, state: "discharging" as const, watts: 38 };
+  const BUILT_IN: Activity = { cpu: 0.45, gpu: 0.9, game: "Baldur's Gate 3", chip: "built-in" };
+  const ON_CARD: Activity = { cpu: 0.45, gpu: 0.9, game: "Baldur's Gate 3" };
+  function cometPc(act: Activity, opts: { unplugged?: boolean; facts?: (f: SystemFacts) => void } = {}) {
+    const snap = simulate(comet, AT, { activity: act, ...(opts.unplugged ? { battery: UNPLUGGED } : {}) });
+    const f = structuredClone(fixtures.comet.facts);
+    opts.facts?.(f);
+    const { findings: _f, ...pc } = buildPC(comet, snap, f);
+    return pc;
+  }
+  const cometApps = (act: Activity) => cleanProcesses(demoProcesses(comet, AT, act), Infinity, cardChip(comet));
+  const ids = (a: ReturnType<typeof slowOrLoud>) => a.causes.map((c) => c.id);
+
+  it("says an unplugged laptop in Best power efficiency is held back, and that plugging in brings back full speed", () => {
+    const a = slowOrLoud({ pc: cometPc(REST, { unplugged: true }), processes: cometApps(REST), now: AT });
+    const c = a.causes.find((x) => x.id === "battery-power")!;
+    expect(c.title).toBe("On battery, Windows is saving power");
+    expect(c.evidence).toBe("Unplugged at 46% · Power mode is Best power efficiency");
+    expect(c.why).toBe("To make the charge last, Windows holds the processor back while the laptop runs on battery. Plugging in brings back full speed.");
+    expect(c.step).toEqual({ kind: "tip", label: "Plug in" });
+    expect(a.headline).toBe("On battery, Windows is keeping the processor slow to save power.");
+  });
+
+  it("says nothing of it plugged in, on a desktop, or where the helper doesn't read the power mode", () => {
+    expect(ids(slowOrLoud({ pc: cometPc(REST), processes: cometApps(REST), now: AT }))).not.toContain("battery-power");
+    const atlas = pcOf("atlas", REST, undefined, (f) => { f.powerMode = { ac: "efficiency", dc: "efficiency", saver: true }; f.maxProcessorState = { ac: 100, dc: 60 }; });
+    expect(ids(slowOrLoud({ pc: atlas, processes: apps("atlas", REST), now: AT }))).not.toContain("battery-power");
+    const older = cometPc(REST, { unplugged: true, facts: (f) => { delete f.powerMode; } });
+    expect(ids(slowOrLoud({ pc: older, processes: cometApps(REST), now: AT }))).not.toContain("battery-power");
+    // Pebble is on battery in the demo, but its helper said nothing of a power mode that saves power.
+    const pebble = slowOrLoud({ pc: pcOf("pebble", REST), processes: apps("pebble", REST), now: AT });
+    expect(ids(pebble)).not.toContain("battery-power");
+  });
+
+  it("names Windows' battery saver by the name this Windows gives it", () => {
+    const pc = cometPc(REST, { unplugged: true, facts: (f) => { f.powerMode = { ac: "balanced", dc: "balanced", saver: true }; } });
+    expect(slowOrLoud({ pc, processes: [], now: AT }).causes.find((x) => x.id === "battery-power")?.evidence).toBe("Unplugged at 46% · Energy saver is on");
+    expect(slowOrLoud({ pc: { ...pc, os: "Windows 10 Home 22H2" }, processes: [], now: AT }).causes.find((x) => x.id === "battery-power")?.evidence).toBe("Unplugged at 46% · Battery saver is on");
+  });
+
+  it("asks rather than says plug in when the power mode saves power plugged in too", () => {
+    const pc = cometPc(REST, { unplugged: true, facts: (f) => { f.powerMode = { ac: "efficiency", dc: "efficiency", saver: false }; } });
+    const c = slowOrLoud({ pc, processes: [], now: AT }).causes.find((x) => x.id === "battery-power")!;
+    expect(c.step).toMatchObject({ kind: "ask", label: "Ask about it" });
+    expect(c.why).toMatch(/plugged in too/);
+  });
+
+  it("offers to lift a cap on the processor on battery through the usual review", () => {
+    const pc = cometPc({ cpu: 0.8, gpu: 0.05, game: null }, { unplugged: true, facts: (f) => { f.maxProcessorState = { ac: 100, dc: 60 }; } });
+    const c = slowOrLoud({ pc, processes: [], now: AT }).causes.find((x) => x.id === "battery-power")!;
+    expect(c.title).toBe("On battery, the processor is capped at 60%");
+    expect(c.evidence).toBe("Unplugged at 46% · 60% on battery, 100% plugged in");
+    expect(c.step).toEqual({ kind: "fix", label: "Review change", fix: [{ kind: "power.maxProcessorState", ac: 100, dc: 100 }], why: "On battery the processor is capped at 60%." });
+    // Rig's own battery saver turns boost off at 99%: that isn't a cap worth undoing.
+    const boostOff = cometPc(REST, { unplugged: true, facts: (f) => { f.maxProcessorState = { ac: 100, dc: 99 }; f.powerMode = { ac: "balanced", dc: "balanced", saver: false }; } });
+    expect(ids(slowOrLoud({ pc: boostOff, processes: [], now: AT }))).not.toContain("battery-power");
+  });
+
+  it("says a game ran on the built-in graphics while the graphics card slept, and offers to move it", () => {
+    const a = slowOrLoud({ pc: cometPc(BUILT_IN), processes: cometApps(BUILT_IN), now: AT });
+    const c = a.causes[0];
+    expect(c.id).toBe("built-in-graphics");
+    expect(c.title).toBe("Baldur's Gate 3 is running on the built-in graphics");
+    expect(c.evidence).toMatch(/^bg3\.exe uses \d+% of the Radeon 780M · RTX 4060 asleep$/);
+    expect(c.why).toBe("This laptop has two graphics chips. Windows ran Baldur's Gate 3 on the built-in Radeon 780M, which saves power but is much slower than the RTX 4060. Setting it to use the RTX 4060 takes effect the next time Baldur's Gate 3 starts.");
+    expect(c.step).toEqual({ kind: "fix", label: "Review change", fix: [{ kind: "display.appGpu", app: "bg3.exe", gpu: "high" }], why: "Windows ran Baldur's Gate 3 on the built-in graphics. It uses the RTX 4060 the next time it starts." });
+    expect(a.headline).toBe("Baldur's Gate 3 is running on the built-in graphics, not the RTX 4060.");
+    // Busy on the built-in chip is still busy: fast fans aren't put down to dust.
+    expect(ids(a)).not.toContain("fans-fast");
+  });
+
+  it("says to reopen the game once it's already set to use the graphics card", () => {
+    const pc = cometPc(BUILT_IN, { facts: (f) => { f.gpuPreferences = { "bg3.exe": "high" }; } });
+    const c = slowOrLoud({ pc, processes: cometApps(BUILT_IN), now: AT }).causes.find((x) => x.id === "built-in-graphics")!;
+    expect(c.step).toEqual({ kind: "tip", label: "Reopen it" });
+    expect(c.why).toBe("This laptop has two graphics chips. Baldur's Gate 3 is already set to use the RTX 4060, which takes effect the next time it starts.");
+  });
+
+  it("leaves a game on the graphics card, a browser on the built-in chip, a desktop and a laptop with one chip alone", () => {
+    expect(ids(slowOrLoud({ pc: cometPc(ON_CARD), processes: cometApps(ON_CARD), now: AT }))).not.toContain("built-in-graphics");
+    const browser: ProcessUse[] = [{ name: "chrome.exe", cpu: 12, memMb: 2400, builtIn: 70 }];
+    expect(ids(slowOrLoud({ pc: cometPc(REST), processes: browser, now: AT }))).not.toContain("built-in-graphics");
+    const game: ProcessUse[] = [{ name: "bg3.exe", cpu: 30, memMb: 9000, builtIn: 85 }];
+    expect(ids(slowOrLoud({ pc: pcOf("atlas", REST), processes: game, now: AT }))).not.toContain("built-in-graphics");
+    expect(ids(slowOrLoud({ pc: pcOf("pebble", REST), processes: game, now: AT }))).not.toContain("built-in-graphics");
+  });
+
+  it("finds both when the demo gaming laptop is checked: unplugged, with a game on the built-in graphics", async () => {
+    const demo = new DemoClient();
+    const procs = await demo.processes("demo-comet");
+    const pc = (await demo.machines()).find((p) => p.id === "demo-comet")!;
+    expect(pc.battery?.state).toBe("discharging");
+    const a = slowOrLoud({ pc, processes: procs, now: Date.now() });
+    expect(a.causes.map((c) => c.title)).toEqual(["Baldur's Gate 3 is running on the built-in graphics", "On battery, Windows is saving power"]);
+    // The desktop is checked as before.
+    expect(ids(slowOrLoud({ pc: (await demo.machines()).find((p) => p.id === "demo-atlas")!, processes: await demo.processes("demo-atlas"), now: Date.now() }))).not.toContain("battery-power");
   });
 });

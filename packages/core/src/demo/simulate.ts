@@ -3,7 +3,7 @@
 
 import type { Inventory, Sensor, Snapshot } from "../telemetry";
 import { activityAt, weekFor, type Activity } from "./schedule";
-import { demoBattery } from "./battery";
+import { demoBattery, type DemoBattery } from "./battery";
 
 /**
  * A slow swing over `period` ms. The time is first brought inside one turn: the sine of a number near a billion is
@@ -30,9 +30,9 @@ const sensorChipName = (name: string) => name.replace(/\(TM\)/g, "").replace(/\s
  * Readings for a demo PC at a moment. It follows the PC's weekly schedule
  * unless told what it's doing; a game on its own means both parts flat out.
  */
-export function simulate(inv: Inventory, t: number, opts: { game?: string | null; activity?: Activity; dust?: number } = {}): Snapshot {
+export function simulate(inv: Inventory, t: number, opts: { game?: string | null; activity?: Activity; dust?: number; battery?: DemoBattery } = {}): Snapshot {
   const laptop = inv.machine.kind === "laptop";
-  const battery = laptop ? demoBattery(inv, t) : null;
+  const battery = laptop ? opts.battery ?? demoBattery(inv, t) : null;
   // On battery the laptop does what its day on battery says (demo/battery.ts), not its usual week.
   const act = opts.activity ?? (opts.game ? { cpu: 1, gpu: 1, game: opts.game } : battery?.activity ?? activityAt(weekFor(inv), t));
   const cpu = Math.min(act.cpu, 1), gpuLoad = Math.min(act.gpu, 1), load = Math.max(cpu, gpuLoad);
@@ -85,10 +85,12 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
   // lists them (AMD's before NVIDIA's). The built-in chip draws the desktop and the browser; in a game it only passes the
   // dedicated chip's frames to the screen. Sharing the processor's chip, it runs about as warm.
   const igpu = laptop && gpu ? inv.gpus.find((g) => g.integrated) : undefined;
-  const awake = !laptop || gpuLoad >= WAKES_AT;
+  const builtIn = !!igpu && act.chip === "built-in";
+  const awake = !laptop || (gpuLoad >= WAKES_AT && !builtIn);
   if (igpu) {
     const name = sensorChipName(igpu.name), dev = `gpu-${igpu.vendor}-integrated`;
-    const busy = awake ? 0.12 : Math.min(1, 0.04 + act.gpu * 3 + cpu * 0.15);
+    // A game sent to the built-in chip keeps it near flat out.
+    const busy = builtIn ? Math.min(1, 0.04 + act.gpu * 0.9 + cpu * 0.1) : awake ? 0.12 : Math.min(1, 0.04 + act.gpu * 3 + cpu * 0.15);
     add("gpu", name, "temperature", "GPU Core", cpuT - 3, undefined, dev);
     add("gpu", name, "load", "GPU Core", pct(busy * 100 + wobble(t, 2300, 2)), undefined, dev);
     add("gpu", name, "load", "D3D 3D", pct(busy * 92 + wobble(t, 2300, 2)), undefined, dev);

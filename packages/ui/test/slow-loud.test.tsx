@@ -58,4 +58,37 @@ describe("why is it slow or loud", () => {
     fireEvent.click(screen.getByRole("button", { name: /Why is Atlas slow or loud\?/ }));
     expect(await screen.findByRole("heading", { name: /^Fans are loud because/ })).toBeTruthy();
   });
+
+  it("on the gaming laptop, says a game is on the built-in graphics and that it's on battery, and moves the game through review", async () => {
+    localStorage.setItem("rig.pc", "demo-comet");
+    const client = new DemoClient();
+    const dialog = within(await openFromHome(client));
+    expect(await dialog.findByRole("heading", { name: "Baldur's Gate 3 is running on the built-in graphics, not the RTX 4060." })).toBeTruthy();
+    const found = within(dialog.getByRole("list", { name: "What Rig found" }));
+    expect(found.getAllByRole("listitem").map((li) => li.querySelector(".row-title")!.textContent)).toEqual([
+      "Baldur's Gate 3 is running on the built-in graphics", "On battery, Windows is saving power",
+    ]);
+    expect(found.getByText(/^bg3\.exe uses \d+% of the Radeon 780M · RTX 4060 asleep$/)).toBeTruthy();
+    expect(found.getByText("Unplugged at 46% · Power mode is Best power efficiency")).toBeTruthy();
+    // Plugging in is the person's to do: said, not a button.
+    expect(found.getByText("Plug in")).toBeTruthy();
+    expect(found.queryByRole("button", { name: "Plug in" })).toBeNull();
+    fireEvent.click(found.getByRole("button", { name: "Details: On battery, Windows is saving power" }));
+    expect(found.getByText(/while the laptop runs on battery\. Plugging in brings back full speed\.$/)).toBeTruthy();
+
+    // The game's step is the usual review: Windows' own words before and after, then the change, which can be undone.
+    fireEvent.click(found.getByRole("button", { name: "Review change" }));
+    const sheet = within(await screen.findByRole("dialog", { name: "Set bg3.exe to use the graphics card?" }));
+    expect(sheet.getByText("Graphics for bg3.exe, from its next start")).toBeTruthy();
+    expect(sheet.getByText("Let Windows decide")).toBeTruthy();
+    expect(sheet.getByText("High performance")).toBeTruthy();
+    fireEvent.click(sheet.getByRole("button", { name: "Make this change" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Set bg3\.exe/ })).toBeNull(), { timeout: 5000 });
+
+    // Checked again, the game is set: it moves the next time it starts.
+    fireEvent.click(await screen.findByRole("button", { name: "Slow or loud? Check now" }));
+    const again = within(await screen.findByRole("list", { name: "What Rig found" }));
+    expect(await again.findByText("Reopen it")).toBeTruthy();
+    expect(again.queryByRole("button", { name: "Review change" })).toBeNull();
+  });
 });

@@ -2,7 +2,7 @@
 // desktop, received from the server on the web, or taken from demo data.
 
 import type { ActionCall } from "./actions";
-import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
+import type { AppGpu, DisplayConnection, FillKind, PowerModeFacts, SensorType } from "./telemetry";
 import type { BuildShape, Picks } from "./build";
 import type { BatteryView } from "./battery";
 import type { SecurityFacts } from "./safety";
@@ -230,6 +230,12 @@ export interface PCSettings {
   visualEffects: "auto" | "appearance" | "performance" | "custom";
   powerPlans: { guid: string; name: string; active: boolean }[];
   startupOn: number;
+  /** The processor's speed cap, plugged in and on battery, in percent. Older views don't have it. */
+  maxProcessorState?: { ac: number; dc: number };
+  /** Windows' power mode and Battery saver, where the helper reads them. */
+  powerMode?: PowerModeFacts;
+  /** Windows' graphics preference per app, by program file name in lower case, where the helper reads them. */
+  gpuPreferences?: Record<string, AppGpu>;
   /** Every app that starts with Windows, in Windows' order. Older views don't have it. */
   startup?: StartupAppView[];
 }

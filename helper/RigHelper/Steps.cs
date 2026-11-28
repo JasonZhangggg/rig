@@ -70,6 +70,7 @@ public static class Steps
             return cur.dmDisplayFrequency == I(c, "hz") ? null : $"{name} runs at {cur.dmDisplayFrequency} Hz.";
         }),
         ["power.setting"] = new PowerStep(),
+        ["display.appGpu"] = new AppGpuStep(),
     };
 
     // Anything else goes to Actions.Apply, which refuses it in the same words as before.
@@ -95,6 +96,7 @@ public static class Steps
     {
         foreach (var p in FixRules.SelfChecks()) yield return p;
         foreach (var p in PowerChecks()) yield return p;
+        foreach (var p in AppGpuStep.SelfChecks()) yield return p;
     }
 
     static JsonObject Call(string json) => JsonNode.Parse(json)!.AsObject();

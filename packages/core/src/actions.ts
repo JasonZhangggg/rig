@@ -5,7 +5,7 @@
 
 import type { DiffRow } from "./model";
 import fixRules from "./rules/fixes.json";
-import type { SystemFacts } from "./telemetry";
+import type { AppGpu, SystemFacts } from "./telemetry";
 
 export type ActionCall =
   | { kind: "power.plan"; guid: string }
@@ -15,7 +15,13 @@ export type ActionCall =
   | { kind: "power.maxProcessorState"; ac: number; dc: number }
   | { kind: "display.refreshRate"; display: string; hz: number }
   /** One power setting on the active plan, by GUID or powercfg alias, for plugged in (ac) and battery (dc). */
-  | { kind: "power.setting"; subgroup: string; setting: string; ac: number; dc: number };
+  | { kind: "power.setting"; subgroup: string; setting: string; ac: number; dc: number }
+  /**
+   * Windows' graphics preference for one app (Settings > System > Display > Graphics), by its program file name. `path`
+   * is the program's full path: the helper finds it from the running app and puts it in the undo call. `none` takes the
+   * preference away again, which Windows reads as letting it decide.
+   */
+  | { kind: "display.appGpu"; app: string; gpu: AppGpu | "none"; path?: string };
 
 export type ActionKind = ActionCall["kind"];
 
@@ -144,6 +150,21 @@ export const catalog: ActionInfo[] = [
       required: ["subgroup", "setting", "ac", "dc"],
     },
   },
+  {
+    kind: "display.appGpu",
+    title: "Graphics chip for an app",
+    when: "On a laptop with two graphics chips, a game ran on the built-in one and is slow. Sets Windows' graphics preference for that program: high is the graphics card, saving the built-in chip, auto lets Windows decide. It takes effect the next time the app starts, and the app must be running so Rig can find its program.",
+    needsRestart: false,
+    tier: 1,
+    schema: {
+      type: "object",
+      properties: {
+        app: { type: "string", description: "The program's file name from the busiest apps, like game.exe, with no folder." },
+        gpu: { type: "string", enum: ["auto", "saving", "high"] },
+      },
+      required: ["app", "gpu"],
+    },
+  },
 ];
 
 export const actionInfo = (k: ActionKind) => catalog.find((a) => a.kind === k)!;
@@ -155,6 +176,17 @@ function powerValueError(info: PowerSettingInfo, v: unknown): boolean {
   const n = v as number;
   if (n < info.range[0] || n > info.range[1]) return true;
   return !!info.atLeast && n !== 0 && n < info.atLeast;
+}
+
+/** A program's file name, like bg3.exe, with no folder. */
+const APP_FILE = /^[a-z0-9][a-z0-9 _.()+'&-]{0,99}\.exe$/i;
+const APP_GPUS = ["none", "auto", "saving", "high"];
+/** A program's full path on a local drive, ending in its own file name: no wildcards, quotes or steps up a folder. */
+function appPathError(path: unknown, app: string): boolean {
+  if (path === undefined) return false;
+  if (typeof path !== "string" || path.length > 260 || !/^[a-z]:\\/i.test(path) || /[*?"<>|\u0000-\u001f/]/.test(path)) return true;
+  if (path.split("\\").some((part) => part === ".." || part === ".")) return true;
+  return !path.toLowerCase().endsWith(`\\${app.toLowerCase()}`);
 }
 
 const onOff = (v: boolean) => (v ? "On" : "Off");
@@ -176,6 +208,11 @@ export function validateCall(c: unknown): string | null {
       const info = typeof call.subgroup === "string" && typeof call.setting === "string" ? powerSettingOf(call.subgroup, call.setting) : undefined;
       if (!info) return `subgroup and setting must be one of Rig's power settings: ${powerList}`;
       return powerValueError(info, call.ac) || powerValueError(info, call.dc) ? `ac and dc must be ${info.unit === "seconds" ? `seconds, 0 for never or ${info.atLeast ?? info.range[0]} to ${info.range[1]}` : `whole numbers from ${info.range[0]} to ${info.range[1]}`}` : null;
+    }
+    case "display.appGpu": {
+      if (typeof call.app !== "string" || !APP_FILE.test(call.app)) return "app must be the program's file name, like game.exe, with no folder";
+      if (!APP_GPUS.includes(call.gpu as string)) return "gpu must be auto, saving or high";
+      return appPathError(call.path, call.app) ? "path must be the program's full path, ending in its file name" : null;
     }
     default: return `Unknown change: ${String(call.kind)}`;
   }
@@ -201,6 +238,11 @@ const pair = (info: PowerSettingInfo, ac: number, dc: number) => (ac === dc ? `$
 /** What a power setting's undo says was there before, for the row: the helper read it just before the change. */
 export function nowFromUndo(undo: ActionCall): FixNow | undefined {
   return undo.kind === "power.setting" ? { kind: "power.setting", ac: undo.ac, dc: undo.dc } : undefined;
+}
+
+/** An app's graphics preference in Windows' own words, as Settings > System > Display > Graphics shows it. */
+export function appGpuWords(gpu: AppGpu | "none" | undefined): string {
+  return gpu === "high" ? "High performance" : gpu === "saving" ? "Power saving" : "Let Windows decide";
 }
 
 /** Whether the row for this call needs the helper to read the PC first (the facts don't hold it). */
@@ -234,6 +276,7 @@ export function describeCall(call: ActionCall, facts: SystemFacts | null, displa
       const n = now ?? (info.id === "processorMax" && facts ? facts.maxProcessorState : undefined);
       return [`${info.title} (plugged in / battery)`, n ? pair(info, n.ac, n.dc) : NOT_READ, pair(info, call.ac, call.dc)];
     }
+    case "display.appGpu": return [`Graphics for ${call.app}, from its next start`, facts?.gpuPreferences ? appGpuWords(facts.gpuPreferences[call.app.toLowerCase()]) : "Unknown", appGpuWords(call.gpu)];
   }
 }
 
@@ -253,5 +296,6 @@ export function titleFor(calls: ActionCall[]): string {
     case "power.maxProcessorState": return c.ac < 100 || c.dc < 100 ? "Capped processor boost" : "Removed the processor cap";
     case "display.refreshRate": return `Set ${c.display} to ${c.hz} Hz`;
     case "power.setting": return `Changed ${powerSettingOf(c.subgroup, c.setting)?.title.toLowerCase() ?? "a power setting"}`;
+    case "display.appGpu": return c.gpu === "high" ? `Set ${c.app} to use the graphics card` : c.gpu === "saving" ? `Set ${c.app} to use the built-in graphics` : `Let Windows pick the graphics for ${c.app}`;
   }
 }

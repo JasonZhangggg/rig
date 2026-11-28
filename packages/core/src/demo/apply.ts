@@ -42,6 +42,10 @@ export function demoSaverPower(inv: Inventory, f: SystemFacts): PowerNow {
   return Object.fromEntries(SAVER_SETTINGS.map((id) => [id, { ...settingsOf(inv, f).get(id)! }]));
 }
 
+/** Where the demo's games live, for the full path Windows keys an app's graphics preference by. */
+const GAME_FOLDERS: Record<string, string> = { "bg3.exe": "Baldurs Gate 3\\bin", "cyberpunk2077.exe": "Cyberpunk 2077\\bin\\x64", "cs2.exe": "Counter-Strike Global Offensive\\game\\bin\\win64" };
+const demoAppPath = (app: string) => `C:\\Program Files (x86)\\Steam\\steamapps\\common\\${GAME_FOLDERS[app.toLowerCase()] ?? app.replace(/\.exe$/i, "")}\\${app}`;
+
 export function applyToFacts(inv: Inventory, f: SystemFacts, call: ActionCall): ActionCall {
   switch (call.kind) {
     case "power.plan": {
@@ -72,6 +76,13 @@ export function applyToFacts(inv: Inventory, f: SystemFacts, call: ActionCall): 
       if (info.id === "processorMax") f.maxProcessorState = { ac: call.ac, dc: call.dc };
       else settingsOf(inv, f).set(info.id, { ac: call.ac, dc: call.dc });
       return { kind: "power.setting", subgroup: info.subgroup, setting: info.setting, ...was };
+    }
+    case "display.appGpu": {
+      const prefs = (f.gpuPreferences ??= {});
+      const key = call.app.toLowerCase(), was = prefs[key] ?? "none";
+      if (call.gpu === "none") delete prefs[key];
+      else prefs[key] = call.gpu;
+      return { kind: "display.appGpu", app: call.app, path: call.path ?? demoAppPath(call.app), gpu: was };
     }
   }
 }

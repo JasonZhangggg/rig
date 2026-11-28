@@ -6,13 +6,16 @@
 import type { ActionCall } from "./actions";
 import type { HistoryPoint, Issue, PC, Route } from "./model";
 import type { ProcessUse } from "./recordings";
+import { machineWord } from "./machineWord";
 
 /** What to do about a cause: an existing finding (its fix or its own action), a change to review, a place in Rig, or a question for the chat. */
 export type SlowLoudStep =
   | { kind: "issue"; label: string; issue: Issue }
   | { kind: "fix"; label: string; fix: ActionCall[]; why: string }
   | { kind: "go"; label: string; route: Route; part?: string }
-  | { kind: "ask"; label: string; ask: string };
+  | { kind: "ask"; label: string; ask: string }
+  /** Something only the person can do, like plugging in: said in place of a button. */
+  | { kind: "tip"; label: string };
 
 export interface SlowLoudCause {
   id: string;
@@ -76,6 +79,11 @@ export const SL_STARTUP = 8;
 /** A background job worth naming once it takes this share of the processor. */
 export const SL_BACKGROUND_CPU = 8;
 
+/** On battery, a processor cap under this, in percent, holds a laptop back. Rig's own battery saver sets 99, which only turns off boost. */
+export const SL_BATTERY_CAP = 90;
+/** An app using this much of a laptop's built-in graphics, and none of its graphics card, runs on the wrong chip. */
+export const SL_BUILT_IN = 40;
+
 /** How many of the busiest apps the check reads. */
 export const SLOW_LOUD_APPS = 8;
 
@@ -100,6 +108,8 @@ const KNOWN: [RegExp, string][] = [
 ];
 
 const backgroundOf = (p: ProcessUse) => BACKGROUND.find(([re]) => re.test(p.name));
+/** Apps that belong on the built-in graphics: the desktop, browsers, chat and office apps. */
+const NOT_GAMES = /^(dwm|explorer|chrome|msedge|firefox|opera|brave|ms-teams|teams|discord|slack|spotify|zoom|steam|steamwebhelper|code|excel|winword|outlook|powerpnt|onedrive|vlc|applicationframehost|searchhost|startmenuexperiencehost|textinputhost|rig|righelper)\.exe$/i;
 
 /** The name a person knows an app by: its own name where Rig knows it, else the program's file name. */
 export function appName(p: Pick<ProcessUse, "name">): string {
@@ -121,6 +131,13 @@ const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const rpm = (n: number) => `${r(n).toLocaleString("en-US")} rpm`;
 const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
 const pctOf = (n: number) => `${r(n)}%`;
+/** A graphics chip's short name: "Radeon 780M", "RTX 4060". Undefined when what's left names no model. */
+const chipShort = (n: string | undefined) => {
+  const s = n?.replace(/\((tm|r)\)|[®™]/gi, " ").replace(/^\s*(NVIDIA|AMD|Intel)\s+/i, "").replace(/^GeForce\s+/i, "").replace(/\s+(Laptop GPU|Graphics|GPU)\s*$/i, "").replace(/\s+/g, " ").trim();
+  return s && /\d/.test(s) ? s : undefined;
+};
+/** What Windows calls its battery saver: Energy saver from Windows 11 24H2 on. */
+const saverName = (os: string) => (/windows 11/i.test(os) && /\b(2[4-9]|[3-9]\d)h\d\b/i.test(os) ? "Energy saver" : "Battery saver");
 
 interface Candidate extends SlowLoudCause {
   score: number;
@@ -134,6 +151,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
   const parts = pc.parts ?? {};
   const cpu = parts.cpu, gpu = parts.gpu, ram = parts.ram;
   const laptop = pc.kind === "laptop";
+  const word = machineWord(pc.kind);
   const issues = pc.issues ?? [];
   const issue = (...ids: string[]) => issues.find((i) => ids.includes(i.id));
   const issueStep = (i: Issue): SlowLoudStep => ({ kind: "issue", label: i.fix ? "Review change" : i.action, issue: i });
@@ -300,8 +318,57 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     });
   }
 
+  // Unplugged, Windows holds a laptop's processor back to make the charge last: a cap on battery, or the power mode.
+  const batt = pc.battery, settings = pc.settings;
+  if (laptop && batt?.state === "discharging") {
+    const at = batt.level != null ? ` at ${batt.level}%` : "";
+    const busyNow = cpuLoad != null && cpuLoad >= 50;
+    const cap = settings?.maxProcessorState, mode = settings?.powerMode;
+    if (cap && cap.dc < SL_BATTERY_CAP) {
+      add({
+        id: "battery-power", score: busyNow ? 70 : 52, noisy: false,
+        title: `On battery, the processor is capped at ${cap.dc}%`, because: `on battery, the processor is capped at ${cap.dc}% of its speed`,
+        evidence: `Unplugged${at} · ${cap.dc}% on battery, ${cap.ac}% plugged in`,
+        why: `Windows' power plan holds the processor to ${cap.dc}% of its speed while the ${word} runs on battery. Lifting the cap makes it faster unplugged, and the charge runs down sooner.`,
+        step: { kind: "fix", label: "Review change", fix: [{ kind: "power.maxProcessorState", ac: cap.ac, dc: 100 }], why: `On battery the processor is capped at ${cap.dc}%.` },
+      });
+    } else if (mode && (mode.saver || mode.dc === "efficiency") && !out.some((c) => c.id === "power-saver")) {
+      const saver = saverName(pc.os);
+      // Plugging in turns the saver off and switches to the plugged-in power mode, unless that one saves power too.
+      const plugHelps = mode.saver || mode.ac !== "efficiency";
+      add({
+        id: "battery-power", score: busyNow ? 66 : 50, noisy: false,
+        title: "On battery, Windows is saving power", because: "on battery, Windows is keeping the processor slow to save power",
+        evidence: `Unplugged${at} · ${mode.saver ? `${saver} is on` : "Power mode is Best power efficiency"}`,
+        why: plugHelps
+          ? `To make the charge last, Windows holds the processor back while the ${word} runs on battery. Plugging in brings back full speed.`
+          : `To make the charge last, Windows holds the processor back. The power mode is Best power efficiency plugged in too.`,
+        step: plugHelps ? { kind: "tip", label: "Plug in" } : { kind: "ask", label: "Ask about it", ask: `My ${word}'s power mode is Best power efficiency, even plugged in. Should I change it?` },
+      });
+    }
+  }
+
+  // A game on a laptop's built-in graphics: the graphics card sleeps while the slower chip does the work.
+  const card = laptop && gpu?.chip ? gpu : undefined;
+  const wrongChip = card && apps.filter((p) => (p.builtIn ?? 0) >= SL_BUILT_IN && (p.gpu ?? 0) < 5 && !backgroundOf(p) && !NOT_GAMES.test(p.name)).sort((a, b) => (b.builtIn ?? 0) - (a.builtIn ?? 0))[0];
+  if (card && wrongChip) {
+    const who = nameOf(wrongChip);
+    const builtIn = chipShort(pc.graphics?.find((g) => g.integrated)?.name) ?? "built-in chip", fast = chipShort(card.chip) ?? "graphics card";
+    const set = settings?.gpuPreferences?.[wrongChip.name.toLowerCase()] === "high";
+    add({
+      id: "built-in-graphics", score: 82, noisy: false,
+      title: `${who} is running on the built-in graphics`, because: `${who} is running on the built-in graphics, not the ${fast}`,
+      evidence: [`${wrongChip.name} uses ${pctOf(wrongChip.builtIn!)} of the ${builtIn}`, card.asleep ? `${fast} asleep` : card.load != null ? `${fast} ${pctOf(card.load)} busy` : null].filter(Boolean).join(" · "),
+      why: set
+        ? `This ${word} has two graphics chips. ${who} is already set to use the ${fast}, which takes effect the next time it starts.`
+        : `This ${word} has two graphics chips. Windows ran ${who} on the built-in ${builtIn}, which saves power but is much slower than the ${fast}. Setting it to use the ${fast} takes effect the next time ${who} starts.`,
+      step: set ? { kind: "tip", label: "Reopen it" } : { kind: "fix", label: "Review change", fix: [{ kind: "display.appGpu", app: wrongChip.name, gpu: "high" }], why: `Windows ran ${who} on the built-in graphics. It uses the ${fast} the next time it starts.` },
+    });
+  }
+
   // Fans fast with nothing busy or hot: dust or the fan settings, likely.
-  const busyAny = (cpuLoad ?? 0) >= 50 || (gpuLoad ?? 0) >= 50;
+  // A game on the built-in graphics is busy too, though the graphics card reads nothing.
+  const busyAny = (cpuLoad ?? 0) >= 50 || (gpuLoad ?? 0) >= 50 || !!wrongChip;
   if (loud && !busyAny && !out.some((c) => c.noisy)) {
     add({
       id: "fans-fast", score: 55, noisy: true, likely: true,
