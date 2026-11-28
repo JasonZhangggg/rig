@@ -10,6 +10,7 @@ import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
 import { dateText } from "../dateText";
+import { whileShown } from "../whileShown";
 
 type CommandApplied = Extract<AppliedStep, { step: CommandStep }>;
 
@@ -134,8 +135,8 @@ function OffForNow() {
     let live = true;
     const look = () => void openReverts().then((o) => live && setOpen(o));
     look();
-    const t = setInterval(look, 15_000);
-    return () => { live = false; clearInterval(t); };
+    const stop = whileShown(look, 15_000);
+    return () => { live = false; stop(); };
   }, [openReverts, applied]);
   if (!open.length) return null;
   const refresh = () => openReverts().then(setOpen);

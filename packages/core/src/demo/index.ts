@@ -23,6 +23,8 @@ import { isBackground } from "../background";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
 import { demoCleanup, demoScan } from "./storage";
 import type { CleanupRead } from "../freeSpace";
+import { demoNetwork } from "./network";
+import type { NetworkCheckReply } from "../network";
 import { DemoManuals } from "./manualShelf";
 import { makerName } from "../manualParts";
 import atlasInv from "./fixtures/atlas.inventory.json";
@@ -37,6 +39,7 @@ export { SimulatedLink } from "./link";
 export { DEMO_RECORDING_ID, demoEvents, demoProcesses, demoRecording } from "./logs";
 export { DemoManuals } from "./manualShelf";
 export { demoScan } from "./storage";
+export { demoNetwork } from "./network";
 export { demoApply, demoCards, demoNativeCards, demoPreview, demoProposal, demoStep, demoUndo, demoUndoRecord, type AnyDemoCard, type DemoCard, type DemoNativeCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
@@ -189,6 +192,14 @@ export class DemoClient implements RigClient {
     await sleep(4000);
     p.scan = demoScan(p.inv, Date.now());
     this.emit(machineId);
+  }
+
+  /** The connection check, after a pause like the real one's pings. Pebble's Wi-Fi is weak; Atlas is on a cable and fine. */
+  async checkNetwork(machineId: string): Promise<NetworkCheckReply> {
+    const p = this.pcs[machineId];
+    if (!p) return { kind: "unsupported", reason: "elsewhere" };
+    await sleep(2400 * DemoClient.pace);
+    return { kind: "done", reading: demoNetwork(p.inv, Date.now()) };
   }
 
   async account() { return { id: "demo", name: "You", email: "demo@rig.app" }; }

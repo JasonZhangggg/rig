@@ -121,6 +121,33 @@ describe("PCs", () => {
     expect(list.cols).toEqual(["changes", "id", "synced_at"]);
   });
 
+  it("keeps what the app left out of an upload because it hadn't changed, and asks for all of it for a PC it doesn't have", async () => {
+    const { call, signUp, queries } = await setup();
+    const cookie = await signUp("kai@example.com");
+    const change = { id: "c1", title: "Power plan to Balanced", at: new Date().toISOString(), steps: [{ kind: "fix", action: "power-plan", value: "balanced" }], state: "applied" };
+    const s = await syncPayload({ changes: [change] as never, games: [{ name: "Cyberpunk 2077", hours: 3 }] as never, events: [] });
+    const id = s.inventory.machine.id;
+    const { inventory: _i, facts: _f, changes: _c, games: _g, events: _e, ...slim } = s;
+    // Before the PC is on the account there's nothing to keep, so the app is asked for all of it.
+    const first = await call(`/api/machines/${id}/sync`, { method: "PUT", json: slim, cookie });
+    expect(first.status).toBe(409);
+    expect(await (await call("/api/machines", { cookie })).json()).toEqual([]);
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
+    const upgrades = await (await call(`/api/machines/${id}/upgrades`, { cookie })).json() as unknown[];
+    expect(upgrades.length).toBeGreaterThan(0);
+    queries.length = 0;
+    const later = { ...slim, view: { ...s.view, name: "Atlas, later" }, history: [{ t: Date.now() + 600_000, cpu: 72, gpu: 66, busy: true }] };
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: later, cookie })).status).toBe(200);
+    // Only what came is written.
+    const write = queries.find((q) => /^update "machine"/.test(q))!;
+    expect([...write.slice(0, write.indexOf(" where ")).matchAll(/"(\w+)" =/g)].map((m) => m[1]).sort()).toEqual(["identity", "identity_at", "synced_at", "view"]);
+    expect(await (await call(`/api/machines/${id}/changes`, { cookie })).json()).toEqual([expect.objectContaining({ id: "c1" })]);
+    expect(await (await call(`/api/machines/${id}/games`, { cookie })).json()).toEqual([expect.objectContaining({ name: "Cyberpunk 2077" })]);
+    expect(await (await call(`/api/machines/${id}/upgrades`, { cookie })).json()).toEqual(upgrades);
+    expect((await (await call(`/api/machines/${id}/history?range=24h`, { cookie })).json() as unknown[]).length).toBe(3);
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: { ...slim, changes: "nope" }, cookie })).status).toBe(400);
+  });
+
   it("keeps fan speed, game and each part's readings per point, and still takes points from older apps", async () => {
     const { call, signUp } = await setup();
     const cookie = await signUp("kit@example.com");
@@ -160,7 +187,7 @@ describe("PCs", () => {
     const row = ["Game Mode", "Off", "On"];
     const old = { id: "c1", machineId: "x", at: "2026-11-01T10:00:00.000Z", title: "Turned Game Mode on", by: "you", status: "applied", why: "", result: "", diff: [row],
       applied: [{ call: { kind: "windows.gameMode", enabled: true }, undo: { kind: "windows.gameMode", enabled: false }, row }] };
-    const s = { ...(await syncPayload()), changes: [old] } as unknown as MachineSync;
+    const s = { ...(await syncPayload()), changes: [old] } as unknown as Awaited<ReturnType<typeof syncPayload>>;
     const id = s.inventory.machine.id;
     expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
     expect(await (await call(`/api/machines/${id}/changes`, { cookie })).json()).toEqual([{ ...old, tier: 1,
@@ -239,7 +266,7 @@ describe("chat", () => {
     expect(p.proposal.tier).toBe(1);
     // An older desktop app reads the same change from `calls`.
     expect(p.proposal.calls).toEqual([{ kind: "windows.gameMode", enabled: true }]);
-    expect(p.proposal.rows[0]).toEqual(["Game Mode", s.facts.gameMode ? "On" : "Off", "On"]);
+    expect(p.proposal.rows[0]).toEqual(["Game Mode", s.facts!.gameMode ? "On" : "Off", "On"]);
     expect(events.at(-1)).toEqual({ type: "done" });
     expect(events.some((e) => e.type === "sources")).toBe(true);
     // The model was told what the PC is and got the result of its tool call.
