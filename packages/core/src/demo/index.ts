@@ -1,5 +1,6 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
+import { suggestedOff } from "../startup";
 import { appliedHelperStep, cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type HelperStep, type PreviewReply, type Step, type UndoReply } from "../change";
 import { demoApply, demoCards, demoCardByNonce, demoCardByStep, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoStep, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
@@ -401,7 +402,7 @@ export class DemoClient implements RigClient {
         onEvent({ type: "recording", request: toRequest(info), queued: false });
       }
     } else if (/startup|slow|boot/.test(q)) {
-      const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
+      const on = suggestedOff(p.facts.startupApps);
       await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
       const steps = fixSteps(on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false })));
       onEvent({ type: "proposal", proposal: { id: uid(), title: stepsTitle(steps), steps, tier: 1, rows: await this.preview(id, steps), status: "waiting" } });

@@ -7,6 +7,7 @@ import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
 import { CardAsk } from "./pages/gpu/CardPick";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
+import { StartupApps } from "./components/StartupApps";
 import { sceneThemeFor } from "./themes";
 import type { SceneTheme } from "./scene";
 import { Overview } from "./pages/Overview";
@@ -152,6 +153,8 @@ function Root() {
     <>
       <SceneFeed />
       <Sidebar><Page /></Sidebar>
+      {/* Before the review sheet, which opens over it. */}
+      <StartupApps />
       <ReviewSheet />
       <CardAsk />
       <ManualViewer />

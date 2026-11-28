@@ -239,7 +239,10 @@ export function describeCall(call: ActionCall, facts: SystemFacts | null, displa
 
 /** A short past-tense title for the changes log. */
 export function titleFor(calls: ActionCall[]): string {
-  if (calls.length > 1 && calls.every((c) => c.kind === "startup.app" && !c.enabled)) return `Turned off ${calls.length} startup apps`;
+  if (calls.length > 1 && calls.every((c) => c.kind === "startup.app")) {
+    const off = calls.filter((c) => c.kind === "startup.app" && !c.enabled).length;
+    return off === calls.length ? `Turned off ${off} startup apps` : off === 0 ? `Turned on ${calls.length} startup apps` : `Changed ${calls.length} startup apps`;
+  }
   if (calls.length > 1) return `${calls.length} changes`;
   const c = calls[0];
   switch (c.kind) {
