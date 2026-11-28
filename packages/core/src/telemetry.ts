@@ -2,6 +2,8 @@
 // contract between the C# helper, the Rust core and the UI, so change them in
 // all three places at once. The helper writes JSON with camelCase names.
 
+import type { SecurityFacts } from "./safety";
+
 export type PCKind = "tower" | "laptop";
 
 export interface Inventory {
@@ -115,6 +117,8 @@ export interface SystemFacts {
   gameMode: boolean;
   visualEffects: "auto" | "appearance" | "performance" | "custom";
   maxProcessorState: { ac: number; dc: number };
+  /** Windows updates, virus protection, the firewall and backup (safety.ts). Missing from helpers before it was read. */
+  security?: SecurityFacts;
 }
 
 /** Pick the first sensor that matches, by hardware, type and a name test. */

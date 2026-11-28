@@ -4,9 +4,10 @@
 import type { ActionCall } from "./actions";
 import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
 import type { BuildShape, Picks } from "./build";
+import type { SecurityFacts } from "./safety";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
-export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "recorded" | "events" | "manuals" | "web" | "signin" | "settings";
+export type Route = "overview" | "pc" | "chat" | "changes" | "upgrades" | "games" | "history" | "logs" | "recorded" | "events" | "manuals" | "safety" | "web" | "signin" | "settings";
 
 /** One row of a before and after table: [setting, now, after]. */
 export type DiffRow = [string, string, string];
@@ -126,6 +127,8 @@ export interface PC {
   parts?: Record<string, Part>;
   /** Windows settings Rig can switch, as they are now. */
   settings?: PCSettings;
+  /** What the helper last read about updates, virus protection, the firewall and backup (safety.ts), with when it read it. */
+  security?: SecurityFacts;
   /** ISO date the person last cleaned the dust out, if they told Rig. */
   cleanedAt?: string;
   /** The models the person picked for parts Windows can't name, like which graphics card it is (build.ts). */

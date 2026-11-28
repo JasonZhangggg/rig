@@ -44,6 +44,16 @@ public static class Program
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
+            // Updates, virus protection, the firewall and backup, read in full (a facts request may answer before the first read is done).
+            try
+            {
+                var started = Stopwatch.StartNew();
+                all["security"] = Json.From(Security.ReadNow(null));
+                if (all["security"]?["readAt"] is null) problems.Add("the safety read has no time");
+                if (started.ElapsedMilliseconds > 20_000) problems.Add($"the safety read took {started.ElapsedMilliseconds / 1000} seconds");
+            }
+            catch (Exception e) { all["security"] = new JsonObject { ["error"] = e.ToString() }; }
+            problems.AddRange(Security.SelfChecks());
             problems.AddRange(LogReads.SelfChecks(null));
             problems.AddRange(NetworkCheck.SelfChecks(all));
             var (gpuChecks, gpuProblems) = Gpu.SelfTest();
@@ -363,7 +373,7 @@ public class Handler(Sensors hw, int? appPid = null)
     {
         "hello" => Json.From(new { version = typeof(Handler).Assembly.GetName().Version?.ToString() ?? "0", elevated = Native.IsAdmin(), driver = Sensors.Driver() }),
         "inventory" => Json.From(Inventory.Read(hw)),
-        "facts" => Json.From(Facts.Read()),
+        "facts" => Json.From(Facts.Read(owner)),
         "snapshot" => Json.From(hw.Snapshot()),
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),

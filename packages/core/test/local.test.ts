@@ -338,6 +338,23 @@ describe("LocalClient", () => {
     expect(own).not.toBe(theirs);
   });
 
+  it("draws a month of this PC's history without reading it from disk again", async () => {
+    const { client, store, advance } = setup();
+    const t0 = Date.parse("2026-11-17T20:00:00") - 20 * 864e5;
+    for (let i = 0; i < 2000; i++) await store.addHistory({ t: t0 + i * 6e5, cpu: 50, gpu: 60, busy: false, fan: null, game: null });
+    await client.start();
+    for (let i = 0; i < 6; i++) { advance(10 * 60_000); await client.tick(); }
+    let reads = 0;
+    const read = store.history.bind(store);
+    store.history = (since) => { reads++; return read(since); };
+    const month = await client.history(client.id, "30d"), week = await client.history(client.id, "7d");
+    client.stop();
+    expect(reads).toBe(0);
+    expect(month).toEqual(await read(Date.parse("2026-11-17T21:00:00") - 30 * 864e5));
+    expect(month.length).toBeGreaterThan(2000);
+    expect(week).toEqual(month.filter((p) => p.t >= Date.parse("2026-11-17T21:00:00") - 7 * 864e5));
+  });
+
   it("keeps at most five days of history for the account while signed out", async () => {
     let signedIn = false;
     const synced: MachineSync[] = [];

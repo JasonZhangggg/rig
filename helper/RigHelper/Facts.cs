@@ -16,7 +16,8 @@ public static class Facts
     const string Run = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string Run32 = @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run";
 
-    public static object Read()
+    /// `owner` is the SID of the account the Rig app runs as, for the reads that belong to the person (Security.cs).
+    public static object Read(string? owner = null)
     {
         var active = Native.ActiveScheme();
         return new
@@ -26,6 +27,8 @@ public static class Facts
             gameMode = GameMode(),
             visualEffects = VisualEffects(),
             maxProcessorState = MaxProcessorState(),
+            // Updates, virus protection, the firewall and backup: kept a while, and left out until the first read is done.
+            security = Security.Read(owner),
         };
     }
 

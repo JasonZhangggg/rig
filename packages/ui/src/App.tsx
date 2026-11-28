@@ -182,7 +182,7 @@ function Root() {
     document.getElementById("main")?.focus({ preventScroll: true });
   }, [ui.route]);
 
-  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: PCPage, games: Games, history: Readings, logs: Readings, recorded: Readings, events: EventLog, manuals: PCPage, web: Web, signin: Overview, settings: Settings }[ui.route];
+  const Page = { overview: Overview, pc: PCPage, chat: Chat, changes: Changes, upgrades: PCPage, games: Games, history: Readings, logs: Readings, recorded: Readings, events: EventLog, manuals: PCPage, safety: PCPage, web: Web, signin: Overview, settings: Settings }[ui.route];
   return (
     <>
       <SceneFeed />
