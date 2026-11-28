@@ -62,4 +62,15 @@ describe("Two screens, one figure", { timeout: 30000 }, () => {
       expect([plo, phi]).toEqual([lo, hi]);
     });
   }
+
+  it("gives the battery one time left on its page, not two", async () => {
+    await open("demo-pebble");
+    await openPart(/^Battery/);
+    await screen.findByRole("tab", { name: "Battery life", selected: true });
+    const page = document.querySelector(".part-detail")!.textContent!;
+    expect(screen.getByText("Left on battery")).toBeTruthy();
+    expect(screen.getByText("at the last hour's rate")).toBeTruthy();
+    // The rate this second's time isn't said beside it, in the tile or in the story under the tabs.
+    expect(page).not.toMatch(/at this rate|would last/);
+  });
 });

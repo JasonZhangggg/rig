@@ -40,7 +40,7 @@ export function batteryTiles(b: BatteryView): JSX.Element[] {
 
 /** The Battery life tab: what drained it today, and ways to make it last longer. */
 export function BatteryLife({ battery }: { battery: BatteryView }) {
-  const story = [battery.story, battery.time?.note && `${battery.time.note}.`].filter(Boolean).join(" ");
+  const story = battery.story;
   const offer = battery.charge?.offer;
   return (
     <div className="batt">

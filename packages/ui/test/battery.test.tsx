@@ -29,7 +29,7 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     expect(screen.getByText("Charge")).toBeTruthy();
     expect(screen.getByText("58%")).toBeTruthy();
     expect(screen.getByText("Left on battery")).toBeTruthy();
-    expect(screen.getByText("at this rate")).toBeTruthy();
+    expect(screen.getByText("at the last hour's rate")).toBeTruthy();
     expect(screen.getByText(/^Went from 100% to 58% in 2 h [12]0 min\. The fastest drop was .+, while (Teams and Chrome|Chrome and Teams) were busy\./)).toBeTruthy();
     expect(within(savers()).getAllByRole("listitem").map((li) => li.querySelector(".row-title")!.textContent)).toEqual([
       "Turn off processor boost on battery", "Turn the screen off after 5 minutes on battery", "Sleep after 15 minutes on battery", "Stop charging at 80%",

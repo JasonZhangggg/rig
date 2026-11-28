@@ -63,10 +63,8 @@ export interface TimeLeft {
   figure?: string;
   /** What the figure is: "Left on battery" or "Until full". */
   label?: string;
-  /** What the figure is worked out from, under it: "at this rate" or "at the last hour's rate". */
+  /** What the figure is worked out from, under it: "at the last hour's rate" or "at this rate". */
   basis?: string;
-  /** A second line, when the last hour's average says something different: "At the last hour's average it would last about 4 h". */
-  note?: string;
 }
 
 /** Minutes to fill from a level at a rate. Batteries slow down near full, so the last fifth is counted at half the rate. */
@@ -78,8 +76,9 @@ function minutesToFull(level: number, fullWh: number, watts: number): number {
 }
 
 /**
- * How long the battery lasts at the rate it's going now, and at the average of the last hour on battery
- * (`recentWatts`, from recordedDrain). Null when the readings don't say: no level, no rate, no capacity.
+ * How long the battery lasts: one figure. At the average of the last hour on battery (`recentWatts`, from
+ * recordedDrain) when there's one, since the rate this second jumps with every app that wakes; at the rate now when
+ * there isn't. Null when the readings don't say: no level, no rate, no capacity.
  */
 export function timeLeft(now: BatteryNow, fullWh: number | undefined, recentWatts?: number | null): TimeLeft | null {
   const { level, state, watts } = now;
@@ -95,14 +94,8 @@ export function timeLeft(now: BatteryNow, fullWh: number | undefined, recentWatt
   const nowM = watts != null && watts >= MIN_WATTS ? left(watts) : null;
   const avgM = recentWatts != null && recentWatts >= MIN_WATTS ? left(recentWatts) : null;
   const ok = (m: number | null): m is number => m != null && m / 60 <= MAX_HOURS;
-  if (ok(nowM)) {
-    const differs = ok(avgM) && Math.abs(avgM - nowM) >= Math.max(15, nowM * 0.15) && hoursMinutes(avgM) !== hoursMinutes(nowM);
-    return {
-      text: `About ${hoursMinutes(nowM)} left at this rate`, figure: hoursMinutes(nowM), label: "Left on battery", basis: "at this rate",
-      ...(differs ? { note: `At the last hour's average it would last about ${hoursMinutes(avgM)}` } : {}),
-    };
-  }
   if (ok(avgM)) return { text: `About ${hoursMinutes(avgM)} left at the last hour's rate`, figure: hoursMinutes(avgM), label: "Left on battery", basis: "at the last hour's rate" };
+  if (ok(nowM)) return { text: `About ${hoursMinutes(nowM)} left at this rate`, figure: hoursMinutes(nowM), label: "Left on battery", basis: "at this rate" };
   return null;
 }
 
