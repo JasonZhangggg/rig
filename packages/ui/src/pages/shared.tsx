@@ -12,6 +12,8 @@ export const partIcon: Record<string, JSX.Element> = {
   board: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="7" y="7" width="6" height="6" rx="1" /><path d="M16 7h2M16 10h2M7 16h11" strokeLinecap="round" /></svg>,
 };
 partIcon.motherboard = partIcon.board;
+/** The connection, for the "Is it my PC or my internet?" check. */
+partIcon.network = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.5a7.5 7.5 0 0 1 11 0M9.5 15.5a3 3 0 0 1 5 0" /><circle cx="12" cy="18.6" r="1" fill="currentColor" stroke="none" /></svg>;
 
 export const shortType = (t: string) => t.replace(" and cooler", "");
 

@@ -10,6 +10,7 @@ import { useManuals } from "../manuals/useManuals";
 import { openManual } from "../manuals/viewerState";
 import { partOf } from "../pages/upgrades/PCUpgrades";
 import { shopCatOf } from "../pages/shared";
+import { NET_CHECK_QUESTION } from "./NetCheck";
 
 /** What a page is about, so a search in a person's own words finds it. */
 const pageWords: Partial<Record<Route, [string, string]>> = {
@@ -25,14 +26,15 @@ const pageWords: Partial<Record<Route, [string, string]>> = {
   settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
 };
 
-type Kind = "pages" | "parts" | "manuals" | "changes" | "games" | "upgrades" | "logs" | "settings";
+type Kind = "pages" | "checks" | "parts" | "manuals" | "changes" | "games" | "upgrades" | "logs" | "settings";
 /** searchOnly items show once something typed matches them. */
 interface Item { id: string; kind: Kind; title: string; sub: string; keys?: string; searchOnly?: boolean; hit?: boolean; badge?: { text: string; tone: string }; run: () => void }
 
-const kindLabel: Record<Kind, string> = { pages: "Pages", parts: "Parts", manuals: "Manuals", changes: "Changes", games: "Games", upgrades: "Upgrades", logs: "Logs", settings: "Settings" };
+const kindLabel: Record<Kind, string> = { pages: "Pages", checks: "Checks", parts: "Parts", manuals: "Manuals", changes: "Changes", games: "Games", upgrades: "Upgrades", logs: "Logs", settings: "Settings" };
 const recTone = { pending: "muted", recording: "info", done: "ok", cancelled: "muted", failed: "warn" } as const;
 const icon: Record<Kind, string> = {
   pages: "M5 4h14v16H5zM5 9h14M9 9v11",
+  checks: "M3.5 9.5a12 12 0 0 1 17 0M6.5 12.5a7.5 7.5 0 0 1 11 0M9.5 15.5a3 3 0 0 1 5 0M12 19h.01",
   parts: "M6 6h12v12H6zM9.5 9.5h5v5h-5zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3",
   manuals: "M5 18.5V5.5A1.5 1.5 0 0 1 6.5 4H19v13H6.5A1.5 1.5 0 0 0 5 18.5 1.5 1.5 0 0 0 6.5 20H19M9 8h6",
   changes: "M4 12a8 8 0 1 0 2.5-5.8M4 4v4h4M12 8v4l3 2",
@@ -87,6 +89,8 @@ function OpenPalette() {
       const [sub, keys] = pageWords[route] ?? ["", ""];
       items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
     }
+    // Read-only checks that run on the PC and answer in a dialog.
+    items.push({ id: "check-network", kind: "checks", title: NET_CHECK_QUESTION, sub: `Checks ${pc.name}'s connection, your router and the internet`, keys: "internet slow wifi wi-fi wireless network connection lag ping latency router modem dns vpn ethernet cable signal", run: () => { close(); set({ netCheck: true }); } });
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({
         id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${temp(p.temp)} now` : p.sub].filter(Boolean).join(" · "),
@@ -138,7 +142,7 @@ function OpenPalette() {
   };
 
   let n = -1;
-  const groups = (["pages", "parts", "manuals", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
+  const groups = (["pages", "checks", "parts", "manuals", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return (
     <div className="palette-scrim" ref={box} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKey}>

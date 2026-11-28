@@ -45,6 +45,7 @@ public static class Program
             problems.AddRange(StorageScan.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
             problems.AddRange(LogReads.SelfChecks(null));
+            problems.AddRange(NetworkCheck.SelfChecks(all));
             var (gpuChecks, gpuProblems) = Gpu.SelfTest();
             all["gpu"] = gpuChecks;
             problems.AddRange(gpuProblems);
@@ -367,6 +368,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
+        "network" => NetworkCheck.Read(p?["start"] is JsonValue start && start.TryGetValue(out bool s) && s),
         "fix.read" => Steps.Read(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),

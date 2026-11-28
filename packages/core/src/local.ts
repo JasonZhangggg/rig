@@ -24,6 +24,7 @@ import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec
 import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
+import type { NetworkCheckReply, NetworkCheckState } from "./network";
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -47,6 +48,12 @@ export interface HelperLink {
    * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
    */
   storage?(fresh?: boolean): Promise<StorageScan>;
+  /**
+   * The connection check: `start` begins one on the helper's own thread (unless one is running) and answers at once, so
+   * readings keep coming while it pings; later calls say whether it's still running, and give the last one it finished.
+   * Read-only; missing on helpers before the check.
+   */
+  network?(start: boolean): Promise<NetworkCheckState>;
   /** One read the chat asked for: a registry key, CIM instances, or a command or script that checks as a read. Returns what it found as text. Missing on helpers before live reads. */
   read?(req: PcReadSpec): Promise<string>;
   /** Command and native steps: check, preview, apply, undo and read (StepRpc). Missing on helpers before general commands. */
@@ -63,6 +70,9 @@ const MAX_READ_HOPS = 8;
 
 /** The folder scan is asked for this often, and every few seconds while one runs, so the map fills in when it's done. */
 export const SCAN_ASK_MS = 30 * 60_000;
+/** How often the app asks whether the connection check is done, and how long it waits before giving up. */
+export const NETWORK_POLL_MS = 400;
+export const NETWORK_WAIT_MS = 20_000;
 export const SCAN_RUNNING_ASK_MS = 15_000;
 
 /** Small on-disk store kept by the desktop shell (SQLite). */
@@ -549,6 +559,22 @@ export class LocalClient implements RigClient {
       })
       .catch((e) => this.o.log("warn", `storage: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => { this.scanReading = null; });
+  }
+
+  async checkNetwork(id: string): Promise<NetworkCheckReply> {
+    if (!(await this.isLocal(id))) return { kind: "unsupported", reason: "elsewhere" };
+    const network = this.link.network?.bind(this.link);
+    if (!network) return { kind: "unsupported", reason: "update" };
+    const began = performance.now();
+    let s = await network(true);
+    while (s.running) {
+      if (performance.now() - began > NETWORK_WAIT_MS) throw new Error("The check took too long. Try again.");
+      await new Promise((r) => setTimeout(r, NETWORK_POLL_MS));
+      s = await network(false);
+    }
+    if (!s.reading) throw new Error("Rig couldn't check the connection. Try again.");
+    this.o.log("info", `network: checked in ${Math.round(performance.now() - began)} ms (${s.reading.adapter?.kind ?? "not connected"})`);
+    return { kind: "done", reading: s.reading };
   }
 
   async measureDrives(id: string) {
