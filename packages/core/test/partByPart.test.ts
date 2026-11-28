@@ -86,6 +86,27 @@ describe("partByPart", () => {
     expect(partByPart(tower({ gpu: 80, gpuLoad: 99 }), week, NOW).busyNow).toBe(true);
   });
 
+  it("calls a laptop's processor at its limit under load working as built, not slowing down or running hot", () => {
+    const pc = tower();
+    const laptop = (temp: number, load: number, more: Partial<PC> = {}): PC => ({
+      ...pc, kind: "laptop", ...more,
+      parts: { cpu: part("AMD Ryzen 9 8945HS", "Processor", { temp, limit: 95, load }), ram: pc.parts!.ram },
+    });
+    const cpu = (p: PC, points: HistoryPoint[] = week) => partByPart(p, points, NOW).rows.find((r) => r.id === "cpu")!;
+    expect(cpu(laptop(95, 80)).state).toBe("design");
+    expect(cpu(laptop(91, 80)).state).toBe("design");
+    // At its limit at rest is a cooling fault, and so is losing speed, which Things to look at calls out.
+    expect(cpu(laptop(95, 10)).state).toBe("slowing");
+    expect(cpu(laptop(95, 80, { issues: [{ id: "cpu-hot", severity: "warn", title: "Processor is slowing down to stay cool", body: "", action: "", go: "chat" }] })).state).toBe("slowing");
+    // Its week at the limit in a game isn't running hot; at the limit while idle is.
+    const busyPeak = [...windows(30, 10, {}), ...windows(10, 1, { busy: true, game: "Cyberpunk 2077", cpu: 95, cpuLoad: 85 })];
+    expect(cpu(laptop(50, 10), busyPeak).ranHot).toBe(false);
+    const idlePeak = [...windows(30, 10, {}), ...windows(10, 1, { busy: false, cpu: 95, cpuLoad: 8 })];
+    expect(cpu(laptop(50, 10), idlePeak).ranHot).toBe(true);
+    // A desktop chip that holds below its limit still slows down there.
+    expect(partByPart(tower({ cpu: 89 }), week, NOW).rows.find((r) => r.id === "cpu")!.state).toBe("slowing");
+  });
+
   it("counts now as the week's highest when nothing recorded was higher", () => {
     const gpu = partByPart(tower({ gpu: 90 }), week, NOW).rows[0];
     expect(gpu.high).toEqual({ value: 90, at: NOW, game: null });

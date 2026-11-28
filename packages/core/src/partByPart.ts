@@ -3,6 +3,7 @@
 // so the desktop, the website and the demo agree.
 
 import { DRIVE_WARM } from "./diagnose";
+import { BUSY_LOAD, cpuLimitByDesign } from "./health";
 import { HOT_MARGIN } from "./insights";
 import type { HistoryKey, HistoryPoint, PC, ReadingUnit } from "./model";
 import { livePoint } from "./view";
@@ -31,6 +32,11 @@ export type PartState =
   | "slowing"
   /** Within HOT_MARGIN °C of that point. */
   | "hot"
+  /**
+   * At or near that point under load, as it's built to run: a laptop's processor, or a desktop chip made to boost to
+   * its limit (limitByDesign), while Things to look at finds nothing wrong with it. Not a worry.
+   */
+  | "design"
   /** Above the top of its usual band, but nowhere near its limit. */
   | "above"
   | "calm"
@@ -54,7 +60,7 @@ export interface PartRow {
   /** The ends of the part's own scale, so each track reads on its own terms. */
   scale: { min: number; max: number };
   state: PartState;
-  /** Its highest this week came within HOT_MARGIN °C of the limit. */
+  /** Its highest this week came within HOT_MARGIN °C of the limit, other than under load on a processor built to run there. */
   ranHot: boolean;
 }
 
@@ -139,7 +145,12 @@ export function partByPart(pc: PC, points: readonly HistoryPoint[], now = Date.n
     // A battery's usual charge is over the whole week: what games or work leaned on says nothing about it.
     const usual = usualBand(battery ? week : source, key);
     const seen = [nowValue, high?.value, usual?.lo, usual?.hi].filter((v): v is number => v != null);
+    // A processor built to run at its limit, at it under load, is working as built unless Things to look at says otherwise.
+    const byDesign = (load: number | null | undefined) => id === "cpu" && cpuLimitByDesign(parts.cpu.name, pc.kind, load);
+    const designNow = byDesign(live.cpuLoad) && !pc.issues?.some((i) => i.id === "cpu-hot");
+    const highLoad = high && (high.at === now ? live.cpuLoad : top?.cpuLoad ?? (top?.busy ? BUSY_LOAD : null));
     const state: PartState = nowValue == null ? "unread"
+      : limit != null && nowValue >= limit - HOT_MARGIN && designNow ? "design"
       : limit != null && nowValue >= limit ? "slowing"
       : limit != null && nowValue >= limit - HOT_MARGIN ? "hot"
       : usual && nowValue > usual.hi && !battery ? "above"
@@ -147,7 +158,7 @@ export function partByPart(pc: PC, points: readonly HistoryPoint[], now = Date.n
     return {
       id, unit, now: nowValue, usual, high, low, limit, state,
       scale: scaleOf(unit, seen, limit, fanMax),
-      ranHot: limit != null && high != null && high.value >= limit - HOT_MARGIN,
+      ranHot: limit != null && high != null && high.value >= limit - HOT_MARGIN && !byDesign(highLoad),
     };
   });
 

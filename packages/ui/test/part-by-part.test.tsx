@@ -6,6 +6,7 @@ import postcss from "postcss";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
+import type { PC } from "@rig/core";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -46,6 +47,26 @@ describe("Your PC, part by part", () => {
     expect(within(rows[6]).getByText("Rig can't read it")).toBeTruthy();
     expect(widget.getByText("Its usual while you play")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/NaN|undefined/);
+  });
+
+  it("says a laptop's processor at its limit in a game is working as built, in the headline and on its row", async () => {
+    /** Comet in a long game: its processor at its limit, at full speed, with nothing in Things to look at about it. */
+    class AtLimit extends DemoClient {
+      override watch(id: string, cb: (pc: PC) => void) {
+        return super.watch(id, (pc) => {
+          const cpu = pc.parts!.cpu;
+          cb({ ...pc, parts: { ...pc.parts, cpu: { ...cpu, temp: cpu.limit, load: 85 } }, issues: pc.issues?.filter((i) => i.id !== "cpu-hot") });
+        });
+      }
+    }
+    localStorage.setItem("rig.pc", "demo-comet");
+    render(<RigApp client={new AtLimit()} />);
+    const { heading, widget } = await partByPart();
+    expect(heading.textContent).toBe("Right now Comet is working hard, and the processor is at its limit, as built");
+    expect(widget.getByText("Nothing ran hot this week.")).toBeTruthy();
+    expect(widget.queryByText(/slowing|parts? ran hot/i)).toBeNull();
+    const row = within(within(widget.getByRole("list", { name: "Parts" })).getAllByRole("button").find((r) => r.textContent?.startsWith("Processor"))!);
+    expect(row.getByText("At its limit, as built").className).toBe("");
   });
 
   it("reads a laptop's battery by its charge, and leaves out the parts Rig can never read", async () => {
