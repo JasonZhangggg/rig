@@ -33,3 +33,23 @@ describe("historyRecorded", () => {
     expect(r.sensors.some((s) => s.part === "gpu")).toBe(false);
   });
 });
+
+describe("recorded, memory", () => {
+  it("leaves out a memory stick's limit settings and tells virtual memory apart from the real thing", () => {
+    const ref = (id: string, hwName: string, type: SensorRef["type"], name: string): SensorRef => ({ id, hw: "memory", hwName, type, name });
+    const sensors = [
+      ref("dimm/0", "DIMM #1", "temperature", "DIMM #1"),
+      ref("dimm/1", "DIMM #1", "temperature", "Temperature Sensor Resolution"),
+      ref("dimm/2", "DIMM #1", "temperature", "Thermal Sensor Low Limit"),
+      ref("dimm/3", "DIMM #1", "temperature", "Thermal Sensor High Limit"),
+      ref("ram/load", "Total Memory", "load", "Memory"),
+      ref("vram/load", "Virtual Memory", "load", "Memory"),
+      ref("vram/used", "Virtual Memory", "data", "Memory Used"),
+    ];
+    const r = recorded({ sensors, samples: [{ t: 1, all: [37, 0, 0, 0, 86, 68, 30] }] });
+    expect(r.sensors.map((s) => s.name)).toEqual(["DIMM #1", "Memory", "Virtual Memory", "Virtual Memory Used"]);
+    const ram = r.parts.find((p) => p.id === "ram")!;
+    expect(r.sensors[ram.lead].name).toBe("Memory");
+    expect(r.points[0].v[ram.lead]).toBe(86);
+  });
+});
