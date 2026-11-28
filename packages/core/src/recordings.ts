@@ -8,6 +8,7 @@
 import type { CustomInfo } from "./probes";
 import { describeChange, memoryTest } from "./changes";
 import { cpuTemp, gpuTemp } from "./health";
+import { gpuLoad, sameChip } from "./limits";
 import { findSensor, type Sensor, type Snapshot } from "./telemetry";
 
 // ----- Windows events -----
@@ -134,8 +135,16 @@ export interface ProcessUse {
   /** Share of the whole processor, 0 to 100. */
   cpu: number;
   memMb: number;
-  /** Share of the graphics card, when Windows reports it. */
+  /**
+   * Share of the graphics card, when Windows reports it. On a PC with two graphics chips, its share of the chip Rig
+   * shows as the graphics card (see `gpus`); missing when it didn't use that chip.
+   */
   gpu?: number;
+  /**
+   * Its share of each graphics chip it used, by the chip's name, as helpers that tell the chips apart send it.
+   * cleanProcesses turns this into `gpu` and leaves it out, so a list it cleaned reads the same cleaned again.
+   */
+  gpus?: Record<string, number>;
 }
 
 /** One reading during a recording. A field is missing when that capture is off, null when the PC didn't report it. */
@@ -160,18 +169,18 @@ export type SensorRef = Pick<Sensor, "id" | "hw" | "hwName" | "type" | "name">;
 
 /** What a recording can capture. `sample` reads it from a sensor snapshot; `helper` names the helper call it needs instead. */
 export const captures = {
-  temps: { label: "Temperatures", sample: (s: Snapshot): Partial<RecordingSample> => ({ cpu: round(cpuTemp(s)?.value), gpu: round(gpuTemp(s)?.value) }) },
+  temps: { label: "Temperatures", sample: (s: Snapshot, chip?: string): Partial<RecordingSample> => ({ cpu: round(cpuTemp(s)?.value), gpu: round(gpuTemp(s, chip)?.value) }) },
   loads: {
     label: "How hard parts work",
-    sample: (s: Snapshot): Partial<RecordingSample> => ({
-      cpuLoad: round(findSensor(s, "cpu", "load", /total/i)?.value), gpuLoad: round(findSensor(s, "gpu", "load", /core|d3d 3d/i)?.value),
+    sample: (s: Snapshot, chip?: string): Partial<RecordingSample> => ({
+      cpuLoad: round(findSensor(s, "cpu", "load", /total/i)?.value), gpuLoad: round(gpuLoad(s, chip)?.value),
       mem: round(findSensor(s, "memory", "load", /^memory$/i)?.value),
     }),
   },
   fans: { label: "Fan speeds", sample: (s: Snapshot): Partial<RecordingSample> => ({ fan: round(s.sensors.reduce<number | null>((m, x) => (x.type === "fan" && x.value != null && x.value > (m ?? 0) ? x.value : m), null)) }) },
   processes: { label: "Busiest apps", helper: "processes" as const },
   events: { label: "Windows crash and error events", helper: "events" as const },
-} satisfies Record<string, { label: string; sample?: (s: Snapshot) => Partial<RecordingSample>; helper?: "processes" | "events" }>;
+} satisfies Record<string, { label: string; sample?: (s: Snapshot, chip?: string) => Partial<RecordingSample>; helper?: "processes" | "events" }>;
 
 export type CaptureKind = keyof typeof captures;
 export const captureKinds = Object.keys(captures) as CaptureKind[];
@@ -280,12 +289,43 @@ function cleanSample(raw: unknown): RecordingSample | null {
   return out;
 }
 
-/** The busiest few by processor share, always with the one holding the most memory, so a memory hog that sits idle still shows. */
-export function cleanProcesses(raw: unknown, max = TOP_PROCESSES): ProcessUse[] {
+/** At most this many graphics chips per app: a PC has one or two, three with an external one. */
+const MAX_CHIPS = 4;
+
+/** Each chip's share, from what the helper sent: names kept short, shares rounded, nothing that isn't a number. */
+function chipShares(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const list = Object.entries(raw as Record<string, unknown>).filter((e): e is [string, number] => !!e[0] && typeof e[1] === "number" && Number.isFinite(e[1]));
+  return list.length ? Object.fromEntries(list.slice(0, MAX_CHIPS).map(([k, v]) => [k.slice(0, 80), Math.round(Math.min(100, Math.max(0, v)))])) : undefined;
+}
+
+/**
+ * An app's share of the graphics card. A helper that tells the chips apart says how much of each it used, and only
+ * the card's own counts; an older one sent one share for every chip together, which is all there is to go on.
+ */
+function cardShare(p: Partial<ProcessUse>, gpus: Record<string, number> | undefined, chip: string | null | undefined): number | undefined {
+  if (gpus) {
+    const own = chip === undefined ? Math.max(...Object.values(gpus)) : chip === null ? undefined : gpus[chip];
+    return own != null && own > 0 ? own : undefined;
+  }
+  return typeof p.gpu === "number" ? Math.round(p.gpu) : undefined;
+}
+
+/**
+ * The busiest few by processor share, always with the one holding the most memory, so a memory hog that sits idle still shows.
+ * `chip` is the graphics card's name (cardChip): an app's graphics share is its share of that chip.
+ */
+export function cleanProcesses(raw: unknown, max = TOP_PROCESSES, chip?: string): ProcessUse[] {
   if (!Array.isArray(raw)) return [];
-  const all = (raw as Partial<ProcessUse>[])
-    .filter((p) => p && typeof p.name === "string" && p.name && typeof p.cpu === "number" && typeof p.memMb === "number")
-    .map((p) => ({ name: p.name!.slice(0, 60), cpu: Math.round(p.cpu! * 10) / 10, memMb: Math.round(p.memMb!), ...(typeof p.gpu === "number" ? { gpu: Math.round(p.gpu) } : {}) }))
+  const ok = (raw as Partial<ProcessUse>[]).filter((p) => p && typeof p.name === "string" && p.name && typeof p.cpu === "number" && typeof p.memMb === "number");
+  const shares = ok.map((p) => chipShares(p.gpus));
+  // The name the helper gave the card, matched as sensors are. No app used it: none of them gets a share of it.
+  const own = chip == null ? undefined : shares.flatMap((g) => Object.keys(g ?? {})).find((k) => sameChip(k, chip)) ?? null;
+  const all = ok
+    .map((p, i) => {
+      const gpus = shares[i], gpu = cardShare(p, gpus, own);
+      return { name: p.name!.slice(0, 60), cpu: Math.round(p.cpu! * 10) / 10, memMb: Math.round(p.memMb!), ...(gpu != null ? { gpu } : {}) };
+    })
     .sort((a, b) => b.cpu - a.cpu || b.memMb - a.memMb);
   if (all.length <= max) return all;
   const biggest = all.reduce((a, b) => (b.memMb > a.memMb ? b : a));
@@ -313,11 +353,11 @@ export function cleanRecording(raw: unknown, pcId: string): Recording | null {
   };
 }
 
-/** One sample from a sensor snapshot, with only what the recording captures. */
-export function sampleFrom(snap: Snapshot, capture: readonly CaptureKind[], top?: ProcessUse[]): RecordingSample {
+/** One sample from a sensor snapshot, with only what the recording captures. `chip`: the graphics card's name (cardChip). */
+export function sampleFrom(snap: Snapshot, capture: readonly CaptureKind[], top?: ProcessUse[], chip?: string): RecordingSample {
   const out: RecordingSample = { t: snap.at, game: snap.game ?? null };
-  for (const k of capture) { const c = captures[k]; if ("sample" in c) Object.assign(out, c.sample(snap)); }
-  if (top && capture.includes("processes")) out.top = cleanProcesses(top);
+  for (const k of capture) { const c = captures[k]; if ("sample" in c) Object.assign(out, c.sample(snap, chip)); }
+  if (top && capture.includes("processes")) out.top = cleanProcesses(top, undefined, chip);
   return out;
 }
 

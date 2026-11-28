@@ -101,8 +101,8 @@ export class BackgroundLog {
   private header: Omit<Sensor, "value">[] | null = null;
   private slots: number[] = [];
 
-  /** Adds lines from the log, in the order they were written. Lines it doesn't know are skipped. */
-  ingest(lines: unknown[]) {
+  /** Adds lines from the log, in the order they were written. Lines it doesn't know are skipped. `chip`: the graphics card's name (cardChip). */
+  ingest(lines: unknown[], chip?: string) {
     for (const raw of lines) {
       const r = raw as Rec | null;
       if (!r || typeof r !== "object") continue;
@@ -124,7 +124,7 @@ export class BackgroundLog {
           const v = Array.isArray(r.v) ? r.v : null;
           if (!this.header || !v || v.length !== this.header.length) break;
           const snap: Snapshot = { at: t, sensors: this.header.map((h, i) => ({ ...h, value: num(v[i]) })), game: null, elevated: true };
-          const s: BackgroundSample = sampleFrom(snap, captureKinds, Array.isArray(r.top) ? cleanProcesses(r.top) : undefined);
+          const s: BackgroundSample = sampleFrom(snap, captureKinds, Array.isArray(r.top) ? cleanProcesses(r.top, undefined, chip) : undefined, chip);
           delete s.game;
           if (r.d) s.detail = true;
           const all: (number | null)[] = new Array(this.sensors.length).fill(null);

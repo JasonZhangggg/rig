@@ -19,6 +19,13 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        // Started by Rig's helper task (HelperTask.cs) with admin rights and no prompt. Anyone signed in as the person can
+        // run that task, so this comes first and takes exactly the task's own command line, and no other mode.
+        if (args.Length > 0 && args[0] == HelperTask.Flag)
+            return HelperTask.ParseTaskArgs(args) is { } task ? await Serve(task.Pipe, task.Parent, task.AppExe) : 2;
+        // RigHelper.exe --start-task --pipe <pipe> --parent <id>: the app, with no admin rights, asks for the task above.
+        if (args.Length > 0 && args[0] == HelperTask.StartFlag) return HelperTask.Start(args);
+
         // RigHelper.exe --selftest out.json: reads everything once and writes it to a file.
         // Used by CI on a Windows runner, and handy for checking a PC by hand.
         if (Arg(args, "--selftest") is string outFile)
@@ -64,6 +71,10 @@ public static class Program
             var (firmwareChecks, firmwareProblems) = FirmwareSelfTest.Run();
             all["firmware"] = firmwareChecks;
             problems.AddRange(firmwareProblems);
+            // Starting the helper with admin rights and no prompt, through a test task of its own.
+            var (taskChecks, taskProblems) = HelperTaskSelfTest.Run();
+            all["helperTask"] = taskChecks;
+            problems.AddRange(taskProblems);
             if (hw0.KeepingHistory() is int keeping and > 0) problems.Add($"{keeping} sensors would keep a day of readings in memory");
             // The background recorder's regular list reuses the graphics share it just read rather than reading Windows' counters again.
             if (all["processes"] is JsonArray)
@@ -98,15 +109,19 @@ public static class Program
             return 0;
         }
         // The installer also passes --pawnio <PawnIO's setup>, so the same prompt adds or removes PawnIO.
+        // And --helper-task, so the same prompt sets up the task that starts the helper with no prompt when Rig opens.
         if (args.Contains("--install-recorder"))
         {
             if (Native.IsAdmin() && Arg(args, "--pawnio") is string pawnSetup) PawnIOSetup.Install(pawnSetup, RecorderSetup.SetupLog);
+            if (args.Contains("--helper-task")) HelperTask.Install(Arg(args, "--app-dir"), RecorderSetup.SetupLog);
             return RecorderSetup.Install(Arg(args, "--app-dir"));
         }
         if (args.Contains("--uninstall-recorder"))
         {
-            if (Native.IsAdmin() && Arg(args, "--pawnio") is string pawnSetup && !RecorderSetup.OtherInstalls(Arg(args, "--app-dir")).Any())
+            bool last = !RecorderSetup.OtherInstalls(Arg(args, "--app-dir")).Any();
+            if (Native.IsAdmin() && Arg(args, "--pawnio") is string pawnSetup && last)
                 PawnIOSetup.Uninstall(pawnSetup, RecorderSetup.SetupLog);
+            if (args.Contains("--helper-task")) HelperTask.Uninstall(last, RecorderSetup.SetupLog);
             return RecorderSetup.Uninstall(Arg(args, "--app-dir"));
         }
         // RigHelper.exe --approve-script <file>: started behind Windows' permission prompt when the person approves a script in Rig.
@@ -122,6 +137,14 @@ public static class Program
 
         string? pipe = Arg(args, "--pipe");
         if (pipe == null || !int.TryParse(Arg(args, "--parent"), out int parent)) return 2;
+        return await Serve(pipe, parent, null);
+    }
+
+    /// Connects to the Rig app's pipe and answers its calls until the app closes. Started by the app (through Windows'
+    /// prompt, or limited) the app's process id is enough; started by the task, `appExe` is the Rig.exe the installer
+    /// named, and the app must be that program, running as this account.
+    static async Task<int> Serve(string pipe, int parent, string? appExe)
+    {
         const string prefix = @"\\.\pipe\";
         if (!pipe.StartsWith(prefix, StringComparison.Ordinal)) return 2;
 
@@ -133,6 +156,7 @@ public static class Program
 
         // Only talk to the Rig app that started us.
         if (!Native.GetNamedPipeServerProcessId(client.SafePipeHandle.DangerousGetHandle(), out uint server) || server != parent) return 5;
+        if (appExe != null && !HelperTask.Serves(appExe, Native.ProcessImage(parent), Native.ProcessUserSid(parent), Person.Mine())) return 5;
 
         using var cts = new CancellationTokenSource();
         app.EnableRaisingEvents = true;
@@ -189,8 +213,20 @@ public static class Program
             if (procs.Count == 0 || procs.Count > Processes.MaxTop) yield return $"processes returned {procs.Count} entries";
             if (procs.Any(p => Json.Num(p?["cpu"], -1) is not (>= 0 and <= 100))) yield return "a process has a processor share outside 0 to 100";
         }
-        var ranked = Processes.Rank([("game", 6L << 30, 3200, 90), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
-        if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90 } || ranked[1].Name != "System") yield return "process ranking is off";
+        const string igpu = "luid_0x00000000_0x0000D1B2", card = "luid_0x00000000_0x0000E3C4";
+        var on = (string chip, double v) => (IReadOnlyDictionary<string, double>)new Dictionary<string, double> { [chip] = v };
+        var ranked = Processes.Rank([("game", 6L << 30, 3200, on(card, 90)), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
+        if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90, Gpus: null } || ranked[1].Name != "System") yield return "process ranking is off";
+        // A laptop with built-in and dedicated graphics: an app's use stays with each chip, never added across them.
+        var chips = new Dictionary<string, string> { [igpu] = "AMD Radeon(TM) 780M Graphics", [card] = "NVIDIA GeForce RTX 4060 Laptop GPU" };
+        var split = Processes.Rank([("game", 1L << 30, 0, new Dictionary<string, double> { [card] = 60, [igpu] = 30 }), ("game", 1L << 30, 0, on(card, 20)), ("chrome", 1L << 30, 0, on(igpu, 40))], 1000, 8, 2, chips);
+        var game = split.FirstOrDefault(r => r.Name == "game.exe");
+        if (game is not { Gpu: 80 } || game.Gpus?.GetValueOrDefault("NVIDIA GeForce RTX 4060 Laptop GPU") != 80 || game.Gpus?.GetValueOrDefault("AMD Radeon(TM) 780M Graphics") != 30)
+            yield return "graphics use isn't kept chip by chip";
+        if (Processes.Rank([("game", 1L << 30, 0, on(card, 60))], 1000, 8, 1, new Dictionary<string, string>())[0] is not { Gpu: 60, Gpus: null })
+            yield return "graphics use names a chip it couldn't name";
+        if (Processes.GpuLuid("pid_1234_luid_0x00000000_0x0000d1b2_phys_0_eng_0_engtype_3D") != igpu || Processes.GpuLuid("pid_1234_phys_0_engtype_3D") != null || Adapters.Id(0xD1B2, 0) != igpu)
+            yield return "reading the graphics chip from a counter is off";
         if (Processes.GpuPid("pid_1234_luid_0x00000000_0x0000D1B5_phys_0_eng_0_engtype_3D") != 1234 || Processes.GpuPid("pid__x") != -1 || Processes.GpuPid("luid_1_engtype_3D") != -1 || Processes.GpuPid("pid_99999999999_x") != -1)
             yield return "reading the process id from a graphics counter is off";
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";

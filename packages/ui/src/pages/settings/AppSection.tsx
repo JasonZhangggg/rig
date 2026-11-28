@@ -117,7 +117,7 @@ export function AppSection() {
 
   return (
     <>
-      <SettingRow id="app-autostart" title="Start Rig with Windows" body={`Rig opens when you sign in to Windows. Windows asks for permission each time, as it does when you open Rig.${starting ? " Waiting for Windows…" : ""}`}>
+      <SettingRow id="app-autostart" title="Start Rig with Windows" body={`Rig opens when you sign in to Windows.${starting ? " Waiting for Windows…" : ""}`}>
         <button type="button" className="switch set-toggle" role="switch" aria-checked={!!on} aria-labelledby="app-autostart" disabled={on == null || starting} onClick={flip}><i /></button>
       </SettingRow>
       {rec && status?.supported && (

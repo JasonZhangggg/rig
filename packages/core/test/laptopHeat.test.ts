@@ -10,6 +10,9 @@ import { fixtures } from "../src/demo";
 const NOW = Date.UTC(2026, 10, 20, 20, 0);
 const MIN = 60_000;
 
+// The graphics sensors carry the dedicated chip's name, as LibreHardwareMonitor reports them, so Rig matches them to it.
+const RTX = "NVIDIA GeForce RTX 4080 Laptop GPU";
+
 /** A gaming laptop: Intel's 14th gen HX chip and an NVIDIA laptop graphics chip beside the built-in one. */
 function gamingLaptop(): Inventory {
   const inv = structuredClone(fixtures.pebble.inv);
@@ -17,13 +20,13 @@ function gamingLaptop(): Inventory {
   inv.cpu = { name: "Intel(R) Core(TM) i9-14900HX", cores: 24, threads: 32, maxClockMhz: 2200 };
   inv.gpus = [
     { name: "Intel(R) UHD Graphics", vendor: "intel", integrated: true },
-    { name: "NVIDIA GeForce RTX 4080 Laptop GPU", vendor: "nvidia", vramMb: 12288, integrated: false },
+    { name: RTX, vendor: "nvidia", vramMb: 12288, integrated: false },
   ];
   return inv;
 }
 
 const sensor = (hw: Sensor["hw"], type: Sensor["type"], name: string, value: number, max: number | null = null): Sensor =>
-  ({ id: `/${hw}/0/${type}/${name}`, hw, hwName: hw, type, name, value, min: null, max });
+  ({ id: `/${hw}/0/${type}/${name}`, hw, hwName: hw === "gpu" ? RTX : hw, type, name, value, min: null, max });
 
 /** Readings at a moment: processor temperature and load, its cores' clocks now and the fastest they've run, the graphics and two laptop fans. */
 function reading(o: { cpu: number; load: number; ghz?: number; topGhz?: number; gpu?: number; gpuLoad?: number }): Snapshot {

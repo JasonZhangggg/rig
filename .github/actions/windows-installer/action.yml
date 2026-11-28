@@ -156,6 +156,28 @@ runs:
         if (-not (Test-Path $key)) { throw "Installing Rig didn't install PawnIO" }
         "PawnIO $((Get-ItemProperty $key).DisplayVersion) installed with Rig"
         if ((Get-ItemProperty 'HKLM:\SOFTWARE\Rig' -ErrorAction SilentlyContinue).PawnIOInstalledByRig -ne "1") { throw "Rig didn't record that it installed PawnIO" }
+        # The task that starts the helper with admin rights when Rig opens, so Windows asks only at install.
+        $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $taskExe = Join-Path $env:ProgramFiles "Rig\Helper\RigHelper.exe"
+        $task = Get-ScheduledTask -TaskName "RigHelper-$sid" -ErrorAction SilentlyContinue
+        if (-not $task) { Get-Content "$env:ProgramData/Rig/Recorder/setup.log" -ErrorAction SilentlyContinue; throw "Installing Rig didn't add the helper's task" }
+        if ($task.Principal.RunLevel -ne "Highest") { throw "The helper's task runs at $($task.Principal.RunLevel), not with full rights" }
+        if ($task.Actions[0].Execute -ne $taskExe) { throw "The helper's task runs $($task.Actions[0].Execute), not $taskExe" }
+        if ($task.Triggers.Count -ne 0) { throw "The helper's task has a trigger, so it would start without Rig asking" }
+        if (-not (Test-Path $taskExe)) { throw "The helper's task program isn't at $taskExe" }
+        "Helper task: $($task.Actions[0].Execute) $($task.Actions[0].Arguments)"
+        # Started the way the app starts it, it runs the Program Files copy, which serves only Rig.exe: a pipe made by
+        # this shell is refused (exit code 5), and that's the task's last result.
+        $pipeName = "rig-helper-" + -join ((1..32) | ForEach-Object { "{0:x}" -f (Get-Random -Maximum 16) })
+        $pipe = New-Object System.IO.Pipes.NamedPipeServerStream($pipeName, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::Asynchronous)
+        $p = Start-Process (Join-Path $dir "RigHelper.exe") -ArgumentList "--start-task", "--pipe", "\\.\pipe\$pipeName", "--parent", "$PID" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "Starting the helper's task answered $($p.ExitCode)" }
+        $null = $pipe.WaitForConnectionAsync().Wait(30000)
+        $pipe.Dispose()
+        $deadline = (Get-Date).AddSeconds(30)
+        do { Start-Sleep -Milliseconds 500; $info = Get-ScheduledTaskInfo -TaskName "RigHelper-$sid" } while ($info.LastTaskResult -in 267009, 267011 -and (Get-Date) -lt $deadline)
+        if ($info.LastTaskResult -ne 5) { throw "The task's helper ended with $($info.LastTaskResult) for a pipe that isn't Rig's, not 5" }
+        "The task started the helper with no prompt, and it refused a pipe that isn't Rig's"
         # An update while Rig's helper is still running. It runs with admin rights, so the
         # installer can't close it, and it takes a few seconds to close after Rig does.
         # A copy of ping stands in for it here, holding RigHelper.exe open for 20 seconds.
@@ -185,6 +207,10 @@ runs:
         if (Test-Path $rig) { throw "Uninstalling Rig left its entry in Installed apps" }
         if (Test-Path $lnk) { throw "Uninstalling Rig left its desktop shortcut" }
         "Uninstalling Rig removed PawnIO"
+        if (Get-ScheduledTask -TaskName "RigHelper-$sid" -ErrorAction SilentlyContinue) { throw "Uninstalling Rig left the helper's task" }
+        Start-Sleep -Seconds 10
+        if (Test-Path (Split-Path $taskExe)) { throw "Uninstalling Rig left $(Split-Path $taskExe)" }
+        "Uninstalling Rig removed the helper's task and its program"
         if (Test-Path $dir) { throw "Uninstalling Rig left $dir behind: $((Get-ChildItem -Recurse $dir | Select-Object -ExpandProperty FullName) -join ', ')" }
 
         # Scripts and IT tools still get the plain flags: /S installs with no window.

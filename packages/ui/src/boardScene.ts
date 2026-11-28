@@ -580,6 +580,30 @@ export function createBoardScene(
     return noPick(g);
   }
 
+  const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0);
+  /**
+   * A power cable as it is: a wire per pin, each about 3.5 mm thick, side by side in the plug's rows, running together
+   * along the route. The rows keep facing the same way as the cable bends, so the cable stays a flat bundle.
+   */
+  function wires(curve: THREE.Curve<THREE.Vector3>, [long, short, axis]: [number, number, THREE.Vector3], [cols, rows]: [number, number], mat: THREE.Material) {
+    const STEPS = 72, pitch = Math.min(long / cols, short / rows, 0.045), r = Math.min(0.018, pitch * 0.42);
+    const centre = curve.getSpacedPoints(STEPS), across = new THREE.Vector3(), side = new THREE.Vector3(), t = new THREE.Vector3();
+    const lines = Array.from({ length: cols * rows }, () => [] as THREE.Vector3[]);
+    centre.forEach((c, i) => {
+      curve.getTangentAt(i / STEPS, t);
+      across.copy(axis).addScaledVector(t, -axis.dot(t)).normalize();
+      side.crossVectors(t, across);
+      for (let a = 0; a < cols; a++) for (let b = 0; b < rows; b++) {
+        lines[a * rows + b]!.push(c.clone().addScaledVector(across, (a - (cols - 1) / 2) * pitch).addScaledVector(side, (b - (rows - 1) / 2) * pitch));
+      }
+    });
+    return lines.map((pts) => {
+      const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), STEPS, r, 6, false), mat);
+      m.castShadow = true;
+      return noPick(m);
+    });
+  }
+
   function makeCable(d: CableDraw): CableNode | null {
     const color = cableColor[d.id] ?? soft.grey;
     const mats: THREE.Material[] = [];
@@ -588,7 +612,9 @@ export function createBoardScene(
     const housing = realMaterial("#1c1d20", { metal: 0.05, rough: 0.5 });
     const band = realMaterial(color, { metal: 0.05, rough: 0.5 });
     mats.push(sleeve, housing, band);
-    let to: BoardNode | null = null, end: THREE.Vector3, route: THREE.Vector3[], radius: number, hole: [number, number];
+    let to: BoardNode | null = null, end: THREE.Vector3, route: THREE.Vector3[], hole: [number, number];
+    // The plug's footprint (long side, short side, and which way the long side runs) and its pins, so the wires land on them.
+    let foot: [number, number, THREE.Vector3], pins: [number, number];
     const lit: BoardNode[] = [];
     let plug: THREE.Object3D;
     const near: THREE.Object3D[] = [];
@@ -601,16 +627,19 @@ export function createBoardScene(
       end = new THREE.Vector3(p.x, p.y, top + PLUG);
       plug = rbox(w + 0.012, h + 0.012, PLUG, housing, p.x, p.y, top + PLUG / 2, 0.006);
       group.add(plug, rbox(w + 0.016, h + 0.016, 0.03, band, p.x, p.y, top + PLUG - 0.018, 0.004));
+      const n = to.item.pins ? [Math.max(to.item.pins.cols, to.item.pins.rows), Math.min(to.item.pins.cols, to.item.pins.rows)] : d.id === "atx24" ? [12, 2] : [4, 2];
+      foot = [Math.max(w, h), Math.min(w, h), w >= h ? X : Y];
+      pins = [n[0]!, n[1]!];
       if (d.id === "atx24") {
         // Through the hole beside the board's front edge
         const g = new THREE.Vector3(BW + 0.22, p.y - 0.05, -0.06);
         route = [g, new THREE.Vector3(BW + 0.2, p.y - 0.02, 0.16), new THREE.Vector3(p.x + 0.06, p.y, top + PLUG + 0.24), end];
-        radius = 0.07; hole = [0.13, 0.24];
+        hole = [0.13, 0.24];
       } else {
         // Through the hole above the board's top rear corner
         const g = new THREE.Vector3(p.x - 0.04, 0.17, -0.06);
         route = [g, new THREE.Vector3(p.x - 0.03, 0.1, 0.1), new THREE.Vector3(p.x, p.y + 0.04, top + PLUG + 0.14), end];
-        radius = 0.042; hole = [0.16, 0.11];
+        hole = [0.16, 0.11];
       }
     } else {
       // The graphics card: an outline standing in its slot, its cooler hanging below it as in a tower.
@@ -636,15 +665,16 @@ export function createBoardScene(
       end = new THREE.Vector3(px, py, Hc + PLUG);
       plug = rbox(0.21, 0.08, PLUG, housing, px, py, Hc + PLUG / 2, 0.006);
       group.add(plug, rbox(0.214, 0.084, 0.03, band, px, py, Hc + PLUG - 0.018, 0.004));
+      // A 16-pin plug has 12 power wires (its 4 sense wires are hair-thin); the others have a wire per pin.
+      const count = Number(/\d+/.exec(d.code ?? "")?.[0] ?? 16);
+      foot = [0.21, 0.08, X];
+      pins = [count >= 16 ? 6 : Math.max(1, Math.round(count / 2)), 2];
       // Up from the power supply's cover below the board, then over the card's edge to the plug.
       const g = new THREE.Vector3(px + 0.4, -BH - 0.2, -0.06);
       route = [g, new THREE.Vector3(px + 0.42, -BH - 0.06, 0.24), new THREE.Vector3(px + 0.36, y1 - T - 0.32, Hc * 0.8), new THREE.Vector3(px + 0.12, py, Hc + PLUG + 0.24), end];
-      radius = 0.045; hole = [0.16, 0.11];
+      hole = [0.16, 0.11];
     }
-    const curve = new THREE.CatmullRomCurve3(route, false, "centripetal");
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, radius, 12, false), sleeve);
-    tube.castShadow = true;
-    group.add(noPick(tube), grommet(route[0], hole[0], hole[1], mats));
+    group.add(...wires(new THREE.CatmullRomCurve3(route, false, "centripetal"), foot, pins, sleeve), grommet(route[0], hole[0], hole[1], mats));
     plug.castShadow = true;
     group.traverse(noPick);
     for (const m of mats) { m.transparent = true; m.userData.op = m.opacity; }

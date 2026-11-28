@@ -21,7 +21,6 @@ async function openPart(name: RegExp) {
   location.hash = "pc";
   render(<RigApp client={new DemoClient()} />);
   fireEvent.click(await screen.findByRole("button", { name }, { timeout: 10000 }));
-  // The first part page waits on the demo's month of history: under a second here, past 10 seconds on a busy CI runner.
   return screen.findByRole("region", { name: "Temperature" }, { timeout: 25000 });
 }
 

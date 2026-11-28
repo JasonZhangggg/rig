@@ -16,6 +16,9 @@ static partial class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetNamedPipeServerProcessId(IntPtr pipe, out uint processId);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetNamedPipeClientProcessId(IntPtr pipe, out uint processId);
+
     // ----- Whose process -----
     const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, TOKEN_QUERY = 0x0008;
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);

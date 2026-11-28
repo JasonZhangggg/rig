@@ -209,9 +209,9 @@ function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
       <button type="button" className={lit ? "is-lit" : undefined} onClick={() => getStage().scene.select(id)}
         onPointerEnter={() => hoverPart(id)} onPointerLeave={() => hoverPart(null)} onFocus={() => hoverPart(id)} onBlur={() => hoverPart(null)}>
         <span className="part-txt"><span className="pt">{part.type}</span>{!isPlaceholderName(part.name) && <span className="pn">{part.name}</span>}</span>
-        {part.temp !== undefined && (
+        {part.temp !== undefined ? (
           <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}{part.warn && <Warm />}</span>
-        )}
+        ) : part.asleep && <span className="part-temp faint">Asleep</span>}
       </button>
     </li>
   );
@@ -374,6 +374,15 @@ function Readings({ part, id }: { part: Part; id: string }) {
             <i><b style={{ transform: `translateX(${Math.min(100, (part.temp / part.limit) * 100) - 100}%)` }} /></i><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
           </span>
         ) : null}
+      </div>,
+    );
+  }
+  else if (part.asleep) {
+    tiles.push(
+      <div key="t" className="live live-wide">
+        <span className="label">Temperature</span>
+        <span className="big">Asleep</span>
+        <span className="faint">Switched off to save power. It wakes when a game or app needs it.</span>
       </div>,
     );
   }
