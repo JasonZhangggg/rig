@@ -105,7 +105,7 @@ describe("Settings", () => {
     const text = await new Promise<string>((done) => { const r = new FileReader(); r.onload = () => done(r.result as string); r.readAsText(saved!); });
     const out = JSON.parse(text) as DataExport;
     expect(out.format).toBe("rig-export/1");
-    expect(out.machines.map((m) => m.name)).toEqual(["Atlas", "Pebble"]);
+    expect(out.machines.map((m) => m.name)).toEqual(["Atlas", "Comet", "Pebble"]);
     expect(out.machines[0].history.length).toBeGreaterThan(100);
     expect(out.machines[0].recordings[0].samples.length).toBeGreaterThan(10);
     expect(out.machines[0].events.length).toBeGreaterThan(0);
@@ -119,7 +119,7 @@ describe("Settings", () => {
     await open("settings");
     fireEvent.click(await screen.findByRole("button", { name: "Delete account…" }));
     const box = screen.getByRole("group", { name: "Delete your account?" });
-    expect(within(box).getByText(/All 3 PCs on it, with their recorded history/)).toBeTruthy();
+    expect(within(box).getByText(/All 4 PCs on it, with their recorded history/)).toBeTruthy();
     const go = within(box).getByRole("button", { name: "Delete my account" }) as HTMLButtonElement;
     expect(go.disabled).toBe(true);
     const input = within(box).getByLabelText("Type DELETE to confirm");

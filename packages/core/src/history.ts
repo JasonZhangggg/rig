@@ -5,6 +5,7 @@ import { readBattery } from "./battery";
 import { cpuTemp, gpuTemp } from "./health";
 import type { HistoryPoint } from "./model";
 import type { ProcessUse } from "./recordings";
+import { gpuLoad } from "./limits";
 import { findSensor, type Snapshot } from "./telemetry";
 
 const max = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
@@ -19,12 +20,15 @@ export function mostCommon(names: Iterable<string | null | undefined>): string |
   return top;
 }
 
-/** A game ran, or the processor or graphics card worked above 70%. */
-export function isBusy(s: Snapshot): boolean {
-  return !!s.game || (findSensor(s, "gpu", "load", /core|d3d 3d/i)?.value ?? 0) > 70 || (findSensor(s, "cpu", "load", /total/i)?.value ?? 0) > 70;
+/** A game ran, or the processor or graphics card worked above 70%. `chip`: the graphics card's name (cardChip), so a second chip's readings don't count as the card's. */
+export function isBusy(s: Snapshot, chip?: string): boolean {
+  return !!s.game || (gpuLoad(s, chip)?.value ?? 0) > 70 || (findSensor(s, "cpu", "load", /total/i)?.value ?? 0) > 70;
 }
 
-/** The readings of one history window: the highest temperatures and fan speed, whether it was busy, and the games seen. */
+/**
+ * The readings of one history window: the highest temperatures and fan speed, whether it was busy, and the games seen.
+ * `chip` is the graphics card's name (cardChip), so a laptop's built-in graphics never stand in for its dedicated chip.
+ */
 export class HistoryWindow {
   private cpu: number | null = null;
   private gpu: number | null = null;
@@ -40,11 +44,11 @@ export class HistoryWindow {
   private appUse = new Map<string, number>();
   private appReads = 0;
 
-  constructor(readonly from: number) {}
+  constructor(readonly from: number, private readonly chip?: string) {}
 
   add(s: Snapshot) {
     this.cpu = max(this.cpu, cpuTemp(s)?.value ?? null);
-    this.gpu = max(this.gpu, gpuTemp(s)?.value ?? null);
+    this.gpu = max(this.gpu, gpuTemp(s, this.chip)?.value ?? null);
     for (const x of s.sensors) {
       if (x.value == null) continue;
       if (x.type === "fan" && x.value > 0) this.fan = max(this.fan, x.value);
@@ -52,9 +56,9 @@ export class HistoryWindow {
     }
     this.board = max(this.board, (findSensor(s, "board", "temperature", /system|motherboard|board/i) ?? findSensor(s, "board", "temperature"))?.value ?? null);
     this.loads.cpuLoad.add(findSensor(s, "cpu", "load", /total/i)?.value);
-    this.loads.gpuLoad.add(findSensor(s, "gpu", "load", /core|d3d 3d/i)?.value);
+    this.loads.gpuLoad.add(gpuLoad(s, this.chip)?.value);
     this.loads.mem.add(findSensor(s, "memory", "load", /^memory$/i)?.value);
-    this.busy ||= isBusy(s);
+    this.busy ||= isBusy(s, this.chip);
     if (s.game) this.games.push(s.game);
     const b = readBattery(s);
     if (b) {

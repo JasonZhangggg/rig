@@ -33,6 +33,10 @@ export interface Part {
   load?: number;
   clock?: string;
   fan?: number;
+  /** A laptop's dedicated graphics chip is switched off to save power, so it has no reading now. */
+  asleep?: boolean;
+  /** The graphics card on a PC with more than one graphics chip: its name, to match its readings by (cardChip). */
+  chip?: string;
   warn?: boolean;
   soldered?: boolean;
   specs: [string, string][];

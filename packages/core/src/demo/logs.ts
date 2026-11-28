@@ -6,7 +6,7 @@ import type { ChatMessage } from "../client";
 import { captureKinds, cleanEvents, intervalFor, limitsOf, sampleFrom, summarise, toInfo, toRequest, type ProcessUse, type RawEvent, type Recording, type RecordingRequest } from "../recordings";
 import type { Inventory } from "../telemetry";
 import { buildPC } from "../view";
-import { activityAt, type Activity } from "./schedule";
+import { activityAt, weekFor, type Activity } from "./schedule";
 import { simulate } from "./simulate";
 import { demoBattery, demoBatteryApps } from "./battery";
 
@@ -18,14 +18,18 @@ const exe: Record<string, string> = { "Cyberpunk 2077": "Cyberpunk2077.exe", "Co
 export function demoProcesses(inv: Inventory, t: number, act?: Activity): ProcessUse[] {
   const onBattery = act ? null : demoBatteryApps(demoBattery(inv, t)?.what, t);
   if (onBattery) return onBattery;
-  act ??= activityAt(inv.machine.kind, t);
+  act ??= activityAt(weekFor(inv), t);
   const wob = (seed: number, amp: number) => Math.sin(t / 9000 + seed) * amp;
+  // With two graphics chips, as the helper reports it: each chip's share apart, and the busiest one's as the app's share.
+  // The built-in chip draws the desktop and the browser; a game runs on the dedicated one.
+  const card = inv.gpus.find((g) => !g.integrated), built = inv.machine.kind === "laptop" && card ? inv.gpus.find((g) => g.integrated) : undefined;
+  const on = (chip: Inventory["gpus"][number] | undefined, share: number) => (built && chip ? { gpu: share, gpus: { [chip.name]: share } } : { gpu: share });
   const list: ProcessUse[] = [
-    { name: "chrome.exe", cpu: 3 + wob(1, 1.5), memMb: 2100 + wob(2, 120) },
+    { name: "chrome.exe", cpu: 3 + wob(1, 1.5), memMb: 2100 + wob(2, 120), ...(built ? on(built, 6) : {}) },
     { name: "Discord.exe", cpu: 1.2 + wob(3, 0.6), memMb: 520 },
-    { name: "dwm.exe", cpu: 0.8 + wob(4, 0.3), memMb: 140, gpu: 2 },
+    { name: "dwm.exe", cpu: 0.8 + wob(4, 0.3), memMb: 140, ...on(built ?? card, 2) },
   ];
-  if (act.game) list.push({ name: exe[act.game] ?? `${act.game}.exe`, cpu: 6 + act.cpu * 48 + wob(5, 3), memMb: 6800 + act.gpu * 3400, gpu: Math.round(act.gpu * 94) });
+  if (act.game) list.push({ name: exe[act.game] ?? `${act.game}.exe`, cpu: 6 + act.cpu * 48 + wob(5, 3), memMb: 6800 + act.gpu * 3400, ...on(card, Math.round(act.gpu * 94)) });
   else if (act.cpu > 0.9) list.push({ name: "TiWorker.exe", cpu: 58 + wob(6, 6), memMb: 900 });
   else if (act.cpu > 0.2) list.push({ name: "EXCEL.EXE", cpu: 9 + wob(7, 3), memMb: 780 }, { name: "ms-teams.exe", cpu: 6 + wob(8, 2), memMb: 1300 });
   return list;

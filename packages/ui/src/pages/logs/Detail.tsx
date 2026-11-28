@@ -60,7 +60,8 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const top = sum?.offenders[0];
   const [stopping, setStopping] = useState(false);
   const stop = () => { setStopping(true); void stopRecording(info.id).finally(() => setStopping(false)); };
-  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec) : null), [rec]);
+  const chip = pc.parts?.gpu?.chip;
+  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec, chip) : null), [rec, chip]);
   const start = info.startedAt, end = info.finishedAt ?? info.endsAt ?? info.startedAt;
   const kind = info.id.startsWith("bg-a-") ? "Closer look" : info.background ? "Background log" : info.by === "rig" ? "Recording Rig started" : "Recording you started";
   const title = caught ? caught.title : info.state === "done" || info.state === "cancelled" ? logTitle(info) : info.reason;
