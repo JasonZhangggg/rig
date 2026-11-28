@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { probeWhen, type ChatMessage } from "@rig/core";
 import { useActions } from "../../state";
+import { dateText } from "../../dateText";
 
-const day = (t: number) => new Date(t).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const day = (t: number) => dateText(new Date(t), { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** A script Rig proposed for the background recorder: the exact text, who it runs as and when. Only the person's press of Approve sets it up. */
 export function ScriptCard({ m }: { m: ChatMessage }) {

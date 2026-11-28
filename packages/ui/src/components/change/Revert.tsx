@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { dateText } from "../../dateText";
 
-const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const clock = (iso: string) => dateText(new Date(iso), { hour: "numeric", minute: "2-digit" });
 
 /** "in 14 minutes", "in 2 hours", "in under a minute", or null once the time is up. */
 export function timeLeft(dueAt: string, now: number): string | null {

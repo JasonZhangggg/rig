@@ -2,6 +2,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { formatTemp, toUnit, type HistoryKey, type HistoryPoint, type ReadingUnit } from "@rig/core";
 import { useTempUnit } from "./state";
+import { dateText } from "./dateText";
 
 /** The element's width in CSS pixels, so a chart draws at its real size and its text isn't stretched. */
 function useWidth<T extends HTMLElement>(fallback: number) {
@@ -20,7 +21,7 @@ function useWidth<T extends HTMLElement>(fallback: number) {
   return [ref, w] as const;
 }
 
-const clock = (t: number, seconds = false) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) });
+const clock = (t: number, seconds = false) => dateText(new Date(t), { hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) });
 
 interface LineChartProps {
   points: HistoryPoint[];
@@ -151,13 +152,13 @@ function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, uni
     } else if (span <= 8 * 36e5) {
       const first = new Date(t0); first.setMinutes(0, 0, 0);
       if (first.getTime() < t0) first.setHours(first.getHours() + 1);
-      for (let t = first.getTime(); t <= t1; t += 36e5) ticks.push({ t, label: new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) });
+      for (let t = first.getTime(); t <= t1; t += 36e5) ticks.push({ t, label: dateText(new Date(t), { hour: "numeric" }) });
     } else if (span <= 1.5 * day) {
-      for (let t = Math.ceil(t0 / (6 * 36e5)) * 6 * 36e5; t <= t1; t += 6 * 36e5) ticks.push({ t, label: new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) });
+      for (let t = Math.ceil(t0 / (6 * 36e5)) * 6 * 36e5; t <= t1; t += 6 * 36e5) ticks.push({ t, label: dateText(new Date(t), { hour: "numeric" }) });
     } else {
       const every = span > 10 * day ? 5 : 1;
       const first = new Date(t0); first.setHours(24, 0, 0, 0);
-      for (let t = first.getTime(), i = 0; t <= t1; t += day, i++) if (i % every === 0) ticks.push({ t, label: new Date(t).toLocaleDateString(undefined, every === 1 ? { weekday: "short" } : { month: "short", day: "numeric" }) });
+      for (let t = first.getTime(), i = 0; t <= t1; t += day, i++) if (i % every === 0) ticks.push({ t, label: dateText(new Date(t), every === 1 ? { weekday: "short" } : { month: "short", day: "numeric" }) });
     }
     // A short stretch with few readings may hold no round times, so its start and end are labelled instead.
     if (ticks.length < 2) ticks.splice(0, ticks.length, { t: t0, label: clock(t0, span < 10 * 60_000) }, { t: t1, label: clock(t1, span < 10 * 60_000) });
@@ -203,7 +204,7 @@ function LineChartSvg({ points: raw, series, w = 860, h = 240, limit, bands, uni
 
   const fmt = (v: number | null | undefined) => (v == null ? "–" : percent ? `${Math.round(v)}%` : rpm ? `${Math.round(v).toLocaleString("en-US")} rpm` : formatTemp(v, unit));
   const whenText = (t: number) => span < 10 * 60_000 ? clock(t, true) : span <= 1.5 * day ? clock(t)
-    : new Date(t).toLocaleString(undefined, span > 10 * day ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" });
+    : dateText(new Date(t), span > 10 * day ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" });
   const cur = at == null ? null : points[nearest(points, at)];
   const cx = cur ? x(cur.t) : 0;
   const readout = cur ? `${whenText(cur.t)}: ${series.map((s) => `${s.name ?? names[s.key]} ${fmt(cur[s.key])}`).join(", ")}` : "";

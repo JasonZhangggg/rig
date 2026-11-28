@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { probeWhen, type ProbeStatus, type RecorderStatus } from "@rig/core";
 import { useActions } from "../../state";
 import { SettingRow } from "./parts";
+import { dateText } from "../../dateText";
 
 const mb = (bytes: number) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
 const ago = (t: number) => {
   const m = Math.round((Date.now() - t) / 60_000);
-  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : new Date(t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : dateText(new Date(t), { weekday: "short", hour: "numeric", minute: "2-digit" });
 };
 
 /** One line on what the background recorder is doing. */
@@ -18,7 +19,7 @@ function recorderLine(s: RecorderStatus | null): string {
   return `On${s.lastT ? `, last wrote ${ago(s.lastT)}` : ""}.${size}`;
 }
 
-const when = (t: number) => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const when = (t: number) => dateText(new Date(t), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** What a custom log is, who asked for it and how it's doing, in one line. */
 function probeLine(p: ProbeStatus): string {

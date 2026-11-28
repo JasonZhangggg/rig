@@ -4,6 +4,7 @@ import { Row } from "../../components/Rows";
 import { useActions, useData, useStillPC } from "../../state";
 import { serious, type Highlight } from "./summary";
 import { clock, clockSec, dayName, kindWord, shortDay } from "./words";
+import { dateText } from "../../dateText";
 
 const DAYS = 30;
 
@@ -121,7 +122,7 @@ export function Strip({ items: events, day, onDay: pickDay }: { items: StripItem
       })}
       {shown && tip != null && (
         <div id={tipId} role="tooltip" className={`ev-tip${tip < 5 ? " start" : tip > DAYS - 6 ? " end" : ""}`} style={{ left: `${((tip + 0.5) / DAYS) * 100}%` }}>
-          <b>{new Date(shown.from).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</b>
+          <b>{dateText(new Date(shown.from), { weekday: "short", month: "short", day: "numeric" })}</b>
           {shown.list.length === 0 ? <span className="faint">Nothing logged</span>
             : shown.list.slice(0, 3).map((e) => <span key={e.key}>{e.title}</span>)}
           {shown.list.length > 3 && <span className="faint">and {shown.list.length - 3} more</span>}
