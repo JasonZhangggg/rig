@@ -47,8 +47,10 @@ describe("Steady interactions", () => {
     fireEvent.click(undo);
     fireEvent.click(undo);
     await act(async () => { slow.done(undefined as never); });
-    await waitFor(() => expect(screen.getByText(/^Undone\./)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/^Undid “.+”\. Your PC is back to how it was before\.$/)).toBeTruthy());
     expect(spy).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole("button", { name: /^Redo/ }));
+    await waitFor(() => expect(screen.getByText(/^Redid “.+”\. The change is back on\.$/)).toBeTruthy());
   });
 
   it("reads the settings once however many times Review is pressed", async () => {
