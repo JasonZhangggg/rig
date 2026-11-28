@@ -15,6 +15,7 @@ export * from "./protection";
 export { checkScript, rulesVersion, secondLook, type ScriptUse } from "./check";
 export * from "./client";
 export * from "./health";
+export * from "./safety";
 export * from "./limits";
 export * from "./diagnose";
 export * from "./history";

@@ -10,7 +10,7 @@ import { Popover } from "./overview/Popover";
 import { TempsCard, type TempsStyle } from "./overview/TempsCard";
 import { dashboardKey, useDashboard } from "./overview/useDashboard";
 import { WeekCard, type EveningsStyle } from "./overview/WeekCard";
-import { ChangesWidget, DriversWidget, DrivesWidget, EventsWidget, GamesWidget, LogsWidget, ManualsWidget, TrendWidget, UpgradeWidget } from "./overview/more";
+import { ChangesWidget, DriversWidget, DrivesWidget, EventsWidget, GamesWidget, LogsWidget, ManualsWidget, SafetyWidget, TrendWidget, UpgradeWidget } from "./overview/more";
 import { Arrow, AsksWidget, HealthWidget, LiveWidget, PCWidget, PartsWidget, StorageWidget, TodoWidget, checkupQuestion, scored, sourceItems, useHomeIssues, useOpenIssue, type TileBox } from "./overview/widgets";
 import { focusSection } from "./settings/sections";
 import { firstName, greeting } from "./shared";
@@ -127,6 +127,7 @@ export function Overview() {
       case "drivers": return <DriversWidget {...props} />;
       case "logs": return <LogsWidget {...props} />;
       case "manuals": return <ManualsWidget {...props} />;
+      case "safety": return <SafetyWidget {...props} />;
       case "temps": return (
         <TempsCard
           temps={week?.temps ?? null} name={pc.name} style={w.style as TempsStyle} days={Number(o.days)} compact={compact}

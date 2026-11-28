@@ -4,6 +4,7 @@
 import type { HealthPart, Issue, Severity } from "./model";
 import { diagnose, STABILITY, WEAR_CRITICAL, WEAR_LOW, type Finding, type HealthInput } from "./diagnose";
 import { boostsToLimit, cpuLimit, cpuTemp, gpuLimit, gpuTemp } from "./limits";
+import { safetyFindings } from "./safety";
 import { findSensor } from "./telemetry";
 
 export type { Finding, HealthInput } from "./diagnose";
@@ -90,6 +91,9 @@ export function findings(input: HealthInput): Finding[] {
 
   // Windows version
   if (/windows 10/i.test(inv.machine.os.name)) add({ id: "win10", category: "Drivers and updates", weight: 25, severity: "warn", title: "Windows 10 no longer gets security updates", body: "Support ended in October 2025. Rig can check whether this PC can move to Windows 11.", action: "Ask about Windows 11", go: "chat", ask: "Can this PC run Windows 11?" });
+
+  // Updates, virus protection and the firewall, only for real problems in what the helper read.
+  for (const f of safetyFindings(facts?.security, input.now ?? snap?.at ?? Date.now())) add(f);
 
   diagnose(input, (f) => add(f));
   return out;

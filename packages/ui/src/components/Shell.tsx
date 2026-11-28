@@ -5,7 +5,7 @@ import { updateWhat } from "../pages/settings/UpdatesSection";
 import { DiffTable } from "./common";
 import { useModal } from "./modal";
 
-/** Every page, for the sidebar and Ctrl K. Upgrades, Manuals, Games and Temperatures are tabs of other pages now (see homeOf), so only Ctrl K lists them. */
+/** Every page, for the sidebar and Ctrl K. Upgrades, Manuals, Safety, Games and Temperatures are tabs of other pages now (see homeOf), so only Ctrl K lists them. */
 export const navItems: [Route, string, string][] = [
   ["overview", "Home", "M3 10.5 10 4l7 6.5V17H3z"],
   ["pc", "My PC", "M6 3h8v14H6zM9 6h2M9 14h2"],
@@ -13,14 +13,15 @@ export const navItems: [Route, string, string][] = [
   ["changes", "Changes", "M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2"],
   ["upgrades", "Upgrades", "M10 16V5M5.5 9.5 10 5l4.5 4.5"],
   ["manuals", "Manuals", "M5 16.5v-11A1.5 1.5 0 0 1 6.5 4H15v11H6.5A1.5 1.5 0 0 0 5 16.5 1.5 1.5 0 0 0 6.5 18H15"],
+  ["safety", "Safety", "M10 3 4.5 5v4.5c0 3.6 2.3 6.4 5.5 7.5 3.2-1.1 5.5-3.9 5.5-7.5V5zM7.5 10l2 2 3.5-4"],
   ["games", "Games", "M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01"],
   ["logs", "Logs", "M5 3h7l3 3v11H5zM12 3v3h3M8 10h4M8 13h4"],
   ["events", "Events", "M10 3 2 17h16zM10 8v4M10 14.5v.01"],
   ["settings", "Settings", "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4"],
 ];
 
-/** The page a route lives on in the sidebar: upgrades and manuals are on My PC, games and events are views of Logs. */
-export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" ? "pc" : r === "history" || r === "games" || r === "events" || r === "recorded" ? "logs" : r);
+/** The page a route lives on in the sidebar: upgrades, manuals and safety are on My PC, games and events are views of Logs. */
+export const homeOf = (r: Route): Route => (r === "upgrades" || r === "manuals" || r === "safety" ? "pc" : r === "history" || r === "games" || r === "events" || r === "recorded" ? "logs" : r);
 
 /** Shows exactly what will change, before anything does. */
 export function ReviewSheet() {

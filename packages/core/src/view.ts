@@ -234,6 +234,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     model: { source: "generic", label: laptop ? "Built from your laptop's size" : "Built from your parts' sizes" },
     parts,
     settings: facts ? { gameMode: facts.gameMode, visualEffects: facts.visualEffects, powerPlans: facts.powerPlans, startupOn: facts.startupApps.filter((a) => a.enabled).length } : undefined,
+    security: facts?.security,
     cleanedAt: id.cleanedAt,
     picks: id.picks,
     readings,
