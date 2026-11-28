@@ -97,7 +97,8 @@
 @media (max-width: 760px) {
   .shell-fpanel { padding: 0; }
   .fp-frame,
-  .shell-fpanel.mini .fp-frame { grid-template-columns: 1fr; border-radius: 0; }
+  /* minmax(0, …): a wide row inside, like a page's tabs, scrolls in its own row instead of widening the page. */
+  .shell-fpanel.mini .fp-frame { grid-template-columns: minmax(0, 1fr); border-radius: 0; }
   /* On a phone the menu hides behind a button in the top bar and opens over the whole screen. */
   /* The top bar's height, so a page's own sticky bar can sit under it (the chat's). */
   :root { --top-bar: 65px; }
