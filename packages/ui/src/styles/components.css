@@ -177,6 +177,19 @@
 .sheet-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px; }
 .sheet .diff-wrap { margin: 10px 22px; }
 .sheet .note { margin: 0 22px; }
+/* Why is it slow or loud: what Rig found as rows, or what it checked when nothing looks wrong. */
+.sl-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 22px 0; }
+.sl-body .rows { margin-top: 4px; }
+.sl-body .row-acts .btn { white-space: nowrap; }
+.sl-sub { font-size: 13px; }
+.sl-checked { list-style: none; margin: -6px 0 0; padding: 0; }
+.sl-checked li { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; font-size: 14px; }
+.sl-checked li + li { border-top: 1px solid var(--line); }
+.sl-checked span { color: var(--text-2); }
+.sl-checked b { font-weight: 600; text-align: right; }
+.sl-note { font-size: 13px; }
+/* On narrow screens a row's buttons drop under it: line their words up with the title's. */
+@media (max-width: 860px) { .sl-body .row-acts { margin-left: -13px; } }
 .toast {
   position: fixed; z-index: 60; bottom: max(24px, env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 16px; border-radius: var(--r);

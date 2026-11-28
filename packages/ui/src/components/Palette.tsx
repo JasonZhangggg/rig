@@ -25,13 +25,14 @@ const pageWords: Partial<Record<Route, [string, string]>> = {
   settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
 };
 
-type Kind = "pages" | "parts" | "manuals" | "changes" | "games" | "upgrades" | "logs" | "settings";
+type Kind = "check" | "pages" | "parts" | "manuals" | "changes" | "games" | "upgrades" | "logs" | "settings";
 /** searchOnly items show once something typed matches them. */
 interface Item { id: string; kind: Kind; title: string; sub: string; keys?: string; searchOnly?: boolean; hit?: boolean; badge?: { text: string; tone: string }; run: () => void }
 
-const kindLabel: Record<Kind, string> = { pages: "Pages", parts: "Parts", manuals: "Manuals", changes: "Changes", games: "Games", upgrades: "Upgrades", logs: "Logs", settings: "Settings" };
+const kindLabel: Record<Kind, string> = { check: "Check", pages: "Pages", parts: "Parts", manuals: "Manuals", changes: "Changes", games: "Games", upgrades: "Upgrades", logs: "Logs", settings: "Settings" };
 const recTone = { pending: "muted", recording: "info", done: "ok", cancelled: "muted", failed: "warn" } as const;
 const icon: Record<Kind, string> = {
+  check: "M3 12h4l2-5 4 10 2-5h6",
   pages: "M5 4h14v16H5zM5 9h14M9 9v11",
   parts: "M6 6h12v12H6zM9.5 9.5h5v5h-5zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3",
   manuals: "M5 18.5V5.5A1.5 1.5 0 0 1 6.5 4H19v13H6.5A1.5 1.5 0 0 0 5 18.5 1.5 1.5 0 0 0 6.5 20H19M9 8h6",
@@ -83,6 +84,7 @@ function OpenPalette() {
 
   const all = useMemo<Item[]>(() => {
     const items: Item[] = [];
+    items.push({ id: "slow-loud", kind: "check", title: `Why is ${pc.name} slow or loud?`, sub: `Checks ${pc.name}'s readings and busiest apps now`, keys: "slow loud noisy noise fan fans laggy lag sluggish stutter hot busy why check now", run: () => { set({ slowLoud: true }); close(); } });
     for (const [route, name] of navItems) {
       const [sub, keys] = pageWords[route] ?? ["", ""];
       items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
@@ -138,7 +140,7 @@ function OpenPalette() {
   };
 
   let n = -1;
-  const groups = (["pages", "parts", "manuals", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
+  const groups = (["check", "pages", "parts", "manuals", "changes", "games", "upgrades", "logs", "settings"] as Kind[]).map((k) => [k, shown.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return (
     <div className="palette-scrim" ref={box} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKey}>
