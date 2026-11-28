@@ -5,7 +5,9 @@
 
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -135,8 +137,14 @@ public static class HelperTaskSelfTest
             if (HelperTask.Security(name) is string sddl)
             {
                 notes["security"] = sddl;
-                if (!sddl.Contains(sid, StringComparison.OrdinalIgnoreCase)) found.Add($"the account it's for isn't in its security: {sddl}");
-                if (sddl.Contains($"FA;;;{sid}", StringComparison.OrdinalIgnoreCase) || sddl.Contains($"GA;;;{sid}", StringComparison.OrdinalIgnoreCase)) found.Add($"the account it's for may change it: {sddl}");
+                // Windows may write the account as an alias (LA for the built-in Administrator), so read the access list.
+                var me = new SecurityIdentifier(sid);
+                var mine = new RawSecurityDescriptor(sddl).DiscretionaryAcl?.OfType<CommonAce>().Where(a => a.SecurityIdentifier == me && a.AceQualifier == AceQualifier.AccessAllowed).ToList() ?? [];
+                int rights = mine.Aggregate(0, (r, a) => r | a.AccessMask);
+                // FILE_EXECUTE, and none of: write, append, write attributes or extended attributes, delete, change access or owner, generic write or all.
+                const int execute = 0x20, change = 0x2 | 0x4 | 0x10 | 0x100 | 0x10000 | 0x40000 | 0x80000 | 0x40000000 | 0x10000000;
+                if ((rights & execute) == 0) found.Add($"the account it's for may not run it: {sddl}");
+                if ((rights & change) != 0) found.Add($"the account it's for may change it: {sddl}");
             }
             found.AddRange(Talk(name, self, notes));
             found.AddRange(Smuggled(name, notes));
