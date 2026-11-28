@@ -3,7 +3,7 @@
 export const LAYOUT_VERSION = 2;
 
 export type Kind = "pc" | "health" | "todo" | "asks" | "temps" | "fans" | "evenings" | "storage" | "live" | "parts"
-  | "trend" | "drives" | "changes" | "events" | "games" | "upgrade" | "drivers" | "logs" | "manuals";
+  | "trend" | "drives" | "changes" | "events" | "games" | "upgrade" | "drivers" | "logs" | "manuals" | "safety";
 export type SizeName = "s" | "m" | "l" | "wide" | "tall" | "full";
 export type Tone = "light" | "dark";
 export type Frame = "tile" | "open";
@@ -243,6 +243,13 @@ export const KINDS: Record<Kind, KindMeta> = {
       { key: "found", label: "Show what each found", type: "toggle", value: true },
     ],
   },
+  // Off by default: Home stays as it was, and anything here that needs a look already shows in Things to look at.
+  safety: {
+    title: "Safe and up to date", blurb: "Windows updates, virus protection, the firewall and backup, and what to do if one isn't fine.",
+    sizes: { s: [3, 3], m: [4, 4], wide: [6, 3], tall: [4, 5] }, size: "m", min: [3, 3], max: [12, 6],
+    styles: [["list", "List"]], tone: "light", frame: "tile", hidden: true,
+    options: [{ key: "age", label: "Show when it was checked", type: "toggle", value: true }],
+  },
   manuals: {
     title: "Manuals", blurb: "The manuals Rig found for your parts, one tap away.",
     sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5] }, size: "m", min: [3, 3], max: [12, 6],
@@ -261,7 +268,7 @@ export const KINDS: Record<Kind, KindMeta> = {
 };
 
 /** Default order: the PC leads, then what needs attention, then the week, then the rest. Storage, a card, sits above Ask Rig, whose short list then ends the column instead of leaving a gap above the card. */
-export const KIND_ORDER: Kind[] = ["pc", "health", "todo", "temps", "fans", "evenings", "storage", "asks", "live", "parts", "trend", "drives", "changes", "events", "games", "upgrade", "drivers", "logs", "manuals"];
+export const KIND_ORDER: Kind[] = ["pc", "health", "todo", "temps", "fans", "evenings", "storage", "asks", "live", "parts", "trend", "drives", "changes", "events", "games", "upgrade", "drivers", "safety", "logs", "manuals"];
 
 const isKind = (k: unknown): k is Kind => typeof k === "string" && k in KINDS;
 export const kindOf = (i: string): Kind => (isKind(i) ? i : "storage");

@@ -281,3 +281,8 @@
 .batt-savers { display: flex; flex-direction: column; gap: 2px; }
 .batt-savers .label { margin-bottom: 2px; }
 .batt-foot { margin-top: 6px; font-size: 13px; }
+/* ---------- Safety tab ---------- */
+/* Four rows, read like the Manuals tab's lists: what was read in grey, a chip only for what needs a look. */
+.safety { max-width: 820px; }
+.safety-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.safety-age { font-size: 13px; }

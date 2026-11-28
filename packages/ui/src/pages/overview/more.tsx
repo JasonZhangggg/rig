@@ -1,11 +1,12 @@
 // Home widgets for the rest of Rig: the live chart, drive health, Changes, Windows events, games, upgrades, drivers,
 // logs and manuals. Each is a list of hairline rows under a heading, opening its page when a row is pressed.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { eventKinds, eventTitle, gameLibrary, insightContext, isActive, type Game, type HistoryPoint, type Manual, type PCEvent, type RecordingInfo, type Severity } from "@rig/core";
+import { eventKinds, eventTitle, gameLibrary, insightContext, isActive, safetyRows, safetySummary, type Game, type HistoryPoint, type Manual, type PCEvent, type RecordingInfo, type Severity } from "@rig/core";
 import { useActions, useApp, useData, useHistory, useTemp } from "../../state";
 import { useEvents } from "../Logs";
 import { ago, hours } from "../games/words";
 import { serious } from "../logs/summary";
+import { safetyHead } from "../safety/SafetyTab";
 import { stateWord, whenRan } from "../logs/words";
 import { shortType } from "../shared";
 import { useUpgrades } from "../upgrades/PCUpgrades";
@@ -391,6 +392,27 @@ export function DriversWidget(props: WidgetProps) {
         <EmptyNote ghost={false}>Rig shows the graphics driver and BIOS versions here once it has read them.</EmptyNote>
       )}
       {on(opts, "ask") && found.length > 0 && <button type="button" className="f-link" onClick={() => ask(question)}>Check for updates<Go /></button>}
+    </section>
+  );
+}
+
+// ----- Safe and up to date -----
+
+export function SafetyWidget(props: WidgetProps) {
+  const { style, opts } = props;
+  const { pc, go } = useApp();
+  const now = Date.now();
+  const rows = safetyRows(pc.security, now);
+  const summary = safetySummary(rows);
+  const lines: Line[] = rows.map((r) => ({
+    key: r.id, title: r.title, meta: r.line,
+    sev: r.state === "look" ? "warn" : undefined,
+    onClick: () => go("safety"),
+  }));
+  return (
+    <section className="f-list" data-style={style}>
+      <Head title="Safe and up to date" sub={on(opts, "age") ? safetyHead(pc.security?.readAt, summary, now) : summary} />
+      <RowList lines={lines} fit={fixed(props)} watch={`${style}${opts.age}`} more={(n) => `${n} more`} onMore={() => go("safety")} />
     </section>
   );
 }
