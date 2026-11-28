@@ -11,7 +11,7 @@
 
 .pbp-cols, .pbp-row {
   display: grid; align-items: center; column-gap: 18px;
-  grid-template-columns: minmax(0, 1.3fr) 56px minmax(100px, .85fr) minmax(0, 1.3fr);
+  grid-template-columns: minmax(0, 1.3fr) 76px minmax(100px, .85fr) minmax(0, 1.3fr);
 }
 .pbp-cols { flex: none; padding: 0 0 6px; border-bottom: 1px solid var(--line); color: var(--text-3); font: var(--t-label); }
 .pbp-cols > :nth-child(2) { text-align: right; }

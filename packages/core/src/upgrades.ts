@@ -2,6 +2,7 @@
 // shop feed, and a made-up price is worse than none.
 
 import type { Upgrade } from "./model";
+import { solderedMemory } from "./shop";
 import type { Inventory } from "./telemetry";
 
 export function suggestUpgrades(inv: Inventory): Upgrade[] {
@@ -10,8 +11,11 @@ export function suggestUpgrades(inv: Inventory): Upgrade[] {
   const m = inv.memory;
   const gb = (mb: number) => Math.round(mb / 1024);
 
-  // Memory
-  if (m.slotsTotal && m.modules.length < m.slotsTotal) {
+  // Memory. Soldered memory takes no sticks, whatever slot count Windows reports.
+  const soldered = solderedMemory(inv);
+  if (soldered === "likely") {
+    out.push({ part: "Memory", fit: "check", title: "Memory may be soldered", detail: "Most thin laptops have memory built into the board. Rig will check your model's service guide.", gain: "", price: "" });
+  } else if (!soldered && m.slotsTotal && m.modules.length < m.slotsTotal) {
     const first = m.modules[0];
     const free = m.slotsTotal - m.modules.length;
     out.push({
@@ -21,8 +25,6 @@ export function suggestUpgrades(inv: Inventory): Upgrade[] {
       gain: gb(m.totalMb) < 32 ? "Helps with heavy multitasking and newer games" : "Only worth it for big projects or virtual machines",
       price: "",
     });
-  } else if (laptop && m.modules.length <= 1) {
-    out.push({ part: "Memory", fit: "check", title: "Memory may be soldered", detail: "Most thin laptops have memory built into the board. Rig will check your model's service guide.", gain: "", price: "" });
   }
 
   // Storage

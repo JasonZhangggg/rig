@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categoryState, demoCatalog, fitOf, gainOf, hardwareFacts, makerOf, makersIn, matchesQuery, priceOf, sameRetailPart, shopFor, type Inventory, type Retail } from "../src";
+import { buildPC, categoryState, demoCatalog, fitOf, gainOf, hardwareFacts, makerOf, makersIn, matchesQuery, priceOf, sameRetailPart, shopFor, suggestUpgrades, type Inventory, type Retail } from "../src";
 import { fixtures } from "../src/demo";
 
 const atlas = (): Inventory => structuredClone(fixtures.atlas.inv);
@@ -148,5 +148,75 @@ describe("matching a shop's listing to a part", () => {
     expect(priceOf(shop.items.find((i) => i.id === "m-flare-32")!)).toBe(item("m-flare-32").offers[0].price);
     const all = shopFor(atlas(), { from: "Best Buy", hits: new Map(demoCatalog.map((i) => [i.id, retail])) });
     expect(all.demo).toBe(false);
+  });
+});
+
+describe("a laptop's own parts", () => {
+  type Module = Inventory["memory"]["modules"][number];
+  const laptop = (modules: Module[], slotsTotal?: number): Inventory => {
+    const inv = pebble();
+    inv.memory = { totalMb: modules.reduce((n, m) => n + m.capacityMb, 0), slotsTotal, modules };
+    return inv;
+  };
+  // LPDDR5 (SMBIOS type 35) that Windows lists as eight 2 GB modules, one a channel, and calls SO-DIMMs.
+  const lpddr = (slotsTotal?: number) => laptop(Array.from({ length: 8 }, (_, i) => ({ capacityMb: 2048, speedMhz: 7467, slot: `Channel${"ABCDEFGH"[i]}`, formFactor: 12, smbiosType: 35 })), slotsTotal);
+  const memoryItems = demoCatalog.filter((i) => i.category === "memory");
+
+  it("shows soldered LPDDR memory as one figure, wherever Windows counts several modules", () => {
+    for (const inv of [lpddr(), lpddr(16)]) {
+      const f = hardwareFacts(inv);
+      expect(categoryState("memory", f)).toMatchObject({ open: false, have: "16 GB, built into the board" });
+      const ram = buildPC(inv, null, null).parts?.ram;
+      expect(ram?.name).toBe("16 GB");
+      expect(ram?.soldered).toBe(true);
+      expect(ram?.specs.map(([k]) => k)).not.toContain("Slots used");
+    }
+  });
+
+  it("offers no memory sticks for soldered memory", () => {
+    for (const inv of [lpddr(), lpddr(16)]) {
+      const f = hardwareFacts(inv);
+      for (const i of memoryItems) expect(fitOf(i, f)).toMatchObject({ verdict: "no", why: "Pebble's memory is built into the board, like most thin laptops." });
+      expect(suggestUpgrades(inv).filter((u) => u.part === "Memory" && u.fit !== "no")).toEqual([]);
+    }
+  });
+
+  it("knows chips on the board from their form, even when Windows doesn't name the memory type", () => {
+    const inv = laptop([0, 1].map(() => ({ capacityMb: 8192, speedMhz: 6400, formFactor: 21 })));
+    expect(categoryState("memory", hardwareFacts(inv)).have).toBe("16 GB, built into the board");
+  });
+
+  it("treats a laptop's one reported SO-DIMM stick as a stick", () => {
+    const inv = laptop([{ capacityMb: 16384, speedMhz: 5600, formFactor: 12, smbiosType: 34 }]);
+    const f = hardwareFacts(inv);
+    expect(categoryState("memory", f)).toMatchObject({ open: true, have: "1 × 16 GB DDR5 at 5600 MT/s" });
+    expect(fitOf(item("m-crucial-sodimm"), f).verdict).not.toBe("no");
+    expect(buildPC(inv, null, null).parts?.ram?.soldered).toBeUndefined();
+  });
+
+  it("still takes one module and no slot count as likely soldered when Windows doesn't say its form or type", () => {
+    const inv = laptop([{ capacityMb: 16384, speedMhz: 7467 }]);
+    expect(hardwareFacts(inv).memory.soldered).toBe(true);
+    expect(suggestUpgrades(inv).find((u) => u.part === "Memory")?.title).toBe("Memory may be soldered");
+  });
+
+  it("says a gaming laptop's graphics chip is soldered, not built into its processor", () => {
+    const inv = pebble();
+    inv.cpu.name = "Intel Core i7-14650HX";
+    inv.gpus = [
+      { name: "Intel UHD Graphics", vendor: "intel", integrated: true },
+      { name: "NVIDIA GeForce RTX 4060 Laptop GPU", vendor: "nvidia", vramMb: 8188, integrated: false },
+    ];
+    const f = hardwareFacts(inv);
+    expect(categoryState("gpu", f)).toMatchObject({ open: false, have: "RTX 4060 Laptop GPU, soldered" });
+    for (const i of demoCatalog.filter((x) => x.category === "gpu")) {
+      expect(fitOf(i, f)).toMatchObject({ verdict: "no", why: "Pebble's RTX 4060 Laptop GPU is soldered to the board." });
+    }
+  });
+
+  it("says a thin laptop's graphics are built into its processor", () => {
+    const f = hardwareFacts(pebble());
+    expect(categoryState("gpu", f)).toMatchObject({ open: false, have: "Built into the processor" });
+    expect(fitOf(item("g-5070"), f).why).toBe("Pebble's graphics are built into its processor.");
   });
 });

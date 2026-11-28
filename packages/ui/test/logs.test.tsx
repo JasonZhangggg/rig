@@ -620,6 +620,36 @@ describe("Logs", () => {
     expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
   });
 
+  it("words a laptop's part rows for a laptop, with its battery's charge and drain instead of a highest", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await open("logs");
+    const parts = await screen.findByRole("region", { name: "Parts" }, { timeout: 10000 });
+    const row = (name: string) => within(within(parts).getAllByRole("button").find((b) => b.querySelector("b")?.textContent === name)!);
+    expect(row("Fans").getByText("Keep the laptop cool")).toBeTruthy();
+    expect(within(parts).queryByText("Move air through the case")).toBeNull();
+    // The fans' unit sits small beside the figure, so it keeps clear of the track.
+    expect(row("Fans").getByText("rpm").tagName).toBe("SMALL");
+    const battery = row("Battery");
+    expect(battery.getByText("On battery")).toBeTruthy();
+    expect(battery.getByText(/^Drawing \d+(\.\d)? W$/)).toBeTruthy();
+    expect(battery.queryByText("Calm")).toBeNull();
+    expect(battery.queryByText(/^Highest/)).toBeNull();
+  });
+
+  it("says how low a battery ran over a past stretch, and whether it ran down", () => {
+    const t0 = Date.now() - 60 * 60_000;
+    const sensors = [{ id: "b", hw: "battery" as const, hwName: "", type: "level" as const, name: "Charge Level", part: "battery" }];
+    const points = Array.from({ length: 60 }, (_, k) => ({ t: t0 + k * 60_000, v: [100 - k] }));
+    const r = { sensors, points, full: true, parts: [{ id: "battery", name: "Battery", sensors: [0], lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 60 * 60_000} limits={{}} device={{ laptop: true }} />);
+    const row = within(within(screen.getByRole("region", { name: "Parts" })).getByRole("button"));
+    row.getByText("41% to 100%");
+    row.getByText("Ran down");
+    row.getByText(/^Lowest 41% at /);
+  });
+
   it("draws a part's charts tall, with readings a couple of seconds apart smoothed into a calm line", () => {
     // On a whole minute, so the stretch starts and ends on whole buckets.
     const t0 = Math.floor(Date.now() / 60_000) * 60_000 - 5 * 60_000;

@@ -19,7 +19,16 @@ export interface Inventory {
   cpu: { name: string; cores: number; threads: number; maxClockMhz?: number };
   gpus: { name: string; vendor: "nvidia" | "amd" | "intel" | "other"; /** PCI subsystem vendor and id ("1da2", "e445"): the card's maker and its exact model. Missing from older helpers. */ subsysVendor?: string; subsysId?: string; vramMb?: number; driverVersion?: string; driverDate?: string; integrated: boolean }[];
   board: { manufacturer: string; product: string; biosVersion: string; biosDate?: string };
-  memory: { totalMb: number; slotsTotal?: number; modules: { manufacturer?: string; partNumber?: string; capacityMb: number; speedMhz?: number; slot?: string }[] };
+  memory: {
+    totalMb: number; slotsTotal?: number;
+    modules: {
+      manufacturer?: string; partNumber?: string; capacityMb: number; speedMhz?: number; slot?: string;
+      /** Windows' FormFactor for the module (8 a DIMM stick, 12 a SO-DIMM stick, 9, 14, 21 and 22 chips on the board). Missing from older helpers and when Windows doesn't say. */
+      formFactor?: number;
+      /** The SMBIOS memory type (26 DDR4, 34 DDR5, 27 to 30 and 35 the low-power LPDDR kinds). Missing from older helpers and when Windows doesn't say. */
+      smbiosType?: number;
+    }[];
+  };
   disks: Disk[];
   volumes: Volume[];
   battery?: { designWh?: number; fullWh?: number; cycles?: number };
