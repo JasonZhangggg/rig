@@ -2,7 +2,7 @@
 // on-disk store and the OS keychain.
 
 import { invoke } from "@tauri-apps/api/core";
-import { scriptHash, type ActionCall, type StepRpc, type FixApplied, type FixNow, type PcReadSpec, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts } from "@rig/core";
+import { scriptHash, type ActionCall, type StepRpc, type FixApplied, type FixNow, type PcReadSpec, HelperLink, HistoryPoint, Inventory, LocalStore, ProcessUse, RawEvent, RecorderCursor, RecorderLink, RecorderStatus, ProbeEdit, ProbeSpec, Snapshot, StorageScan, StoredChange, SystemFacts, type NetworkCheckState } from "@rig/core";
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -19,6 +19,7 @@ export const tauriLink: HelperLink = {
   events: (sinceMs: number) => call<RawEvent[]>("events", { sinceMs }),
   processes: () => call<ProcessUse[]>("processes", { top: 8 }),
   storage: (fresh?: boolean) => call<StorageScan>("storage", { fresh: !!fresh }),
+  network: (start: boolean) => call<NetworkCheckState>("network", { start }),
   read: (req: PcReadSpec) => call<{ text: string }>("read", { read: req }).then((r) => r.text),
   step: <K extends keyof StepRpc>(method: K, params: StepRpc[K]["params"]) => call<StepRpc[K]["reply"]>(method, params),
 };

@@ -11,7 +11,7 @@ import { openRevert, protectionRow, revertResult, type OpenRevert } from "./prot
 import { appliedHelperStep, canonicalStep, cardTier, changeOf, checkStep, runRows, stepHash, stepsTitle, type Allowed, type AppliedStep, type ApplyReply, type FixStep, type FixUndo, type HelperStep, type PreviewReply, type Step, type StepLink, type StoredChange, type UndoReply } from "./change";
 import { ruleWords, rulesVersion } from "./check";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "./alerts";
-import type { BoardLayoutReply, MachineSync, ReadLayoutRequest } from "./api";
+import { ApiError, SYNC_SEND_ALL, type BoardLayoutReply, type MachineSync, type ReadLayoutRequest, type SyncReply } from "./api";
 import type { CloudClient } from "./cloud";
 import { makeExport, type DataExport } from "./export";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
@@ -24,6 +24,7 @@ import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec
 import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
+import type { NetworkCheckReply, NetworkCheckState } from "./network";
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
@@ -48,6 +49,12 @@ export interface HelperLink {
    * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
    */
   storage?(fresh?: boolean): Promise<StorageScan>;
+  /**
+   * The connection check: `start` begins one on the helper's own thread (unless one is running) and answers at once, so
+   * readings keep coming while it pings; later calls say whether it's still running, and give the last one it finished.
+   * Read-only; missing on helpers before the check.
+   */
+  network?(start: boolean): Promise<NetworkCheckState>;
   /** One read the chat asked for: a registry key, CIM instances, or a command or script that checks as a read. Returns what it found as text. Missing on helpers before live reads. */
   read?(req: PcReadSpec): Promise<string>;
   /** Command and native steps: check, preview, apply, undo and read (StepRpc). Missing on helpers before general commands. */
@@ -64,6 +71,9 @@ const MAX_READ_HOPS = 8;
 
 /** The folder scan is asked for this often, and every few seconds while one runs, so the map fills in when it's done. */
 export const SCAN_ASK_MS = 30 * 60_000;
+/** How often the app asks whether the connection check is done, and how long it waits before giving up. */
+export const NETWORK_POLL_MS = 400;
+export const NETWORK_WAIT_MS = 20_000;
 export const SCAN_RUNNING_ASK_MS = 15_000;
 
 /** Small on-disk store kept by the desktop shell (SQLite). */
@@ -107,6 +117,9 @@ export interface LocalOptions {
 }
 
 const EVENTS_DAYS = 30;
+/** The parts of an upload that are left out while they're the same as last time. */
+const syncParts = ["inventory", "facts", "changes", "games", "events"] as const;
+type SyncPart = (typeof syncParts)[number];
 /** History points sent to the account at most at once, after a time signed out or offline: five days. Older ones were never going to be sent. */
 const UNSYNCED_MAX = 720;
 const BACKGROUND_PAGES = 30;
@@ -137,6 +150,10 @@ export class LocalClient implements RigClient {
    * account is behind on are the ones after this: kept as one number, not a growing list rewritten every ten minutes.
    */
   private syncedTo = 0;
+  /** Each part of the last upload the account took, as sent, so the next one leaves out what hasn't changed. Empty: send them all. */
+  private sentParts = new Map<SyncPart, string>();
+  /** Off once a server turned down an upload with parts left out, as one from before it took them does. */
+  private partsOk = true;
   private listeners = new Set<(pc: PC) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
   private ticker: { every: number; timer: ReturnType<typeof setInterval> } | null = null;
@@ -379,15 +396,36 @@ export class LocalClient implements RigClient {
   /** Uploads this PC to the account so the website shows it. Quietly does nothing when signed out. */
   async sync() {
     if (!this.cloud || !this.inv || !this.facts || !(await this.signedIn())) return;
-    const payload: MachineSync = {
-      at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
-      history: this.unsynced(), changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
-      identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt, picks: this.identity.picks }, identityAt: this.identity.at,
+    const parts: Required<Pick<MachineSync, SyncPart>> = {
+      inventory: this.inv, facts: this.facts, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
       events: await this.windowsEvents().catch(() => []),
     };
-    const sent = payload.history.at(-1)?.t;
+    const json = Object.fromEntries(syncParts.map((k) => [k, JSON.stringify(parts[k])])) as Record<SyncPart, string>;
+    const history = this.unsynced();
+    // Parts the account already has as they are now are left out; `all` sends every part.
+    const upload = (all: boolean): MachineSync => {
+      const out: MachineSync = {
+        at: new Date(this.o.now()).toISOString(), view: this.view(), history,
+        identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt, picks: this.identity.picks }, identityAt: this.identity.at,
+      };
+      for (const k of syncParts) if (all || !this.partsOk || this.sentParts.get(k) !== json[k]) Object.assign(out, { [k]: parts[k] });
+      return out;
+    };
+    const payload = upload(false);
+    const sent = history.at(-1)?.t;
     try {
-      const reply = await this.cloud.sync(this.id, payload);
+      let reply: SyncReply | undefined;
+      try {
+        reply = await this.cloud.sync(this.id, payload);
+      } catch (e) {
+        const leftOut = syncParts.some((k) => !(k in payload));
+        if (!leftOut || !(e instanceof ApiError) || (e.status !== SYNC_SEND_ALL && e.status !== 400)) throw e;
+        // 409: the account has no copy of this PC, as after signing in to another account. 400: a server from before it
+        // took uploads with parts left out, so they all go every time from now on.
+        if (e.status === 400) this.partsOk = false;
+        reply = await this.cloud.sync(this.id, upload(true));
+      }
+      this.sentParts = new Map(syncParts.map((k) => [k, json[k]]));
       if (sent != null && sent > this.syncedTo) { this.syncedTo = sent; await this.store.set("syncedTo", sent); }
       // Renamed on the website since this PC last changed it: take the website's version.
       if (reply?.identityAt && (!this.identity.at || reply.identityAt > this.identity.at)) {
@@ -397,6 +435,8 @@ export class LocalClient implements RigClient {
       }
       await this.syncRecordings(reply?.recordings);
     } catch (e) {
+      // What the account has is no longer known, so the next round sends everything.
+      this.sentParts.clear();
       this.o.log("warn", `sync: failed, trying again next round: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -574,6 +614,22 @@ export class LocalClient implements RigClient {
       })
       .catch((e) => this.o.log("warn", `storage: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => { this.scanReading = null; });
+  }
+
+  async checkNetwork(id: string): Promise<NetworkCheckReply> {
+    if (!(await this.isLocal(id))) return { kind: "unsupported", reason: "elsewhere" };
+    const network = this.link.network?.bind(this.link);
+    if (!network) return { kind: "unsupported", reason: "update" };
+    const began = performance.now();
+    let s = await network(true);
+    while (s.running) {
+      if (performance.now() - began > NETWORK_WAIT_MS) throw new Error("The check took too long. Try again.");
+      await new Promise((r) => setTimeout(r, NETWORK_POLL_MS));
+      s = await network(false);
+    }
+    if (!s.reading) throw new Error("Rig couldn't check the connection. Try again.");
+    this.o.log("info", `network: checked in ${Math.round(performance.now() - began)} ms (${s.reading.adapter?.kind ?? "not connected"})`);
+    return { kind: "done", reading: s.reading };
   }
 
   async measureDrives(id: string) {
