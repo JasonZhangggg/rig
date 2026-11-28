@@ -59,7 +59,7 @@ export function BatteryLife({ battery }: { battery: BatteryView }) {
             {offer && <ChargeRow offer={offer} />}
           </Rows>
         ) : <p className="muted batt-none">Nothing to change. The settings Rig can change already go easy on the battery.</p>}
-        {(battery.savers.length > 0 || offer?.op) && <p className="faint batt-foot">Each one can be undone from Changes.</p>}
+        {(battery.savers.length > 0 || offer?.op) && <p className="faint batt-foot">{offer && !offer.op ? `Each one you review can be undone from Changes.` : "Each one can be undone from Changes."}</p>}
       </section>
     </div>
   );

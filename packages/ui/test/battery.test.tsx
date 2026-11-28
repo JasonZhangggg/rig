@@ -104,6 +104,8 @@ describe("Stopping charging short of full", { timeout: 25000 }, () => {
     expect(within(row).getByText("Stop charging at 80%")).toBeTruthy();
     expect(within(row).getByText("Plugged in at 100% most of the time. Set it in MyASUS.")).toBeTruthy();
     expect(within(row).queryByRole("button", { name: /^Review/ })).toBeNull();
+    // The maker's app sets that one, so only the rows Rig reviews are undone from Changes.
+    expect(screen.getByText("Each one you review can be undone from Changes.")).toBeTruthy();
     fireEvent.click(within(row).getByRole("button", { name: "Ask about it: Stop charging at 80%" }));
     expect(await screen.findByText(/^My ASUS laptop is plugged in at 100% most of the time\. How do I make it stop charging at 80% in MyASUS/)).toBeTruthy();
   });
