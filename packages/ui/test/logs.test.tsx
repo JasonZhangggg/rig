@@ -27,6 +27,14 @@ async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
 }
 
+/** Opens the Show menu and picks a part, like "Graphics card", or a reading across every part, like "Temperatures". */
+function show(name: string, side: "Parts" | "Readings" = "Parts", scope: HTMLElement = document.body) {
+  fireEvent.click(within(scope).getByRole("button", { name: /^Show / }));
+  const menu = within(scope).getByRole("dialog", { name: "Show" });
+  fireEvent.click(within(menu).getByRole("tab", { name: side }));
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name: new RegExp(`^${name}`) }));
+}
+
 describe("Logs", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });
   afterEach(() => cleanup());
@@ -268,15 +276,21 @@ describe("Logs", () => {
     const readings = screen.getByRole("region", { name: "Readings" });
     const temps = await within(readings).findByRole("img", { name: "Temperatures" }, { timeout: 500 });
     within(readings).getByRole("heading", { name: "Last 5 minutes" });
-    within(readings).getByText("Live");
+    within(readings).getByText("Live", { selector: ".lv-badge" });
     within(readings).getByText(/A reading every 2 s/);
-    // One picker reaches from the last few minutes back to the month.
+    // A Live switch, then the stretches back to the month.
     const spans = within(readings).getByRole("group", { name: "How far back" });
-    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["5 min", "1 hour", "6 hours", "Day", "Week", "Month"]);
+    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["Live", "Hour", "Day", "Week", "Month"]);
+    const liveSwitch = within(spans).getByRole("button", { name: "Live" });
+    expect(liveSwitch.getAttribute("aria-pressed")).toBe("true");
     // Rig has only been open a few seconds, so an hour of readings starts partway, and says when.
-    fireEvent.click(within(spans).getByRole("button", { name: "1 hour" }));
-    within(readings).getByText(/Readings start at .*, when Rig opened/);
-    fireEvent.click(within(spans).getByRole("button", { name: "5 min" }));
+    fireEvent.click(within(spans).getByRole("button", { name: "Hour" }));
+    expect(liveSwitch.getAttribute("aria-pressed")).toBe("false");
+    within(readings).getByRole("heading", { name: "Last hour" });
+    within(readings).getByText(/Readings start at .*, when Rig opened. For earlier ones, pick Day\./);
+    fireEvent.click(liveSwitch);
+    expect(liveSwitch.getAttribute("aria-pressed")).toBe("true");
+    within(readings).getByRole("heading", { name: "Last 5 minutes" });
     // The line moves with each new reading.
     const line = () => [...temps.querySelectorAll("path")].map((p) => p.getAttribute("d")).join("|");
     const before = line();
@@ -319,7 +333,7 @@ describe("Logs", () => {
       // A day keeps a set number of readings, so the newest one replaces an old one: same count, later finish.
       const today = list.filter((r) => r.id.startsWith("bg-d-")).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))[0];
       await act(async () => { send(list.map((r) => (r.id === today.id ? { ...r, finishedAt: (r.finishedAt ?? 0) + 30_000 } : r))); });
-      await waitFor(() => expect(within(readings).getByText(/ to /).textContent).not.toBe(before));
+      await waitFor(() => expect(within(readings).getByText(/ to .*, every 30 s$/).textContent).not.toBe(before));
     } finally { vi.useRealTimers(); }
   });
 
@@ -337,7 +351,7 @@ describe("Logs", () => {
       const readings = screen.getByRole("region", { name: "Readings" });
       await within(readings).findByRole("img", { name: "Temperatures" });
       within(readings).getByRole("img", { name: "Fans" });
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
+      show("Graphics card", "Parts", readings);
       within(readings).getByRole("rowheader", { name: "Hot spot" });
       within(readings).getByRole("img", { name: "Power" });
 
@@ -355,7 +369,7 @@ describe("Logs", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("shows the last 6 hours, the week or the month on the same chart, saying where the readings came from", async () => {
+  it("shows the day, the week or the month on the same chart, saying where the readings came from", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
     try {
@@ -370,8 +384,8 @@ describe("Logs", () => {
       await within(readings).findByText("Every sensor, every 30 s");
       await within(readings).findByRole("img", { name: "Temperatures" });
 
-      fireEvent.click(within(spans).getByRole("button", { name: "6 hours" }));
-      within(readings).getByRole("heading", { name: "Last 6 hours" });
+      fireEvent.click(within(spans).getByRole("button", { name: "Day" }));
+      within(readings).getByRole("heading", { name: "Today" });
       await within(readings).findByRole("img", { name: "Temperatures" });
 
       // A month is longer than the background log keeps, so it's Rig's 10-minute history, on the same chart.
@@ -379,7 +393,9 @@ describe("Logs", () => {
       within(readings).getByRole("heading", { name: "Last 30 days" });
       within(readings).getByText("Every 10 minutes while Rig was open");
       const month = await within(readings).findByRole("img", { name: "Temperatures" });
-      within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ });
+      fireEvent.click(within(readings).getByRole("button", { name: "Show Whole PC" }));
+      within(within(readings).getByRole("dialog", { name: "Show" })).getByRole("menuitemradio", { name: /^Processor/ });
+      fireEvent.keyDown(document, { key: "Escape" });
       // A month's axis names a date every few days, not all thirty weekdays in a row.
       const dates = [...month.parentElement!.querySelector("svg.ln-axis")!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
       expect(dates.length).toBeGreaterThan(1);
@@ -399,7 +415,7 @@ describe("Logs", () => {
       await within(readings).findByRole("img", { name: "Temperatures" });
       // One view: no separate table to switch to.
       expect(within(readings).queryByRole("button", { name: "Table" })).toBeNull();
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
+      show("Graphics card", "Parts", readings);
       const temps = within(readings).getByRole("table", { name: "Temperatures, every sensor" });
       // Right under its chart.
       expect(within(readings).getByRole("img", { name: "Temperatures" }).parentElement!.contains(temps)).toBe(true);
@@ -431,7 +447,7 @@ describe("Logs", () => {
       within(readings).getByText(/^1 of \d+$/);
       fireEvent.change(find, { target: { value: "nothing like this" } });
       within(readings).getByText(/No sensor matches/);
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Whole PC/ }));
+      show("Whole PC", "Parts", readings);
       expect((find as HTMLInputElement).value).toBe("");
       await within(readings).findByRole("table", { name: "Temperatures, every sensor" });
     } finally { vi.useRealTimers(); }
@@ -507,7 +523,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s, i) => (s.type === "clock" ? (k + i) % 2 ? 800 : 5300 : 50 + ((k + i) % 6))) }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    show("Processor");
     const lines = (name: string) => screen.getByRole("img", { name }).querySelectorAll("path.ln-line").length;
     // Temperatures: the package and the hottest core, not all eight.
     expect(lines("Temperatures")).toBe(2);
@@ -546,9 +562,91 @@ describe("Logs", () => {
     const points = Array.from({ length: 10 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s) => (s.name === "CPU Memory" ? null : 10 + k)) }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    show("Processor");
     const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
     expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
+  });
+
+  it("opens the whole PC on a row per part, and one picker shows a part's every sensor or one reading across every part", () => {
+    const t0 = Date.now() - 5 * 60_000;
+    const s = (hw: "cpu" | "gpu", part: string, type: "temperature" | "load", name: string) => ({ id: `${part}-${name}`, hw, hwName: "", type, name, part });
+    const sensors = [s("cpu", "cpu", "temperature", "CPU Package"), s("cpu", "cpu", "load", "CPU Total"), s("gpu", "gpu", "temperature", "GPU Core"), s("gpu", "gpu", "load", "GPU Core")];
+    // A reading every 2 s for five minutes, the processor peaking at 81°C a minute in.
+    const points = Array.from({ length: 150 }, (_, k) => ({ t: t0 + k * 2000, v: [k === 30 ? 81 : 55 + (k % 4), 20 + (k % 7), 60 + (k % 3), 90] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0, 1], lead: 0 }, { id: "gpu", name: "Graphics card", sensors: [2, 3], lead: 2 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{ cpu: 95 }} live />);
+
+    // The whole PC: a row per part with its reading now, its lowest to highest and its highest with the time.
+    const parts = screen.getByRole("region", { name: "Parts" });
+    const rows = within(parts).getAllByRole("button");
+    expect(rows.map((b) => b.querySelector("b")?.textContent)).toEqual(["Processor", "Graphics card"]);
+    within(rows[0]).getByText(/^55°C to 81°C$/);
+    within(rows[0]).getByText(/^Highest 81°C at /);
+    within(rows[0]).getByText("Calm");
+
+    // One button opens a menu with two sides: Parts, with each part's reading now, and Readings across every part.
+    const button = screen.getByRole("button", { name: "Show Whole PC" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    const menu = screen.getByRole("dialog", { name: "Show" });
+    expect(within(menu).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Parts", "Readings"]);
+    expect(within(menu).getByRole("tab", { name: "Parts" }).getAttribute("aria-selected")).toBe("true");
+    const items = () => within(menu).getAllByRole("menuitemradio");
+    expect(items().map((o) => o.textContent)).toEqual(["Whole PC", "Processor56°C", "Graphics card62°C"]);
+    expect(items()[0].getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(menu).getByRole("tab", { name: "Readings" }));
+    expect(items().map((o) => o.textContent)).toEqual(["Temperatures2 parts", "Usage2 parts"]);
+    // One kind of reading: a chart for each part, named for the part, and no part rows. The menu closes.
+    fireEvent.click(items()[0]);
+    expect(screen.queryByRole("dialog", { name: "Show" })).toBeNull();
+    screen.getByRole("button", { name: "Show Temperatures, every part" });
+    expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
+    screen.getByRole("img", { name: "Processor" });
+    screen.getByRole("img", { name: "Graphics card" });
+    expect(screen.queryByRole("img", { name: "Usage" })).toBeNull();
+    // It opens again on the Readings side, and Escape closes it without a change.
+    fireEvent.click(screen.getByRole("button", { name: /^Show / }));
+    expect(within(screen.getByRole("dialog", { name: "Show" })).getByRole("tab", { name: "Readings" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Show" })).toBeNull();
+
+    // A part's row opens every reading of that part.
+    show("Whole PC");
+    fireEvent.click(within(screen.getByRole("region", { name: "Parts" })).getAllByRole("button")[1]);
+    screen.getByRole("button", { name: "Show Graphics card" });
+    screen.getByRole("img", { name: "Temperatures" });
+    screen.getByRole("img", { name: "Usage" });
+    expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
+  });
+
+  it("draws a part's charts tall, with readings a couple of seconds apart smoothed into a calm line", () => {
+    // On a whole minute, so the stretch starts and ends on whole buckets.
+    const t0 = Math.floor(Date.now() / 60_000) * 60_000 - 5 * 60_000;
+    const sensors = [{ id: "t", hw: "cpu" as const, hwName: "", type: "temperature" as const, name: "CPU Package", part: "cpu" }];
+    const points = Array.from({ length: 150 }, (_, k) => ({ t: t0 + k * 2000, v: [k % 2 ? 50 : 60] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{}} />);
+    show("Processor");
+    const chart = screen.getByRole("img", { name: "Temperatures" });
+    expect(Number(chart.getAttribute("height") ?? chart.querySelector("svg")?.getAttribute("height"))).toBeGreaterThanOrEqual(150);
+    const d = chart.querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    const ys = [...d.matchAll(/[ML]-?[\d.]+,(-?[\d.]+)/g)].map((m) => Number(m[1]));
+    // Far fewer points than readings, and none at the 50 and 60 it flips between: an even line through the middle.
+    expect(ys.length).toBeLessThan(points.length / 3);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(10);
+  });
+
+  it("draws a line from the first few readings, before there are enough to smooth", () => {
+    const t0 = Math.floor(Date.now() / 60_000) * 60_000 - 5 * 60_000;
+    const sensors = [{ id: "t", hw: "cpu" as const, hwName: "", type: "temperature" as const, name: "CPU Package", part: "cpu" }];
+    // Rig has just opened: four readings, six seconds' worth.
+    const points = [0, 2000, 4000, 6000].map((d, k) => ({ t: t0 + 4 * 60_000 + d, v: [50 + k] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{}} />);
+    show("Processor");
+    const d = screen.getByRole("img", { name: "Temperatures" }).querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    expect(d.match(/L/g) ?? []).toHaveLength(3);
   });
 
   it("opens a drive's readings without freezing, with a few round steps up its transfer chart", () => {
@@ -559,7 +657,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [39, (k % 5) * 120e6, 3.5e9, 41_250] }));
     const r = { sensors, points, full: true, parts: [{ id: "ssd", name: "Storage", sensors: [0, 1, 2, 3], lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Storage/ }));
+    show("Storage");
     const steps = (name: string) => [...screen.getByRole("img", { name }).querySelectorAll("text.chart-tick")].map((t) => t.textContent);
     const transfer = steps("Transfer");
     expect(transfer.length).toBeGreaterThan(1);

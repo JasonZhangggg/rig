@@ -1,24 +1,6 @@
 .trend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
 @media (max-width: 860px) { .trend { grid-template-columns: 1fr; } }
 
-/* Performance: the parts down the side, Task Manager style, and the picked part's charts and sensors beside them. */
-.pf-rail { display: flex; flex-direction: column; gap: 2px; margin-left: -10px; }
-.pf-part {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name now" "spark spark"; align-items: baseline; gap: 4px 10px;
-  padding: 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
-  transition: scale .12s var(--ease-out);
-}
-.pf-part:active { scale: .98; }
-@media (hover: hover) and (pointer: fine) { .pf-part:not([aria-pressed="true"]):hover { background: color-mix(in srgb, var(--text) 4%, transparent); } }
-.pf-part[aria-pressed="true"] { background: var(--sel); }
-.pf-part-name { grid-area: name; overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.pf-part-now { grid-area: now; display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; white-space: nowrap; }
-.pf-part-now b { font-weight: 600; }
-.pf-part-now b.look { color: var(--look-text); }
-.pf-spark { grid-area: spark; display: block; width: 100%; height: 28px; }
-.pf-spark path { fill: none; stroke: var(--text-3); stroke-width: 1.25; stroke-linejoin: round; }
-.pf-part[aria-pressed="true"] .pf-spark path { stroke: var(--text); }
-
 /* The readings worth a glance, now, under the part's name. */
 @keyframes pf-pop { from { opacity: 0; transform: translateY(-4px) scale(.96); } }
 /* A sensor's name charts it on its own; the whole row is the target. */
@@ -31,6 +13,4 @@
 
 @media (max-width: 860px) {
   .figs { grid-template-columns: minmax(0, 1fr); }
-  .pf-rail { flex-direction: row; overflow-x: auto; margin: 0 -16px; padding: 0 16px 0 6px; scroll-snap-type: x proximity; scroll-padding-inline: 6px 16px; scrollbar-width: none; }
-  .pf-part { flex: 0 0 min(148px, 40%); scroll-snap-align: start; grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "now" "spark"; }
 }

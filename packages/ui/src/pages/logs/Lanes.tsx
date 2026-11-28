@@ -1,8 +1,9 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from "react";
-import { findReadings, peakOf, sensorGroups, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type PointerEvent, type RefObject } from "react";
+import { findReadings, sensorGroups, type PartsView, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
 import { dateText } from "../../dateText";
+import { PartSummary, partLines } from "./PartSummary";
 
 type Temp = ReturnType<typeof useTemp>;
 
@@ -31,6 +32,9 @@ export interface Lane { title: string; type: LaneType; series: LaneSeries[]; mor
 export interface Band { from: number; to: number; kind: "look" | "game" }
 /** A moment to number on the chart, matching a list beside it. */
 export interface ChartMark { t: number; look?: boolean; /** Numbers the flag, to match a numbered list beside the chart. */ n?: number }
+
+/** The space between two charts side by side. */
+const COL_GAP = 32;
 
 const percent = (t: LaneType) => t === "load" || t === "level" || t === "control";
 
@@ -88,12 +92,19 @@ function nearest(t: number, points: readonly RecordedPoint[]) {
 
 /**
  * One sensor's line, bucketed to about five pixels so a day of readings draws as a calm line, not a scribble. Each bucket
- * keeps its peak, so a spike still shows, and a stretch with no readings is a gap. Buckets are fixed in time, so as a live
+ * keeps its peak, so a spike still shows, or with `calm`, wider buckets draw their average, so readings a couple of
+ * seconds apart don't jitter. A stretch with no readings is a gap. Buckets are fixed in time, so as a live
  * chart slides, a reading stays in its bucket and the line doesn't shimmer.
  */
-function pathOf(points: readonly RecordedPoint[], i: number, x: (t: number) => number, y: (v: number) => number, t0: number, t1: number, w: number, gapMs: number) {
-  const size = (t1 - t0) / Math.max(20, Math.round(w / 5)) || 1;
-  const b: { k: number; t: number; v: number; gap: boolean }[] = [];
+function pathOf(points: readonly RecordedPoint[], i: number, x: (t: number) => number, y: (v: number) => number, t0: number, t1: number, w: number, gapMs: number, calm?: { px: number; least: number }) {
+  const size = Math.max(calm?.least ?? 0, (t1 - t0) / Math.max(20, Math.round(w / (calm?.px ?? 5)))) || 1;
+  // Too few readings yet to smooth, like just after Rig opens: draw them as they are, so there is a line at all.
+  if (calm) {
+    let first = Infinity, last = -Infinity;
+    for (const p of points) if (p.t >= t0 && p.t <= t1 && p.v[i] != null) { first = Math.min(first, p.t); last = Math.max(last, p.t); }
+    if (last - first < 4 * size) return pathOf(points, i, x, y, t0, t1, w, gapMs);
+  }
+  const b: { k: number; t: number; v: number; sum: number; st: number; n: number; gap: boolean }[] = [];
   let last = -Infinity;
   for (const p of points) {
     if (p.t < t0 || p.t > t1) continue;
@@ -103,11 +114,23 @@ function pathOf(points: readonly RecordedPoint[], i: number, x: (t: number) => n
     const gap = last > -Infinity && p.t - last > gapMs;
     last = p.t;
     const cur = b[b.length - 1];
-    if (!cur || cur.k !== k) b.push({ k, t: p.t, v, gap });
-    else { if (gap) cur.gap = true; if (v > cur.v) { cur.v = v; cur.t = p.t; } }
+    if (!cur || cur.k !== k) b.push({ k, t: p.t, v, sum: v, st: p.t, n: 1, gap });
+    else { if (gap) cur.gap = true; cur.sum += v; cur.st += p.t; cur.n++; if (v > cur.v) { cur.v = v; cur.t = p.t; } }
   }
   let d = "";
-  for (const p of b) d += `${d && !p.gap ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+  // Calm, each bucket draws the average of its readings, eased with its neighbours so a reading that flips between two
+  // values draws flat rather than as a zigzag; otherwise its peak, so a spike still shows.
+  const avg = b.map((p) => p.sum / p.n);
+  for (let j = 0; j < b.length; j++) {
+    const p = b[j];
+    let v = p.v;
+    if (calm) {
+      const prev = j > 0 && !p.gap ? avg[j - 1] : null, next = j + 1 < b.length && !b[j + 1].gap ? avg[j + 1] : null;
+      v = prev != null && next != null ? (prev + 2 * avg[j] + next) / 4 : (avg[j] + (prev ?? next ?? avg[j])) / 2;
+    }
+    const t = calm ? p.st / p.n : p.t;
+    d += `${d && !p.gap ? "L" : "M"}${x(t).toFixed(1)},${y(v).toFixed(1)}`;
+  }
   return d;
 }
 
@@ -236,7 +259,10 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   // so the right edge never shows a gap that fills in when the reading arrives.
   const lag = live ? Math.min(10_000, Math.max(1000, 2 * every)) : 0;
   const t0 = start - lag, t1 = end - lag;
-  const [ref, w] = useWidth<HTMLDivElement>(900);
+  const [ref, full] = useWidth<HTMLDivElement>(900);
+  // With rows, a wide screen sets the charts two to a row, so each keeps a shape you can read rather than a long thin strip.
+  const cols = rows && lanes.length > 1 && full >= 1100 ? 2 : 1;
+  const w = cols === 2 ? Math.floor((full - COL_GAP) / 2) : full;
   const clip = `ln-clip${useId().replace(/[^\w-]/g, "")}`;
   const pad = { l: compact ? 34 : 42, r: 8 };
   const iw = Math.max(40, w - pad.l - pad.r);
@@ -250,7 +276,7 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   const move = (e: PointerEvent<HTMLDivElement>) => {
     // Over the rows, they show the reading now, not at a moment on the chart.
     if ((e.target as Element).closest?.(".ln-rows")) { if (cursor != null) onCursor(null); return; }
-    const r = e.currentTarget.getBoundingClientRect();
+    const r = ((e.target as Element).closest?.(".ln-lane") ?? e.currentTarget).getBoundingClientRect();
     const px = e.clientX - r.left - pad.l;
     if (px >= 0 && px <= iw) onCursor(t0 + (px / iw) * (t1 - t0));
   };
@@ -258,7 +284,7 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   // Readings further apart than a few of their usual steps (the PC was off or asleep) leave a gap.
   const gap = Math.max(gapMs, 3 * every);
   const drawn = useMemo(() => lanes.map((lane) => {
-    const h = lane.h ?? (compact ? 76 : 96);
+    const h = lane.h ?? (rows ? Math.round(Math.min(230, Math.max(compact ? 130 : 150, w * 0.3))) : compact ? 76 : 96);
     // The rest of a lane's lines, when it's open, drawn faint behind its key ones. With rows, a group of like sensors
     // that's open draws its members faint, and a row picked out is drawn.
     const fams = familiesOf(lane.more ?? []);
@@ -275,7 +301,8 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
     const grid = gridOf(sc);
     // Live lines start a little before the left edge, so sliding left never shows an empty strip there.
     const from = live ? t0 - (t1 - t0) / 10 : t0;
-    const paths = all.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap) }));
+    // With rows, readings a few seconds apart are averaged, so the line shows the trend; the rows keep the exact highest.
+    const paths = all.map((s) => ({ ...s, d: pathOf(points, s.i, x, y, from, end, iw, gap, rows ? { px: 8, least: 5 * every } : undefined) }));
     return { lane, h, y, grid, paths, sc, fams };
   }), [points, lanes, t0, t1, w, compact, gap, open, pinned, rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -294,7 +321,7 @@ export function Lanes({ points, lanes, t0: start, t1: end, cursor, onCursor, ban
   const focus = (paths: { i: number }[]) => paths.some((p) => picked(p.i));
   if (!points.length) return null;
   return (
-    <div ref={ref} className="ln" onPointerMove={move} onPointerDown={move} onPointerLeave={() => onCursor(null)}>
+    <div ref={ref} className={`ln${cols === 2 ? " two" : ""}`} onPointerMove={move} onPointerDown={move} onPointerLeave={() => onCursor(null)}>
       {drawn.map(({ lane, h, y, grid, paths, sc, fams }, li) => (
         <div key={lane.title} className="ln-lane">
           <div className="ln-head" style={{ paddingLeft: pad.l }}>
@@ -450,16 +477,6 @@ function SensorRows({ lane, drawn, fams, rows, sc, at, live, compact, pinned, on
 }
 
 /** A small line for a part in the rail. */
-function Spark({ points, i, from, to }: { points: readonly RecordedPoint[]; i: number; from: number; to: number }) {
-  const w = 200, h = 26;
-  const vals = points.filter((p) => p.t >= from && p.t <= to).map((p) => p.v[i]).filter((v): v is number => v != null);
-  if (vals.length < 2) return null;
-  const lo = Math.min(...vals), hi = Math.max(...vals);
-  const x = (t: number) => ((t - from) / (to - from || 1)) * w;
-  const y = (v: number) => 2 + (h - 4) * (1 - (v - lo) / (hi - lo || 1));
-  return <svg className="pf-spark ln-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true"><path d={pathOf(points, i, x, y, from, to, w / 2, Infinity)} vectorEffect="non-scaling-stroke" /></svg>;
-}
-
 /** Sensors that sum up the rest of their kind: a package, a total, the highest or the average. */
 const summary = /package|total|\bmax\b|average|\bavg\b|highest|^usage$|^memory$|^in use$|^cpu core$/i;
 /** A part's lane draws at most this many lines until you ask to see them all. */
@@ -555,37 +572,6 @@ export function lanesFor(r: Recorded, pick: string, limits: { cpu?: number; gpu?
   }).map((l, j) => ({ ...l, h: j === 0 ? h : undefined }));
 }
 
-/** The parts down the side, as in the live view: what each part's main reading reached in the stretch, and its line. */
-export function PartRail({ r, pick, onPick, from, to, limits, live }: {
-  r: Recorded; pick: string; onPick: (id: string) => void; from: number; to: number; limits: { cpu?: number; gpu?: number };
-  /** Show each part's reading now, not its highest. */
-  live?: boolean;
-}) {
-  const temp = useTemp();
-  return (
-    <div className="pf-rail ln-rail" role="group" aria-label="Parts">
-      <button type="button" className="pf-part" aria-pressed={pick === "all"} onClick={() => onPick("all")}>
-        <span className="pf-part-name">Whole PC</span>
-        <span className="pf-part-now faint">{r.sensors.length} {r.sensors.length === 1 ? "sensor" : "sensors"}</span>
-      </button>
-      {r.parts.map((p) => {
-        const s = r.sensors[p.lead];
-        const newest = live ? r.points[r.points.length - 1]?.v[p.lead] : null;
-        const top = live ? (newest == null ? null : { max: newest }) : peakOf(r, p.lead, from, to);
-        const limit = p.id === "gpu" ? limits.gpu : p.id === "cpu" ? limits.cpu : undefined;
-        const near = top && limit != null && s.type === "temperature" && top.max >= limit - 6;
-        return (
-          <button key={p.id} type="button" className="pf-part" aria-pressed={pick === p.id} onClick={() => onPick(p.id)}>
-            <span className="pf-part-name">{p.name}</span>
-            <span className="pf-part-now"><b className={`num${near ? " look" : ""}`}>{value(temp, s.type, top?.max)}</b><span className="faint">{live ? "now" : "highest"}</span></span>
-            <Spark points={r.points} i={p.lead} from={from} to={to} />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /** The sensors that match a search, a lane for each part and kind they're in, every match drawn. */
 function foundLanes(r: Recorded, query: string, limits: { cpu?: number; gpu?: number }): Lane[] {
   const found = new Set(findReadings(r.sensors.map((s, i) => ({ ...s, i })), query).map((s) => s.i));
@@ -597,42 +583,161 @@ function foundLanes(r: Recorded, query: string, limits: { cpu?: number; gpu?: nu
   }));
 }
 
+/** One lane per part for a kind of reading, like every part's temperatures, each part's key lines drawn. */
+function kindLanes(r: Recorded, kind: SensorType, limits: { cpu?: number; gpu?: number }): Lane[] {
+  return r.parts.flatMap((p) => lanesFor(r, p.id, limits).filter((l) => l.type === kind).map((l) => ({ ...l, title: p.name })));
+}
+
+/** The kinds of reading that two or more parts chart, in a hardware monitor's order, with how many parts chart each. */
+function sharedKinds(r: Recorded, limits: { cpu?: number; gpu?: number }) {
+  const parts = new Map<SensorType, number>();
+  for (const p of r.parts) for (const t of new Set(lanesFor(r, p.id, limits).map((l) => l.type))) parts.set(t as SensorType, (parts.get(t as SensorType) ?? 0) + 1);
+  return sensorGroups.filter(([type]) => (parts.get(type) ?? 0) >= 2).map(([type, title]) => ({ type, title, parts: parts.get(type)! }));
+}
+
+type Pick = { part: string } | { kind: SensorType };
+
+const Check = () => <svg className="sh-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const Chevron = () => <svg className="ln-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+
 /**
- * Every sensor over a stretch, as a chart and a table in one: the parts down the side, a lane per kind of reading, and
- * under each lane its sensors with their reading now and their lowest and highest. A search finds any sensor on the PC.
+ * One button that opens a menu with two sides: Parts, to see one part with every sensor (or the whole PC), and Readings,
+ * to see one kind of reading across every part. It opens on the side of what's shown, and a pick closes it.
  */
-export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, live }: {
+function ShowPicker({ pick, onPick, parts, kinds }: {
+  pick: Pick; onPick: (p: Pick) => void;
+  parts: { id: string; name: string; now?: string }[];
+  kinds: { type: SensorType; title: string; parts: number }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<"parts" | "readings">("kind" in pick ? "readings" : "parts");
+  const box = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const click = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setOpen(false);
+      btn.current?.focus();
+    };
+    document.addEventListener("click", click);
+    document.addEventListener("keydown", key, true);
+    return () => { document.removeEventListener("click", click); document.removeEventListener("keydown", key, true); };
+  }, [open]);
+  const label = "kind" in pick ? kinds.find((k) => k.type === pick.kind)?.title ?? "Readings" : pick.part === "all" ? "Whole PC" : parts.find((p) => p.id === pick.part)?.name ?? "Whole PC";
+  const choose = (p: Pick) => { onPick(p); setOpen(false); btn.current?.focus(); };
+  const toggle = () => { if (!open) setSide("kind" in pick ? "readings" : "parts"); setOpen(!open); };
+  const arrows = (e: KeyEvent<HTMLElement>) => {
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const to = e.key === "ArrowDown" ? (at + 1) % items.length : e.key === "ArrowUp" ? (at - 1 + items.length) % items.length : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -1;
+    if (to < 0 || !items.length) return;
+    e.preventDefault();
+    items[to].focus();
+  };
+  const tab = (to: "parts" | "readings", text: string) => (
+    <button type="button" role="tab" id={`${id}-${to}`} aria-selected={side === to} aria-controls={`${id}-list`} tabIndex={side === to ? 0 : -1} onClick={() => setSide(to)}>{text}</button>
+  );
+  return (
+    <div className="ln-show" ref={box}>
+      <button ref={btn} type="button" className="ln-show-btn" aria-haspopup="dialog" aria-expanded={open} aria-label={`Show ${label}${"kind" in pick ? ", every part" : ""}`} onClick={toggle}>
+        <span className="ln-show-k">Show</span>
+        <b>{label}</b>
+        {"kind" in pick && <span className="ln-show-k">every part</span>}
+        <Chevron />
+      </button>
+      {open && (
+        <div className="sh-menu ln-menu" role="dialog" aria-label="Show">
+          <div className="seg ln-sides" role="tablist" aria-label="Show by" onKeyDown={(e) => {
+            if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+            e.preventDefault();
+            const to = side === "parts" ? "readings" : "parts";
+            setSide(to);
+            document.getElementById(`${id}-${to}`)?.focus();
+          }}>
+            {tab("parts", "Parts")}
+            {tab("readings", "Readings")}
+          </div>
+          <div className="ln-menu-list" role="menu" id={`${id}-list`} aria-labelledby={`${id}-${side}`} onKeyDown={arrows}>
+            {side === "parts"
+              ? parts.map((p) => {
+                const on = "part" in pick && pick.part === p.id;
+                return (
+                  <button key={p.id} type="button" role="menuitemradio" aria-checked={on} onClick={() => choose({ part: p.id })}>
+                    <span className="ln-menu-name">{p.name}</span>
+                    {p.now && <span className="ln-menu-hint num">{p.now}</span>}
+                    {on ? <Check /> : <i className="ln-menu-pad" aria-hidden="true" />}
+                  </button>
+                );
+              })
+              : kinds.map((k) => {
+                const on = "kind" in pick && pick.kind === k.type;
+                return (
+                  <button key={k.type} type="button" role="menuitemradio" aria-checked={on} onClick={() => choose({ kind: k.type })}>
+                    <span className="ln-menu-name">{k.title}</span>
+                    <span className="ln-menu-hint">{k.parts} parts</span>
+                    {on ? <Check /> : <i className="ln-menu-pad" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Every sensor over a stretch, as a chart and a table in one. One picker says what to show: the whole PC, which opens
+ * on each part's row as on Home over its main charts; one part, with all of its sensors; or one kind of reading across
+ * every part. A search finds any sensor on the PC.
+ */
+export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, live, week }: {
   r: Recorded; /** Every reading, not thinned, so the lowest and highest are exact. */ whole?: Recorded | null;
   from: number; to: number; limits: { cpu?: number; gpu?: number }; bands?: Band[]; marks?: ChartMark[]; compact?: boolean; live?: boolean;
+  /** Each part's usual from the last week, for the part rows. */
+  week?: PartsView | null;
 }) {
-  const [pick, setPick] = useState("all");
+  const [picked, setPick] = useState<Pick>({ part: "all" });
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
   const finding = query.trim();
-  // Live lanes are kept short, so the log under them is in view too.
-  const first = live ? (compact ? 96 : 116) : compact ? 110 : 140;
-  // A part's own view adds a Highest and Average line where its sensors have nothing that sums them up.
-  const shown = useMemo(() => (pick === "all" || finding ? r : withSummaries(r, pick)), [r, pick, finding]);
+  const kinds = useMemo(() => sharedKinds(r, limits), [r.sensors, r.parts, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pick: Pick = "kind" in picked && !kinds.some((k) => k.type === picked.kind) ? { part: "all" } : picked;
+  const part = "part" in pick ? pick.part : "all";
+  const kind = "kind" in pick ? pick.kind : null;
+  const one = part !== "all" && !finding;
+  const shown = useMemo(() => (one ? withSummaries(r, part) : r), [r, part, one]);
   const stats = useMemo(() => {
     const src = whole ?? r;
-    const all = pick === "all" || finding ? src : withSummaries(src, pick);
-    return statsOf(all.points, all.sensors.length, from, to);
-  }, [whole, r, pick, finding, from, to]);
-  const lanes = useMemo(() => (finding ? foundLanes(r, finding, limits)
-    : lanesFor(shown, pick, limits, first).map((l, j) => (live && j > 0 ? { ...l, h: l.h ?? (compact ? 64 : 78) } : l))),
-    [shown.sensors, shown.parts, pick, finding, limits.cpu, limits.gpu, first, live, compact]); // eslint-disable-line react-hooks/exhaustive-deps
+    return statsOf((one ? withSummaries(src, part) : src).points, shown.sensors.length, from, to);
+  }, [whole, r, part, one, shown.sensors.length, from, to]);
+  const lanes = useMemo(() => (finding ? foundLanes(r, finding, limits) : kind ? kindLanes(shown, kind, limits) : lanesFor(shown, part, limits)).map((l) => ({ ...l, h: undefined })),
+    [shown.sensors, shown.parts, part, kind, finding, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overview = part === "all" && !kind && !finding;
+  const lines = useMemo(() => partLines(whole ?? r, from, to, week ?? null, limits), [whole, r, from, to, week, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = lanes.reduce((n, l) => n + l.series.length, 0);
+  const temp = useTemp();
+  const parts = [{ id: "all", name: "Whole PC" }, ...r.parts.map((p) => {
+    const l = lines.find((x) => x.id === p.id);
+    return { id: p.id, name: p.name, now: l?.now != null ? value(temp, l.type, l.now) : undefined };
+  })];
+  const choose = (p: Pick) => { setPick(p); setQuery(""); };
   return (
-    <div className="ln-grid">
-      <PartRail r={r} pick={finding ? "" : pick} onPick={(id) => { setPick(id); setQuery(""); }} from={from} to={to} limits={limits} live={live} />
-      <div className="ln-main">
-        <div className="ln-find">
+    <div className="ln-all">
+      <div className="ln-bar">
+        <ShowPicker pick={pick} onPick={choose} parts={parts} kinds={kinds} />
+        <div className="ln-search">
           <input type="search" className="input" placeholder="Find a sensor, like core 3" aria-label="Find a sensor" value={query} onChange={(e) => setQuery(e.target.value)} />
           {finding && <span className="faint num" aria-live="polite">{count} of {r.sensors.length}</span>}
         </div>
-        {finding && !lanes.length ? <p className="muted ln-none">No sensor matches “{finding}”. Try a part, like processor, a kind, like voltage, or a sensor, like core 3.</p>
-          : <Lanes key={finding ? "find" : pick} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
       </div>
+      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} onPick={(id) => choose({ part: id })} />}
+      {finding && !lanes.length ? <p className="muted ln-none">No sensor matches “{finding}”. Try a part, like processor, a kind, like voltage, or a sensor, like core 3.</p>
+        : <Lanes key={finding ? "find" : kind ?? part} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
     </div>
   );
 }
