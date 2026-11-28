@@ -273,6 +273,10 @@ describe("chat", () => {
     await readEvents(await on.ask("2"));
     const third = await readEvents(await on.ask("3"));
     expect(third[0]).toMatchObject({ type: "error", message: expect.stringContaining("daily limit") });
+    expect((third[0] as { message: string }).message).toContain("You can ask again at midnight UTC.");
+    // With the person's time zone, it says when that is on their clock.
+    const local = await readEvents(await on.call("/api/chat", { method: "POST", json: { machineId: on.s.inventory.machine.id, tz: "Asia/Tokyo", messages: [{ from: "you", text: "4" }] }, cookie: on.cookie }));
+    expect((local[0] as { message: string }).message).toMatch(/You can ask again (tomorrow )?at 9:00 AM\.$/);
   });
 
   it("refuses a PC that isn't on the account", async () => {
