@@ -121,6 +121,7 @@
 .splash { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 14px; background: var(--bg); color: var(--text-2); font-size: 14px; text-align: center; padding: 24px; }
 .splash p { max-width: 44ch; }
 .splash .splash-detail { margin-top: -6px; color: var(--text-3); font-size: 13px; }
+.splash-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .splash[role="status"] .fp-logo { animation: rig-pulse 1.6s ease-in-out infinite; }
 @keyframes rig-pulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .splash[role="status"] .fp-logo { animation: none; } }
