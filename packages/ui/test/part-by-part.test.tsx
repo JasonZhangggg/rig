@@ -105,7 +105,8 @@ describe("Your PC, part by part", () => {
     client.history = async (...args: Parameters<typeof history>) => (await history(...args)).map((p) => ({ ...p, game: null }));
     render(<RigApp client={client} />);
     const { widget } = await partByPart();
-    expect(widget.getByText("Its usual when busy")).toBeTruthy();
+    // The usual is worded once the week's readings load, so wait for it.
+    expect(await widget.findByText("Its usual when busy")).toBeTruthy();
     expect(widget.queryByText("Its usual while you play")).toBeNull();
   });
 
