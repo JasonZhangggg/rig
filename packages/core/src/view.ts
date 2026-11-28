@@ -6,6 +6,7 @@ import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageS
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageScan, type SystemFacts } from "./telemetry";
 import { driveMaps } from "./drives";
+import { isSetting, sensorName } from "./sensors";
 import type { Picks } from "./build";
 
 /** What the person set for a PC in Rig: its name and color, the last dust clean, and the models they picked for parts Windows can't name. */
@@ -208,9 +209,9 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const drives = new Set(snap?.sensors.filter((x) => x.hw === "storage").map((x) => x.hwName));
   const readings: Reading[] = (snap?.sensors ?? []).flatMap((x) => {
     const part = partOf(x, laptop, dgpu?.name);
-    if (!part || !parts[part] || x.value == null) return [];
+    if (!part || !parts[part] || x.value == null || isSetting(x)) return [];
     const top = Math.max(x.max ?? -Infinity, dayMax[x.id] ?? -Infinity, x.value);
-    return [{ id: x.id, part, name: x.hw === "storage" && drives.size > 1 ? `${x.hwName} ${x.name}` : x.name, type: x.type, value: x.value, min: x.min ?? null, max: top }];
+    return [{ id: x.id, part, name: x.hw === "storage" && drives.size > 1 ? `${x.hwName} ${x.name}` : sensorName(x), type: x.type, value: x.value, min: x.min ?? null, max: top }];
   });
 
   const { health, breakdown } = score(laptop, fs, more.events != null);

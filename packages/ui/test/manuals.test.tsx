@@ -77,6 +77,15 @@ describe("Manuals", () => {
     expect((await viewer()).getByLabelText("Page number")).toBeTruthy();
   });
 
+  it("asks whether a driver is current even when the maker's download page is there too", async () => {
+    await show("manuals");
+    const drivers = within(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" }).closest("section")!);
+    const gpu = within(drivers.getByText("NVIDIA GeForce RTX 4070 SUPER").closest("li, article, [role=listitem], .row") as HTMLElement);
+    expect(gpu.getByRole("link", { name: "NVIDIA downloads" })).toBeTruthy();
+    fireEvent.click(gpu.getByRole("button", { name: "Ask if there's a newer one" }));
+    expect(await screen.findByText(/Is there a newer driver for my NVIDIA GeForce RTX 4070 SUPER\? I have NVIDIA 565\.90\./)).toBeTruthy();
+  });
+
   it("lists each part's manual as a row, with no Ready badge and one box for opening a manual", async () => {
     await show("manuals");
     const list = within(await screen.findByRole("region", { name: "Manuals" }));

@@ -77,6 +77,21 @@ describe("navigation", () => {
     expect(screen.getByRole("link", { name: /^Logs/ }).getAttribute("aria-current")).toBe("page");
   });
 
+  it("finds things when the words are typed in any order", async () => {
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    fireEvent.click(screen.getByRole("button", { name: /Search or ask/ }));
+    const palette = within(screen.getByRole("dialog", { name: "Search" }));
+    const search = palette.getByRole("textbox", { name: "Search" });
+    // Drivers live with the manuals; asking for them the other way round still finds that page.
+    fireEvent.change(search, { target: { value: "bios drivers" } });
+    expect(palette.getByRole("button", { name: /^Manuals and drivers On My PC/ })).toBeTruthy();
+    // Rig's own log file, asked for in plain words, leads to where its folder opens.
+    fireEvent.change(search, { target: { value: "open logs folder" } });
+    fireEvent.click(palette.getByRole("button", { name: /^About Settings/ }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+  });
+
   it("opens a part's own page when it's picked in Home's 3D view", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
@@ -96,6 +111,7 @@ describe("navigation", () => {
     expect(location.hash).toBe("#upgrades");
     const tabs = within(screen.getByRole("navigation", { name: "My PC" }));
     expect(tabs.getByRole("link", { name: "Upgrades" }).getAttribute("aria-current")).toBe("page");
-    expect(tabs.getByRole("link", { name: "Manuals" }).getAttribute("href")).toBe("#manuals");
+    // Drivers live with the manuals, and the tab says so, so someone after a driver finds it.
+    expect(tabs.getByRole("link", { name: "Manuals and drivers" }).getAttribute("href")).toBe("#manuals");
   });
 });

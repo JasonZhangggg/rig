@@ -23,7 +23,7 @@ import { GpuPorts } from "./gpu/GpuPorts";
 import { gpuStage } from "./gpu/gpuStage";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
-const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals"], ["safety", "Safety"]];
+const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals and drivers"], ["safety", "Safety"]];
 
 const driverPages: Record<string, string> = {
   NVIDIA: "https://www.nvidia.com/en-us/drivers/",
