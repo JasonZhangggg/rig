@@ -1,10 +1,11 @@
 import { useActions, useUpdates, type UpdateState } from "../../state";
 import { rigVersion } from "../../version";
 import { SettingRow } from "./parts";
+import { dateText } from "../../dateText";
 
 const ago = (t: number) => {
   const m = Math.round((Date.now() - t) / 60_000);
-  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : new Date(t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : dateText(new Date(t), { weekday: "short", hour: "numeric", minute: "2-digit" });
 };
 
 /** What closes and what Windows asks, said wherever Update can be pressed. */

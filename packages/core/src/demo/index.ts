@@ -11,7 +11,7 @@ import { suggestUpgrades } from "../upgrades";
 import { shopFor } from "../shop";
 import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
-import { activityAt } from "./schedule";
+import { activityAt, type Activity } from "./schedule";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts, demoNow } from "./apply";
@@ -44,7 +44,7 @@ export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } fr
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: { until: number; act: Activity }; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -116,7 +116,7 @@ export class DemoClient implements RigClient {
   private view(id: string): PC {
     const p = this.pcs[id];
     const now = Date.now();
-    const snap = simulate(p.inv, now, { dust: p.dust });
+    const snap = this.snapshot(p, now);
     for (const s of snap.sensors) if (s.type === "temperature" && s.value != null) p.dayMax[s.id] = Math.max(p.dayMax[s.id] ?? 0, s.value);
     // Lowest and highest of each sensor since Rig started, as the hardware monitor keeps them. The demo "started" six hours ago.
     if (!p.seen) {
@@ -131,6 +131,27 @@ export class DemoClient implements RigClient {
     p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
     return withAlerts({ ...pc, lastSync: "Demo PC" }, alerts);
+  }
+
+  /** A demo PC's readings now: its weekly schedule, or the busy moment the slow-or-loud check set going. */
+  private snapshot(p: DemoPC, now: number) {
+    return simulate(p.inv, now, { dust: p.dust, activity: p.scene && now < p.scene.until ? p.scene.act : undefined });
+  }
+
+  /**
+   * The busiest apps on a demo PC. So "Why is it slow or loud?" has something to find whenever it's tried, checking Atlas
+   * finds it in a game with a Windows Security scan running beside it: in its evening game if it's playing one, else in
+   * Cyberpunk for the next quarter of an hour, which its readings and Home show too.
+   */
+  async processes(id: string) {
+    const p = this.pcs[id];
+    if (!p) return null;
+    const now = Date.now();
+    if (p.inv.machine.kind !== "tower") return demoProcesses(p.inv, now);
+    const act = p.scene && now < p.scene.until ? p.scene.act : activityAt(p.inv.machine.kind, now);
+    if (!act.game) { p.scene = { until: now + 15 * 60_000, act: { cpu: 0.55, gpu: 1, game: "Cyberpunk 2077" } }; this.emit(id); }
+    const playing = p.scene && now < p.scene.until ? p.scene.act : act;
+    return [...demoProcesses(p.inv, now, playing), { name: "MsMpEng.exe", cpu: 9.6, memMb: 380 }].sort((a, b) => b.cpu - a.cpu);
   }
 
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }
@@ -182,7 +203,7 @@ export class DemoClient implements RigClient {
     cb(this.view(id));
     this.timer ??= setInterval(() => this.listeners.forEach((_, k) => {
       this.emit(k);
-      void this.pcs[k].recorder.tick(simulate(this.pcs[k].inv, Date.now(), { dust: this.pcs[k].dust }));
+      void this.pcs[k].recorder.tick(this.snapshot(this.pcs[k], Date.now()));
     }), 2000);
     return () => {
       set.delete(cb);

@@ -29,6 +29,10 @@
 /* The verdict on the PC is what the page is for, so it reads in full ink, right under the greeting. */
 .f-head p { margin-top: 8px; color: var(--text); font-size: 17px; font-weight: 500; line-height: 1.45; }
 .f-head-tools { display: flex; align-items: center; gap: 8px; }
+/* The one-tap "why is it slow or loud?" check: a quiet line under the verdict, not another button. */
+.f-check { display: block; margin-top: 6px; padding: 2px 0; border: 0; background: none; color: var(--text-2); font: 500 14px/1.4 var(--font); text-align: left; cursor: pointer; }
+.f-check span { color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); transition: text-decoration-color 150ms ease; }
+@media (hover: hover) and (pointer: fine) { .f-check:hover span { text-decoration-color: currentColor; } }
 .f-date { display: flex; align-items: center; gap: 11px; height: 52px; }
 .f-date b { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; font: 500 18px/1 var(--font); letter-spacing: -.02em; }
 .f-date span { color: var(--text-2); font-size: 12.5px; font-weight: 500; line-height: 1.3; }
@@ -164,6 +168,7 @@
 .f-health-main { display: flex; align-items: center; gap: 26px; }
 .f-health-text { flex: 1; min-width: 0; display: grid; justify-items: start; gap: 6px; }
 .f-health h2 { font: var(--t-title); letter-spacing: -.01em; }
+.dash[data-cols="1"] .f-health p { -webkit-line-clamp: unset; }
 .f-health p { display: -webkit-box; overflow: hidden; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.45; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .f-health .f-link { margin-top: 2px; font-size: 13px; }
 .f-ring { position: relative; width: 116px; height: 116px; flex: none; }
@@ -288,6 +293,8 @@
 .f-todo-empty .f-todo-ico { width: 48px; height: 48px; background: var(--good); color: var(--graphite); }
 .f-todo-empty p { max-width: 32ch; color: var(--text-2); font-size: 15px; font-weight: 500; line-height: 1.5; }
 .f-todo-foot { flex: none; margin-top: auto; display: flex; padding-top: 16px; }
+/* On the page there's no tile edge to sit on, so the link follows the list instead of floating at the bottom. */
+.dw[data-frame="open"] .f-todo-foot { margin-top: 0; }
 
 /* ----- Ask Rig ----- */
 .f-asks { min-height: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -306,6 +313,8 @@
 @container wbox (min-height: 1px) {
   .f-asks-list { flex: 1; }
   .f-asks[data-style="rows"] .f-asks-list { justify-content: center; }
+  /* On the page the questions stay under their heading, as the other lists there do. */
+  .dw[data-frame="open"] .f-asks[data-style="rows"] .f-asks-list { justify-content: flex-start; }
   .f-asks[data-style="rows"] .f-asks-list button { flex: 0 1 clamp(44px, 20cqh, 112px); font-size: clamp(15px, min(2.4cqi, 4.4cqh), 22px); }
   .f-asks[data-style="chips"] .f-asks-list { align-content: center; gap: clamp(8px, 2.4cqh, 16px); }
   .f-asks[data-style="chips"] .f-asks-list button { padding: clamp(10px, 2.6cqh, 16px) clamp(16px, 2.2cqi, 24px); font-size: clamp(14px, min(2.2cqi, 4cqh), 19px); }
@@ -331,7 +340,6 @@
 /* A narrow tile puts the headline number under the title, on one line with its label. */
 @container wbox (max-width: 200px) {
   .pl-head { flex-wrap: wrap; gap: 6px 8px; }
-  .pl-head h2 { font-size: 16px; }
   .pl-figure { display: flex; align-items: baseline; gap: 6px; text-align: left; }
   .pl-figure b { font-size: 1.6rem; }
   .pl-figure span { font-size: 12px; }

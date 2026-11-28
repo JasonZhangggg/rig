@@ -9,18 +9,19 @@ import { useActions, useAppSelector, useLatest } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
+import { dateText } from "../dateText";
 
 type CommandApplied = Extract<AppliedStep, { step: CommandStep }>;
 
 const midnight = (t: number | Date) => new Date(t).setHours(0, 0, 0, 0);
-const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const clock = (iso: string) => dateText(new Date(iso), { hour: "numeric", minute: "2-digit" });
 
 /** "Today", "Yesterday", or the date in full. */
 export function dayLabel(iso: string, now = new Date()) {
   const days = Math.round((midnight(now) - midnight(new Date(iso))) / 864e5);
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
-  return new Date(iso).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  return dateText(new Date(iso), { weekday: "long", month: "long", day: "numeric" });
 }
 
 /** Newest day first, each day's changes newest first. */

@@ -68,7 +68,7 @@ describe("Home's panels", () => {
     render(<RigApp client={new DemoClient()} />);
     expect(await screen.findByText(/Home is empty/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add widget" })).getByRole("button", { name: /^Health/ }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add widget" })).getByRole("button", { name: "Add Health" }));
     expect(screen.queryByText(/Home is empty/)).toBeNull();
     expect(screen.getByRole("dialog", { name: "Add widget" })).toBeTruthy();
     expect(screen.getAllByText("Health added.").length).toBeGreaterThan(0);

@@ -78,6 +78,8 @@ export interface UI {
   palette: boolean;
   /** The "Is it my PC or my internet?" check is open (components/NetCheck.tsx). */
   netCheck: boolean;
+  /** "Why is it slow or loud?" is open (components/SlowLoud.tsx). */
+  slowLoud: boolean;
   /** The startup apps dialog is open. */
   startupApps: boolean;
   sideMini: boolean;
@@ -343,7 +345,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, selected: null, tab: "live", shopCat: null, range: "7d",
-    review: null, toast: null, palette: false, netCheck: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
+    review: null, toast: null, palette: false, slowLoud: false, netCheck: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0, live: [] });
@@ -548,7 +550,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           setData((d) => ({ ...d, changes: [change, ...d.changes.filter((c) => c.id !== change.id)] }));
           if (r.proposalId) patchProposal(r.proposalId, { status: "applied", changeId: change.id });
           set({ review: null });
-          toast(r.steps.length === 1 ? "Done." : `${r.steps.length} changes made.`, change.id);
+          toast(r.steps.length === 1 ? `Done: ${change.title}.` : `Done: ${change.title}. ${r.steps.length} settings changed.`, change.id);
         } catch (e) {
           set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Rig couldn't make this change, so nothing was changed. Try again, and if it keeps happening, restart Rig." } });
         }
@@ -699,7 +701,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         try {
           const next = c.status === "applied" ? await client.undo(pcId, id) : await client.redo(pcId, id);
           setData((d) => ({ ...d, changes: d.changes.map((x) => (x.id === id ? next : x)), chat: d.chat.map((m) => (m.proposal?.changeId === id ? { ...m, proposal: { ...m.proposal, status: next.status === "applied" ? "applied" : "waiting" } } : m)) }));
-          toast(next.status === "undone" ? `Undone. ${c.title} is back to how it was.` : `Made again: ${c.title}.`);
+          toast(next.status === "undone" ? `Undid “${c.title}”. Your PC is back to how it was before.` : `Redid “${c.title}”. The change is back on.`);
         } catch (e) {
           toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }

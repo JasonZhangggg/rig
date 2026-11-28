@@ -1,5 +1,6 @@
 import { fixSteps, type Alert, type Issue, type PC, type Severity } from "@rig/core";
 import type { Ctx } from "../state";
+import { dateText } from "../dateText";
 
 export const partIcon: Record<string, JSX.Element> = {
   cpu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="6" y="6" width="12" height="12" rx="2" /><rect x="9.5" y="9.5" width="5" height="5" rx="1" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /></svg>,
@@ -63,10 +64,10 @@ export function firstName(name: string | null | undefined): string | null {
 export function sinceText(iso: string, now = new Date()): string {
   const d = new Date(iso);
   const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
-  if (days <= 0) return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (days <= 0) return dateText(d, { hour: "numeric", minute: "2-digit" });
   if (days === 1) return "yesterday";
-  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (days < 7) return dateText(d, { weekday: "long" });
+  return dateText(d, { month: "short", day: "numeric" });
 }
 
 /** An alert as a row in Things to look at. Opening it asks Rig about it. */

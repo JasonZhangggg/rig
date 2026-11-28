@@ -62,7 +62,7 @@ describe("customizing Home", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toMatch(/place 5 of 7$/);
     fireEvent.click(screen.getByRole("button", { name: /^Add widget/ }));
     const library = within(screen.getByRole("dialog", { name: "Add widget" }));
-    fireEvent.click(library.getByRole("button", { name: /^Fans/ }));
+    fireEvent.click(library.getByRole("button", { name: "Add Fans" }));
     expect(await screen.findByRole("heading", { name: "Fans" })).toBeTruthy();
     expect(tile("Fans").getAttribute("aria-label")).toBe("Fans, Medium, place 8 of 8");
   });

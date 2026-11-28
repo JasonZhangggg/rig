@@ -11,7 +11,7 @@ import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
 import type { Shop } from "./shop";
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import type { BoardLayoutReply, ReadLayoutRequest } from "./api";
-import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./recordings";
+import type { PCEvent, ProcessUse, Recording, RecordingInfo, RecordingRequest } from "./recordings";
 import type { ProbeSpec } from "./probes";
 import type { PcRead } from "./reads";
 import type { ScreenLook } from "./screen";
@@ -171,6 +171,11 @@ export interface RigClient {
   undo(machineId: string, changeId: string): Promise<Change>;
   redo(machineId: string, changeId: string): Promise<Change>;
 
+  /**
+   * The busiest apps on the PC right now, as its Rig app reads them. Reading them changes nothing, so it needs no approval.
+   * Null where they can't be read from here (the website, or another PC), so a screen can say it needs the Rig app on that PC.
+   */
+  processes(machineId: string): Promise<ProcessUse[] | null>;
   /** Windows crash, driver, hardware, shutdown and disk events from the last 30 days, newest first. */
   events(machineId: string): Promise<PCEvent[]>;
   /** The PC's recordings, newest first. Calls back now and whenever one changes; returns a stop function. */

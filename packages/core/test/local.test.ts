@@ -11,7 +11,7 @@ function setup(over: Partial<HelperLink> = {}, cloud: CloudClient | null = null)
   };
   const store = new MemoryStore();
   const client = new LocalClient(link, store, cloud, { tickMs: 1e9, syncEveryMs: 1e9, now: () => t });
-  return { client, store, sim, advance: (ms: number) => { t += ms; } };
+  return { client, store, sim, advance: (ms: number) => { t += ms; }, now: () => t };
 }
 
 describe("LocalClient", () => {
@@ -350,6 +350,47 @@ describe("LocalClient", () => {
     await client.sync();
     client.stop();
     expect(synced.at(-1)!.history.length).toBe(720);
+  });
+
+  it("writes only a few bytes to disk per history window while signed out, and still sends the missed points after a restart", async () => {
+    let signedIn = false;
+    const synced: MachineSync[] = [];
+    const cloud = { signedIn: async () => signedIn, sync: async (_id: string, p: MachineSync) => { synced.push(p); }, machines: async () => [], account: async () => null } as unknown as CloudClient;
+    const { client, store, advance, now } = setup({}, cloud);
+    let written = 0;
+    const set = store.set.bind(store);
+    store.set = async (k, v) => { if (k !== "alerts") written += JSON.stringify(v ?? null).length; return set(k, v); };
+    await client.start();
+    // A day of history windows with nobody signed in: Rig keeps them for the account without rewriting a growing list each time.
+    for (let n = 0; n < 144; n++) { advance(10 * 60_000); await client.tick(); }
+    client.stop();
+    const points = (await store.history(0)).length;
+    expect(points).toBeGreaterThan(50);
+    expect(written / points).toBeLessThan(200);
+    // Rig restarts on the same PC, then someone signs in: the day's points go up, once.
+    const again = new LocalClient(new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now }), store, cloud, { tickMs: 1e9, syncEveryMs: 1e9, now });
+    await again.start();
+    signedIn = true;
+    await again.sync();
+    await again.sync();
+    again.stop();
+    const sent = synced.map((s) => s.history.length);
+    expect(sent.at(-2)).toBe(points);
+    expect(sent.at(-1)).toBe(0);
+  });
+
+  it("sends the points an older version of Rig kept for the account", async () => {
+    const synced: MachineSync[] = [];
+    const cloud = { signedIn: async () => true, sync: async (_id: string, p: MachineSync) => { synced.push(p); }, machines: async () => [], account: async () => null } as unknown as CloudClient;
+    const { client, store } = setup({}, cloud);
+    const t0 = new Date("2026-11-17T18:00:00").getTime();
+    const old = [0, 1, 2].map((i) => ({ t: t0 + i * 6e5, cpu: 50, gpu: 60, busy: false, fan: null, game: null }));
+    for (const p of old) await store.addHistory(p);
+    await store.set("unsynced", old.slice(1));
+    await client.start();
+    await client.sync();
+    client.stop();
+    expect([...new Set(synced.flatMap((s) => s.history).map((p) => p.t))]).toEqual(old.slice(1).map((p) => p.t));
   });
 
   it("reads less often and stays still on screen while the window is hidden, but still passes on alerts", async () => {
