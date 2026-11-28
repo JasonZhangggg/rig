@@ -199,11 +199,6 @@
 .ln-key b { min-width: 3.2em; color: var(--text); font-weight: 600; text-align: right; }
 .ln-more { padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .ln-more:hover { color: var(--text); }
-.ln-find { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
-.ln-find > .input { flex: 1 1 220px; max-width: 320px; height: 36px; }
-.ln-find .faint { font-size: 13px; }
-.ln-pick { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; font-weight: 500; }
-.ln-pick select.input { width: auto; min-width: 150px; height: 36px; padding-right: 28px; color: var(--text); }
 /* Two charts to a row on a wide screen, each with its sensors under it. */
 .ln.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; row-gap: 22px; align-items: start; }
 .ln.two .ln-lane:nth-child(2) { border-top: 0; padding-top: 0; }
@@ -286,10 +281,6 @@
   .ln-rows th, .ln-rows td { padding: 4px 5px; }
   .ln-rows thead :is(th, td):first-child { width: auto; }
   .ln-rows thead th:is(:nth-child(2), :nth-child(3), :nth-child(4)) { width: 62px; }
-  .ln-find > .input { max-width: none; flex-basis: 100%; }
-  /* Each dropdown takes half the row, its name above it, so "Every kind" isn't cut short. */
-  .ln-pick { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: stretch; gap: 4px; }
-  .ln-pick select.input { width: 100%; min-width: 0; }
 }
 
 /* ---------- A recording that caught a problem (pages/logs/Caught.tsx) ----------
@@ -344,4 +335,46 @@
   .cg-lead { grid-template-columns: minmax(0, 1fr); grid-template-areas: "eyebrow" "head" "summary"; gap: 6px; }
   .cg-checks { grid-template-columns: minmax(0, 1fr); }
   .cg-checks li:nth-child(2) { border-top: 1px solid var(--line); }
+}
+
+/* What to show: one button opens a menu with two sides, Parts and Readings. */
+.ln-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.ln-search { display: flex; align-items: center; gap: 10px; flex: 0 1 300px; }
+.ln-search .input { height: 36px; width: 100%; }
+.ln-search .faint { font-size: 13px; white-space: nowrap; }
+.ln-show { position: relative; }
+.ln-show-btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 16px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 15px; white-space: nowrap; cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
+}
+.ln-show-btn b { font-weight: 650; }
+.ln-show-k { color: var(--text-3); font-weight: 500; }
+.ln-show-btn:active { transform: scale(.98); }
+.ln-show-btn[aria-expanded="true"] { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .ln-show-btn:hover { background: var(--surface-2); } }
+.ln-chev { width: 16px; height: 16px; color: var(--text-3); transition: transform 160ms var(--ease-out); }
+.ln-show-btn[aria-expanded="true"] .ln-chev { transform: rotate(180deg); }
+.ln-menu { left: 0; right: auto; width: 300px; gap: 6px; transform-origin: top left; }
+.ln-sides { display: flex; }
+.ln-sides button { flex: 1; }
+.ln-sides button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(27, 27, 31, .14), 0 0 0 1px var(--line); }
+.ln-menu-list { display: flex; flex-direction: column; max-height: min(360px, 60vh); overflow-y: auto; }
+.ln-menu-list > button {
+  display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 8px 10px; border: 0; border-radius: calc(var(--r-sm) - 4px);
+  background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.ln-menu-list > button[aria-checked="true"] { font-weight: 650; }
+@media (hover: hover) and (pointer: fine) { .ln-menu-list > button:hover { background: var(--surface-2); } }
+.ln-menu-list > button:active { background: var(--sel); }
+.ln-menu-name { flex: 1; min-width: 0; }
+.ln-menu-hint { color: var(--text-3); font-size: 13px; font-weight: 500; }
+.ln-menu-pad { width: 16px; flex: none; }
+.ln-menu .sh-check { margin-left: 0; }
+@media (max-width: 860px) {
+  .ln-show { flex: 1 1 100%; }
+  .ln-show-btn { width: 100%; }
+  .ln-show-btn .ln-chev { margin-left: auto; }
+  .ln-menu { width: 100%; }
+  .ln-search { flex: 1 1 100%; }
 }

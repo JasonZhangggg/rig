@@ -27,6 +27,14 @@ async function open(route: string) {
   await act(async () => { location.hash = route; window.dispatchEvent(new HashChangeEvent("hashchange")); });
 }
 
+/** Opens the Show menu and picks a part, like "Graphics card", or a reading across every part, like "Temperatures". */
+function show(name: string, side: "Parts" | "Readings" = "Parts", scope: HTMLElement = document.body) {
+  fireEvent.click(within(scope).getByRole("button", { name: /^Show / }));
+  const menu = within(scope).getByRole("dialog", { name: "Show" });
+  fireEvent.click(within(menu).getByRole("tab", { name: side }));
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name: new RegExp(`^${name}`) }));
+}
+
 describe("Logs", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); window.scrollTo = () => {}; Element.prototype.scrollIntoView = () => {}; });
   afterEach(() => cleanup());
@@ -337,7 +345,7 @@ describe("Logs", () => {
       const readings = screen.getByRole("region", { name: "Readings" });
       await within(readings).findByRole("img", { name: "Temperatures" });
       within(readings).getByRole("img", { name: "Fans" });
-      fireEvent.change(within(readings).getByRole("combobox", { name: "Show" }), { target: { value: "gpu" } });
+      show("Graphics card", "Parts", readings);
       within(readings).getByRole("rowheader", { name: "Hot spot" });
       within(readings).getByRole("img", { name: "Power" });
 
@@ -379,7 +387,9 @@ describe("Logs", () => {
       within(readings).getByRole("heading", { name: "Last 30 days" });
       within(readings).getByText("Every 10 minutes while Rig was open");
       const month = await within(readings).findByRole("img", { name: "Temperatures" });
-      within(within(readings).getByRole("combobox", { name: "Show" })).getByRole("option", { name: "Processor" });
+      fireEvent.click(within(readings).getByRole("button", { name: "Show Whole PC" }));
+      within(within(readings).getByRole("dialog", { name: "Show" })).getByRole("menuitemradio", { name: /^Processor/ });
+      fireEvent.keyDown(document, { key: "Escape" });
       // A month's axis names a date every few days, not all thirty weekdays in a row.
       const dates = [...month.parentElement!.querySelector("svg.ln-axis")!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
       expect(dates.length).toBeGreaterThan(1);
@@ -399,7 +409,7 @@ describe("Logs", () => {
       await within(readings).findByRole("img", { name: "Temperatures" });
       // One view: no separate table to switch to.
       expect(within(readings).queryByRole("button", { name: "Table" })).toBeNull();
-      fireEvent.change(within(readings).getByRole("combobox", { name: "Show" }), { target: { value: "gpu" } });
+      show("Graphics card", "Parts", readings);
       const temps = within(readings).getByRole("table", { name: "Temperatures, every sensor" });
       // Right under its chart.
       expect(within(readings).getByRole("img", { name: "Temperatures" }).parentElement!.contains(temps)).toBe(true);
@@ -431,7 +441,7 @@ describe("Logs", () => {
       within(readings).getByText(/^1 of \d+$/);
       fireEvent.change(find, { target: { value: "nothing like this" } });
       within(readings).getByText(/No sensor matches/);
-      fireEvent.change(within(readings).getByRole("combobox", { name: "Show" }), { target: { value: "all" } });
+      show("Whole PC", "Parts", readings);
       expect((find as HTMLInputElement).value).toBe("");
       await within(readings).findByRole("table", { name: "Temperatures, every sensor" });
     } finally { vi.useRealTimers(); }
@@ -507,7 +517,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s, i) => (s.type === "clock" ? (k + i) % 2 ? 800 : 5300 : 50 + ((k + i) % 6))) }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Show" }), { target: { value: "cpu" } });
+    show("Processor");
     const lines = (name: string) => screen.getByRole("img", { name }).querySelectorAll("path.ln-line").length;
     // Temperatures: the package and the hottest core, not all eight.
     expect(lines("Temperatures")).toBe(2);
@@ -546,7 +556,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 10 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s) => (s.name === "CPU Memory" ? null : 10 + k)) }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Show" }), { target: { value: "cpu" } });
+    show("Processor");
     const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
     expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
   });
@@ -568,22 +578,37 @@ describe("Logs", () => {
     within(rows[0]).getByText(/^Highest 81°C at /);
     within(rows[0]).getByText("Calm");
 
-    // One picker: the whole PC, a part with every sensor, or one reading across every part.
-    const show = screen.getByRole("combobox", { name: "Show" });
-    expect(within(show).getAllByRole("option").map((o) => o.textContent)).toEqual(["Whole PC", "Processor", "Graphics card", "All temperatures", "All usage"]);
-    expect(within(show).getAllByRole("group").map((g) => g.getAttribute("label"))).toEqual(["One part, every sensor", "One reading, every part"]);
-    expect(screen.queryByRole("combobox", { name: "Reading" })).toBeNull();
-    // One kind of reading: a chart for each part, named for the part, and no part rows.
-    fireEvent.change(show, { target: { value: "kind:temperature" } });
+    // One button opens a menu with two sides: Parts, with each part's reading now, and Readings across every part.
+    const button = screen.getByRole("button", { name: "Show Whole PC" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    const menu = screen.getByRole("dialog", { name: "Show" });
+    expect(within(menu).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Parts", "Readings"]);
+    expect(within(menu).getByRole("tab", { name: "Parts" }).getAttribute("aria-selected")).toBe("true");
+    const items = () => within(menu).getAllByRole("menuitemradio");
+    expect(items().map((o) => o.textContent)).toEqual(["Whole PC", "Processor56°C", "Graphics card62°C"]);
+    expect(items()[0].getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(menu).getByRole("tab", { name: "Readings" }));
+    expect(items().map((o) => o.textContent)).toEqual(["Temperatures2 parts", "Usage2 parts"]);
+    // One kind of reading: a chart for each part, named for the part, and no part rows. The menu closes.
+    fireEvent.click(items()[0]);
+    expect(screen.queryByRole("dialog", { name: "Show" })).toBeNull();
+    screen.getByRole("button", { name: "Show Temperatures, every part" });
     expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
     screen.getByRole("img", { name: "Processor" });
     screen.getByRole("img", { name: "Graphics card" });
     expect(screen.queryByRole("img", { name: "Usage" })).toBeNull();
+    // It opens again on the Readings side, and Escape closes it without a change.
+    fireEvent.click(screen.getByRole("button", { name: /^Show / }));
+    expect(within(screen.getByRole("dialog", { name: "Show" })).getByRole("tab", { name: "Readings" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Show" })).toBeNull();
 
     // A part's row opens every reading of that part.
-    fireEvent.change(show, { target: { value: "all" } });
+    show("Whole PC");
     fireEvent.click(within(screen.getByRole("region", { name: "Parts" })).getAllByRole("button")[1]);
-    expect((screen.getByRole("combobox", { name: "Show" }) as HTMLSelectElement).value).toBe("gpu");
+    screen.getByRole("button", { name: "Show Graphics card" });
     screen.getByRole("img", { name: "Temperatures" });
     screen.getByRole("img", { name: "Usage" });
     expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
@@ -596,7 +621,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 150 }, (_, k) => ({ t: t0 + k * 2000, v: [k % 2 ? 50 : 60] }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{}} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Show" }), { target: { value: "cpu" } });
+    show("Processor");
     const chart = screen.getByRole("img", { name: "Temperatures" });
     expect(Number(chart.getAttribute("height") ?? chart.querySelector("svg")?.getAttribute("height"))).toBeGreaterThanOrEqual(150);
     const d = chart.querySelector("path.ln-line")!.getAttribute("d") ?? "";
@@ -613,7 +638,7 @@ describe("Logs", () => {
     const points = [0, 2000, 4000, 6000].map((d, k) => ({ t: t0 + 4 * 60_000 + d, v: [50 + k] }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{}} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Show" }), { target: { value: "cpu" } });
+    show("Processor");
     const d = screen.getByRole("img", { name: "Temperatures" }).querySelector("path.ln-line")!.getAttribute("d") ?? "";
     expect(d.match(/L/g) ?? []).toHaveLength(3);
   });
@@ -626,7 +651,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [39, (k % 5) * 120e6, 3.5e9, 41_250] }));
     const r = { sensors, points, full: true, parts: [{ id: "ssd", name: "Storage", sensors: [0, 1, 2, 3], lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Show" }), { target: { value: "ssd" } });
+    show("Storage");
     const steps = (name: string) => [...screen.getByRole("img", { name }).querySelectorAll("text.chart-tick")].map((t) => t.textContent);
     const transfer = steps("Transfer");
     expect(transfer.length).toBeGreaterThan(1);

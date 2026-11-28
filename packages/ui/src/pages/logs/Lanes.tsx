@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type PointerEvent, type RefObject } from "react";
 import { findReadings, sensorGroups, type PartsView, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
@@ -588,17 +588,106 @@ function kindLanes(r: Recorded, kind: SensorType, limits: { cpu?: number; gpu?: 
   return r.parts.flatMap((p) => lanesFor(r, p.id, limits).filter((l) => l.type === kind).map((l) => ({ ...l, title: p.name })));
 }
 
-/** What the picker calls each kind of reading, across every part. */
-const ACROSS: Partial<Record<SensorType, string>> = {
-  temperature: "All temperatures", load: "All usage", clock: "All clock speeds", fan: "All fan speeds", power: "All power",
-  voltage: "All voltages", current: "All current", throughput: "All transfer speeds", data: "All data", level: "All levels", control: "All fan control",
-};
-
-/** The kinds of reading that two or more parts chart, in a hardware monitor's order: the ones worth comparing across parts. */
+/** The kinds of reading that two or more parts chart, in a hardware monitor's order, with how many parts chart each. */
 function sharedKinds(r: Recorded, limits: { cpu?: number; gpu?: number }) {
   const parts = new Map<SensorType, number>();
   for (const p of r.parts) for (const t of new Set(lanesFor(r, p.id, limits).map((l) => l.type))) parts.set(t as SensorType, (parts.get(t as SensorType) ?? 0) + 1);
-  return sensorGroups.filter(([type]) => (parts.get(type) ?? 0) >= 2 && ACROSS[type]).map(([type]) => ({ type, title: ACROSS[type]! }));
+  return sensorGroups.filter(([type]) => (parts.get(type) ?? 0) >= 2).map(([type, title]) => ({ type, title, parts: parts.get(type)! }));
+}
+
+type Pick = { part: string } | { kind: SensorType };
+
+const Check = () => <svg className="sh-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const Chevron = () => <svg className="ln-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+
+/**
+ * One button that opens a menu with two sides: Parts, to see one part with every sensor (or the whole PC), and Readings,
+ * to see one kind of reading across every part. It opens on the side of what's shown, and a pick closes it.
+ */
+function ShowPicker({ pick, onPick, parts, kinds }: {
+  pick: Pick; onPick: (p: Pick) => void;
+  parts: { id: string; name: string; now?: string }[];
+  kinds: { type: SensorType; title: string; parts: number }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<"parts" | "readings">("kind" in pick ? "readings" : "parts");
+  const box = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const click = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setOpen(false);
+      btn.current?.focus();
+    };
+    document.addEventListener("click", click);
+    document.addEventListener("keydown", key, true);
+    return () => { document.removeEventListener("click", click); document.removeEventListener("keydown", key, true); };
+  }, [open]);
+  const label = "kind" in pick ? kinds.find((k) => k.type === pick.kind)?.title ?? "Readings" : pick.part === "all" ? "Whole PC" : parts.find((p) => p.id === pick.part)?.name ?? "Whole PC";
+  const choose = (p: Pick) => { onPick(p); setOpen(false); btn.current?.focus(); };
+  const toggle = () => { if (!open) setSide("kind" in pick ? "readings" : "parts"); setOpen(!open); };
+  const arrows = (e: KeyEvent<HTMLElement>) => {
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const to = e.key === "ArrowDown" ? (at + 1) % items.length : e.key === "ArrowUp" ? (at - 1 + items.length) % items.length : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -1;
+    if (to < 0 || !items.length) return;
+    e.preventDefault();
+    items[to].focus();
+  };
+  const tab = (to: "parts" | "readings", text: string) => (
+    <button type="button" role="tab" id={`${id}-${to}`} aria-selected={side === to} aria-controls={`${id}-list`} tabIndex={side === to ? 0 : -1} onClick={() => setSide(to)}>{text}</button>
+  );
+  return (
+    <div className="ln-show" ref={box}>
+      <button ref={btn} type="button" className="ln-show-btn" aria-haspopup="dialog" aria-expanded={open} aria-label={`Show ${label}${"kind" in pick ? ", every part" : ""}`} onClick={toggle}>
+        <span className="ln-show-k">Show</span>
+        <b>{label}</b>
+        {"kind" in pick && <span className="ln-show-k">every part</span>}
+        <Chevron />
+      </button>
+      {open && (
+        <div className="sh-menu ln-menu" role="dialog" aria-label="Show">
+          <div className="seg ln-sides" role="tablist" aria-label="Show by" onKeyDown={(e) => {
+            if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+            e.preventDefault();
+            const to = side === "parts" ? "readings" : "parts";
+            setSide(to);
+            document.getElementById(`${id}-${to}`)?.focus();
+          }}>
+            {tab("parts", "Parts")}
+            {tab("readings", "Readings")}
+          </div>
+          <div className="ln-menu-list" role="menu" id={`${id}-list`} aria-labelledby={`${id}-${side}`} onKeyDown={arrows}>
+            {side === "parts"
+              ? parts.map((p) => {
+                const on = "part" in pick && pick.part === p.id;
+                return (
+                  <button key={p.id} type="button" role="menuitemradio" aria-checked={on} onClick={() => choose({ part: p.id })}>
+                    <span className="ln-menu-name">{p.name}</span>
+                    {p.now && <span className="ln-menu-hint num">{p.now}</span>}
+                    {on ? <Check /> : <i className="ln-menu-pad" aria-hidden="true" />}
+                  </button>
+                );
+              })
+              : kinds.map((k) => {
+                const on = "kind" in pick && pick.kind === k.type;
+                return (
+                  <button key={k.type} type="button" role="menuitemradio" aria-checked={on} onClick={() => choose({ kind: k.type })}>
+                    <span className="ln-menu-name">{k.title}</span>
+                    <span className="ln-menu-hint">{k.parts} parts</span>
+                    {on ? <Check /> : <i className="ln-menu-pad" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -612,54 +701,43 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
   /** Each part's usual from the last week, for the part rows. */
   week?: PartsView | null;
 }) {
-  // "all", a part's id, or "kind:" and a kind of reading.
-  const [view, setView] = useState("all");
+  const [picked, setPick] = useState<Pick>({ part: "all" });
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
   const finding = query.trim();
   const kinds = useMemo(() => sharedKinds(r, limits), [r.sensors, r.parts, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
-  const picked = view.startsWith("kind:") ? (view.slice(5) as SensorType) : null;
-  const kind = picked && kinds.some((k) => k.type === picked) ? picked : null;
-  const part = kind || picked || !r.parts.some((p) => p.id === view) ? "all" : view;
+  const pick: Pick = "kind" in picked && !kinds.some((k) => k.type === picked.kind) ? { part: "all" } : picked;
+  const part = "part" in pick ? pick.part : "all";
+  const kind = "kind" in pick ? pick.kind : null;
   const one = part !== "all" && !finding;
-  // A part's own view adds a Highest and Average line where its sensors have nothing that sums them up.
   const shown = useMemo(() => (one ? withSummaries(r, part) : r), [r, part, one]);
   const stats = useMemo(() => {
     const src = whole ?? r;
     return statsOf((one ? withSummaries(src, part) : src).points, shown.sensors.length, from, to);
   }, [whole, r, part, one, shown.sensors.length, from, to]);
-  const lanes = useMemo(() => (finding ? foundLanes(r, finding, limits)
-    : kind ? kindLanes(shown, kind, limits)
-    : lanesFor(shown, part, limits)).map((l) => ({ ...l, h: undefined })),
+  const lanes = useMemo(() => (finding ? foundLanes(r, finding, limits) : kind ? kindLanes(shown, kind, limits) : lanesFor(shown, part, limits)).map((l) => ({ ...l, h: undefined })),
     [shown.sensors, shown.parts, part, kind, finding, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
   const overview = part === "all" && !kind && !finding;
-  const lines = useMemo(() => (overview ? partLines(whole ?? r, from, to, week ?? null, limits) : []), [overview, whole, r, from, to, week, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lines = useMemo(() => partLines(whole ?? r, from, to, week ?? null, limits), [whole, r, from, to, week, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = lanes.reduce((n, l) => n + l.series.length, 0);
-  const pick = (v: string) => { setView(v); setQuery(""); };
-  const value = finding ? "" : kind ? `kind:${kind}` : part;
+  const temp = useTemp();
+  const parts = [{ id: "all", name: "Whole PC" }, ...r.parts.map((p) => {
+    const l = lines.find((x) => x.id === p.id);
+    return { id: p.id, name: p.name, now: l?.now != null ? value(temp, l.type, l.now) : undefined };
+  })];
+  const choose = (p: Pick) => { setPick(p); setQuery(""); };
   return (
     <div className="ln-all">
-      <div className="ln-find" role="group" aria-label="What to show">
-        <label className="ln-pick"><span>Show</span>
-          <select className="input" value={value} onChange={(e) => pick(e.target.value)}>
-            {finding && <option value="" disabled>Search results</option>}
-            <option value="all">Whole PC</option>
-            <optgroup label="One part, every sensor">
-              {r.parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </optgroup>
-            {kinds.length > 0 && (
-              <optgroup label="One reading, every part">
-                {kinds.map((k) => <option key={k.type} value={`kind:${k.type}`}>{k.title}</option>)}
-              </optgroup>
-            )}
-          </select>
-        </label>
-        <input type="search" className="input" placeholder="Find a sensor, like core 3" aria-label="Find a sensor" value={query} onChange={(e) => setQuery(e.target.value)} />
-        {finding && <span className="faint num" aria-live="polite">{count} of {r.sensors.length}</span>}
+      <div className="ln-bar">
+        <ShowPicker pick={pick} onPick={choose} parts={parts} kinds={kinds} />
+        <div className="ln-search">
+          <input type="search" className="input" placeholder="Find a sensor, like core 3" aria-label="Find a sensor" value={query} onChange={(e) => setQuery(e.target.value)} />
+          {finding && <span className="faint num" aria-live="polite">{count} of {r.sensors.length}</span>}
+        </div>
       </div>
-      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} onPick={pick} />}
+      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} onPick={(id) => choose({ part: id })} />}
       {finding && !lanes.length ? <p className="muted ln-none">No sensor matches “{finding}”. Try a part, like processor, a kind, like voltage, or a sensor, like core 3.</p>
-        : <Lanes key={finding ? "find" : value} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
+        : <Lanes key={finding ? "find" : kind ?? part} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
     </div>
   );
 }
