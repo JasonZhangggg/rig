@@ -7,13 +7,14 @@ import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from 
 import { changeOf, type Step, type StoredChange } from "./change";
 import {
   ApiError, DELETE_WORD, desktopClientId, errorText, paths, readChatStream, readJson, unreachableText,
-  type AddManualRequest, type BoardLayoutReply, type ChatRequest, type ReadLayoutRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
+  type AddManualRequest, type GameRequirementsRequest, type BoardLayoutReply, type ChatRequest, type ReadLayoutRequest, type DeleteAccountRequest, type MachineSync, type SaveManualPagesRequest, type SyncReply,
 } from "./api";
 import type { DataExport } from "./export";
 import type { Identity } from "./view";
 import type { Account, Change, ChatEvent, ChatMessage, Log, Range, RigClient } from "./client";
 import type { DiffRow, Game, HistoryPoint, PC, Upgrade } from "./model";
 import type { Shop } from "./shop";
+import type { GameRequirements } from "./canItRun";
 import type { PCEvent, Recording, RecordingInfo } from "./recordings";
 import type { ProbeStatus } from "./probes";
 import type { SystemFacts } from "./telemetry";
@@ -205,6 +206,10 @@ export class CloudClient implements RigClient {
   upgrades(id: string) { return this.req<Upgrade[]>(paths.upgrades(id)); }
   shop(id: string) { return this.req<Shop | null>(paths.shop(id)); }
   games(id: string) { return this.req<Game[]>(paths.games(id)); }
+  async gameRequirements(game: string): Promise<GameRequirements | null> {
+    const body: GameRequirementsRequest = { game };
+    return (await this.req<{ requirements: GameRequirements | null }>(paths.gameRequirements, { method: "POST", body: JSON.stringify(body) })).requirements;
+  }
   async changes(id: string): Promise<Change[]> { return (await this.req<StoredChange[]>(paths.changes(id))).map(changeOf); }
 
   /** The busiest apps are read on the PC itself and never synced, so the website can't list them. */

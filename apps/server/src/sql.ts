@@ -34,6 +34,7 @@ export interface RigTables {
   };
   chat_usage: { user_id: string; day: string; count: number };
   command_shapes: { day: string; shape: string; count: number };
+  game_requirements: { key: string; data: ColumnType<unknown, string | null, string | null>; read_at: Time | null; missed_at: Time | null };
   manual_sources: {
     key: string; url: string | null; title: string | null; host: string | null; bytes: number | null;
     found_at: Time | null; missed_at: Time | null;

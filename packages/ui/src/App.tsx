@@ -8,6 +8,7 @@ import { CardAsk } from "./pages/gpu/CardPick";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
 import { SlowLoudSheet } from "./components/SlowLoud";
+import { CanItRunSheet } from "./components/CanItRun";
 import { StartupApps } from "./components/StartupApps";
 import { sceneThemeFor } from "./themes";
 import type { SceneTheme } from "./scene";
@@ -192,6 +193,7 @@ function Root() {
       <CardAsk />
       <ManualViewer />
       <SlowLoudSheet />
+      <CanItRunSheet />
       <Palette />
       <UpdateNotice />
       <Toast />

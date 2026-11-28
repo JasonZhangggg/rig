@@ -190,6 +190,24 @@
 .sl-note { font-size: 13px; }
 /* On narrow screens a row's buttons drop under it: line their words up with the title's. */
 @media (max-width: 860px) { .sl-body .row-acts { margin-left: -13px; } }
+
+/* "Can it run a game?": the name field, then the parts in rows. */
+.cr-form { display: flex; gap: 8px; align-items: center; }
+.cr-form .input { flex: 1; min-width: 0; }
+.cr-sheet .row-fig b { font-size: 14px; font-weight: 500; }
+.cr-need { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.cr-need dt { color: var(--text-2); }
+.cr-need dd { margin: 0; }
+.cr-sheet .sl-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.cr-lv { display: none; }
+.cr-lv.look { color: var(--look-text); }
+@media (max-width: 860px) {
+  .cr-sheet .row { grid-template-columns: minmax(0, 1fr) auto; }
+  .cr-sheet .row-acts { margin-left: 12px; }
+  .cr-sheet .row-fig { display: none; }
+  .cr-sheet .cr-lv { display: inline; }
+}
+.gm-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* Startup apps: the list scrolls between the heading and the buttons, a switch on the right of each row on any width. */
 .sheet.su-sheet { display: flex; flex-direction: column; overflow: hidden; outline: none; }
 .su-suggest { align-self: flex-start; margin: 4px 0 0 -10px; }

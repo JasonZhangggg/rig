@@ -75,6 +75,12 @@ export interface HardwareFacts {
   storage: { nvme: number; sata: number; totalTb: number; drive?: string };
   /** Estimated draw at full load, from the parts' typical draw. */
   draw: { cpu: number; gpu: number; rest: number; total: number };
+  /** Windows as it names itself ("Windows 11 Pro") and its build. Missing from a server older than the game check. */
+  os?: { name: string; build?: string };
+  /** The processor's own graphics, when there's no card. */
+  igpu?: string;
+  /** Each volume's free space, and whether it's on an SSD (missing: Rig can't tell). Missing from an older server. */
+  volumes?: { letter: string; freeGb: number; ssd?: boolean }[];
 }
 
 export interface Shop {
@@ -151,6 +157,13 @@ export function hardwareFacts(inv: Inventory): HardwareFacts {
       drive: inv.disks[0]?.model,
     },
     draw: { cpu: cpuW, gpu: gpuW, rest, total: cpuW + gpuW + rest },
+    os: { name: inv.machine.os.name, build: inv.machine.os.build || undefined },
+    igpu: gpu ? undefined : inv.gpus.find((g) => g.integrated)?.name,
+    volumes: inv.volumes.map((v) => {
+      const disk = inv.disks.find((d) => d.number !== undefined && d.number === v.disk) ?? (inv.disks.length === 1 ? inv.disks[0] : undefined);
+      const ssd = !disk || disk.media === "unknown" ? undefined : disk.media !== "hdd";
+      return { letter: v.letter, freeGb: v.freeGb, ...(ssd === undefined ? {} : { ssd }) };
+    }),
   };
 }
 

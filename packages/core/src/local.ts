@@ -25,6 +25,7 @@ import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
 import { suggestUpgrades } from "./upgrades";
+import type { GameRequirements } from "./canItRun";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
 import { SLOW_LOUD_APPS } from "./slowLoud";
@@ -969,6 +970,12 @@ export class LocalClient implements RigClient {
   async manuals(id: string): Promise<Manual[]> {
     if (await this.signedIn()) return this.cloud!.manuals(id);
     return (await this.isLocal(id)) ? (await this.localManuals()).sort((a, b) => b.addedAt.localeCompare(a.addedAt)) : [];
+  }
+
+  async gameRequirements(game: string): Promise<GameRequirements | null> {
+    const cloud: RigClient | null = this.cloud;
+    if (cloud?.gameRequirements && (await this.signedIn())) return cloud.gameRequirements(game);
+    throw new Error("Sign in so Rig can look up a game's requirements.");
   }
 
   async findManual(id: string, target: ManualTarget): Promise<Manual | null> {

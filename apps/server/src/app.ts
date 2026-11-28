@@ -8,8 +8,9 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, screenLookReply, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, screenLookReply, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type GameRequirements, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
 import { manualRoutes } from "./routes-manuals";
+import { REQUIREMENTS_DAYS, REQUIREMENTS_MISS_DAYS, checkGame, findRequirements, gameKey } from "./requirements";
 import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { MAX_RESUMES, answer, type ChatContext, type Progress, type Streamer, type Turn } from "./chat";
@@ -99,7 +100,7 @@ export function createApp(deps: AppDeps = {}) {
     c.set("store", new Store(dbFor(c)));
     await next();
   };
-  for (const p of ["/api/me", "/api/me/*", "/api/machines", "/api/machines/*", "/api/chat"]) app.use(p, signedIn);
+  for (const p of ["/api/me", "/api/me/*", "/api/machines", "/api/machines/*", "/api/games/*", "/api/chat"]) app.use(p, signedIn);
 
   app.get("/api/me", (c) => c.json(c.get("user")));
 
@@ -237,6 +238,32 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   manualRoutes(app, { validId, machine, notFound, now, claude, fetch: deps.fetch ?? ((input, init) => fetch(input, init)), dailyLimit });
+
+  // A game's requirements, read from its store or publisher page. What was read is shared between accounts; only a
+  // lookup that asks Claude counts against the day's questions.
+  app.post("/api/games/requirements", async (c) => {
+    const t = checkGame(await c.req.json().catch(() => null));
+    if (typeof t === "string") return c.json({ message: t }, 400);
+    const store = c.get("store");
+    const key = gameKey(t.game);
+    const cached = await store.gameRequirements(key);
+    const age = (at: string | Date) => now().getTime() - new Date(at).getTime();
+    if (cached && "found" in cached && age(cached.found.readAt) < REQUIREMENTS_DAYS * 864e5) return c.json({ requirements: cached.found });
+    if (cached && "missedAt" in cached && age(cached.missedAt) < REQUIREMENTS_MISS_DAYS * 864e5) return c.json({ requirements: null });
+    if (!c.env.ANTHROPIC_API_KEY) return c.json({ message: "Rig can't look up games on this server yet." }, 503);
+    const limit = dailyLimit(c);
+    if (!(await store.useChat(c.get("user").id, limit, now()))) {
+      return c.json({ message: `You've used today's ${limit} questions, and looking up a game counts as one. It resets at midnight UTC.` }, 429);
+    }
+    let found: GameRequirements | null;
+    try {
+      found = await findRequirements(claude(c.env), t.game, now(), c.req.raw.signal);
+    } catch {
+      return c.json({ message: "Rig couldn't look the game up just now. Try again in a minute." }, 502);
+    }
+    await store.saveGameRequirements(key, found, now());
+    return c.json({ requirements: found });
+  });
 
   app.post("/api/chat", async (c) => {
     const raw = await c.req.text();

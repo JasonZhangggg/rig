@@ -6,6 +6,7 @@ import { Library, type GameSort } from "./games/Library";
 import { RecentSessions } from "./games/Summary";
 import { partName } from "./games/words";
 import { LogsHead } from "./logs/Head";
+import { CAN_RUN_ASK } from "../components/CanItRun";
 
 type GameRange = "7d" | "30d";
 const rangeWords: Record<GameRange, string> = { "7d": "this week", "30d": "this month" };
@@ -33,7 +34,7 @@ function useTuning() {
 }
 
 export function Games() {
-  const { ask } = useActions();
+  const { ask, set } = useActions();
   const pc = useStillPC();
   const [range, setRange] = useState<GameRange>("7d");
   const [open, setOpen] = useState<string | null>(null);
@@ -68,7 +69,12 @@ export function Games() {
   const recorded = !!points?.length;
   return (
     <div className="page pg-focus">
-      <LogsHead sub={`What you played on ${pc.name} and how warm the ${part} ran while you did.`} right={seg} />
+      <LogsHead sub={`What you played on ${pc.name} and how warm the ${part} ran while you did.`} right={(
+        <div className="gm-tools">
+          <button type="button" className="btn ghost sm" onClick={() => set({ canRun: "" })}>{CAN_RUN_ASK}</button>
+          {seg}
+        </div>
+      )} />
       {library == null ? <p className="muted" role="status">Loading…</p> : library.games.length ? (
         <>
           <Library library={library} when={when} sort={sort} onSort={setSort} tuned={(name) => !!tuning(name)} onOpen={show}>

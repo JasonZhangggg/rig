@@ -45,6 +45,14 @@ const icon: Record<Kind, string> = {
   settings: "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4",
 };
 
+/** The game in "can it run X", "can my pc run X", "requirements for X" or "X requirements", or null. */
+export function canRunGame(q: string): string | null {
+  const t = q.trim().replace(/\?+$/, "").trim();
+  const m = t.match(/^(?:can\s+(?:it|i|my\s+pc|my\s+laptop|this\s+pc|\S+)\s+run|will\s+(?:it|my\s+pc|this\s+pc)\s+run|(?:system\s+)?(?:requirements|specs)\s+(?:for|of))\s+(.{2,100})$/i)
+    ?? t.match(/^(.{2,100}?)\s+(?:system\s+)?(?:requirements|specs)$/i);
+  return m ? m[1].trim() : null;
+}
+
 // Ctrl K search across the PC: parts, changes, games, upgrades and recordings, plus "Ask Rig".
 // Only there while it's open, so it isn't drawn again on every reading while it's closed.
 export function Palette() {
@@ -87,6 +95,10 @@ function OpenPalette() {
   const all = useMemo<Item[]>(() => {
     const items: Item[] = [];
     items.push({ id: "slow-loud", kind: "check", title: `Why is ${pc.name} slow or loud?`, sub: `Checks ${pc.name}'s readings and busiest apps now`, keys: "slow loud noisy noise fan fans laggy lag sluggish stutter hot busy why check now", run: () => { set({ slowLoud: true }); close(); } });
+    items.push({ id: "can-run", kind: "check", title: `Can ${pc.name} run a game?`, sub: "Compares a game's minimum and recommended specs with this PC", keys: "can it run game games requirements specs system requirements minimum recommended play will run fps", run: () => { set({ canRun: "" }); close(); } });
+    // "can it run forza", "requirements for cs2": the check for that game, whatever else matches.
+    const named = canRunGame(q);
+    if (named) items.push({ id: "can-run-named", kind: "check", title: `Can ${pc.name} run ${named}?`, sub: "Compares its minimum and recommended specs with this PC", hit: true, searchOnly: true, run: () => { set({ canRun: named }); close(); } });
     for (const [route, name] of navItems) {
       const [sub, keys] = pageWords[route] ?? ["", ""];
       items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
@@ -121,7 +133,7 @@ function OpenPalette() {
       items.push({ id: `s-${sec.id}`, kind: "settings", title: sec.title, sub: `Settings · ${sec.intro}`, keys: sec.keywords, searchOnly: true, run: () => { focusSection(sec.id); open("settings"); } });
     }
     return items;
-  }, [pc, data.changes, data.recordings, extra, temp, manuals, pages.hits]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pc, data.changes, data.recordings, extra, temp, manuals, pages.hits, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const words = q.trim().toLowerCase();
   // Every word typed has to match, in any order, so "logs folder" finds the same thing as "folder logs".

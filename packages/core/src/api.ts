@@ -88,6 +88,7 @@ export const paths = {
   manualPage: (id: string, mid: string, n: number) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/pages/${n}`,
   boardLayout: (id: string, maker: string, model: string) => `/machines/${encodeURIComponent(id)}/board-layout?maker=${encodeURIComponent(maker)}&model=${encodeURIComponent(model)}`,
   manualLayout: (id: string, mid: string) => `/machines/${encodeURIComponent(id)}/manuals/${encodeURIComponent(mid)}/layout`,
+  gameRequirements: "/games/requirements",
   chat: "/chat",
   config: "/config",
   // Better Auth
@@ -103,6 +104,10 @@ export const paths = {
 } as const;
 
 /**
+ * A game's requirements (needs an account; shared between accounts, and a lookup that reads the web counts against the
+ * daily chat allowance):
+ * - POST   gameRequirements           body GameRequirementsRequest -> { requirements: GameRequirements | null }
+ *
  * Manuals on the server (all need an account, and the PC must be on it):
  * - GET    manuals(id)                -> Manual[]
  * - POST   manualFind(id)             body ManualTarget -> { manual: Manual | null } (counts against the daily chat allowance)
@@ -115,6 +120,8 @@ export const paths = {
  * - GET    boardLayout(id, maker, model) -> BoardLayoutReply (the board model's shared layout, read once for everyone)
  * - POST   manualLayout(id, mid)      body ReadLayoutRequest -> BoardLayoutReply (reads the drawing unless it's read or being read)
  */
+export interface GameRequirementsRequest { game: string }
+
 export interface AddManualRequest { target: ManualTarget; name: string; bytes: number }
 export interface SaveManualPagesRequest { pages: ManualPage[]; diagrams: ManualDiagram[] }
 
