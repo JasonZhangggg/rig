@@ -37,6 +37,13 @@ describe("Steady interactions", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
+  it("names the change it just made, with Undo beside it", async () => {
+    await show("changes");
+    fireEvent.click(await screen.findByRole("button", { name: /^Review: / }));
+    fireEvent.click(await screen.findByRole("button", { name: "Make this change" }));
+    expect(await screen.findByText("Done: Set LG 27GP850 to 165 Hz.", {}, { timeout: 3000 })).toBeTruthy();
+  });
+
   it("undoes once however many times Undo is pressed while it works", async () => {
     const client = await show("changes");
     const undo = await screen.findByRole("button", { name: /^Undo/ });

@@ -544,7 +544,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           setData((d) => ({ ...d, changes: [change, ...d.changes.filter((c) => c.id !== change.id)] }));
           if (r.proposalId) patchProposal(r.proposalId, { status: "applied", changeId: change.id });
           set({ review: null });
-          toast(r.steps.length === 1 ? "Done." : `${r.steps.length} changes made.`, change.id);
+          toast(r.steps.length === 1 ? `Done: ${change.title}.` : `Done: ${change.title}. ${r.steps.length} settings changed.`, change.id);
         } catch (e) {
           set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Rig couldn't make this change, so nothing was changed. Try again, and if it keeps happening, restart Rig." } });
         }
