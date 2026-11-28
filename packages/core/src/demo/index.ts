@@ -12,7 +12,8 @@ import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
-import { applyToFacts, demoNow } from "./apply";
+import { applyToFacts, demoNow, demoSaverPower } from "./apply";
+import { batteryView } from "../battery";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
@@ -120,7 +121,9 @@ export class DemoClient implements RigClient {
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
-    return withAlerts({ ...pc, lastSync: "Demo PC" }, alerts);
+    // The battery page reads the history and the power settings, which the rest of the demo view goes without.
+    const battery = batteryView(p.inv, snap, p.facts, { history: p.recent.points, power: demoSaverPower(p.inv, p.facts), now });
+    return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: "Demo PC" }, alerts);
   }
 
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }
@@ -193,6 +196,7 @@ export class DemoClient implements RigClient {
         const dust = p.dust * Math.max(0, 1 - (this.born - from) / rangeMs["30d"]);
         const w = new HistoryWindow(from);
         for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));
+        if (w.onBattery) for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.addApps(demoProcesses(p.inv, at));
         kept.set(from, point = w.point());
       }
       out.push(point);
@@ -263,7 +267,7 @@ export class DemoClient implements RigClient {
 
   async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
     const p = this.pcs[id];
-    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays, demoNow(p.facts, s.call)));
+    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays, demoNow(p.inv, p.facts, s.call)));
   }
 
   async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {

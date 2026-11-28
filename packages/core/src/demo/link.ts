@@ -32,7 +32,7 @@ export class SimulatedLink implements HelperLink {
     return { undo: applyToFacts(this.inv, this.f, call), verify: { ok: true } };
   }
   async readFix(call: ActionCall): Promise<FixNow> {
-    const now = demoNow(this.f, call);
+    const now = demoNow(this.inv, this.f, call);
     if (!now) throw new Error("The facts already hold this one.");
     return now;
   }

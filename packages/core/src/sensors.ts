@@ -101,6 +101,12 @@ const rules: Record<string, Rule[]> = {
     ["Core voltage", "voltage", /vcore|cpu core/i],
   ],
   fans: [["Fastest", "fan", /./, "max"]],
+  battery: [
+    ["Charge", "level", /charge level/i],
+    ["Draw", "power", /rate/i],
+    ["Voltage", "voltage", /voltage/i],
+    ["Wear", "level", /degradation/i],
+  ],
 };
 rules.board = rules.motherboard;
 

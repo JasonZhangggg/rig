@@ -270,3 +270,11 @@
 .mt-add-hint { color: var(--text-3); font-size: 13px; }
 .mt-add .mn-form { flex: 1; max-width: 640px; padding: 4px 0; }
 .mt-note { margin: 10px 0 0; font-size: 13px; }
+
+/* A laptop's battery: the charge and the time left as figures, then today's story and ways to stretch it (pages/battery). */
+.batt-how { font-size: 14px; }
+.batt { display: flex; flex-direction: column; gap: 20px; }
+.batt-story { max-width: 60ch; color: var(--text-2); line-height: 1.5; }
+.batt-savers { display: flex; flex-direction: column; gap: 2px; }
+.batt-savers .label { margin-bottom: 2px; }
+.batt-foot { margin-top: 6px; font-size: 13px; }

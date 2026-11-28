@@ -4,32 +4,42 @@
 
 import { powerSettingOf, powerSettings, type ActionCall, type FixNow } from "../actions";
 import type { Inventory, SystemFacts } from "../telemetry";
+import { SAVER_SETTINGS, type PowerNow } from "../battery";
 
 const demoPower: Record<string, [number, number]> = {
   usbSelectiveSuspend: [1, 1], pcieLinkState: [0, 2], sleepAfter: [1800, 900], displayOffAfter: [600, 300], hibernateAfter: [0, 10800], processorMin: [5, 5], coolingPolicy: [1, 0],
 };
+/** Pebble's battery side was never tuned: the screen stays on 15 minutes and it sleeps after an hour, so the battery page has savers to show. */
+const laptopPower: Record<string, [number, number]> = { ...demoPower, sleepAfter: [1800, 3600], displayOffAfter: [600, 900] };
 
 const settings = new WeakMap<SystemFacts, Map<string, { ac: number; dc: number }>>();
-function settingsOf(f: SystemFacts) {
+function settingsOf(inv: Inventory, f: SystemFacts) {
   let s = settings.get(f);
   if (!s) {
-    s = new Map(powerSettings.filter((p) => demoPower[p.id]).map((p) => [p.id, { ac: demoPower[p.id][0], dc: demoPower[p.id][1] }]));
+    const made = inv.machine.kind === "laptop" ? laptopPower : demoPower;
+    s = new Map(powerSettings.filter((p) => made[p.id]).map((p) => [p.id, { ac: made[p.id][0], dc: made[p.id][1] }]));
     settings.set(f, s);
   }
   return s;
 }
 
-function power(f: SystemFacts, subgroup: string, setting: string) {
+function power(inv: Inventory, f: SystemFacts, subgroup: string, setting: string) {
   const info = powerSettingOf(subgroup, setting);
   if (!info) throw new Error("That isn't one of Rig's power settings.");
-  const now = info.id === "processorMax" ? f.maxProcessorState : settingsOf(f).get(info.id);
+  const now = info.id === "processorMax" ? f.maxProcessorState : settingsOf(inv, f).get(info.id);
   if (!now) throw new Error("This PC's power plan doesn't have that setting.");
   return { info, now };
 }
 
 /** What a power setting holds in the made-up settings, as the helper's read would say. Undefined for the other fixes. */
-export function demoNow(f: SystemFacts, call: ActionCall): FixNow | undefined {
-  return call.kind === "power.setting" ? { kind: "power.setting", ...power(f, call.subgroup, call.setting).now } : undefined;
+export function demoNow(inv: Inventory, f: SystemFacts, call: ActionCall): FixNow | undefined {
+  return call.kind === "power.setting" ? { kind: "power.setting", ...power(inv, f, call.subgroup, call.setting).now } : undefined;
+}
+
+/** The power settings the battery savers look at, as the helper would read them on a demo laptop. */
+export function demoSaverPower(inv: Inventory, f: SystemFacts): PowerNow {
+  if (inv.machine.kind !== "laptop") return {};
+  return Object.fromEntries(SAVER_SETTINGS.map((id) => [id, { ...settingsOf(inv, f).get(id)! }]));
 }
 
 export function applyToFacts(inv: Inventory, f: SystemFacts, call: ActionCall): ActionCall {
@@ -57,10 +67,10 @@ export function applyToFacts(inv: Inventory, f: SystemFacts, call: ActionCall): 
       return { kind: "display.refreshRate", display: d.name, hz: was };
     }
     case "power.setting": {
-      const { info, now } = power(f, call.subgroup, call.setting);
+      const { info, now } = power(inv, f, call.subgroup, call.setting);
       const was = { ...now };
       if (info.id === "processorMax") f.maxProcessorState = { ac: call.ac, dc: call.dc };
-      else settingsOf(f).set(info.id, { ac: call.ac, dc: call.dc });
+      else settingsOf(inv, f).set(info.id, { ac: call.ac, dc: call.dc });
       return { kind: "power.setting", subgroup: info.subgroup, setting: info.setting, ...was };
     }
   }
