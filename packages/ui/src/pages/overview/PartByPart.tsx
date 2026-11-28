@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { partByPart, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
+import { partByPart, type BatteryView, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
 import { useApp, useTemp } from "../../state";
 import { shortType } from "../shared";
 import { isPlaceholderName } from "../partNames";
@@ -13,13 +13,19 @@ const PLAIN: Record<string, { label: string; job: string; laptopJob?: string }> 
   ram: { label: "Memory", job: "Keeps what's open close at hand" },
   ssd: { label: "Main drive", job: "Holds Windows, your games and files" },
   motherboard: { label: "Motherboard", job: "Connects every part and shares out power" },
-  board: { label: "Mainboard", job: "Connects every part and shares out power" },
+  board: { label: "Motherboard", job: "Connects every part and shares out power" },
   fans: { label: "Fans", job: "Move air through the case", laptopJob: "Keep the laptop cool" },
   battery: { label: "Battery", job: "Runs the laptop away from the wall" },
   psu: { label: "Power supply", job: "Turns wall power into what each part needs" },
   case: { label: "Case", job: "Holds every part and guides the air" },
   chassis: { label: "Laptop", job: "Holds every part" },
 };
+
+/** What a part does for the person, in the words for this kind of PC. Logs' part rows say it the same way. */
+export const partJob = (id: string, laptop: boolean) => (laptop && PLAIN[id]?.laptopJob) || PLAIN[id]?.job || "";
+
+/** What a battery is doing, in a word or two. */
+export const batteryWord: Record<NonNullable<BatteryView["state"]>, string> = { discharging: "On battery", charging: "Charging", plugged: "Plugged in" };
 
 /** A model without the chip maker's brand words, which the kind of part already says: "RTX 4070 SUPER", "Ryzen 7 7800X3D". */
 const shortModel = (name: string) => name.replace(/\((R|TM)\)/gi, "").replace(/^(NVIDIA|AMD|Intel)\s+/i, "").replace(/^GeForce\s+/i, "").replace(/\s+/g, " ").trim();
@@ -46,7 +52,8 @@ function useFormat() {
 }
 
 /** How the part is doing now, in a word or two, and rust only when it needs a look. */
-function stateOf(r: PartRow): { text: string; look?: boolean } {
+function stateOf(r: PartRow, battery?: BatteryView): { text: string; look?: boolean } {
+  if (r.id === "battery" && r.state !== "unread") return { text: battery?.state ? batteryWord[battery.state] : "Charge left" };
   switch (r.state) {
     case "unread": return { text: "Rig can't read it" };
     case "slowing": return { text: "Slowing itself down", look: true };
@@ -59,6 +66,7 @@ function stateOf(r: PartRow): { text: string; look?: boolean } {
 /** What the week says about the part: its highest, in rust only when that came close to where it slows down. */
 function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string): { text: string; look?: boolean } {
   if (r.state === "unread") return { text: r.id === "case" ? "Nothing in it to read" : "No sensor Windows can read" };
+  if (r.id === "battery") return r.low ? { text: `Lowest ${said(r, r.low.value)} this week` } : { text: "Rig is still learning its usual" };
   if (learning || !r.high) return { text: "Rig is still learning its usual" };
   const { value, at: when, game } = r.high;
   if (r.ranHot) return { text: `Hit ${said(r, value)}${game ? ` in ${game}` : ""}, ${dayFmt.format(when)}`, look: true };
@@ -112,7 +120,7 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
   const [list, fits] = useFit<HTMLUListElement>(view.rows.length, { on: box.cols > 1, reserve: 36, watch: `${names}${loading}` });
   const rest = view.rows.length - fits;
   const open = (id: string) => { set({ selected: id, tab: "live" }); go("pc"); };
-  const usualWord = view.usualWhen === "any" ? "Its usual this week" : "Its usual while you play";
+  const usualWord = view.usualWhen === "any" ? "Its usual this week" : view.usualWhen === "busy" ? "Its usual when busy" : "Its usual while you play";
   return (
     <section className="f-pbp" aria-labelledby="f-pbp-title">
       <div className="pbp-head">
@@ -129,14 +137,14 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
           const p = pc.parts![r.id];
           const plain = PLAIN[r.id] ?? { label: shortType(p.type), job: "" };
           const model = names && !isPlaceholderName(p.name) ? shortModel(p.model ?? p.name) : null;
-          const state = stateOf(r), week = loading && r.state !== "unread" ? null : weekOf(r, !view.usualWhen, fmt.said);
+          const state = stateOf(r, pc.battery), week = loading && r.state !== "unread" ? null : weekOf(r, !view.usualWhen, fmt.said);
           const [num, unit] = r.now != null ? fmt.parts(r, r.now) : ["–", ""];
           return (
             <li key={r.id}>
               <button type="button" className={`pbp-row${r.state === "unread" ? " unread" : ""}`} onClick={() => open(r.id)}>
                 <span className="pbp-name">
                   <b>{plain.label}{model && <small> {model}</small>}</b>
-                  <span>{(laptop && plain.laptopJob) || plain.job}</span>
+                  <span>{partJob(r.id, laptop) || plain.job}</span>
                 </span>
                 <span className="pbp-now">
                   <b>{num}{unit && <small>{unit === "rpm" ? ` ${unit}` : unit}</small>}</b>
