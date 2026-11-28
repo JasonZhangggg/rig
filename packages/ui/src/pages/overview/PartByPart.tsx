@@ -72,12 +72,20 @@ function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: st
 function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string, asleep: boolean): { text: string; look?: boolean } {
   if (asleep && !r.high) return { text: "It wakes when a game needs it" };
   if (r.state === "unread" && !asleep) return { text: r.id === "case" ? "Nothing in it to read" : "No sensor Windows can read" };
-  if (r.id === "battery") return r.low ? { text: `Lowest ${said(r, r.low.value)} this week` } : { text: "Rig is still learning its usual" };
+  if (r.id === "battery") {
+    if (!r.low) return { text: "Rig is still learning its usual" };
+    // The charge is already beside the row, so a low that's the charge now isn't said again.
+    if (r.now == null || Math.round(r.low.value) !== Math.round(r.now)) return { text: `Lowest ${said(r, r.low.value)} this week` };
+    return { text: steady(r) ? "Held there all week" : "Its lowest this week" };
+  }
   if (learning || !r.high) return { text: "Rig is still learning its usual" };
   const { value, at: when, game } = r.high;
   if (r.ranHot) return { text: `Hit ${said(r, value)}${game ? ` in ${game}` : ""}, ${dayFmt.format(when)}`, look: true };
   return { text: `${said(r, value)} at most this week` };
 }
+
+/** A battery that sat at the same charge all week, like one held at 80% on the charger. */
+const steady = (r: PartRow) => r.usual != null && r.now != null && r.usual.lo === r.usual.hi && Math.round(r.usual.hi) === Math.round(r.now);
 
 /** The sentence over the list: how the PC is now, then what the week held. */
 function headline(view: PartsView, name: string, online: boolean, laptop: boolean) {
@@ -162,7 +170,7 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
                 </span>
                 <span className="pbp-week">
                   <Track r={r} asleep={asleep} />
-                  {r.usual && <span>usual {fmt.range(r, r.usual.lo, r.usual.hi)}</span>}
+                  {r.usual && !(r.id === "battery" && steady(r)) && <span>usual {fmt.range(r, r.usual.lo, r.usual.hi)}</span>}
                 </span>
                 <span className="pbp-state">
                   <b className={state.look ? "look" : undefined}>{state.text}</b>

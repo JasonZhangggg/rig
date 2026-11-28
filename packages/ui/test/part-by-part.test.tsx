@@ -78,9 +78,21 @@ describe("Your PC, part by part", () => {
     const battery = within(rows[5]);
     expect(battery.getByText("58")).toBeTruthy();
     expect(battery.getByText("On battery")).toBeTruthy();
-    expect(battery.getByText(/^Lowest \d+% this week$/)).toBeTruthy();
+    // Running down, its charge now is the week's lowest: said once, beside the row, not again under it.
+    expect(battery.getByText("Its lowest this week")).toBeTruthy();
+    expect(rows[5].textContent!.match(/58/g)).toHaveLength(1);
     expect(widget.queryByText("Rig can't read it")).toBeNull();
     expect(widget.queryByText("No sensor Windows can read")).toBeNull();
+  });
+
+  it("says a battery held at one charge all week once, not three times", async () => {
+    localStorage.setItem("rig.pc", "demo-comet");
+    render(<RigApp client={new DemoClient()} />);
+    const { widget } = await partByPart();
+    const row = within(widget.getByRole("list", { name: "Parts" })).getAllByRole("button").find((r) => r.textContent?.startsWith("Battery"))!;
+    expect(within(row).getByText("80")).toBeTruthy();
+    expect(within(row).getByText("Held there all week")).toBeTruthy();
+    expect(row.textContent!.match(/80/g)).toHaveLength(1);
   });
 
   it("words the usual for work when the busy hours weren't games", async () => {
