@@ -276,15 +276,21 @@ describe("Logs", () => {
     const readings = screen.getByRole("region", { name: "Readings" });
     const temps = await within(readings).findByRole("img", { name: "Temperatures" }, { timeout: 500 });
     within(readings).getByRole("heading", { name: "Last 5 minutes" });
-    within(readings).getByText("Live");
+    within(readings).getByText("Live", { selector: ".lv-badge" });
     within(readings).getByText(/A reading every 2 s/);
-    // One picker reaches from the last few minutes back to the month.
+    // A Live switch, then the stretches back to the month.
     const spans = within(readings).getByRole("group", { name: "How far back" });
-    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["5 min", "1 hour", "6 hours", "Day", "Week", "Month"]);
+    expect(within(spans).getAllByRole("button").map((b) => b.textContent)).toEqual(["Live", "Hour", "Day", "Week", "Month"]);
+    const liveSwitch = within(spans).getByRole("button", { name: "Live" });
+    expect(liveSwitch.getAttribute("aria-pressed")).toBe("true");
     // Rig has only been open a few seconds, so an hour of readings starts partway, and says when.
-    fireEvent.click(within(spans).getByRole("button", { name: "1 hour" }));
-    within(readings).getByText(/Readings start at .*, when Rig opened/);
-    fireEvent.click(within(spans).getByRole("button", { name: "5 min" }));
+    fireEvent.click(within(spans).getByRole("button", { name: "Hour" }));
+    expect(liveSwitch.getAttribute("aria-pressed")).toBe("false");
+    within(readings).getByRole("heading", { name: "Last hour" });
+    within(readings).getByText(/Readings start at .*, when Rig opened. For earlier ones, pick Day\./);
+    fireEvent.click(liveSwitch);
+    expect(liveSwitch.getAttribute("aria-pressed")).toBe("true");
+    within(readings).getByRole("heading", { name: "Last 5 minutes" });
     // The line moves with each new reading.
     const line = () => [...temps.querySelectorAll("path")].map((p) => p.getAttribute("d")).join("|");
     const before = line();
@@ -363,7 +369,7 @@ describe("Logs", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("shows the last 6 hours, the week or the month on the same chart, saying where the readings came from", async () => {
+  it("shows the day, the week or the month on the same chart, saying where the readings came from", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
     try {
@@ -378,8 +384,8 @@ describe("Logs", () => {
       await within(readings).findByText("Every sensor, every 30 s");
       await within(readings).findByRole("img", { name: "Temperatures" });
 
-      fireEvent.click(within(spans).getByRole("button", { name: "6 hours" }));
-      within(readings).getByRole("heading", { name: "Last 6 hours" });
+      fireEvent.click(within(spans).getByRole("button", { name: "Day" }));
+      within(readings).getByRole("heading", { name: "Today" });
       await within(readings).findByRole("img", { name: "Temperatures" });
 
       // A month is longer than the background log keeps, so it's Rig's 10-minute history, on the same chart.

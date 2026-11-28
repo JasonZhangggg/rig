@@ -268,7 +268,7 @@
 .rd-head { margin-top: 0; flex-wrap: wrap; }
 .rd-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-left: auto; }
 .rd-source .faint { font-size: 13px; }
-@media (prefers-reduced-motion: reduce) { .lv-badge.on i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lv-badge.on i, .rd-live.on i { animation: none; } }
 
 @media (max-width: 760px) {
   .lv-sech { align-items: flex-start; flex-direction: column; }
@@ -378,3 +378,13 @@
   .ln-menu { width: 100%; }
   .ln-search { flex: 1 1 100%; }
 }
+
+/* How far back: a Live switch, then the stretches Rig logged. */
+.rd-when { display: flex; align-items: center; gap: 10px; }
+.rd-live { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px 0 14px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); color: var(--text-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out); }
+.rd-live:active { transform: scale(.97); }
+.rd-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); transition: background-color 150ms ease; }
+@media (hover: hover) and (pointer: fine) { .rd-live:not(.on):hover { color: var(--text); background: var(--surface-2); } }
+.rd-live.on { color: var(--text); border-color: color-mix(in srgb, var(--look) 40%, var(--line)); background: color-mix(in srgb, var(--look) 8%, var(--surface)); }
+.rd-live.on i { background: var(--look); animation: lv-beat 2s var(--ease-in-out) infinite; }
+@media (max-width: 860px) { .rd-when { flex: 1 1 100%; gap: 8px; } .rd-when .seg button { padding: 0 11px; } }

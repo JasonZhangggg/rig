@@ -13,10 +13,11 @@ import { clock, dayName, isPhone } from "./words";
 const MIN = 60_000, HOUR = 36e5, DAY = 864e5;
 const startOfDay = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
-/** How far back the chart reaches. The first two are the live readings, the rest what Rig logged. */
-export type Span = "5m" | "1h" | "6h" | "day" | "week" | "month";
-export const spanWords: [Span, string][] = [["5m", "5 min"], ["1h", "1 hour"], ["6h", "6 hours"], ["day", "Day"], ["week", "Week"], ["month", "Month"]];
-const spanMs: Record<Exclude<Span, "day">, number> = { "5m": 5 * MIN, "1h": HOUR, "6h": 6 * HOUR, week: 7 * DAY, month: 30 * DAY };
+/** How far back the chart reaches. Live (the last 5 minutes) and the hour are the live readings, the rest what Rig logged. */
+export type Span = "5m" | "1h" | "day" | "week" | "month";
+/** The stretches after Live. */
+export const spanWords: [Span, string][] = [["1h", "Hour"], ["day", "Day"], ["week", "Week"], ["month", "Month"]];
+const spanMs: Record<Exclude<Span, "day">, number> = { "5m": 5 * MIN, "1h": HOUR, week: 7 * DAY, month: 30 * DAY };
 const isLive = (s: Span) => s === "5m" || s === "1h";
 const historyRange = (s: Span): HistoryRange => (s === "month" ? "30d" : s === "week" ? "7d" : "24h");
 
@@ -95,7 +96,7 @@ export function Readings() {
   const week = useMemo(() => (weekPoints ? partByPart(full, weekPoints) : null), [full, weekPoints]);
 
   const shown = useMemo((): Shown => {
-    const title = span === "5m" ? "Last 5 minutes" : span === "1h" ? "Last hour" : span === "6h" ? "Last 6 hours" : span === "day" ? (dayInfo ? dayName(from) : "Last 24 hours") : span === "week" ? "Last 7 days" : "Last 30 days";
+    const title = span === "5m" ? "Last 5 minutes" : span === "1h" ? "Last hour" : span === "day" ? (dayInfo ? dayName(from) : "Last 24 hours") : span === "week" ? "Last 7 days" : "Last 30 days";
     if (isLive(span)) {
       const live = data.live;
       const r = live.length > 1 ? liveRecorded(full.readings ?? [], thin(live, from, to - from)) : null;
@@ -108,8 +109,8 @@ export function Readings() {
       return {
         r: r && r.sensors.length ? r : null, whole, from: since ? Math.min(since, to - 20_000) : from, to, title, live: full.online,
         source: !full.online ? (last ? `Offline since ${clock(last.t)}` : "Offline") : every ? `A reading every ${every} s` : "Waiting for the next reading",
-        note: since ? `Readings start at ${clock(since)}, when Rig opened. For earlier ones, pick 6 hours.` : undefined,
-        empty: !full.online ? `${pc.name} is offline, so there's nothing live to show. Pick 6 hours or longer for what it logged.` : "Readings draw here as they come in.",
+        note: since ? `Readings start at ${clock(since)}, when Rig opened. For earlier ones, pick Day.` : undefined,
+        empty: !full.online ? `${pc.name} is offline, so there's nothing live to show. Pick Day or longer for what it logged.` : "Readings draw here as they come in.",
       };
     }
     if (logged) {
@@ -132,11 +133,12 @@ export function Readings() {
     return {
       r, whole: r ? historyRecorded(points) : null, from, to, title, source: "Every 10 minutes while Rig was open",
       note: span !== "month" ? "Turn on the background recorder in Settings on this PC to keep every sensor every 30 seconds, even while Rig is closed." : undefined,
-      empty: `Nothing logged on ${pc.name} in the last ${span === "month" ? "30 days" : span === "week" ? "7 days" : span === "day" ? "24 hours" : "6 hours"}.`,
+      empty: `Nothing logged on ${pc.name} in the last ${span === "month" ? "30 days" : span === "week" ? "7 days" : "24 hours"}.`,
     };
   }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, logged]);
 
   if (opened) return opened;
+  const pickSpan = (k: Span) => { setSpan(k); setPick(0); };
   const active = data.recordings.find(isActive);
   const looks = isLive(span) ? [] : looksIn(data.recordings, from, to);
   const bands: Band[] = looks.map((l) => ({ from: l.startedAt!, to: l.finishedAt ?? l.startedAt!, kind: "look" }));
@@ -149,8 +151,11 @@ export function Readings() {
       {active && <NowRecording r={active} pcName={pc.name} />}
       <section className="rd-readings" aria-label="Readings">
         <div className="rd-bar">
-          <div className="seg rd-spans" role="group" aria-label="How far back">
-            {spanWords.map(([k, word]) => <button key={k} type="button" aria-pressed={span === k} onClick={() => { setSpan(k); setPick(0); }}>{word}</button>)}
+          <div className="rd-when" role="group" aria-label="How far back">
+            <button type="button" className={`rd-live${span === "5m" ? " on" : ""}`} aria-pressed={span === "5m"} onClick={() => pickSpan("5m")}><i aria-hidden="true" />Live</button>
+            <div className="seg rd-spans">
+              {spanWords.map(([k, word]) => <button key={k} type="button" aria-pressed={span === k} onClick={() => pickSpan(k)}>{word}</button>)}
+            </div>
           </div>
           {span === "week" && <div className="seg rd-views" role="group" aria-label="Show as">
             <button type="button" aria-pressed={story} onClick={() => setView("story")}>Story</button>
