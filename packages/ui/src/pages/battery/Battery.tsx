@@ -15,7 +15,8 @@ export function batteryTiles(b: BatteryView): JSX.Element[] {
   if (b.level != null) {
     const how = b.state === "discharging" && b.watts != null ? `Drawing ${b.watts} W`
       : b.state === "charging" && b.watts != null ? `Charging at ${Math.round(b.watts)} W`
-      : b.state === "plugged" ? b.time?.text : undefined;
+      // The charge is the figure above, so held short of full it says what Windows says, not the number again.
+      : b.state === "plugged" ? (b.level < 99 ? "Plugged in, not charging" : b.time?.text) : undefined;
     tiles.push(
       <div key="charge" className="live">
         <span className="label">Charge</span>

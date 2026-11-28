@@ -92,6 +92,9 @@ describe("Stopping charging short of full", { timeout: 25000 }, () => {
     await openBattery("demo-comet");
     expect(screen.getByText("Charging stops at 80% to slow wear.")).toBeTruthy();
     expect(screen.queryByText(/^Stop charging/)).toBeNull();
+    // The charge is the big figure, so the line under it doesn't say 80% a second time.
+    expect(screen.getByText("Plugged in, not charging")).toBeTruthy();
+    expect(screen.queryByText(/holding at 80%/)).toBeNull();
   });
 
   it("on the laptop that sits at 100% on the charger, names its maker's app and asks about it, since Rig can't set it there", async () => {
