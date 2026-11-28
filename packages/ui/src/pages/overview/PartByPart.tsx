@@ -62,6 +62,7 @@ function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: st
     case "unread": return { text: "Rig can't read it" };
     case "slowing": return { text: "Slowing itself down", look: true };
     case "hot": return { text: "Running hot", look: true };
+    case "design": return { text: "At its limit, as built" };
     case "above": return { text: r.unit === "percent" ? "Fuller than usual" : r.unit === "rpm" ? "Faster than usual" : "Warmer than usual" };
     default: return { text: "Calm" };
   }
@@ -83,11 +84,14 @@ function headline(view: PartsView, name: string, online: boolean, laptop: boolea
   const label = (r: PartRow) => PLAIN[r.id]?.label.toLowerCase() ?? r.id;
   const slowing = view.rows.filter((r) => r.state === "slowing"), hot = view.rows.filter((r) => r.state === "hot" || r.state === "slowing");
   const above = view.rows.filter((r) => r.state === "above");
+  const design = view.rows.filter((r) => r.state === "design");
   const ranHot = view.rows.filter((r) => r.ranHot);
   const doing = view.busyNow == null ? null : view.busyNow ? "working hard" : "resting";
   let title: string;
   if (!online) title = `${name} is offline, so these are its last readings`;
   else if (hot.length) title = `Right now the ${and(hot.map(label))} ${hot.length > 1 ? "are" : "is"} ${slowing.length === hot.length ? "slowing down to stay safe" : "running hot"}`;
+  // Only a processor runs at its limit by design, so there's one at most.
+  else if (design.length && !above.length) title = `Right now ${name} is ${doing ?? "on"}, and the ${label(design[0])} is at its limit, as built`;
   else if (above.length) title = `Right now ${name} is ${doing ?? "on"}, and the ${and(above.map(label))} ${above.length > 1 ? "are" : "is"} above usual`;
   else title = doing ? `Right now ${name} is ${doing}, and every part is calm` : `Right now every part of ${name} is calm`;
   const now = !online ? "" : view.busyNow === false ? "Nothing heavy is running." : view.busyNow ? "A game or something heavy is running." : "";

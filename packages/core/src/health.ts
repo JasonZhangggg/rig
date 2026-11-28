@@ -6,7 +6,7 @@ import { diagnose, STABILITY, WEAR_CRITICAL, WEAR_LOW, type Finding, type Health
 import { boostsToLimit, cardChip, cpuLimit, cpuTemp, gpuLimit, gpuTemp, mobileChip, throttlingHard } from "./limits";
 import { safetyFindings } from "./safety";
 import { machineWord } from "./machineWord";
-import { findSensor, type Inventory } from "./telemetry";
+import { findSensor, type Inventory, type PCKind } from "./telemetry";
 import { suggestedOff } from "./startup";
 
 export type { Finding, HealthInput } from "./diagnose";
@@ -25,8 +25,13 @@ export const BUSY_LOAD = 60;
  * from BUSY_LOAD.
  */
 export function limitByDesign(inv: Inventory, load: number | null | undefined): boolean {
-  if (load == null || !boostsToLimit(inv.cpu.name, inv.machine.kind)) return false;
-  return inv.machine.kind === "laptop" || mobileChip(inv.cpu.name) ? load > REST_LOAD : load >= BUSY_LOAD;
+  return cpuLimitByDesign(inv.cpu.name, inv.machine.kind, load);
+}
+
+/** limitByDesign from the processor's name and the machine's kind, for screens that have the PC rather than its inventory. */
+export function cpuLimitByDesign(cpu: string, kind: PCKind | undefined, load: number | null | undefined): boolean {
+  if (load == null || !boostsToLimit(cpu, kind)) return false;
+  return kind === "laptop" || mobileChip(cpu) ? load > REST_LOAD : load >= BUSY_LOAD;
 }
 
 const ghz = (mhz: number) => `${(mhz / 1000).toFixed(1)} GHz`;
