@@ -21,12 +21,12 @@ describe("why is it slow or loud", () => {
   it("opens from Home and names what keeps the PC busy, with a step for each cause", async () => {
     const dialog = within(await openFromHome());
     // The demo desktop is in a game with a Windows Security scan beside it whenever it's checked.
-    expect(await dialog.findByRole("heading", { name: /^Fans are loud because Cyberpunk 2077 is keeping the graphics card at 97%/ })).toBeTruthy();
+    expect(await dialog.findByRole("heading", { name: "The fans are loud. Here's why." })).toBeTruthy();
     const found = within(dialog.getByRole("list", { name: "What Rig found" }));
     expect(found.getByText("Windows Security is scanning in the background")).toBeTruthy();
     expect(found.getByText("MsMpEng.exe uses 10% of the processor")).toBeTruthy();
     fireEvent.click(found.getByRole("button", { name: "Ask about settings" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Fans are loud/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /fans are loud/ })).toBeNull());
     expect(await screen.findByText(/^Cyberpunk 2077 keeps my graphics card at 97%/)).toBeTruthy();
   });
 
@@ -56,14 +56,14 @@ describe("why is it slow or loud", () => {
     fireEvent.keyDown(document, { key: "k", ctrlKey: true });
     fireEvent.change(await screen.findByRole("textbox", { name: "Search" }), { target: { value: "noisy" } });
     fireEvent.click(screen.getByRole("button", { name: /Why is Atlas slow or loud\?/ }));
-    expect(await screen.findByRole("heading", { name: /^Fans are loud because/ })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "The fans are loud. Here's why." })).toBeTruthy();
   });
 
   it("on the gaming laptop, says a game is on the built-in graphics and that it's on battery, and moves the game through review", async () => {
     localStorage.setItem("rig.pc", "demo-comet");
     const client = new DemoClient();
     const dialog = within(await openFromHome(client));
-    expect(await dialog.findByRole("heading", { name: "Baldur's Gate 3 is running on the built-in graphics, not the RTX 4060." })).toBeTruthy();
+    expect(await dialog.findByRole("heading", { name: "Here's what's slowing Comet down." })).toBeTruthy();
     const found = within(dialog.getByRole("list", { name: "What Rig found" }));
     expect(found.getAllByRole("listitem").map((li) => li.querySelector(".row-title")!.textContent)).toEqual([
       "Baldur's Gate 3 is running on the built-in graphics", "On battery, Windows is saving power",

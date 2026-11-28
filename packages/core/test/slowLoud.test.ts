@@ -39,7 +39,7 @@ describe("why is my PC slow or loud", () => {
   it("names the game keeping the graphics card busy when the fans are loud", () => {
     const a = slowOrLoud({ pc: pcOf("atlas", GAME), processes: apps("atlas", GAME), now: AT });
     expect(a.loud).toBe(true);
-    expect(a.headline).toBe("Fans are loud because Cyberpunk 2077 is keeping the graphics card at 97%.");
+    expect(a.headline).toBe("The fans are loud. Here's why.");
     const top = a.causes[0];
     expect(top.title).toBe("Cyberpunk 2077 keeps the graphics card at 97%");
     expect(top.evidence).toMatch(/^Cyberpunk2077\.exe uses 94% of it · \d+°C · fans at [\d,]+ rpm$/);
@@ -70,14 +70,14 @@ describe("why is my PC slow or loud", () => {
     expect(top.why).toMatch(/points at the cooler/);
     // The health check's own finding is the next step.
     expect(top.step).toMatchObject({ kind: "issue", label: "Ask what to do", issue: { id: "cpu-hot" } });
-    expect(a.headline).toBe("Likely: the processor is hot while barely working, which points at the cooler.");
+    expect(a.headline).toBe("Here's what's likely slowing Atlas down.");
   });
 
   it("says memory is nearly full and which app holds the most", () => {
     const pc = pcOf("atlas", REST, (s) => setSensor(s, "memory", "load", /^memory$/i, 95));
     const procs: ProcessUse[] = [{ name: "chrome.exe", cpu: 4, memMb: 9830 }, { name: "Discord.exe", cpu: 1, memMb: 600 }];
     const a = slowOrLoud({ pc, processes: procs, now: AT });
-    expect(a.headline).toBe("Memory is 95% full, so apps wait on the drive.");
+    expect(a.headline).toBe("Here's what's slowing Atlas down.");
     expect(a.causes[0].evidence).toBe("Chrome holds the most, 9.6 GB");
     expect(a.causes[0].step).toMatchObject({ kind: "issue", label: "Ask what's using it", issue: { id: "mem-full" } });
     // With a cause of slowness, the startup apps come along as a smaller one.
@@ -100,7 +100,7 @@ describe("why is my PC slow or loud", () => {
     const busy: Activity = { cpu: 1, gpu: 0.05, game: null };
     const a = slowOrLoud({ pc: pcOf("pebble", busy), processes: apps("pebble", busy), now: AT });
     expect(a.causes[0].title).toBe("Windows Update is installing updates in the background");
-    expect(a.headline).toBe("Fans are loud because Windows Update is installing updates in the background.");
+    expect(a.headline).toBe("The fans are loud. Here's why.");
     expect(a.causes.map((c) => c.id)).not.toContain("cpu-busy");
   });
 
@@ -116,7 +116,7 @@ describe("why is my PC slow or loud", () => {
     const pc = pcOf("atlas", REST, (s) => setSensor(s, "board", "fan", /fan #/i, 2200));
     const a = slowOrLoud({ pc, processes: [], now: AT });
     expect(a.causes[0]).toMatchObject({ id: "fans-fast", likely: true, step: { kind: "go", route: "pc", part: "fans" } });
-    expect(a.headline).toBe("Fans are loud, likely because of dust or the fan settings, since nothing is busy.");
+    expect(a.headline).toBe("The fans are loud. Here's the likely reason.");
   });
 
   it("looks back over the last hour when it's quiet now", () => {
@@ -146,7 +146,7 @@ describe("why is my PC slow or loud", () => {
     const play: Activity = { cpu: 0.5, gpu: 0.75, game: "Baldur's Gate 3" };
     const procs = [...apps("atlas", play), { name: "MsMpEng.exe", cpu: 9.6, memMb: 380 }];
     const a = slowOrLoud({ pc: pcOf("atlas", play, (s) => setSensor(s, "gpu", "fan", /gpu fan/i, 2300)), processes: procs, now: AT });
-    expect(a.headline).toBe("Fans are loud because Baldur's Gate 3 is keeping the graphics card at 74%.");
+    expect(a.headline).toBe("The fans are loud. Here's why.");
     expect(a.causes.map((c) => c.id)).toEqual(["gpu-busy", "background-scan"]);
   });
 
@@ -186,7 +186,7 @@ describe("reading the busiest apps", () => {
     const pc = (await demo.machines()).find((p) => p.id === "demo-atlas")!;
     const a = slowOrLoud({ pc, processes: procs, now: Date.now() });
     // The demo desktop is dusty, so its card also reaches its limit.
-    expect(a.headline).toBe("Fans are loud because Cyberpunk 2077 is keeping the graphics card at 97%, and it's at its 88°C limit.");
+    expect(a.headline).toBe("The fans are loud. Here's why.");
     expect(a.causes.map((c) => c.title)).toEqual(["Cyberpunk 2077 keeps the graphics card at 97%", "Graphics card is at its 88°C limit", "Windows Security is scanning in the background"]);
     // Home shows the same game.
     expect(pc.parts?.gpu?.load).toBe(97);
@@ -215,7 +215,7 @@ describe("why is my laptop slow: on battery, and a game on the built-in graphics
     expect(c.evidence).toBe("Unplugged at 46% · Power mode is Best power efficiency");
     expect(c.why).toBe("To make the charge last, Windows holds the processor back while the laptop runs on battery. Plugging in brings back full speed.");
     expect(c.step).toEqual({ kind: "tip", label: "Plug in" });
-    expect(a.headline).toBe("On battery, Windows is keeping the processor slow to save power.");
+    expect(a.headline).toBe("Here's what's slowing Comet down.");
   });
 
   it("says nothing of it plugged in, on a desktop, or where the helper doesn't read the power mode", () => {
@@ -261,7 +261,7 @@ describe("why is my laptop slow: on battery, and a game on the built-in graphics
     expect(c.evidence).toMatch(/^bg3\.exe uses \d+% of the Radeon 780M · RTX 4060 asleep$/);
     expect(c.why).toBe("This laptop has two graphics chips. Windows ran Baldur's Gate 3 on the built-in Radeon 780M, which saves power but is much slower than the RTX 4060. Setting it to use the RTX 4060 takes effect the next time Baldur's Gate 3 starts.");
     expect(c.step).toEqual({ kind: "fix", label: "Review change", fix: [{ kind: "display.appGpu", app: "bg3.exe", gpu: "high" }], why: "Windows ran Baldur's Gate 3 on the built-in graphics. It uses the RTX 4060 the next time it starts." });
-    expect(a.headline).toBe("Baldur's Gate 3 is running on the built-in graphics, not the RTX 4060.");
+    expect(a.headline).toBe("Here's what's slowing Comet down.");
     // Busy on the built-in chip is still busy: fast fans aren't put down to dust.
     expect(ids(a)).not.toContain("fans-fast");
   });

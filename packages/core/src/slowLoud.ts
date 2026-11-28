@@ -126,7 +126,6 @@ const BG_DOING: Record<Background, string> = { scan: "is scanning in the backgro
 // ----- Words -----
 
 const r = Math.round;
-const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const rpm = (n: number) => `${r(n).toLocaleString("en-US")} rpm`;
 const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
@@ -141,8 +140,6 @@ const saverName = (os: string) => (/windows 11/i.test(os) && /\b(2[4-9]|[3-9]\d)
 
 interface Candidate extends SlowLoudCause {
   score: number;
-  /** The cause as the end of "Fans are loud because …". */
-  because: string;
   /** It makes noise: heat or a part kept busy. Memory or a capped processor doesn't. */
   noisy: boolean;
 }
@@ -185,7 +182,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const found = hotIdle ?? issue("cpu-hot", "cpu-warm");
     add({
       id: "cpu-hot-rest", score: 95, noisy: true, likely: true,
-      title: "Processor is hot while barely working", because: `the processor is hot while barely working, which points at the ${laptop ? "cooling" : "cooler"}`,
+      title: "Processor is hot while barely working",
       evidence: `${r(cpuT)}°C at ${pctOf(cpuLoad)} busy · limit ${cpuLim}°C`,
       why: laptop
         ? "A processor at rest should run well under its limit. On a laptop that points at the cooling: dust in the fan, vents blocked by a soft surface, or a fan that stopped."
@@ -193,7 +190,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
       step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: laptop ? `My laptop's processor is at ${r(cpuT)}°C while only ${pctOf(cpuLoad)} busy. Is something wrong with its fan?` : `My processor is at ${r(cpuT)}°C while only ${pctOf(cpuLoad)} busy. Is the cooler failing?` },
     });
   } else if (hotIdle) {
-    add({ id: "cpu-hot-rest", score: 85, noisy: true, likely: true, title: hotIdle.title, because: lower(hotIdle.title), evidence: hotIdle.evidence?.[0] ?? hotIdle.body, why: hotIdle.body, step: issueStep(hotIdle) });
+    add({ id: "cpu-hot-rest", score: 85, noisy: true, likely: true, title: hotIdle.title, evidence: hotIdle.evidence?.[0] ?? hotIdle.body, why: hotIdle.body, step: issueStep(hotIdle) });
   }
 
   // A part at its limit slows itself down to stay safe, and its fans run flat out.
@@ -202,14 +199,14 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     // A laptop's processor is built to work at its limit. Without a finding (it hasn't lost real speed there) that's how it runs, not a fault.
     if (laptop && !found && cpuLoad != null) add({
       id: "cpu-limit", score: 60, noisy: true,
-      title: `Processor is working at its ${cpuLim}°C limit`, because: `the processor is working at its ${cpuLim}°C limit`,
+      title: `Processor is working at its ${cpuLim}°C limit`,
       evidence: `${r(cpuT)}°C at ${pctOf(cpuLoad)} busy`,
       why: "Laptop processors are built to run up to their limit under load. There they slow down a little to stay safe, which is called throttling, and the fans run fast. That's normal.",
       step: { kind: "ask", label: "Ask about it", ask: `My laptop's processor runs at ${r(cpuT)}°C under load. Is that normal, and can I make it quieter?` },
     });
     else add({
       id: "cpu-limit", score: 78, noisy: true,
-      title: `Processor is at its ${cpuLim}°C limit`, because: `the processor is at its ${cpuLim}°C limit and slowing itself down`,
+      title: `Processor is at its ${cpuLim}°C limit`,
       evidence: `${r(cpuT)}°C${cpuLoad != null ? ` at ${pctOf(cpuLoad)} busy` : ""}`,
       why: "At its limit it gives up some speed to stay safe, which is called throttling, and its fan runs flat out.",
       step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: `My processor is at ${r(cpuT)}°C. What should I do?` },
@@ -219,7 +216,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const found = issue("gpu-hot", "gpu-hotspot-hot");
     add({
       id: "gpu-limit", score: 78, noisy: true,
-      title: `Graphics card is at its ${gpuLim}°C limit`, because: `the graphics card is at its ${gpuLim}°C limit and slowing itself down`,
+      title: `Graphics card is at its ${gpuLim}°C limit`,
       evidence: `${r(gpuT)}°C${gpuLoad != null ? ` at ${pctOf(gpuLoad)} busy` : ""}`,
       why: `At its limit it gives up some speed to stay safe, which is called throttling, and its fans run flat out. ${laptop ? "Dust in the fans or blocked vents is the usual cause." : "Dust on the card and the case's filters is the usual cause."}`,
       step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: `My graphics card is at ${r(gpuT)}°C. What should I do?` },
@@ -233,7 +230,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const driveToo = disk != null && disk >= SL_DISK_BUSY;
     add({
       id: `background-${what}`, score: bgTop.cpu >= 20 || driveToo ? 72 : 62, noisy: true,
-      title: `${who} ${BG_DOING[what]}`, because: `${who} ${BG_DOING[what]}`,
+      title: `${who} ${BG_DOING[what]}`,
       evidence: `${bgTop.name} uses ${pctOf(bgTop.cpu)} of the processor${driveToo ? ` · drive ${pctOf(disk!)} busy` : ""}`,
       why: "This is Windows' own work. It usually finishes on its own, and the fans settle when it does.",
       step: { kind: "ask", label: "Ask about it", ask: `${who} ${BG_DOING[what]} on ${pc.name} (${bgTop.name}, ${pctOf(bgTop.cpu)} of the processor). Is that normal, and can I make it run at a better time?` },
@@ -249,7 +246,6 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     add({
       id: "gpu-busy", score: 70 + (loud ? 10 : 0), noisy: true,
       title: who ? `${who} keeps the graphics card at ${pctOf(gpuLoad)}` : `Graphics card is ${pctOf(gpuLoad)} busy`,
-      because: who ? `${who} is keeping the graphics card at ${pctOf(gpuLoad)}` : `the graphics card is ${pctOf(gpuLoad)} busy`,
       evidence: [top && top.gpu != null && `${top.name} uses ${pctOf(top.gpu)} of it`, temp, loud && fastest && `fans at ${rpm(fastest.rpm)}`].filter(Boolean).join(" · "),
       why: loud ? "The harder the card works, the faster its fans spin to keep it cool. Lower settings or a frame rate cap make it work less." : undefined,
       step: { kind: "ask", label: "Ask about settings", ask: who ? `${who} keeps my graphics card at ${pctOf(gpuLoad)} and the fans get loud. Which settings would make it quieter without losing much?` : `My graphics card is ${pctOf(gpuLoad)} busy. What's using it?` },
@@ -264,7 +260,6 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
       add({
         id: "cpu-busy", score: 68 + (loud ? 8 : 0), noisy: true,
         title: who ? `${who} keeps the processor at ${pctOf(cpuLoad)}` : `Processor is ${pctOf(cpuLoad)} busy`,
-        because: who ? `${who} is keeping the processor at ${pctOf(cpuLoad)}` : `the processor is ${pctOf(cpuLoad)} busy`,
         evidence: [top && `${top.name} uses ${pctOf(top.cpu)} of it`, cpuT != null && `${r(cpuT)}°C`, loud && fastest && `fans at ${rpm(fastest.rpm)}`].filter(Boolean).join(" · "),
         step: { kind: "ask", label: "Ask about it", ask: who ? `${who} keeps my processor at ${pctOf(cpuLoad)}. Is that normal, and how do I calm it down?` : `My processor is ${pctOf(cpuLoad)} busy. What's using it?` },
       });
@@ -277,7 +272,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const found = issue("mem-full");
     add({
       id: "mem-full", score: 75, noisy: false,
-      title: `Memory is ${pctOf(mem)} full`, because: `memory is ${pctOf(mem)} full, so apps wait on the drive`,
+      title: `Memory is ${pctOf(mem)} full`,
       evidence: top ? `${appName(top)} holds the most, ${gb(top.memMb)}` : "",
       why: "When memory runs out, Windows moves things to the drive, which is much slower. Closing apps or browser tabs you aren't using frees it.",
       step: found ? issueStep(found) : { kind: "ask", label: "Ask what's using it", ask: "My memory is almost full. What's using it?" },
@@ -288,7 +283,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
   if (disk != null && disk >= SL_DISK_BUSY && !bgTop) {
     add({
       id: "disk-busy", score: 60, noisy: false,
-      title: `Drive is ${pctOf(disk)} busy`, because: `the drive is ${pctOf(disk)} busy, so everything waits on it`,
+      title: `Drive is ${pctOf(disk)} busy`,
       evidence: "Opening apps and files waits on it",
       step: { kind: "go", label: "See the readings", route: "logs" },
     });
@@ -300,7 +295,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     if (a.kind === "too-hot" && out.some((c) => c.id === `${a.part}-limit`)) continue;
     add({
       id: `alert-${a.id}`, score: a.kind === "fan-stopped" ? 90 : a.kind === "too-hot" ? 78 : 58, noisy: a.kind !== "fan-stopped",
-      title: a.title, because: lower(a.title), evidence: a.detail,
+      title: a.title, evidence: a.detail,
       step: a.ask ? { kind: "ask", label: "Ask what to do", ask: a.ask } : { kind: "go", label: "See the part", route: "pc", part: a.part },
     });
   }
@@ -311,7 +306,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const balanced = pc.settings!.powerPlans.find((p) => /^balanced$/i.test(p.name.trim()));
     add({
       id: "power-saver", score: cpuLoad != null && cpuLoad >= 50 ? 66 : 45, noisy: false,
-      title: "Power saver is holding the processor back", because: "the Power saver plan is holding the processor back",
+      title: "Power saver is holding the processor back",
       evidence: `Windows' power plan is ${plan.name}`,
       why: "It keeps the processor's speed down to save power. Balanced lets it speed up when there's work to do.",
       step: balanced ? { kind: "fix", label: "Review change", fix: [{ kind: "power.plan", guid: balanced.guid }], why: "Power saver keeps the processor's speed down." } : { kind: "ask", label: "Ask about it", ask: `${pc.name} uses the ${plan.name} power plan. Should I change it?` },
@@ -327,7 +322,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     if (cap && cap.dc < SL_BATTERY_CAP) {
       add({
         id: "battery-power", score: busyNow ? 70 : 52, noisy: false,
-        title: `On battery, the processor is capped at ${cap.dc}%`, because: `on battery, the processor is capped at ${cap.dc}% of its speed`,
+        title: `On battery, the processor is capped at ${cap.dc}%`,
         evidence: `Unplugged${at} · ${cap.dc}% on battery, ${cap.ac}% plugged in`,
         why: `Windows' power plan holds the processor to ${cap.dc}% of its speed while the ${word} runs on battery. Lifting the cap makes it faster unplugged, and the charge runs down sooner.`,
         step: { kind: "fix", label: "Review change", fix: [{ kind: "power.maxProcessorState", ac: cap.ac, dc: 100 }], why: `On battery the processor is capped at ${cap.dc}%.` },
@@ -338,7 +333,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
       const plugHelps = mode.saver || mode.ac !== "efficiency";
       add({
         id: "battery-power", score: busyNow ? 66 : 50, noisy: false,
-        title: "On battery, Windows is saving power", because: "on battery, Windows is keeping the processor slow to save power",
+        title: "On battery, Windows is saving power",
         evidence: `Unplugged${at} · ${mode.saver ? `${saver} is on` : "Power mode is Best power efficiency"}`,
         why: plugHelps
           ? `To make the charge last, Windows holds the processor back while the ${word} runs on battery. Plugging in brings back full speed.`
@@ -357,7 +352,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const set = settings?.gpuPreferences?.[wrongChip.name.toLowerCase()] === "high";
     add({
       id: "built-in-graphics", score: 82, noisy: false,
-      title: `${who} is running on the built-in graphics`, because: `${who} is running on the built-in graphics, not the ${fast}`,
+      title: `${who} is running on the built-in graphics`,
       evidence: [`${wrongChip.name} uses ${pctOf(wrongChip.builtIn!)} of the ${builtIn}`, card.asleep ? `${fast} asleep` : card.load != null ? `${fast} ${pctOf(card.load)} busy` : null].filter(Boolean).join(" · "),
       why: set
         ? `This ${word} has two graphics chips. ${who} is already set to use the ${fast}, which takes effect the next time it starts.`
@@ -372,7 +367,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
   if (loud && !busyAny && !out.some((c) => c.noisy)) {
     add({
       id: "fans-fast", score: 55, noisy: true, likely: true,
-      title: "Fans are fast while nothing is busy", because: "of dust or the fan settings, since nothing is busy",
+      title: "Fans are fast while nothing is busy",
       evidence: [upper(fanWords), cpuLoad != null && `processor ${pctOf(cpuLoad)} busy`, gpuLoad != null && `graphics card ${pctOf(gpuLoad)}`].filter(Boolean).join(" · "),
       why: "With nothing busy or hot, dust in the fans or the fan settings are the likely cause.",
       step: { kind: "go", label: "See the fans", route: "pc", part: "fans" },
@@ -386,7 +381,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const found = issue("startup");
     add({
       id: "startup", score: 30, noisy: false,
-      title: `${startup} apps start with Windows`, because: `${startup} apps start with Windows and keep running`,
+      title: `${startup} apps start with Windows`,
       evidence: "Each one slows the start and keeps running in the background",
       step: found ? issueStep(found) : { kind: "ask", label: "Review startup apps", ask: "Which of my startup apps can I safely turn off?" },
     });
@@ -401,7 +396,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
       const part = g >= c ? "graphics card" : "processor", at = r(Math.max(g, c));
       add({
         id: "earlier", score: 40, noisy: true, likely: true,
-        title: `Earlier, ${game ? `${game} kept` : "something kept"} the ${part} at ${at}%`, because: `${game ?? "something"} kept the ${part} at ${at}% in the last hour`,
+        title: `Earlier, ${game ? `${game} kept` : "something kept"} the ${part} at ${at}%`,
         evidence: "Quiet now",
         why: "That busy stretch in the last hour is likely what you heard.",
         step: { kind: "go", label: "See the readings", route: "logs" },
@@ -424,16 +419,12 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
 
   let headline: string;
   if (!top) headline = loud ? `Nothing looks wrong. ${upper(fanWords)} are normal for what ${pc.name} is doing.` : "Nothing looks wrong right now.";
-  else if (loud && top.noisy) {
-    // The part a game keeps busy is often also the one at its limit: say both in one go.
-    const hot = causes.find((c) => c.id === (top.id === "gpu-busy" ? "gpu-limit" : top.id === "cpu-busy" ? "cpu-limit" : ""));
-    const lim = top.id === "gpu-busy" ? gpuLim : cpuLim;
-    headline = `Fans are loud${top.likely ? ", likely" : ""} because ${top.because}${hot ? `, and it's at its ${lim}°C limit` : ""}.`;
-  }
-  else headline = `${top.likely ? "Likely: " : ""}${top.likely ? top.because : upper(top.because)}.`;
+  // The causes are the rows under it, each with its numbers and what to do, so the headline points at them, not repeats them.
+  else if (loud && top.noisy) headline = top.likely ? "The fans are loud. Here's the likely reason." : "The fans are loud. Here's why.";
+  else headline = `Here's what's ${top.likely ? "likely " : ""}slowing ${pc.name} down.`;
 
   return {
-    headline, calm: !top, loud, causes: causes.map(({ score: _s, because: _b, noisy: _n, ...c }) => c), checked,
+    headline, calm: !top, loud, causes: causes.map(({ score: _s, noisy: _n, ...c }) => c), checked,
     appsNote: processes === null ? `The list of apps needs the Rig app open on ${pc.name}.` : undefined,
     asOf: pc.online ? undefined : `From ${pc.name}'s last readings.`,
   };

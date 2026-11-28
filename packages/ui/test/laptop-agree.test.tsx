@@ -105,4 +105,18 @@ describe("Two screens, one figure", { timeout: 30000 }, () => {
     const closed = await screen.findByText(/^Built into Comet's board, so not upgradable:/, undefined, { timeout: 10000 });
     expect(closed.textContent).toBe("Built into Comet's board, so not upgradable: memory (most likely), graphics and processor.");
   });
+
+  for (const pc of ["demo-comet", "demo-atlas"]) {
+    it(`gives ${pc}'s Slow or loud a headline that points to the reasons, not one that repeats the first`, async () => {
+      await open(pc);
+      fireEvent.click(await screen.findByRole("button", { name: "Slow or loud? Check now" }));
+      const found = within(await screen.findByRole("list", { name: "What Rig found" }, { timeout: 10000 }));
+      const heading = screen.getByRole("dialog").querySelector("h2")!.textContent!;
+      const first = found.getAllByRole("listitem")[0].querySelector(".row-title")!.textContent!;
+      // The first reason is said once, in its row with its numbers and its step; the headline names no game, app or part of it.
+      const who = /^(.+?) (keeps|is running)/.exec(first)?.[1] ?? first;
+      expect(heading).toMatch(/^(The fans are loud\. Here's (why|the likely reason)\.|Here's what's (likely )?slowing \w+ down\.)$/);
+      expect(heading).not.toContain(who);
+    });
+  }
 });
