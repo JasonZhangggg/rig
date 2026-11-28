@@ -6,6 +6,7 @@ import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageS
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageScan, type SystemFacts } from "./telemetry";
 import { driveMaps } from "./drives";
+import { batteryView, type PowerNow } from "./battery";
 import { isSetting, sensorName } from "./sensors";
 import type { Picks } from "./build";
 
@@ -69,12 +70,14 @@ export function livePoint(pc: PC, t: number): HistoryPoint {
 export type Evidence = Pick<HealthInput, "events" | "history" | "now"> & {
   /** The helper's last folder scan, for what fills each drive. Missing: the map shows used and free only. */
   scan?: StorageScan | null;
+  /** A laptop's power settings the battery savers look at, as the helper read them (SAVER_SETTINGS). */
+  power?: PowerNow;
 };
 
 export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}, more: Evidence = {}): PC & { findings: Finding[] } {
   const laptop = inv.machine.kind === "laptop";
   const parts: Record<string, Part> = {};
-  const { scan, ...evidence } = more;
+  const { scan, power, ...evidence } = more;
   const fs = findings({ inv, snap, facts, ...evidence });
   const cpuLim = cpuLimit(inv.cpu.name, snap);
   const warnPart = new Set(fs.filter((f) => f.severity === "warn" || f.severity === "bad").map((f) => f.part).filter(Boolean));
@@ -215,6 +218,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   });
 
   const { health, breakdown } = score(laptop, fs, more.events != null);
+  const battery = batteryView(inv, snap, facts, { history: evidence.history, power, now: evidence.now });
   const issues: Issue[] = fs.length ? fs : [{ id: "all-good", severity: "ok", title: "Nothing needs a look", body: "Temperatures, storage and settings all look normal.", action: "Ask Rig anything", go: "chat" }];
 
   return {
@@ -251,6 +255,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
       name: d.name, width: d.width, height: d.height, refreshHz: d.refreshHz, connection: d.connection,
       onCard: d.gpu && dgpu && !dgpu.integrated ? d.gpu === dgpu.name : undefined,
     })),
+    ...(battery ? { battery } : {}),
     findings: fs,
   };
 }

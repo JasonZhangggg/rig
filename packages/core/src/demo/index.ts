@@ -14,7 +14,8 @@ import { simulate } from "./simulate";
 import { activityAt, type Activity } from "./schedule";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
-import { applyToFacts, demoNow } from "./apply";
+import { applyToFacts, demoNow, demoSaverPower } from "./apply";
+import { batteryView } from "../battery";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
@@ -61,7 +62,7 @@ export function freshSecurity(facts: SystemFacts, now: number): SystemFacts {
 
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: { until: number; act: Activity }; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; today?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: { until: number; act: Activity }; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -147,7 +148,14 @@ export class DemoClient implements RigClient {
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
-    return withAlerts({ ...pc, lastSync: "Demo PC" }, alerts);
+    // The battery page reads today's history (and the hour before, for a stretch that started late last night) and the
+    // power settings, which the rest of the demo view goes without. Only laptops have one, and only today's windows are worked out.
+    if (p.inv.machine.kind === "laptop" && (!p.today || now - p.today.at > HISTORY_WINDOW_MS)) {
+      const midnight = new Date(now).setHours(0, 0, 0, 0);
+      p.today = { at: now, points: this.points(p, Math.min(midnight, now - 3 * 36e5) - 36e5, now) };
+    }
+    const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now });
+    return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: "Demo PC" }, alerts);
   }
 
   /** A demo PC's readings now: its weekly schedule, or the busy moment the slow-or-loud check set going. */
@@ -259,6 +267,7 @@ export class DemoClient implements RigClient {
         const dust = p.dust * Math.max(0, 1 - (this.born - from) / rangeMs["30d"]);
         const w = new HistoryWindow(from);
         for (const at of sampled(from)) w.add(simulate(p.inv, at, { dust }));
+        if (w.onBattery) for (const at of sampled(from)) w.addApps(demoProcesses(p.inv, at));
         kept.set(from, point = w.point());
       }
       out.push(point);
@@ -329,7 +338,7 @@ export class DemoClient implements RigClient {
 
   async preview(id: string, steps: Step[]): Promise<DiffRow[]> {
     const p = this.pcs[id];
-    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays, demoNow(p.facts, s.call)));
+    return fixesOnly(steps).map((s) => describeCall(s.call, p.facts, p.inv.displays, demoNow(p.inv, p.facts, s.call)));
   }
 
   async apply(id: string, steps: Step[], meta: ApplyMeta): Promise<Change> {

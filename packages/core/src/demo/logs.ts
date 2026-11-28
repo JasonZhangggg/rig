@@ -8,13 +8,17 @@ import type { Inventory } from "../telemetry";
 import { buildPC } from "../view";
 import { activityAt, type Activity } from "./schedule";
 import { simulate } from "./simulate";
+import { demoBattery, demoBatteryApps } from "./battery";
 
 const MIN = 60_000;
 const DAY = 864e5;
 const exe: Record<string, string> = { "Cyberpunk 2077": "Cyberpunk2077.exe", "Counter-Strike 2": "cs2.exe", "Baldur's Gate 3": "bg3.exe", "Stardew Valley": "Stardew Valley.exe", Minecraft: "javaw.exe" };
 
 /** The busiest apps on a demo PC at a moment, following what it's doing. */
-export function demoProcesses(inv: Inventory, t: number, act: Activity = activityAt(inv.machine.kind, t)): ProcessUse[] {
+export function demoProcesses(inv: Inventory, t: number, act?: Activity): ProcessUse[] {
+  const onBattery = act ? null : demoBatteryApps(demoBattery(inv, t)?.what, t);
+  if (onBattery) return onBattery;
+  act ??= activityAt(inv.machine.kind, t);
   const wob = (seed: number, amp: number) => Math.sin(t / 9000 + seed) * amp;
   const list: ProcessUse[] = [
     { name: "chrome.exe", cpu: 3 + wob(1, 1.5), memMb: 2100 + wob(2, 120) },

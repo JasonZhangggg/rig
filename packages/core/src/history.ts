@@ -1,8 +1,10 @@
 // What one HistoryPoint holds, folded from the sensor readings taken during
 // its window. The desktop app and the demo both record through this.
 
+import { readBattery } from "./battery";
 import { cpuTemp, gpuTemp } from "./health";
 import type { HistoryPoint } from "./model";
+import type { ProcessUse } from "./recordings";
 import { findSensor, type Snapshot } from "./telemetry";
 
 const max = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
@@ -32,6 +34,11 @@ export class HistoryWindow {
   private loads = { cpuLoad: new Mean(), gpuLoad: new Mean(), mem: new Mean() };
   private busy = false;
   private games: string[] = [];
+  private batt: number | null = null;
+  private drain = new Mean(10);
+  private hadBattery = false;
+  private appUse = new Map<string, number>();
+  private appReads = 0;
 
   constructor(readonly from: number) {}
 
@@ -49,20 +56,50 @@ export class HistoryWindow {
     this.loads.mem.add(findSensor(s, "memory", "load", /^memory$/i)?.value);
     this.busy ||= isBusy(s);
     if (s.game) this.games.push(s.game);
+    const b = readBattery(s);
+    if (b) {
+      this.hadBattery = true;
+      if (b.level != null) this.batt = b.level;
+      if (b.state === "discharging") this.drain.add(b.watts);
+    }
+  }
+
+  /** On battery the busiest apps are worth keeping, so the battery page can say what drained it. */
+  get onBattery() { return this.drain.value() != null; }
+
+  /** The busiest apps at one moment in the window. An app counts when it averaged at least 5% of the whole processor. */
+  addApps(top: readonly ProcessUse[]) {
+    this.appReads++;
+    for (const p of top) this.appUse.set(p.name, (this.appUse.get(p.name) ?? 0) + p.cpu);
   }
 
   point(): HistoryPoint {
     return {
       t: this.from, cpu: round(this.cpu), gpu: round(this.gpu), busy: this.busy, fan: round(this.fan), game: mostCommon(this.games),
       cpuLoad: this.loads.cpuLoad.value(), gpuLoad: this.loads.gpuLoad.value(), mem: this.loads.mem.value(), drive: round(this.drive), board: round(this.board),
+      ...(this.hadBattery ? { batt: round(this.batt), drain: this.drain.value() } : {}),
+      ...(this.onBattery && this.appReads ? this.busyApps() : {}),
     };
   }
+
+  private busyApps(): { apps?: string[] } {
+    const apps = [...this.appUse].map(([name, sum]) => [name, sum / this.appReads] as const)
+      .filter(([name, cpu]) => cpu >= BUSY_APP && !NOT_APPS.test(name)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name]) => name);
+    return apps.length ? { apps } : {};
+  }
 }
+
+/** An app's share of the whole processor, averaged over a window, that counts as keeping it busy. */
+const BUSY_APP = 5;
+/** Windows' own housekeeping, which isn't an app anyone opened. */
+const NOT_APPS = /^(idle|system|system idle process|registry|dwm|csrss|svchost|lsass|services|wininit|smss|audiodg|rig|righelper)(\.exe)?$/i;
 
 /** A running average of the readings that came in, rounded; null when none did. */
 class Mean {
   private sum = 0;
   private n = 0;
+  /** `per` steps: 1 rounds to whole numbers, 10 to tenths. */
+  constructor(private per = 1) {}
   add(v: number | null | undefined) { if (v != null) { this.sum += v; this.n++; } }
-  value() { return this.n ? Math.round(this.sum / this.n) : null; }
+  value() { return this.n ? Math.round((this.sum / this.n) * this.per) / this.per : null; }
 }

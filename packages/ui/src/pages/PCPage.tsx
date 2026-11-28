@@ -22,6 +22,7 @@ import { GpuView } from "./gpu/GpuView";
 import { TempRange, rangePart } from "./TempRange";
 import { GpuPorts } from "./gpu/GpuPorts";
 import { gpuStage } from "./gpu/gpuStage";
+import { BatteryLife, batteryTiles } from "./battery/Battery";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
 const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals and drivers"], ["safety", "Safety"]];
@@ -256,7 +257,8 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   // The motherboard opens on what's plugged into it, a tower's graphics card on its outputs and power, storage on what fills each drive.
   const first: [string, string][] = id === "motherboard" ? [["slots", "Slots"], ["cables", "Cables"]]
     : id === "gpu" && pc.kind === "tower" ? [["ports", "Ports"]]
-    : id === "ssd" && pc.drives?.length ? [["drives", "Drives"]] : [];
+    : id === "ssd" && pc.drives?.length ? [["drives", "Drives"]]
+    : id === "battery" && pc.battery ? [["life", "Battery life"]] : [];
   const tabs: [string, string][] = [...first, ["specs", "Specs"], ["manual", "Manual"]];
   if (part.driver) tabs.push(["drivers", part.driver.installed.startsWith("BIOS") ? "BIOS" : "Drivers"]);
   if (ideas.length) tabs.push(["upgrade", "Upgrade"]);
@@ -319,6 +321,11 @@ function SourceBadge({ part }: { part: Part }) {
     : <div className="source-badge"><span className="chip no-dot">3D shape from size</span>{part.dims ?? "Built from the part's size and color"}</div>;
 }
 
+function BatteryTab() {
+  const { pc } = useApp();
+  return pc.battery ? <BatteryLife battery={pc.battery} /> : null;
+}
+
 function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   const { ask } = useApp();
   const inUnit = useTempText();
@@ -327,6 +334,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
   if (tab === "drives") return <StorageMap />;
   if (tab === "cables") return <BoardCables />;
   if (tab === "ports") return <GpuPorts />;
+  if (tab === "life") return <BatteryTab />;
   if (tab === "drivers" && part.driver) {
     const d = part.driver;
     const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || part.name.includes(k));
@@ -373,6 +381,7 @@ function Readings({ part, id }: { part: Part; id: string }) {
   if (part.load !== undefined) tiles.push(<div key="l" className="live"><span className="label">Load</span><span key={part.load} className="big live-tick">{part.load}%</span><span className="bar live-load" aria-hidden="true"><i style={{ transform: `translateX(${part.load - 100}%)` }} /></span></div>);
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
+  if (id === "battery" && pc.battery) tiles.push(...batteryTiles(pc.battery));
   return (
     <>
       {tiles.length > 0 && <div className="live-grid">{tiles}</div>}

@@ -3,6 +3,7 @@
 
 import type { Inventory, Sensor, Snapshot } from "../telemetry";
 import { activityAt, type Activity } from "./schedule";
+import { demoBattery } from "./battery";
 
 /**
  * A slow swing over `period` ms. The time is first brought inside one turn: the sine of a number near a billion is
@@ -25,7 +26,9 @@ const slug = (hw: string, type: string, name: string) => `/${hw}/0/${type}/${nam
  */
 export function simulate(inv: Inventory, t: number, opts: { game?: string | null; activity?: Activity; dust?: number } = {}): Snapshot {
   const laptop = inv.machine.kind === "laptop";
-  const act = opts.activity ?? (opts.game ? { cpu: 1, gpu: 1, game: opts.game } : activityAt(inv.machine.kind, t));
+  const battery = laptop ? demoBattery(inv, t) : null;
+  // On battery the laptop does what its day on battery says (demo/battery.ts), not its usual week.
+  const act = opts.activity ?? (opts.game ? { cpu: 1, gpu: 1, game: opts.game } : battery?.activity ?? activityAt(inv.machine.kind, t));
   const cpu = Math.min(act.cpu, 1), gpuLoad = Math.min(act.gpu, 1), load = Math.max(cpu, gpuLoad);
   const dust = opts.dust ?? 0;
   const amd = /amd|ryzen/i.test(inv.cpu.name);
@@ -136,6 +139,19 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
       add("storage", disk.model, "level", "Percentage Used", 100 - (disk.healthPercent ?? 98));
       add("storage", disk.model, "data", "Data Written", (disk.writtenTb ?? 12) * 1000);
     }
+  }
+
+  // The battery, named the way LibreHardwareMonitor names it: the rate and current are named for which way they go.
+  if (battery && inv.battery) {
+    const name = `${inv.machine.manufacturer} Battery`.trim();
+    const w = battery.state === "plugged" ? 0 : battery.watts + (battery.state === "discharging" ? wobble(t, 4000, 0.6) + act.cpu * wobble(t, 1300, 1.5) : 0);
+    const v = 14.8 + (battery.level / 100) * 2.4;
+    const way = battery.state === "discharging" ? "Discharge" : battery.state === "charging" ? "Charge" : "Charge/Discharge";
+    add("battery", name, "level", "Charge Level", battery.level);
+    if (inv.battery.designWh && inv.battery.fullWh) add("battery", name, "level", "Degradation Level", 100 - (inv.battery.fullWh / inv.battery.designWh) * 100);
+    add("battery", name, "voltage", "Voltage", v);
+    add("battery", name, "power", `${way} Rate`, w);
+    add("battery", name, "current", `${way} Current`, w / v);
   }
 
   return { at: t, sensors: s, game: act.game, elevated: true };
