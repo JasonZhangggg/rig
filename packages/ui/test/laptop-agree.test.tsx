@@ -1,5 +1,5 @@
 // One fact, one figure: where two screens of Rig speak of the same thing, they say the same, and say it once.
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
 
@@ -117,6 +117,29 @@ describe("Two screens, one figure", { timeout: 30000 }, () => {
       const who = /^(.+?) (keeps|is running)/.exec(first)?.[1] ?? first;
       expect(heading).toMatch(/^(The fans are loud\. Here's (why|the likely reason)\.|Here's what's (likely )?slowing \w+ down\.)$/);
       expect(heading).not.toContain(who);
+    });
+  }
+
+  for (const [pc, word] of [["demo-comet", "Graphics"], ["demo-atlas", "Graphics card"]]) {
+    it(`calls ${pc}'s graphics "${word}" on Home, its own page and Logs`, async () => {
+      await open(pc);
+      // Home's part-by-part row.
+      const row = await homeRow(/^Graphics/);
+      expect(row.querySelector(".pbp-name b")!.firstChild!.textContent).toBe(word);
+      // My laptop or My PC: the list of parts, and the part's own page.
+      await go("pc");
+      const parts = within(await screen.findByRole("list", { name: "Parts" }, { timeout: 10000 }));
+      fireEvent.click(parts.getByRole("button", { name: new RegExp(`^${word}( |$)`) }));
+      expect((await screen.findByText(word, { selector: ".part-kind" }, { timeout: 10000 })).textContent).toBe(word);
+      // Logs: the part's row over the readings.
+      await go("logs");
+      const names = await waitFor(() => {
+        const found = [...document.querySelectorAll(".pbp-name b")].map((b) => b.textContent);
+        expect(found).toContain("Processor");
+        return found;
+      }, { timeout: 10000 });
+      expect(names).toContain(word);
+      expect(document.querySelector("main")!.textContent).not.toMatch(word === "Graphics" ? /Graphics card/ : /Graphics(?! card)\b/);
     });
   }
 });

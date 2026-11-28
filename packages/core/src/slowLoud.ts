@@ -6,7 +6,7 @@
 import type { ActionCall } from "./actions";
 import type { HistoryPoint, Issue, PC, Route } from "./model";
 import type { ProcessUse } from "./recordings";
-import { machineWord } from "./machineWord";
+import { graphicsWord, machineWord } from "./machineWord";
 
 /** What to do about a cause: an existing finding (its fix or its own action), a change to review, a place in Rig, or a question for the chat. */
 export type SlowLoudStep =
@@ -410,7 +410,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
   // What was checked, in a line each.
   const checked: string[] = [];
   if (cpu) checked.push(["Processor", [cpuLoad != null && `${pctOf(cpuLoad)} busy`, cpuT != null && `${r(cpuT)}°C`].filter(Boolean).join(", ") || "no reading"].join(": "));
-  if (gpu) checked.push(["Graphics card", [gpuLoad != null && `${pctOf(gpuLoad)} busy`, gpuT != null && `${r(gpuT)}°C`].filter(Boolean).join(", ") || "no reading"].join(": "));
+  if (gpu) checked.push([graphicsWord(pc.kind), [gpuLoad != null && `${pctOf(gpuLoad)} busy`, gpuT != null && `${r(gpuT)}°C`].filter(Boolean).join(", ") || "no reading"].join(": "));
   if (mem != null) checked.push(`Memory: ${pctOf(mem)} full`);
   if (disk != null) checked.push(`Drive: ${pctOf(disk)} busy`);
   if (fastest) checked.push(`Fans: ${rpm(fastest.rpm)} at most`);

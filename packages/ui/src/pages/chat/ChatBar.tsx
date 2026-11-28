@@ -1,4 +1,4 @@
-import { seenLabel } from "@rig/core";
+import { graphicsWord, seenLabel } from "@rig/core";
 import { useApp, useTemp } from "../../state";
 
 interface Pill { key: string; label: string; value: string; look?: boolean }
@@ -10,7 +10,7 @@ function usePills(): Pill[] {
   const pills: Pill[] = [];
   const cpu = pc.parts?.cpu, gpu = pc.parts?.gpu;
   if (cpu?.temp != null) pills.push({ key: "cpu", label: "Processor", value: temp(cpu.temp, { mark: "degree" }), look: cpu.warn });
-  if (gpu?.temp != null) pills.push({ key: "gpu", label: "Graphics card", value: temp(gpu.temp, { mark: "degree" }), look: gpu.warn });
+  if (gpu?.temp != null) pills.push({ key: "gpu", label: graphicsWord(pc.kind), value: temp(gpu.temp, { mark: "degree" }), look: gpu.warn });
   if (pc.fans?.length) {
     const stopped = pc.alerts?.some((a) => a.kind === "fan-stopped");
     pills.push({ key: "fans", label: "Fans", value: stopped ? "one stopped" : "ok", look: stopped });

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { partByPart, type BatteryView, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
+import { graphicsWord, partByPart, type BatteryView, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
 import { useApp, useTemp } from "../../state";
 import { shortType } from "../shared";
 import { isPlaceholderName } from "../partNames";
@@ -172,7 +172,7 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
             <li key={r.id}>
               <button type="button" className={`pbp-row${r.state === "unread" && !asleep ? " unread" : ""}`} onClick={() => open(r.id)}>
                 <span className="pbp-name">
-                  <b>{plain.label}{model && <small> {model}</small>}</b>
+                  <b>{r.id === "gpu" ? graphicsWord(pc.kind) : plain.label}{model && <small> {model}</small>}</b>
                   <span>{partJob(r.id, laptop) || plain.job}</span>
                 </span>
                 <span className="pbp-now">

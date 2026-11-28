@@ -12,7 +12,7 @@ import type { ChargeRead } from "./chargeLimit";
 import { isSetting, sensorName } from "./sensors";
 import { solderedMemory } from "./shop";
 import type { Picks } from "./build";
-import { machineWord } from "./machineWord";
+import { graphicsWord, machineWord } from "./machineWord";
 import { makerName } from "./manualParts";
 
 /** What the person set for a PC in Rig: its name and color, the last dust clean, and the models they picked for parts Windows can't name. */
@@ -118,7 +118,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
     const gt = gpuTemp(snap, chip);
     const asleep = laptop && chip != null && !gt && gpuAsleep(snap, chip);
     parts.gpu = {
-      name: dgpu.name, type: "Graphics card", modelSource: "generic",
+      name: dgpu.name, type: graphicsWord(inv.machine.kind), modelSource: "generic",
       // Windows names the chip, not the exact card; the card's own maker isn't known yet.
       maker: chipMaker[dgpu.vendor], model: dgpu.name.replace(/^(NVIDIA|AMD|Intel)(\(R\))?\s+/i, ""),
       temp: round(gt?.value), tempMax: gt ? round(Math.max(dayMax[gt.id] ?? 0, gt.value ?? 0)) : undefined, limit: gpuLimit(dgpu.vendor),

@@ -8,6 +8,7 @@
 
 import type { HardwareFacts, ShopCategory } from "./shop";
 import { categoryState } from "./shop";
+import { graphicsWord } from "./machineWord";
 
 /** One level of a game's requirements, as the page words it. Numbers are what the page gives, in GB. */
 export interface SpecLevel {
@@ -264,7 +265,7 @@ export function canItRun(f: HardwareFacts, req: GameRequirements): RunAnswer {
     if (mText === undefined && rText === undefined) return;
     const lv = levelOf(m, r);
     const unsure = lv.level === "unknown" || lv.recommendedUnknown;
-    parts.push({ part, label: part === "gpu" && !f.gpu ? "Graphics" : labels[part], yours, minimum: mText, recommended: rText, ...lv, ...(unsure && why ? { why } : {}) });
+    parts.push({ part, label: part === "gpu" ? (f.gpu ? graphicsWord(f.laptop ? "laptop" : "tower") : "Graphics") : labels[part], yours, minimum: mText, recommended: rText, ...lv, ...(unsure && why ? { why } : {}) });
   };
 
   // Processor and graphics, by tier.

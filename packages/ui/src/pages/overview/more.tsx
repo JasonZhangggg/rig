@@ -1,7 +1,7 @@
 // Home widgets for the rest of Rig: the live chart, drive health, Changes, Windows events, games, upgrades, drivers,
 // logs and manuals. Each is a list of hairline rows under a heading, opening its page when a row is pressed.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { eventKinds, eventTitle, gameLibrary, insightContext, isActive, safetyRows, safetySummary, type Game, type HistoryPoint, type Manual, type PCEvent, type RecordingInfo, type Severity } from "@rig/core";
+import { eventKinds, graphicsWord, eventTitle, gameLibrary, insightContext, isActive, safetyRows, safetySummary, type Game, type HistoryPoint, type Manual, type PCEvent, type RecordingInfo, type Severity } from "@rig/core";
 import { useActions, useApp, useData, useHistory, useMachineWord, useTemp } from "../../state";
 import { useEvents } from "../Logs";
 import { ago, hours } from "../games/words";
@@ -74,10 +74,11 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 type Point = HistoryPoint;
 type Series = { key: "cpu" | "gpu"; label: string; pick: (p: Point) => number | null | undefined };
 
-const SERIES: Record<string, Series[]> = {
-  temps: [{ key: "cpu", label: "Processor", pick: (p) => p.cpu }, { key: "gpu", label: "Graphics card", pick: (p) => p.gpu }],
-  load: [{ key: "cpu", label: "Processor", pick: (p) => p.cpuLoad }, { key: "gpu", label: "Graphics card", pick: (p) => p.gpuLoad }],
-};
+/** `gpu`: the graphics part's name, "Graphics" on a laptop. */
+const seriesOf = (gpu: string): Record<string, Series[]> => ({
+  temps: [{ key: "cpu", label: "Processor", pick: (p) => p.cpu }, { key: "gpu", label: gpu, pick: (p) => p.gpu }],
+  load: [{ key: "cpu", label: "Processor", pick: (p) => p.cpuLoad }, { key: "gpu", label: gpu, pick: (p) => p.gpuLoad }],
+});
 
 /** A path through the points, scaled to a 100 by 40 box. */
 function pathOf(points: Point[], pick: Series["pick"], from: number, span: number, lo: number, hi: number) {
@@ -101,7 +102,7 @@ export function TrendWidget(props: WidgetProps) {
   const temp = useTemp();
   const minutes = Number(opts.span) || 60;
   const load = style === "load";
-  const series = SERIES[load ? "load" : "temps"].filter((s) => on(opts, s.key));
+  const series = seriesOf(graphicsWord(pc.kind))[load ? "load" : "temps"].filter((s) => on(opts, s.key));
   const last = live[live.length - 1];
   const to = last?.t ?? Date.now(), from = to - minutes * 60_000;
   // The recorded history fills the stretch before Rig opened, so the chart isn't empty for its first hour.

@@ -38,7 +38,7 @@ describe("Laptop polish", { timeout: 25000 }, () => {
     expect(await screen.findAllByText("ASUS ROG Zephyrus G14 GA403UV")).toBeTruthy();
     expect(screen.queryByText(/the card's exact model/)).toBeNull();
     await act(async () => { location.hash = "pc"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
-    for (const part of ["Processor", "Graphics card", "Cooling", "Battery"]) {
+    for (const part of ["Processor", "Graphics", "Cooling", "Battery"]) {
       fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${part}`) }, { timeout: 10000 }));
       fireEvent.click(await screen.findByRole("tab", { name: "Manual" }, { timeout: 10000 }));
       const body = document.querySelector(".detail-body")!;

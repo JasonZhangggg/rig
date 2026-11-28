@@ -99,8 +99,8 @@ export function Readings() {
     const title = span === "5m" ? "Last 5 minutes" : span === "1h" ? "Last hour" : span === "day" ? (dayInfo ? dayName(from) : "Last 24 hours") : span === "week" ? "Last 7 days" : "Last 30 days";
     if (isLive(span)) {
       const live = data.live;
-      const r = live.length > 1 ? liveRecorded(full.readings ?? [], thin(live, from, to - from)) : null;
-      const whole = r ? liveRecorded(full.readings ?? [], live.filter((p) => p.t >= from)) : null;
+      const r = live.length > 1 ? liveRecorded(full.readings ?? [], thin(live, from, to - from), pc.kind) : null;
+      const whole = r ? liveRecorded(full.readings ?? [], live.filter((p) => p.t >= from), pc.kind) : null;
       const last = live[live.length - 1];
       const every = live.length > 1 ? Math.max(1, Math.round((last.t - live[live.length - 2].t) / 1000)) : null;
       // Rig keeps readings from when it opened, so a long span may start partway.
@@ -115,7 +115,7 @@ export function Readings() {
     }
     if (logged) {
       if (!recs) return { r: null, from, to, title, source: "", empty: "Loading…" };
-      const all = recs.length ? recorded(recs.length === 1 ? recs[0] : joinRecordings(recs), pc.parts?.gpu?.chip) : null;
+      const all = recs.length ? recorded(recs.length === 1 ? recs[0] : joinRecordings(recs), pc.parts?.gpu?.chip, pc.kind) : null;
       const inRange = all ? all.points.filter((p) => p.t >= from && p.t <= to) : [];
       const r = all && { ...all, points: thin(inRange, from, to - from) };
       const first = r?.points[0]?.t ?? from, last = r?.points.at(-1)?.t ?? to;
@@ -129,9 +129,9 @@ export function Readings() {
     }
     if (!history) return { r: null, from, to, title, source: "", empty: "Loading…" };
     const points = history.filter((p) => p.t >= from && p.t <= to);
-    const r = points.length ? historyRecorded(thin(points, from, to - from)) : null;
+    const r = points.length ? historyRecorded(thin(points, from, to - from), pc.kind) : null;
     return {
-      r, whole: r ? historyRecorded(points) : null, from, to, title, source: "Every 10 minutes while Rig was open",
+      r, whole: r ? historyRecorded(points, pc.kind) : null, from, to, title, source: "Every 10 minutes while Rig was open",
       note: span !== "month" ? `Turn on the background recorder in Settings on this ${machineWord(pc.kind)} to keep every sensor every 30 seconds, even while Rig is closed.` : undefined,
       empty: `Nothing logged on ${pc.name} in the last ${span === "month" ? "30 days" : span === "week" ? "7 days" : "24 hours"}.`,
     };
