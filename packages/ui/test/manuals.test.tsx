@@ -86,6 +86,50 @@ describe("Manuals", () => {
     expect(await screen.findByText(/Is there a newer driver for my NVIDIA GeForce RTX 4070 SUPER\? I have NVIDIA 565\.90\./)).toBeTruthy();
   });
 
+  it("on a desktop, lists the graphics card driver and the BIOS, with no laptop maker's page", async () => {
+    await show("manuals");
+    const drivers = within(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" }).closest("section")!);
+    expect(drivers.getAllByRole("listitem").map((li) => li.querySelector(".row-title")?.textContent)).toEqual(["NVIDIA GeForce RTX 4070 SUPER", "MSI MAG B650 TOMAHAWK WIFI"]);
+    expect(drivers.queryByRole("link", { name: /support$/ })).toBeNull();
+    expect(drivers.queryByText(/safer pick/)).toBeNull();
+    expect(screen.getByText("For your monitor, case, cooler or anything else")).toBeTruthy();
+  });
+
+  it("on a laptop, leads with the maker's support page, then the graphics driver and the BIOS", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    await show("manuals");
+    expect(await screen.findByRole("heading", { level: 1, name: "Pebble" })).toBeTruthy();
+    const drivers = within(screen.getByRole("heading", { level: 2, name: "Drivers and BIOS" }).closest("section")!);
+    const rows = drivers.getAllByRole("listitem");
+    expect(rows.map((li) => li.querySelector(".row-title")?.textContent)).toEqual(["ASUS Zenbook 14 OLED UX3405MA", "Intel Arc Graphics", "ASUSTeK UX3405MA"]);
+
+    const laptop = within(rows[0]);
+    expect(laptop.getByText("Drivers, BIOS and manual")).toBeTruthy();
+    expect(laptop.getByRole("link", { name: "ASUS support" }).getAttribute("href")).toBe("https://www.asus.com/support/download-center/");
+
+    const graphics = within(rows[1]);
+    expect(graphics.getByText("Graphics driver")).toBeTruthy();
+    expect(graphics.getByText("Intel 32.0.101.6078")).toBeTruthy();
+    expect(graphics.getByRole("link", { name: "Intel downloads" }).getAttribute("href")).toBe("https://www.intel.com/content/www/us/en/support/detect.html");
+    expect(drivers.getByText("ASUS's own graphics driver is tested on this laptop, so it can be the safer pick than the newest one from the chip maker.")).toBeTruthy();
+    expect(within(rows[2]).getByText("BIOS")).toBeTruthy();
+
+    fireEvent.click(graphics.getByRole("button", { name: "Ask if there's a newer one" }));
+    expect(await screen.findByText(/Is there a newer driver for my Intel Arc Graphics\? I have Intel 32\.0\.101\.6078\./)).toBeTruthy();
+  });
+
+  it("on a laptop, suggests a manual for a dock, monitor, mouse or charger, not a case or cooler", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    await show("manuals");
+    const list = within(await screen.findByRole("region", { name: "Manuals" }));
+    expect(list.getByText("For your dock, monitor, mouse or charger")).toBeTruthy();
+    expect(list.queryByText(/case, cooler/)).toBeNull();
+    fireEvent.click(list.getByRole("button", { name: /Add a manual/ }));
+    const kinds = [...(list.getByLabelText("Kind") as HTMLSelectElement).options].map((o) => o.textContent);
+    expect(kinds).toEqual(["Monitor", "Drive", "Other"]);
+    expect((list.getByLabelText("Model") as HTMLInputElement).placeholder).toBe("Like U2723QE");
+  });
+
   it("lists each part's manual as a row, with no Ready badge and one box for opening a manual", async () => {
     await show("manuals");
     const list = within(await screen.findByRole("region", { name: "Manuals" }));
