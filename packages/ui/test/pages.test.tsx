@@ -287,7 +287,21 @@ describe("Upgrades", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Battery/ }));
     fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
     const idea = (await screen.findByRole("heading", { level: 3, name: "Battery replacement" })).closest("li")!;
-    expect(idea.querySelector("p.muted")!.textContent).toBe("At 89% there's no need yet. Most people replace it around 70 to 75%.");
+    expect(idea.querySelector("p.muted")!.textContent).toBe("Most people replace it around 70 to 75%.");
+    expect(within(idea).getByText("89% of original capacity.")).toBeTruthy();
+    // Not needed yet, once: the chip, with no words beside it saying it again.
+    expect(idea.textContent!.match(/not needed yet|no need/gi)).toEqual(["Not needed yet"]);
+    expect(idea.textContent!.match(/89%/g)).toHaveLength(1);
+  });
+
+  it("says how a part's upgrade fits once, by its chip", async () => {
+    localStorage.setItem("rig.pc", "demo-comet");
+    await show("pc");
+    fireEvent.click(await screen.findByRole("button", { name: /^Memory/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
+    const idea = (await screen.findByRole("heading", { level: 3, name: "Memory may be soldered" })).closest("li")!;
+    expect(within(idea).getByText("Check first")).toBeTruthy();
+    expect(within(idea).queryByText("Check your model first")).toBeNull();
   });
 
   it("says so before Rig has read the parts", async () => {
