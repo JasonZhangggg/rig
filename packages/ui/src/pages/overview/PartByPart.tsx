@@ -51,8 +51,12 @@ function useFormat() {
   return { said, parts, range };
 }
 
+/** A laptop's graphics chip switched off to save power: no reading now, but nothing wrong. */
+const ASLEEP = "Asleep to save power";
+
 /** How the part is doing now, in a word or two, and rust only when it needs a look. */
-function stateOf(r: PartRow, battery?: BatteryView): { text: string; look?: boolean } {
+function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: string; look?: boolean } {
+  if (asleep) return { text: ASLEEP };
   if (r.id === "battery" && r.state !== "unread") return { text: battery?.state ? batteryWord[battery.state] : "Charge left" };
   switch (r.state) {
     case "unread": return { text: "Rig can't read it" };
@@ -64,8 +68,9 @@ function stateOf(r: PartRow, battery?: BatteryView): { text: string; look?: bool
 }
 
 /** What the week says about the part: its highest, in rust only when that came close to where it slows down. */
-function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string): { text: string; look?: boolean } {
-  if (r.state === "unread") return { text: r.id === "case" ? "Nothing in it to read" : "No sensor Windows can read" };
+function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string, asleep: boolean): { text: string; look?: boolean } {
+  if (asleep && !r.high) return { text: "It wakes when a game needs it" };
+  if (r.state === "unread" && !asleep) return { text: r.id === "case" ? "Nothing in it to read" : "No sensor Windows can read" };
   if (r.id === "battery") return r.low ? { text: `Lowest ${said(r, r.low.value)} this week` } : { text: "Rig is still learning its usual" };
   if (learning || !r.high) return { text: "Rig is still learning its usual" };
   const { value, at: when, game } = r.high;
@@ -96,8 +101,8 @@ function headline(view: PartsView, name: string, online: boolean, laptop: boolea
   return { title, now, week };
 }
 
-function Track({ r }: { r: PartRow }) {
-  if (r.state === "unread" || r.unit == null) return <span className="pbp-track none" aria-hidden="true" />;
+function Track({ r, asleep }: { r: PartRow; asleep: boolean }) {
+  if ((r.state === "unread" && !asleep) || r.unit == null) return <span className="pbp-track none" aria-hidden="true" />;
   const pos = (v: number) => `${at(r, v)}%`;
   return (
     <span className="pbp-track" aria-hidden="true">
@@ -137,11 +142,13 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
           const p = pc.parts![r.id];
           const plain = PLAIN[r.id] ?? { label: shortType(p.type), job: "" };
           const model = names && !isPlaceholderName(p.name) ? shortModel(p.model ?? p.name) : null;
-          const state = stateOf(r, pc.battery), week = loading && r.state !== "unread" ? null : weekOf(r, !view.usualWhen, fmt.said);
+          // Asleep, the part keeps its week: the usual band and highest from when it last worked.
+          const asleep = r.now == null && !!p.asleep;
+          const state = stateOf(r, asleep, pc.battery), week = loading && (r.state !== "unread" || asleep) ? null : weekOf(r, !view.usualWhen, fmt.said, asleep);
           const [num, unit] = r.now != null ? fmt.parts(r, r.now) : ["–", ""];
           return (
             <li key={r.id}>
-              <button type="button" className={`pbp-row${r.state === "unread" ? " unread" : ""}`} onClick={() => open(r.id)}>
+              <button type="button" className={`pbp-row${r.state === "unread" && !asleep ? " unread" : ""}`} onClick={() => open(r.id)}>
                 <span className="pbp-name">
                   <b>{plain.label}{model && <small> {model}</small>}</b>
                   <span>{partJob(r.id, laptop) || plain.job}</span>
@@ -150,7 +157,7 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
                   <b>{num}{unit && <small>{unit === "rpm" ? ` ${unit}` : unit}</small>}</b>
                 </span>
                 <span className="pbp-week">
-                  <Track r={r} />
+                  <Track r={r} asleep={asleep} />
                   {r.usual && <span>usual {fmt.range(r, r.usual.lo, r.usual.hi)}</span>}
                 </span>
                 <span className="pbp-state">

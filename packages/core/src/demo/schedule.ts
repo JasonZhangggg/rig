@@ -2,7 +2,13 @@
 // look like a real person's: weekday work, evening games, one hot evening,
 // an update running in the background, a late Saturday past midnight.
 
-import type { PCKind } from "../telemetry";
+import type { Inventory, PCKind } from "../telemetry";
+
+/** Whose week a demo PC follows: the tower's, the work laptop's, or the gaming laptop's (a laptop with a dedicated graphics chip). */
+export type DemoWeek = PCKind | "gaming";
+
+export const weekFor = (inv: Pick<Inventory, "machine" | "gpus">): DemoWeek =>
+  inv.machine.kind === "laptop" && inv.gpus.some((g) => !g.integrated) ? "gaming" : inv.machine.kind;
 
 /** How hard each part works, from 0 at rest to 1 flat out (a little over 1 pushes it past its usual), and the game in front, if any. */
 export interface Activity {
@@ -21,7 +27,7 @@ const play = (from: number, to: number, game: string, cpu: number, gpu: number):
 const task = (from: number, to: number, cpu: number): Stretch => ({ from, to, game: null, cpu, gpu: 0.05 });
 
 /** Each weekday's stretches, Sunday first. */
-const weeks: Record<PCKind, Stretch[][]> = {
+const weeks: Record<DemoWeek, Stretch[][]> = {
   tower: [
     [play(14, 16, "Counter-Strike 2", 0.5, 0.65), play(19.5, 22, "Counter-Strike 2", 0.5, 0.65)],
     [office, task(20, 21, 1)],
@@ -40,14 +46,24 @@ const weeks: Record<PCKind, Stretch[][]> = {
     [office, task(20, 22, 1.5)],
     [play(19.5, 23, "Minecraft", 0.7, 0)],
   ],
+  // Lectures and coursework by day on the built-in graphics, games plugged in at night on the RTX.
+  gaming: [
+    [play(15, 18, "Baldur's Gate 3", 0.5, 0.8), play(20.5, 23, "Counter-Strike 2", 0.5, 0.7)],
+    [office, play(20, 22.5, "Counter-Strike 2", 0.5, 0.7)],
+    [office, task(18, 19, 1)],
+    [office, play(19.5, 22.5, "Cyberpunk 2077", 0.7, 1)],
+    [office, play(20, 22, "Counter-Strike 2", 0.5, 0.7)],
+    [office, play(19, 24, "Baldur's Gate 3", 0.5, 0.8)],
+    [play(13, 16, "Cyberpunk 2077", 0.7, 1), play(21, 25, "Counter-Strike 2", 0.5, 0.7)],
+  ],
 };
 
-/** What a demo PC of this kind is doing at a moment, in the local time of whoever runs the demo. */
-export function activityAt(kind: PCKind, t: number): Activity {
+/** What a demo PC on this week is doing at a moment, in the local time of whoever runs the demo. */
+export function activityAt(week: DemoWeek, t: number): Activity {
   const d = new Date(t);
   const hour = d.getHours() + d.getMinutes() / 60;
-  const today = weeks[kind][d.getDay()];
-  const yesterday = weeks[kind][(d.getDay() + 6) % 7];
+  const today = weeks[week][d.getDay()];
+  const yesterday = weeks[week][(d.getDay() + 6) % 7];
   const now = today.find((s) => s.from <= hour && hour < s.to);
   const late = now ? null : yesterday.find((s) => s.from <= hour + 24 && hour + 24 < s.to);
   const on = now ?? late;

@@ -75,7 +75,7 @@ describe("makeExport", () => {
   it("exports the demo PCs with a month of history", async () => {
     const out = await new DemoClient().exportData();
     expect(out.account?.email).toBe("demo@rig.app");
-    expect(out.machines.map((m) => m.name)).toEqual(["Atlas", "Pebble"]);
+    expect(out.machines.map((m) => m.name)).toEqual(["Atlas", "Comet", "Pebble"]);
     expect(out.machines[0].history.length).toBeGreaterThan(30 * 100);
     expect(out.machines[0].inventory).not.toBeNull();
   });

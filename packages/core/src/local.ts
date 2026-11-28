@@ -17,6 +17,7 @@ import type { CloudClient } from "./cloud";
 import { makeExport, type DataExport } from "./export";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type Log, type Range, type RigClient } from "./client";
 import { HistoryWindow } from "./history";
+import { cardChip } from "./limits";
 import { HISTORY_WINDOW_MS, type Alert, type DiffRow, type Game, type HistoryPoint, type PC } from "./model";
 import { Recorder } from "./recorder";
 import { BACKGROUND_DAYS, BackgroundLog, backgroundRecordings, isBackground, type RecorderCursor, type RecorderLink } from "./background";
@@ -206,7 +207,7 @@ export class LocalClient implements RigClient {
   constructor(private link: HelperLink, private store: LocalStore, private cloud: CloudClient | null, opts: LocalOptions = {}) {
     this.o = { tickMs: 2000, quietTickMs: 10_000, historyEveryMs: HISTORY_WINDOW_MS, syncEveryMs: 5 * 60_000, factsEveryMs: 30_000, inventoryEveryMs: 10 * 60_000, now: Date.now, notify: () => {}, recorder: null, backgroundEveryMs: 60_000, log: () => {}, approveStep: null, ...opts };
     this.recorder = new Recorder({
-      pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()),
+      pcId: () => this.id, source: link, store, now: () => this.o.now(), limits: () => limitsOf(this.view()), chip: () => this.chip,
       onChange: () => this.emitRecordings(),
       onFinish: (r) => {
         this.o.notify({ title: "Rig finished recording", body: r.state === "failed" ? "It couldn't collect readings. Open Rig to see why." : "Open Logs in Rig to see what it found." });
@@ -218,6 +219,9 @@ export class LocalClient implements RigClient {
     if (!link.storage) (this as Partial<Record<"measureDrives", unknown>>).measureDrives = undefined;
     if (!link.cleanupSizes) (this as Partial<Record<"cleanupSizes", unknown>>).cleanupSizes = undefined;
   }
+
+  /** The graphics card's name, so every graphics reading and each app's graphics share is the card's own. */
+  private get chip() { return this.inv ? cardChip(this.inv) : undefined; }
 
   /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
   get id() { return this.inv?.machine.id ?? "this-pc"; }
@@ -338,13 +342,13 @@ export class LocalClient implements RigClient {
   }
 
   private async record(now: number) {
-    const w = this.window ??= new HistoryWindow(now);
+    const w = this.window ??= new HistoryWindow(now, this.chip);
     if (this.snap) w.add(this.snap);
     // On battery, what kept the processor busy, so the battery page can say what drained it. One read every couple of minutes.
     if (w.onBattery && this.link.processes && now - this.appsAt >= APPS_EVERY_MS) {
       this.appsAt = now;
       const top = await this.link.processes().catch(() => null);
-      if (top) w.addApps(cleanProcesses(top));
+      if (top) w.addApps(cleanProcesses(top, undefined, this.chip));
     }
     if (now - w.from >= this.o.historyEveryMs) {
       const p = w.point();
@@ -603,7 +607,7 @@ export class LocalClient implements RigClient {
   /** The busiest apps, from the helper. Only for this PC: another PC's apps aren't synced. */
   async processes(id: string): Promise<ProcessUse[] | null> {
     if (!(await this.isLocal(id)) || !this.link.processes) return null;
-    return cleanProcesses(await this.link.processes(), SLOW_LOUD_APPS);
+    return cleanProcesses(await this.link.processes(), SLOW_LOUD_APPS, this.chip);
   }
 
   /** Windows' event log, plus what the background recorder caught: power events, and anything Windows has since dropped. */
@@ -676,7 +680,7 @@ export class LocalClient implements RigClient {
         let added = 0;
         for (let i = 0; i < BACKGROUND_PAGES; i++) {
           const page = await rec.read(from, this.bgCursor);
-          this.bg.ingest(page.records);
+          this.bg.ingest(page.records, this.chip);
           // A week's first read comes in many pages: finished days are thinned as they arrive, so they're never all held in full.
           this.bg.settle(now);
           added += page.records.length;

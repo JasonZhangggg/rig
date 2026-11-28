@@ -1,11 +1,11 @@
-// Pebble's battery for the demo: unplugged a couple of hours before the demo
+// Pebble's battery for the demo (the gaming laptop stays plugged in, held at 80%): unplugged a couple of hours before the demo
 // opened, so it's on battery at about 58% and drawing about 11 W, with a
 // video call in the middle that drained it fastest. Before that it sat on the
 // charger, full; when it gets low it goes back on the charger and fills.
 
 import type { Inventory } from "../telemetry";
 import type { ProcessUse } from "../recordings";
-import { activityAt, type Activity } from "./schedule";
+import { activityAt, weekFor, type Activity } from "./schedule";
 
 const MIN = 60_000;
 
@@ -49,7 +49,7 @@ const days = new WeakMap<Inventory, Day>();
 
 /** What it does at a minute after coming off the charger: a game or a heavy task from its usual week wins over the plan above. */
 function doing(inv: Inventory, t: number, i: number): { a: Activity; what?: DemoBattery["what"] } {
-  const usual = activityAt(inv.machine.kind, t);
+  const usual = activityAt(weekFor(inv), t);
   if (usual.game || usual.cpu > 0.35) return { a: usual };
   const what = whatAt(i);
   return { a: activity[what], what };
@@ -95,8 +95,12 @@ function dayOf(inv: Inventory): Day | null {
   return d;
 }
 
-/** The demo laptop's battery at a moment, or null for a desktop or a laptop without a battery. */
+/** Where the gaming laptop's maker app holds its battery, plugged in at a desk: most of its owners set this limit. */
+const HELD_AT = 80;
+
+/** A demo laptop's battery at a moment, or null for a desktop or a laptop without a battery. */
 export function demoBattery(inv: Inventory, t: number): DemoBattery | null {
+  if (inv.battery?.fullWh && weekFor(inv) === "gaming") return { level: HELD_AT, state: "plugged", watts: 0 };
   const d = dayOf(inv);
   if (!d) return null;
   const i = Math.floor((t - d.unplugged) / MIN);
