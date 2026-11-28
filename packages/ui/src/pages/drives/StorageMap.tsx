@@ -3,6 +3,7 @@ import { moveOne, roomFor, roomWords, type DriveFill, type DriveMap } from "@rig
 import { Row, RowFigure, Rows } from "../../components/Rows";
 import { useApp, useAppSelector, useTemp } from "../../state";
 import { ago } from "../games/words";
+import { FreeSpace } from "./FreeSpace";
 
 const size = (gb: number) => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${Math.round(gb).toLocaleString()} GB`);
 const mediaName: Record<DriveMap["media"], string> = { nvme: "NVMe SSD", ssd: "SATA SSD", hdd: "Hard drive", unknown: "Drive" };
@@ -48,6 +49,7 @@ export function StorageMap() {
       <ul className="sm-drives" aria-label="Drives">
         {drives.map((d, i) => <Drive key={`${d.model}-${i}`} d={d} all={drives} noAdmin={noAdmin} />)}
       </ul>
+      <FreeSpace />
     </div>
   );
 }
