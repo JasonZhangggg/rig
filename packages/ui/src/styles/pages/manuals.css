@@ -46,7 +46,10 @@
 .row-meta .mn-meta { color: inherit; font-size: inherit; }
 :is(.mn-row, .row-meta) .mn-meta span + span::before { content: "\00a0\00a0\00b7\00a0\00a0\200b"; display: inline; width: auto; height: auto; margin: 0; border-radius: 0; background: none; color: var(--text-3); }
 /* Under 860px a row's buttons go under its grey line, as in the Changes list. */
-@media (max-width: 860px) { .mn-row-body { flex-basis: 100%; } }
+@media (max-width: 860px) {
+  .mn-row-body { flex-basis: 100%; }
+  .mn-row-acts > .btn.ghost:first-child { margin-left: calc(-1 * var(--hang)); }
+}
 
 
 .mn-form { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }

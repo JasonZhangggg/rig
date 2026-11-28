@@ -253,7 +253,6 @@
 @keyframes lv-beat { 50% { opacity: .35; } }
 .lv-feed { display: flex; flex-direction: column; gap: 10px; }
 .lv-feed { padding-top: 18px; border-top: 1px solid var(--line); }
-.lv-feed .rows { max-width: 900px; }
 .lv-sech { align-items: center; }
 .lv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .lv-tools .faint { font-size: 13px; }
