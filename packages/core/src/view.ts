@@ -11,6 +11,7 @@ import { batteryView, type PowerNow } from "./battery";
 import { isSetting, sensorName } from "./sensors";
 import { solderedMemory } from "./shop";
 import type { Picks } from "./build";
+import { machineWord } from "./machineWord";
 
 /** What the person set for a PC in Rig: its name and color, the last dust clean, and the models they picked for parts Windows can't name. */
 export interface Identity { name?: string; accent?: string; cleanedAt?: string; picks?: Picks }
@@ -31,9 +32,9 @@ function maxOf(snap: Snapshot | null, pick: (s: Sensor) => boolean): number | un
   return v.length ? Math.max(...v) : undefined;
 }
 
-function prettyName(host: string): string {
-  // DESKTOP-4KF2J9 means nobody named it. Use something friendlier until they do.
-  return /^(DESKTOP|LAPTOP)-[A-Z0-9]+$/i.test(host) ? "My PC" : host;
+function prettyName(host: string, kind: PC["kind"]): string {
+  // DESKTOP-4KF2J9 means nobody named it. Use something friendlier until they do: "My PC", or "My laptop".
+  return /^(DESKTOP|LAPTOP)-[A-Z0-9]+$/i.test(host) ? `My ${machineWord(kind)}` : host;
 }
 
 /**
@@ -235,14 +236,14 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
 
   return {
     id: inv.machine.id,
-    name: id.name || prettyName(inv.machine.hostname),
+    name: id.name || prettyName(inv.machine.hostname, inv.machine.kind),
     kind: inv.machine.kind,
     accent: id.accent || defaultAccent,
     nickname: laptop ? `${inv.machine.manufacturer} laptop` : "Desktop",
     os: `${inv.machine.os.name} ${inv.machine.os.version}`.trim(),
     health, breakdown,
     seenAt: snap ? new Date(snap.at).toISOString() : undefined,
-    lastSync: "Live on this PC",
+    lastSync: `Live on this ${machineWord(inv.machine.kind)}`,
     online: true,
     summary: summaryLine(health, fs),
     stats, issues, fans,

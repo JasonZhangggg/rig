@@ -127,6 +127,9 @@ export function withLive(prev: LivePoint[], pc: PC): LivePoint[] {
   return [...keep, { ...livePoint(pc, t), vals }];
 }
 
+/** The kind of PC this device last showed, so "Reading your laptop…" is right before the first read. */
+const KIND_KEY = "rig.kind";
+
 const storage = {
   get(k: string) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
@@ -347,7 +350,7 @@ const noHost: AppHost = {};
 /** How long the first read may take before Rig says it's stuck. It keeps waiting behind the message, and carries on if the read finishes. */
 export const STALL_MS = 45_000;
 
-export function AppProvider({ client, host = noHost, children, fallback, stallMs = STALL_MS }: { client: RigClient; host?: AppHost; children: ReactNode; fallback: (state: Pending, retry: () => void, reason: string | null) => ReactNode; stallMs?: number }) {
+export function AppProvider({ client, host = noHost, children, fallback, stallMs = STALL_MS }: { client: RigClient; host?: AppHost; children: ReactNode; fallback: (state: Pending, retry: () => void, reason: string | null, word: "PC" | "laptop") => ReactNode; stallMs?: number }) {
   const [ui, setUI] = useState<UI>(() => ({
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
@@ -613,7 +616,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           }
           if (act === "apply" && preview?.outcome === "ready" && (!was || was.apply.outcome === "declined") && p.status !== "declined" && !waitingOn(p, index)) {
             if (stale(preview.expiresAt)) { patch((q) => ({ previews: at(q.previews, null) })); return; }
-            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(asked, preview.verdict.commands, p.looks), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
+            const apply = await client.applyStep(pcId, preview.nonce, { title: stepHeadline(asked, preview.verdict.commands, p.looks, machineWord(pcOf().kind)), why: p.why, by: "rig", from: { proposalId, messageId: message.id } });
             keep({ apply });
           } else if (act === "undo" && was?.apply.outcome === "applied" && was.undo?.outcome !== "undone") {
             keep({ ...was, undo: await client.undoStep(pcId, was.apply.undo.id) });
@@ -741,8 +744,14 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   // Tell the screens that picked a part of the state once the new state is in place.
   useLayoutEffect(() => { store.current.fns.forEach((f) => f()); }, [value]);
 
+  // The screens before a PC is read name it too: the one being read, or the kind this device last showed.
+  const kind = data.pc?.kind;
+  useEffect(() => { if (kind) storage.set(KIND_KEY, kind); }, [kind]);
   const retry = () => { setLoaded(false); setFailed(null); setAttempt((n) => n + 1); };
-  if (!value || !actions) return <>{fallback(!loaded ? "loading" : failed !== null ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry, failed)}</>;
+  if (!value || !actions) {
+    const word = machineWord(data.pcs.find((p) => p.id === ui.pcId)?.kind ?? (storage.get(KIND_KEY) as PC["kind"] | null) ?? undefined);
+    return <>{fallback(!loaded ? "loading" : failed !== null ? "error" : data.pcs.some((p) => p.parts) ? "loading" : "empty", retry, failed, word)}</>;
+  }
   return (
     <StoreCtx.Provider value={store.current}>
       <ActionsCtx.Provider value={actions}>

@@ -39,7 +39,7 @@ function NativeApplied({ step, reply, looks, undone }: { step: NativeStep; reply
   );
 }
 
-function RolledBackResult({ reply, native }: { reply: RolledBack; native: boolean }) {
+function RolledBackResult({ reply, native, word }: { reply: RolledBack; native: boolean; word: string }) {
   const touches = reply.result.touches;
   const saved = touches.filter((t) => snapshotted(t.touch));
   const left = reply.left ?? [];
@@ -52,7 +52,7 @@ function RolledBackResult({ reply, native }: { reply: RolledBack; native: boolea
       <Fact label="Why">
         <ul className="cc-plain">
           {reply.sentinels.map((s) => (
-            <li key={s.sentinel}>{native ? "It" : "The command"} changed {sentinelWords(s.sentinel)}, which Rig never lets {native ? "a change touch" : "a command change"}. It went from “{s.before}” to “{s.after}”.</li>
+            <li key={s.sentinel}>{native ? "It" : "The command"} changed {sentinelWords(s.sentinel, word)}, which Rig never lets {native ? "a change touch" : "a command change"}. It went from “{s.before}” to “{s.after}”.</li>
           ))}
           {reply.error && <li>{native ? "It" : "The command"} stopped with an error: {reply.error}</li>}
         </ul>
@@ -81,6 +81,8 @@ export interface ResultViewProps {
   /** The commands the change script runs, as Rig found them. */
   runs: FoundCommand[];
   pcName: string;
+  /** "PC" or "laptop", for the machine the change was made on. */
+  word?: string;
   canApply: boolean;
   /** The looks the proposal's screen steps came from. */
   looks?: ScreenLook[];
@@ -90,15 +92,15 @@ export interface ResultViewProps {
 }
 
 /** What happened after Apply: before and after, what else changed, a rollback, and Undo with what it can reach. */
-export function ResultView({ step, outcome, runs, pcName, canApply, looks, busy, onUndo }: ResultViewProps) {
+export function ResultView({ step, outcome, runs, pcName, word = "PC", canApply, looks, busy, onUndo }: ResultViewProps) {
   const a = outcome.apply;
   if (a.outcome === "expired") return <p className="cc-note">This card was too old to run, so nothing changed on {pcName}. Ask again and Rig will read the settings fresh.</p>;
   if (a.outcome === "refused") return <p className="cc-note"><b>Rig didn't run this, so nothing changed on {pcName}.</b> {a.verdict.refused}</p>;
-  if (a.outcome === "rolledBack") return <RolledBackResult reply={a} native={step.kind === "native"} />;
+  if (a.outcome === "rolledBack") return <RolledBackResult reply={a} native={step.kind === "native"} word={word} />;
   if (a.outcome === "limit") return <p className="cc-note" role="status">{limitLine(a.until, pcName)}</p>;
   if (a.outcome === "declined") return <p className="cc-note" role="status">{declinedLine(pcName)}</p>;
   const native = step.kind === "native" ? nativeOf(step.op, looks) : null;
-  const own = native?.part.red?.(native.op);
+  const own = native?.part.red?.(native.op, word);
   const reach = step.kind === "command" ? undoReach(step.cmd, a.undo, runs) : nativeReach(a.undo, own?.words ? own : undefined, native?.part.back?.(native.op, native.look));
   const button = native?.part.button;
   const again = outcome.undo?.outcome === "failed";

@@ -14,6 +14,8 @@ export interface StepCardProps {
   /** Set once the person has applied it. */
   outcome?: StepOutcome | null;
   pcName: string;
+  /** "PC" or "laptop": the noun for the machine the card changes (core's machineWord). */
+  word?: string;
   /** False on the website, where changes can't be made. */
   canApply: boolean;
   /** Rig read text from outside this PC earlier in the conversation. */
@@ -113,16 +115,16 @@ interface Look {
 
 const key = (t: Touch) => `${t.kind}|${touchName(t)}`.toLowerCase();
 
-function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string, recipe?: RecipeStep): Look {
+function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string, word: string, recipe?: RecipeStep): Look {
   const commands = verdict?.commands ?? [];
   const admin = verdict?.status === "allowed" && verdict.admin;
   const runs = runCommands(cmd, commands);
   const plan = undoPlan(cmd, runs);
   const kind = verdict?.status === "allowed" ? redKind(cmd, verdict) : "none";
-  const words = redWords(kind);
+  const words = redWords(kind, word);
   const own = recipe && recipeOf(recipe.id);
   return {
-    title: own ? own.title : headline(cmd, commands), does: cmd.does, runs,
+    title: own ? own.title : headline(cmd, commands, word), does: cmd.does, runs,
     says: own ? <RecipeSays does={cmd.does} when={takesEffectWords(own)} /> : <ClaudeSays text={cmd.does} />,
     whatLabel: own ? "It changes" : "Claude says it changes",
     what: (ready) => {
@@ -139,7 +141,7 @@ function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string,
     amber: { risk: riskLine(runs, admin), undo: <>{plan.line}<Untied names={plan.untied} /></>, noUndo: plan.kind === "none" },
     red: {
       kind, reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: `High. Read it slowly.${admin ? " Needs admin, so Windows asks first." : ""}`,
-      undo: <>{redBack(kind, plan)}{kind !== "none" && <Untied names={plan.untied} />}</>, noUndo: words.word === "permanent",
+      undo: <>{redBack(kind, plan, word)}{kind !== "none" && <Untied names={plan.untied} />}</>, noUndo: words.word === "permanent",
     },
     exact: `These scripts are exactly what runs on ${pcName}.`,
     confirm: () => null,
@@ -149,20 +151,20 @@ function commandLook(cmd: Command, verdict: Verdict | undefined, pcName: string,
 const nativeRisk: Record<Tier, string> = { 0: "Low.", 1: "Low.", 2: "Medium.", 3: "High. Read it slowly." };
 const nativeBack = "Yes. Rig keeps how it was, and Undo puts it back.";
 
-function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: Verdict | undefined, pcName: string): Look {
+function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: Verdict | undefined, pcName: string, word: string): Look {
   const { op, part, look } = native;
   const reasons = verdict?.status === "allowed" ? [...new Set(verdict.reasons)] : [];
   const tier = verdict?.status === "allowed" ? verdict.tier : 2;
-  const own = part.red?.(op);
+  const own = part.red?.(op, word);
   return {
     title: part.title(op, look), does: part.does?.(op) ?? nativeDoes(op), says: <NativeSays own={part.does?.(op) ?? null} said={nativeDoes(op)} />, whatLabel: "What changes", runs: [],
     what: (ready) => <NativeWhat op={op} part={part} read={ready?.read} look={look} />,
-    facts: (ready) => part.more?.(op, ready?.read, pcName, look),
+    facts: (ready) => part.more?.(op, ready?.read, pcName, look, word),
     folds: () => null,
     amber: { risk: <>{nativeRisk[tier]}{reasons.length > 0 && <ul className="cc-plain cc-reasons">{reasons.map((r) => <li key={r}>{r}</li>)}</ul>}</>, undo: nativeBack, noUndo: false },
     red: {
       kind: own?.kind ?? "lowers", reasons: verdict?.status === "allowed" ? redReasons(verdict) : [], risk: nativeRisk[3],
-      undo: own?.undo ?? `${nativeBack} Until you undo it, the PC is less protected.`, noUndo: own?.noUndo ?? false, words: own?.words,
+      undo: own?.undo ?? `${nativeBack} Until you undo it, the ${word} is less protected.`, noUndo: own?.noUndo ?? false, words: own?.words,
     },
     exact: `This is exactly what changes on ${pcName}.`,
     confirm: (ready) => part.confirm?.(op, ready?.read) ?? null,
@@ -170,16 +172,16 @@ function nativeLook(native: NonNullable<ReturnType<typeof nativeOf>>, verdict: V
 }
 
 /** How the card shows this step, or null for a native op this app doesn't know. */
-function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string, looks?: ScreenLook[], recipe?: RecipeStep): Look | null {
-  if (step.kind === "command") return commandLook(step.cmd, verdict, pcName, recipe);
+function lookOf(step: HelperStep, verdict: Verdict | undefined, pcName: string, word: string, looks?: ScreenLook[], recipe?: RecipeStep): Look | null {
+  if (step.kind === "command") return commandLook(step.cmd, verdict, pcName, word, recipe);
   const native = nativeOf(step.op, looks);
-  return native && nativeLook(native, verdict, pcName);
+  return native && nativeLook(native, verdict, pcName, word);
 }
 
 /** A step's heading, as its card shows it and the changes log keeps it. */
-export function stepHeadline(step: HelperStep | RecipeStep, commands: FoundCommand[] = [], looks?: ScreenLook[]): string {
+export function stepHeadline(step: HelperStep | RecipeStep, commands: FoundCommand[] = [], looks?: ScreenLook[], word = "PC"): string {
   if (step.kind === "recipe") return recipeOf(step.id) ? recipeDoes(step).replace(/\.$/, "") : "A change";
-  if (step.kind === "command") return headline(step.cmd, commands);
+  if (step.kind === "command") return headline(step.cmd, commands, word);
   const native = nativeOf(step.op, looks);
   return native ? native.part.title(native.op, native.look) : "A change";
 }
@@ -253,7 +255,7 @@ function RedCard(p: TierProps) {
   const [busy, run] = useBusy();
   const id = useId();
   const { kind, reasons } = p.look.red;
-  const words = p.look.red.words ?? redWords(kind);
+  const words = p.look.red.words ?? redWords(kind, p.word);
   const tick = p.look.confirm(p.ready);
   const ok = typed.trim().toLowerCase() === words.word && (!tick || ticked);
   const lead = (
@@ -324,7 +326,7 @@ function DoneCard(p: HelperCardProps & { look: Look; outcome: StepOutcome; focus
     <Frame tone="plain" title={p.look.title} place={p.place} chips={resultChip(p.outcome)} focus={p.focus}>
       <div className="cc-facts">
         {p.look.says}
-        <ResultView step={p.step} outcome={p.outcome} runs={p.look.runs} pcName={p.pcName} canApply={p.canApply} looks={p.looks} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
+        <ResultView step={p.step} outcome={p.outcome} runs={p.look.runs} pcName={p.pcName} word={p.word} canApply={p.canApply} looks={p.looks} busy={busy} onUndo={(force) => run(() => p.onUndo(force))} />
       </div>
       {p.look.folds()}
       {p.canApply && (a === "limit" || a === "declined") && (
@@ -361,7 +363,7 @@ function HelperCard(p: HelperCardProps) {
   const nothingRan = a?.outcome === "limit" || a?.outcome === "declined";
   const verdict = p.preview?.verdict ?? checkStep(p.step, { tainted: !!p.tainted, looks: p.looks, byPerson: p.byPerson });
   if (p.step.kind === "native" && !knownNative(p.step.op)) return <RefusedCard step={p.step} verdict={newerKind} place={p.place} onSteps={p.onSteps} />;
-  const look = lookOf(p.step, verdict, p.pcName, p.looks, p.recipe);
+  const look = lookOf(p.step, verdict, p.pcName, p.word ?? "PC", p.looks, p.recipe);
   if (look && p.outcome && !back && !(p.declined && nothingRan)) return <DoneCard {...p} look={look} outcome={p.outcome} focus={pressed.current} />;
   if (verdict.status === "refused" || !look) return <RefusedCard step={p.step} verdict={verdict.status === "refused" ? verdict : refusal("This isn't a kind of change Rig makes.")} place={p.place} onSteps={p.onSteps} />;
   if (p.declined) {

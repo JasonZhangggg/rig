@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { isActive, type RecordingInfo } from "@rig/core";
 import { Icon } from "../../components/common";
-import { useActions, useData, useTempText } from "../../state";
+import { useActions, useData, useMachineWord, useTempText } from "../../state";
 import { Progress } from "./RecordingCard";
 import { minutes, stateWord, whenRan } from "./words";
 import { dateText } from "../../dateText";
@@ -20,6 +20,7 @@ function result(r: RecordingInfo, inUnit: (s: string) => string): string {
 export function NowRecording({ r, pcName }: { r: RecordingInfo; pcName: string }) {
   const { stopRecording, openRecording } = useActions();
   const [stopping, setStopping] = useState(false);
+  const word = useMachineWord();
   return (
     <section className="card card-pad rec-now">
       <div className="rec-now-head">
@@ -30,7 +31,7 @@ export function NowRecording({ r, pcName }: { r: RecordingInfo; pcName: string }
         </div>
       </div>
       {r.state === "pending"
-        ? <p className="muted">It starts the next time the Rig app on {pcName} checks in, within about five minutes while the PC is on.</p>
+        ? <p className="muted">It starts the next time the Rig app on {pcName} checks in, within about five minutes while the {word} is on.</p>
         : <Progress r={r} />}
     </section>
   );

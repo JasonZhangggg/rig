@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Account, RigClient } from "@rig/core";
-import { AppProvider, useApp, useAppearance, useUI, type AppHost } from "./state";
+import { AppProvider, useApp, useAppearance, useMachineWord, useUI, type AppHost } from "./state";
 import { applyAppearance } from "./appearance";
 import { getStage } from "./components/Stage";
-import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
+import { ReviewSheet, Toast, UpdateNotice, navItems, navLabel } from "./components/Shell";
 import { CardAsk } from "./pages/gpu/CardPick";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
@@ -71,15 +71,15 @@ export function RigApp({ client, requireAccount, host }: RigAppProps) {
   }
   const logs = host?.openLogs;
   return (
-    <AppProvider client={client} host={host} fallback={(s, retry, reason) => s === "error"
+    <AppProvider client={client} host={host} fallback={(s, retry, reason, word) => s === "error"
       ? client.kind === "web"
         ? <Splash text="Rig can't reach your PCs right now. Check your internet connection, then try again." retry={retry} />
-        : <Splash text="Rig couldn't read this PC." detail={`${reason ?? ""} Try again, and if it keeps happening, restart your PC.`.trim()} retry={retry} logs={logs} />
+        : <Splash text={`Rig couldn't read this ${word}.`} detail={`${reason ?? ""} Try again, and if it keeps happening, restart your ${word}.`.trim()} retry={retry} logs={logs} />
       : s === "loading"
-        ? <Splash text="Reading your PC…" />
+        ? <Splash text={`Reading your ${word}…`} />
         : client.kind === "web"
           ? <NoPCsYet client={client} account={account} found={retry} />
-          : <Splash text="Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it." logs={logs} />}>
+          : <Splash text={`Rig couldn't read this ${word}. Restart Rig, and if it keeps happening, reinstall it.`} logs={logs} />}>
       <Root />
     </AppProvider>
   );
@@ -168,6 +168,7 @@ function SceneFeed() {
 
 function Root() {
   const ui = useUI();
+  const word = useMachineWord();
 
   // A new page gets its own tab title, and focus moves to it so a screen reader hears the change.
   const firstRoute = useRef(true);
@@ -179,8 +180,9 @@ function Root() {
     if (ui.route !== "chat") window.scrollTo(0, 0);
   }, [ui.route]);
   useEffect(() => {
-    const label = navItems.find(([r]) => r === ui.route)?.[1];
-    document.title = label && ui.route !== "overview" ? `${label} · Rig` : "Rig";
+    document.title = ui.route !== "overview" && navItems.some(([r]) => r === ui.route) ? `${navLabel(ui.route, word)} · Rig` : "Rig";
+  }, [ui.route, word]);
+  useEffect(() => {
     if (firstRoute.current) { firstRoute.current = false; return; }
     document.getElementById("main")?.focus({ preventScroll: true });
   }, [ui.route]);

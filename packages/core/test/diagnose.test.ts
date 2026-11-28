@@ -230,6 +230,24 @@ describe("crashes, shutdowns and errors", () => {
     expect(f.body).toMatch(/Cyberpunk 2077/);
   });
 
+  it("calls a laptop a laptop when it shuts off, and points at the charger and battery", () => {
+    const events = [ev(1 * DAY, "Microsoft-Windows-Kernel-Power", 41, "", "critical"), ev(3 * DAY, "Microsoft-Windows-Kernel-Power", 41, "", "critical")];
+    const history = [point(1 * DAY + 5 * MIN, { gpu: 66, gpuLoad: 97, busy: true }), point(3 * DAY + 5 * MIN, { gpu: 64, gpuLoad: 95, busy: true })];
+    const load = find(pebble(), null, "shutdowns-load", { events, history })!;
+    expect(load.title).toBe("The laptop shut off twice under load");
+    expect(load.body).toMatch(/charger/);
+    expect(`${load.body} ${load.ask}`).not.toMatch(/\bPC\b|power supply/i);
+    const cold = find(pebble(), null, "shutdowns", { events })!;
+    expect(`${cold.title} ${cold.body} ${cold.ask}`).not.toMatch(/\bPC\b|power supply/i);
+  });
+
+  it("names a laptop nobody named My laptop, live on this laptop", () => {
+    const inv = pebble(); inv.machine.hostname = "LAPTOP-8QX2M1";
+    expect(buildPC(inv, null, null)).toMatchObject({ name: "My laptop", lastSync: "Live on this laptop" });
+    const desk = atlas(); desk.machine.hostname = "DESKTOP-4KF2J9";
+    expect(buildPC(desk, null, null)).toMatchObject({ name: "My PC", lastSync: "Live on this PC" });
+  });
+
   it("says when a single power cut is all there is", () => {
     expect(ids(atlas(), null, { events: [ev(1 * DAY, "Microsoft-Windows-Kernel-Power", 41, "", "critical")] }).filter((i) => i.startsWith("shutdowns"))).toEqual([]);
   });
