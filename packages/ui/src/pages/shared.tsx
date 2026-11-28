@@ -21,10 +21,23 @@ export const shopCatOf: Record<string, string> = { ram: "memory", ssd: "storage"
 // What clicking an issue does everywhere
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
   if (i.fix) { ctx.review(fixSteps(i.fix), { by: "you", why: i.title }); return; }
-  if (i.ask) { ctx.ask(i.ask); return; }
+  // A full drive opens the storage map's Free up space list where the PC has a map, and asks Rig where it doesn't.
+  const map = i.tab === "drives" && !!pc.drives?.length;
+  if (i.ask && !map) { ctx.ask(i.ask); return; }
   if (i.part && i.go === "upgrades") ctx.set({ shopCat: shopCatOf[i.part] ?? null });
-  else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });
+  else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: i.tab ?? (pc.parts?.[i.part]?.driver ? "drivers" : "live") });
   ctx.go(i.go);
+  if (map) revealWhenShown(FREE_SPACE_ID);
+}
+
+/** The storage map's Free up space list, which a full drive's finding opens at. */
+export const FREE_SPACE_ID = "free-up-space";
+
+/** Scrolls to an element once the page that holds it has drawn it, giving up after about a second. */
+function revealWhenShown(id: string, tries = 60) {
+  const el = document.getElementById(id);
+  if (el) { el.scrollIntoView?.({ block: "start", behavior: "smooth" }); return; }
+  if (tries > 0) requestAnimationFrame(() => revealWhenShown(id, tries - 1));
 }
 
 /** How often Rig suggests cleaning the dust out, in days. */
@@ -66,9 +79,11 @@ export function sinceText(iso: string, now = new Date()): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** An alert as a row in Things to look at. Opening it asks Rig about it. */
+/** An alert as a row in Things to look at. Opening it asks Rig about it, except a full drive, which opens what's safe to clear (issueGo). */
 export function alertIssue(a: Alert, now = new Date()): Issue {
-  return { id: `alert-${a.id}`, severity: a.severity, part: a.part, go: "chat", ask: a.ask, action: "Ask about it", title: a.title, body: `Since ${sinceText(a.since, now)}. ${a.detail}` };
+  const row = { id: `alert-${a.id}`, severity: a.severity, part: a.part, title: a.title, body: `Since ${sinceText(a.since, now)}. ${a.detail}` };
+  if (a.kind === "drive-full") return { ...row, go: "pc", tab: "drives", ask: a.ask, action: "See what to clear" };
+  return { ...row, go: "chat", ask: a.ask, action: "Ask about it" };
 }
 
 const severityOrder: Record<Severity, number> = { bad: 0, warn: 1, info: 2, ok: 3 };

@@ -43,6 +43,7 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
+            problems.AddRange(Cleanup.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
             problems.AddRange(LogReads.SelfChecks(null));
             var (gpuChecks, gpuProblems) = Gpu.SelfTest();
@@ -367,6 +368,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
+        "cleanup.sizes" => Cleanup.Sizes(owner),
         "fix.read" => Steps.Read(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "recorder.probes" => ProbeStore.Edit(p, hw),

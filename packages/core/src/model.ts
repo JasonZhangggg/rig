@@ -48,6 +48,8 @@ export interface Issue {
   go: Route;
   /** A question to start the chat with when the issue is opened. */
   ask?: string;
+  /** The tab of the part to open on My PC, when it's not the usual one. "drives" opens the storage map at Free up space. */
+  tab?: string;
   /** A change that fixes it, shown for review before anything happens. */
   fix?: ActionCall[];
   /** What Rig saw that led here, one plain line each, so the chat (and the person) can check the reasoning. */

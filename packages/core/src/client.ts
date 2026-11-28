@@ -15,6 +15,7 @@ import type { PCEvent, Recording, RecordingInfo, RecordingRequest } from "./reco
 import type { ProbeSpec } from "./probes";
 import type { PcRead } from "./reads";
 import type { ScreenLook } from "./screen";
+import type { CleanupRead } from "./freeSpace";
 
 export interface Proposal {
   id: string;
@@ -184,6 +185,11 @@ export interface RigClient {
   refreshBackground?(): Promise<unknown>;
   /** Desktop and demo: measures what fills each drive again now, in the background. Only for this PC; the storage map shows it while it runs. */
   measureDrives?(machineId: string): Promise<void>;
+  /**
+   * Desktop and demo: how much the usual safe-to-clear places hold now (temp files, the Recycle Bin, update caches and the
+   * like), and when each game in the recorded history last played. Only reads; only for this PC. Missing on the website.
+   */
+  cleanupSizes?(machineId: string): Promise<CleanupRead>;
 
   /** The PC's manuals, newest first. */
   manuals(machineId: string): Promise<Manual[]>;
