@@ -3,6 +3,7 @@
 
 import type { FillKind, Inventory, StorageScan } from "../telemetry";
 import type { CleanupRead, SpotKind } from "../freeSpace";
+import { weekFor } from "./schedule";
 
 type Fill = [FillKind, number, [string, number][]?];
 
@@ -29,11 +30,20 @@ const byLetter: Record<string, Record<string, Fill[]>> = {
       ["system", 22],
     ],
   },
+  gaming: {
+    "C:": [
+      ["windows", 34],
+      ["apps", 74, [["Microsoft Office", 9], ["ASUS", 3], ["NVIDIA Corporation", 2]]],
+      ["games", 412, [["Baldur's Gate 3", 148], ["Cyberpunk 2077", 92], ["Counter-Strike 2", 61]]],
+      ["files", 191, [["Videos", 84], ["Downloads", 52], ["Documents", 38]]],
+      ["system", 26],
+    ],
+  },
 };
 
 /** The demo's folder scan, as if it finished at `at`. */
 export function demoScan(inv: Inventory, at: number, running = false): StorageScan {
-  const table = byLetter[inv.machine.kind === "laptop" ? "laptop" : "tower"];
+  const table = byLetter[weekFor(inv)];
   return {
     at,
     running,
@@ -69,7 +79,8 @@ const longAgo: Record<"tower" | "laptop", [string, number][]> = {
 export function demoCleanup(inv: Inventory, now: number, storageSense: boolean): CleanupRead {
   const kind = inv.machine.kind === "laptop" ? "laptop" : "tower";
   const day = 864e5;
-  const recent = kind === "tower" ? ["Cyberpunk 2077", "Counter-Strike 2", "Baldur's Gate 3", "Rocket League", "Call of Duty", "Forza Horizon 5"] : ["Minecraft", "Stardew Valley"];
+  const recent = kind === "tower" ? ["Cyberpunk 2077", "Counter-Strike 2", "Baldur's Gate 3", "Rocket League", "Call of Duty", "Forza Horizon 5"]
+    : weekFor(inv) === "gaming" ? ["Counter-Strike 2", "Baldur's Gate 3", "Cyberpunk 2077"] : ["Minecraft", "Stardew Valley"];
   return {
     sizes: { at: now, storageSense, spots: spotsBy[kind].map(([k, gb, drive, files]) => ({ kind: k, gb, drive, ...(files ? { files } : {}) })) },
     played: [...recent.map((name, i) => ({ name, lastPlayed: now - (i + 1) * 2 * day })), ...longAgo[kind].map(([name, days]) => ({ name, lastPlayed: now - days * day }))],

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { reducedMotion } from "../appearance";
-import { chipDriverPages, formatTemp, type Part, type Route, type TempUnit } from "@rig/core";
+import { chipDriverPages, formatTemp, machineWord, type Part, type Route, type TempUnit } from "@rig/core";
 import { StageSlot, getStage, hoverPart, useStageHover } from "../components/Stage";
 import { useApp, useTemp, useTempText, useTempUnit } from "../state";
 import { ManualsTab } from "../manuals/ManualsTab";
@@ -66,7 +66,7 @@ export function PCPage() {
             <div><h1>{pc.name}</h1><p className="sub">{sub}</p></div>
             {view === "pc" && <button ref={customizeBtn} className="btn ghost sm" type="button" onClick={() => setCustomize(!customize)} aria-expanded={customize}>Customize</button>}
           </div>
-          <nav className="lg-views pc-views" aria-label="My PC">
+          <nav className="lg-views pc-views" aria-label={`My ${machineWord(pc.kind)}`}>
             {pcViews.map(([r, label]) => <a key={r} href={`#${r}`} aria-current={view === r ? "page" : undefined}>{label}</a>)}
           </nav>
         </>
@@ -176,7 +176,7 @@ function Customize({ onDone }: { onDone: () => void }) {
           {pcAccents.map((a) => <button key={a} type="button" className="swatch" style={{ background: a }} aria-label={`Accent ${a}`} aria-pressed={a.toLowerCase() === pc.accent.toLowerCase()} onClick={() => update({ accent: a })} />)}
         </div>
       </div>
-      <p className="faint customize-note">The accent marks this PC in your list of PCs.</p>
+      <p className="faint customize-note">The accent marks this {machineWord(pc.kind)} in your list of PCs.</p>
       <div className="customize-foot"><button className="btn primary sm" type="button" onClick={() => { saveName(); onDone(); }}>Done</button></div>
     </div>
   );
@@ -203,9 +203,9 @@ function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
       <button type="button" className={lit ? "is-lit" : undefined} onClick={() => getStage().scene.select(id)}
         onPointerEnter={() => hoverPart(id)} onPointerLeave={() => hoverPart(null)} onFocus={() => hoverPart(id)} onBlur={() => hoverPart(null)}>
         <span className="part-txt"><span className="pt">{part.type}</span>{!isPlaceholderName(part.name) && <span className="pn">{part.name}</span>}</span>
-        {part.temp !== undefined && (
+        {part.temp !== undefined ? (
           <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}{part.warn && <Warm />}</span>
-        )}
+        ) : part.asleep && <span className="part-temp faint">Asleep</span>}
       </button>
     </li>
   );
@@ -368,6 +368,15 @@ function Readings({ part, id }: { part: Part; id: string }) {
             <i><b style={{ transform: `translateX(${Math.min(100, (part.temp / part.limit) * 100) - 100}%)` }} /></i><span className="faint">{limitWords(part.temp, part.limit, unit)}</span>
           </span>
         ) : null}
+      </div>,
+    );
+  }
+  else if (part.asleep) {
+    tiles.push(
+      <div key="t" className="live live-wide">
+        <span className="label">Temperature</span>
+        <span className="big">Asleep</span>
+        <span className="faint">Switched off to save power. It wakes when a game or app needs it.</span>
       </div>,
     );
   }

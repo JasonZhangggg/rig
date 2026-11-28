@@ -166,6 +166,15 @@ describe("the connection check's answer", () => {
     expect(a.findings).toHaveLength(1);
   });
 
+  it("calls a laptop a laptop, not a PC", () => {
+    const off = { at, adapter: null, gateway: null, internet: ping("1.1.1.1", 0, null), dns: { name: "www.microsoft.com", ms: null }, vpn: null };
+    const a = networkAnswer(off, "laptop");
+    expect(a.headline).toBe("This laptop isn't connected to a network");
+    expect(a.findings[0].ask).toBe("My laptop says it isn't connected to a network. What should I check?");
+    expect(networkAnswer(wired(), "laptop").headline).toBe("Your laptop's connection is fine; any slowness is past your router");
+    expect(networkAnswer(wired(), "tower").headline).toBe("Your PC's connection is fine; any slowness is past your router");
+  });
+
   it("names a slow cable link, and an old driver when the link is the problem", () => {
     expect(networkAnswer(wired({ adapter: { kind: "ethernet", name: "Ethernet", linkMbps: 100 } })).findings[0]).toMatchObject({ id: "cable", title: "The cable connects at 100 Mbps" });
     const old = wired({ adapter: { kind: "ethernet", name: "Ethernet", description: "Realtek PCIe GbE", linkMbps: 1000, driverDate: "2019-05-02", driverVersion: "10.35" }, gateway: ping("192.168.0.1", 2, 3) });

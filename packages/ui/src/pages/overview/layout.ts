@@ -53,10 +53,13 @@ export type OptionDef =
 /** The PC widget's styles that draw the PC in 3D. */
 const MODEL = ["showcase", "chips"];
 
+/** Words that name the machine take its noun ("PC" or "laptop", from machineWord in core). */
+type Words = string | ((word: string) => string);
+
 export interface KindMeta {
-  title: string;
+  title: Words;
   /** One line for the Add widget library. */
-  blurb: string;
+  blurb: Words;
   /** Columns and rows of the 12 column grid for each preset size. */
   sizes: Partial<Record<SizeName, [number, number]>>;
   size: SizeName;
@@ -72,13 +75,19 @@ export interface KindMeta {
   options: OptionDef[];
 }
 
+const said = (x: Words, word: string) => (typeof x === "function" ? x(word) : x);
+/** A widget's name, for this machine: "Your laptop" on a laptop. */
+export const kindTitle = (k: Kind, word: string) => said(KINDS[k].title, word);
+/** A widget's line in the Add widget library, for this machine. */
+export const kindBlurb = (k: Kind, word: string) => said(KINDS[k].blurb, word);
+
 export const SIZE_LABEL: Record<SizeName, string> = { s: "Small", m: "Medium", l: "Large", wide: "Wide", tall: "Tall", full: "Full width" };
 
 const days: [string, string][] = [["7", "7 days"], ["5", "5 days"], ["3", "3 days"]];
 
 export const KINDS: Record<Kind, KindMeta> = {
   pc: {
-    title: "Your PC", blurb: "Each part with how it's doing against its usual, or the PC in 3D.",
+    title: (w) => `Your ${w}`, blurb: (w) => `Each part with how it's doing against its usual, or the ${w} in 3D.`,
     sizes: { m: [6, 6], l: [8, 8], wide: [12, 6], full: [12, 9] }, size: "l", min: [5, 5], max: [12, 10],
     // Part by part comes first, so a new Home starts with it. A saved Home keeps the style it was saved with.
     styles: [["parts", "Part by part"], ["showcase", "3D, big figures"], ["chips", "3D, chips"]], tone: "light", frame: "open", heavy: true,
@@ -90,7 +99,7 @@ export const KINDS: Record<Kind, KindMeta> = {
     ],
   },
   health: {
-    title: "Health", blurb: "One score for how the PC is doing, and why.",
+    title: "Health", blurb: (w) => `One score for how the ${w} is doing, and why.`,
     sizes: { s: [3, 2], m: [4, 2], wide: [6, 2], tall: [4, 4], l: [6, 4] }, size: "m", min: [3, 2], max: [8, 5],
     styles: [["ring", "Ring"], ["number", "Big number"], ["compact", "Compact"]], tone: "light", frame: "tile",
     options: [
@@ -189,7 +198,7 @@ export const KINDS: Record<Kind, KindMeta> = {
     ],
   },
   changes: {
-    title: "Changes", blurb: "The latest changes to the PC, and whether each is still on.",
+    title: "Changes", blurb: (w) => `The latest changes to the ${w}, and whether each is still on.`,
     sizes: { s: [3, 3], m: [4, 3], wide: [6, 3], tall: [4, 5], l: [6, 5] }, size: "m", min: [3, 3], max: [12, 8],
     styles: [["list", "List"], ["count", "Big number"]], tone: "light", frame: "tile", hidden: true,
     options: [

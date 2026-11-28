@@ -1,32 +1,32 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Game, Route, Upgrade } from "@rig/core";
+import { machineWord, type Game, type Route, type Upgrade } from "@rig/core";
 import { useApp, useTemp, useUI } from "../state";
-import { focusSection, settingsSections } from "../pages/settings/sections";
+import { focusSection, introOf, settingsSections } from "../pages/settings/sections";
 import { minutes, stateWord, whenRan } from "../pages/logs/words";
-import { navItems } from "./Shell";
+import { navItems, navLabel } from "./Shell";
 import { arrowKeys, useModal } from "./modal";
 import { useManualSearch } from "../manuals/Search";
 import { useManuals } from "../manuals/useManuals";
 import { openManual } from "../manuals/viewerState";
 import { partOf } from "../pages/upgrades/PCUpgrades";
 import { shopCatOf } from "../pages/shared";
-import { NET_CHECK_QUESTION } from "./NetCheck";
+import { netCheckQuestion } from "./NetCheck";
 import { dateText } from "../dateText";
 
 /** What a page is about, so a search in a person's own words finds it. */
-const pageWords: Partial<Record<Route, [string, string]>> = {
+const pageWords = (word: string): Partial<Record<Route, [string, string]>> => ({
   overview: ["Your dashboard: health, temperatures and things to look at", "home dashboard overview health summary tiles customize"],
-  pc: ["Your PC in 3D with every part and how warm it runs", "my pc 3d parts specs components hardware temperature"],
+  pc: [`Your ${word} in 3D with every part and how warm it runs`, "my pc laptop 3d parts specs components hardware temperature"],
   games: ["In Logs: how your games ran and how warm they got", "games fps gaming performance tuning"],
-  upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
-  manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
-  safety: ["On My PC: Windows updates, virus protection, the firewall and backup", "safety safe secure security up to date windows update updates restart antivirus anti-virus virus defender malware firewall backup onedrive file history protection"],
-  chat: ["Ask Rig anything about your PC", "ask chat help question"],
+  upgrades: [`On My ${word}: parts that fit, with prices`, "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
+  manuals: [`On My ${word}: every part's manual, drivers and BIOS`, "manuals manual diagrams pdf drivers driver bios"],
+  safety: [`On My ${word}: Windows updates, virus protection, the firewall and backup`, "safety safe secure security up to date windows update updates restart antivirus anti-virus virus defender malware firewall backup onedrive file history protection"],
+  chat: [`Ask Rig anything about your ${word}`, "ask chat help question"],
   logs: ["Every sensor, live or back to the last month", "logs readings live now real time realtime sensors temperature history temps heat chart graph day week month usage load cpu gpu memory ram fans performance task manager hwmonitor recordings recorded background log closer look custom log yesterday"],
   events: ["In Logs: everything that happened, newest first", "events log feed tail alerts windows event log crashes errors blue screen driver shutdown problems closer look"],
   changes: ["What Rig or you changed, with undo", "changes undo fixes applied review"],
   settings: ["Appearance, units, notifications and your account", "settings preferences appearance colors theme units notifications account"],
-};
+});
 
 type Kind = "check" | "pages" | "parts" | "manuals" | "changes" | "games" | "upgrades" | "logs" | "settings";
 /** searchOnly items show once something typed matches them. */
@@ -95,17 +95,19 @@ function OpenPalette() {
 
   const all = useMemo<Item[]>(() => {
     const items: Item[] = [];
+    const word = machineWord(pc.kind);
+    const words = pageWords(word);
     items.push({ id: "slow-loud", kind: "check", title: `Why is ${pc.name} slow or loud?`, sub: `Checks ${pc.name}'s readings and busiest apps now`, keys: "slow loud noisy noise fan fans laggy lag sluggish stutter hot busy why check now", run: () => { set({ slowLoud: true }); close(); } });
-    items.push({ id: "can-run", kind: "check", title: `Can ${pc.name} run a game?`, sub: "Compares a game's minimum and recommended specs with this PC", keys: "can it run game games requirements specs system requirements minimum recommended play will run fps", run: () => { set({ canRun: "" }); close(); } });
+    items.push({ id: "can-run", kind: "check", title: `Can ${pc.name} run a game?`, sub: `Compares a game's minimum and recommended specs with this ${word}`, keys: "can it run game games requirements specs system requirements minimum recommended play will run fps", run: () => { set({ canRun: "" }); close(); } });
     // "can it run forza", "requirements for cs2": the check for that game, whatever else matches.
     const named = canRunGame(q);
-    if (named) items.push({ id: "can-run-named", kind: "check", title: `Can ${pc.name} run ${named}?`, sub: "Compares its minimum and recommended specs with this PC", hit: true, searchOnly: true, run: () => { set({ canRun: named }); close(); } });
-    for (const [route, name] of navItems) {
-      const [sub, keys] = pageWords[route] ?? ["", ""];
-      items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
+    if (named) items.push({ id: "can-run-named", kind: "check", title: `Can ${pc.name} run ${named}?`, sub: `Compares its minimum and recommended specs with this ${word}`, hit: true, searchOnly: true, run: () => { set({ canRun: named }); close(); } });
+    for (const [route] of navItems) {
+      const [sub, keys] = words[route] ?? ["", ""];
+      items.push({ id: `page-${route}`, kind: "pages", title: navLabel(route, word), sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
     }
     // Read-only checks that run on the PC and answer in a dialog.
-    items.push({ id: "check-network", kind: "check", title: NET_CHECK_QUESTION, sub: `Checks ${pc.name}'s connection, your router and the internet`, keys: "internet slow wifi wi-fi wireless network connection lag ping latency router modem dns vpn ethernet cable signal", run: () => { close(); set({ netCheck: true }); } });
+    items.push({ id: "check-network", kind: "check", title: netCheckQuestion(word), sub: `Checks ${pc.name}'s connection, your router and the internet`, keys: "internet slow wifi wi-fi wireless network connection lag ping latency router modem dns vpn ethernet cable signal", run: () => { close(); set({ netCheck: true }); } });
     const startup = pc.settings?.startup;
     if (startup) {
       const on = startup.filter((a) => a.enabled).length;
@@ -133,7 +135,7 @@ function OpenPalette() {
     }
     for (const sec of settingsSections) {
       if (sec.show && !sec.show(ctx)) continue;
-      items.push({ id: `s-${sec.id}`, kind: "settings", title: sec.title, sub: `Settings · ${sec.intro}`, keys: sec.keywords, searchOnly: true, run: () => { focusSection(sec.id); open("settings"); } });
+      items.push({ id: `s-${sec.id}`, kind: "settings", title: sec.title, sub: `Settings · ${introOf(sec, word)}`, keys: sec.keywords, searchOnly: true, run: () => { focusSection(sec.id); open("settings"); } });
     }
     return items;
   }, [pc, data.changes, data.recordings, extra, temp, manuals, pages.hits, q]); // eslint-disable-line react-hooks/exhaustive-deps

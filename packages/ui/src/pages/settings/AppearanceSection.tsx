@@ -3,7 +3,7 @@ import {
   brass, chromeOf, chromes, colorsOf, cornerSets, densities, FILL_INK, fillProblems, isDefaultAppearance, isHex, lightenForInk, motions, pageTones, palettes,
   textSizes, type Appearance, type DataColors,
 } from "../../appearance";
-import { resetAppearance, setAppearance, useActions, useAppearance } from "../../state";
+import { resetAppearance, setAppearance, useActions, useAppearance, useMachineWord } from "../../state";
 import { MoreToggle, SettingRow } from "./parts";
 import { onFocusSection, peekFocusSection } from "./focus";
 
@@ -14,6 +14,7 @@ const roles: { key: keyof DataColors; name: string; about: string }[] = [
 ];
 
 export function AppearanceSection() {
+  const word = useMachineWord();
   const look = useAppearance();
   const { toast } = useActions();
   const [more, setMore] = useState(() => peekFocusSection() === "appearance");
@@ -23,7 +24,7 @@ export function AppearanceSection() {
   return (
     <>
       <div className="set-block">
-        <div className="set-text"><b id="look-colors">Colors</b><p className="muted">The colors that mark your readings on every screen and the 3D PC.</p></div>
+        <div className="set-text"><b id="look-colors">Colors</b><p className="muted">The colors that mark your readings on every screen and the 3D {word}.</p></div>
         <div className="look-presets" role="group" aria-labelledby="look-colors">
           {palettes.map((p) => (
             <PresetCard key={p.id} name={p.name} blurb={p.blurb} colors={p.colors} on={look.palette === p.id} onPick={() => setAppearance({ palette: p.id })} />
@@ -32,8 +33,8 @@ export function AppearanceSection() {
         </div>
         {look.palette === "custom" && <CustomColors look={look} />}
       </div>
-      <Choice id="look-text" title="Text size" body="Makes every screen a little bigger, the 3D PC included." options={textSizes} value={look.text} onPick={(text) => setAppearance({ text })} />
-      <Choice id="look-motion" title="Motion" body="Reduce keeps the 3D PC and the sign-in art still and turns off animations." options={motions} value={look.motion} onPick={(motion) => setAppearance({ motion })} />
+      <Choice id="look-text" title="Text size" body={`Makes every screen a little bigger, the 3D ${word} included.`} options={textSizes} value={look.text} onPick={(text) => setAppearance({ text })} />
+      <Choice id="look-motion" title="Motion" body={`Reduce keeps the 3D ${word} and the sign-in art still and turns off animations.`} options={motions} value={look.motion} onPick={(motion) => setAppearance({ motion })} />
       <MoreToggle id="look-more" title="More appearance options" summary={summary} open={more} onToggle={() => setMore(!more)} />
       {more && (
         <div className="look-more" id="look-more">

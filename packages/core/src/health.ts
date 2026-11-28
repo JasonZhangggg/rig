@@ -3,7 +3,7 @@
 
 import type { HealthPart, Issue, Severity } from "./model";
 import { diagnose, STABILITY, WEAR_CRITICAL, WEAR_LOW, type Finding, type HealthInput } from "./diagnose";
-import { boostsToLimit, cpuLimit, cpuTemp, gpuLimit, gpuTemp, mobileChip, throttlingHard } from "./limits";
+import { boostsToLimit, cardChip, cpuLimit, cpuTemp, gpuLimit, gpuTemp, mobileChip, throttlingHard } from "./limits";
 import { safetyFindings } from "./safety";
 import { findSensor, type Inventory } from "./telemetry";
 import { suggestedOff } from "./startup";
@@ -77,7 +77,7 @@ export function findings(input: HealthInput): Finding[] {
     }
   }
   const gpu = inv.gpus.find((g) => !g.integrated);
-  const gt = gpuTemp(snap);
+  const gt = gpuTemp(snap, cardChip(inv));
   if (gpu && gt?.value != null) {
     const lim = gpuLimit(gpu.vendor);
     const evidence = [`${gt.name} ${Math.round(gt.value)}°C, limit ${lim}°C`];

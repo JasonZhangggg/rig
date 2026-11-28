@@ -16,6 +16,8 @@ export interface RecorderOptions {
   store: { get<T>(key: string): Promise<T | null>; set(key: string, value: unknown): Promise<void> };
   now: () => number;
   limits?: () => Limits;
+  /** The graphics card's name (cardChip), so a laptop's built-in graphics aren't recorded as its card. */
+  chip?: () => string | undefined;
   /** A recording started, stopped, finished or grew. */
   onChange?: (r: Recording) => void;
   onFinish?: (r: Recording) => void;
@@ -97,7 +99,7 @@ export class Recorder {
       const last = r.samples[r.samples.length - 1];
       if (snap && r.samples.length < MAX_SAMPLES && (!last || now - last.t >= r.intervalMs)) {
         const top = r.capture.includes("processes") ? await this.o.source.processes?.().catch(() => undefined) : undefined;
-        r.samples.push({ ...sampleFrom(snap, r.capture, top), t: now });
+        r.samples.push({ ...sampleFrom(snap, r.capture, top, this.o.chip?.()), t: now });
         this.o.onChange?.(r);
       }
       if (now >= (r.endsAt ?? 0)) await this.finish("done");

@@ -7,20 +7,22 @@ import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage,
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
+import { machineWord } from "../machineWord";
 import { suggestUpgrades } from "../upgrades";
 import type { GameRequirements } from "../canItRun";
 import { demoRequirements, demoRequirementsFor } from "./requirements";
 import { shopFor } from "../shop";
 import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
-import { activityAt, type Activity } from "./schedule";
+import { activityAt, weekFor, type Activity } from "./schedule";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts, demoNow, demoSaverPower } from "./apply";
 import { batteryView } from "../battery";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
-import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
+import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
+import { cardChip } from "../limits";
 import { demoBackground } from "./background";
 import { isBackground } from "../background";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
@@ -32,8 +34,10 @@ import { DemoManuals } from "./manualShelf";
 import { makerName } from "../manualParts";
 import atlasInv from "./fixtures/atlas.inventory.json";
 import pebbleInv from "./fixtures/pebble.inventory.json";
+import cometInv from "./fixtures/comet.inventory.json";
 import atlasFacts from "./fixtures/atlas.facts.json";
 import pebbleFacts from "./fixtures/pebble.facts.json";
+import cometFacts from "./fixtures/comet.facts.json";
 
 export { simulate } from "./simulate";
 export { activityAt, type Activity } from "./schedule";
@@ -63,7 +67,12 @@ export function freshSecurity(facts: SystemFacts, now: number): SystemFacts {
   };
 }
 
-export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
+export const fixtures = {
+  atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts },
+  pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts },
+  /** A gaming laptop with two graphics chips: the Radeon built into its Ryzen, and an RTX 4060 that sleeps when nothing needs it. */
+  comet: { inv: cometInv as Inventory, facts: cometFacts as SystemFacts },
+};
 
 interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; today?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: { until: number; act: Activity }; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
 
@@ -113,7 +122,7 @@ export class DemoClient implements RigClient {
       void store.set("recordings", seed.map(toInfo));
       for (const r of seed) void store.set(`recording:${r.id}`, r);
       const recorder: Recorder = new Recorder({
-        pcId: () => inv.machine.id, store, now: Date.now, limits: () => limitsOf(this.view(inv.machine.id)),
+        pcId: () => inv.machine.id, store, now: Date.now, limits: () => limitsOf(this.view(inv.machine.id)), chip: () => cardChip(inv),
         source: { events: async (since) => demoEvents(inv.machine.kind, Date.now(), since), processes: async () => demoProcesses(inv, Date.now()) },
         onChange: () => { const p = this.pcs[inv.machine.id]; if (p) recListeners.forEach((cb) => cb(this.recordingList(p))); },
       });
@@ -123,6 +132,7 @@ export class DemoClient implements RigClient {
       // Atlas's owner already told Rig which graphics card it is, since Windows' ids don't name it.
       "demo-atlas": mk(fixtures.atlas.inv, fixtures.atlas.facts, { name: "Atlas", accent: "#E8692E", picks: { gpu: "msi-ventus2x-4070s-oc" } }, 1),
       "demo-pebble": mk(fixtures.pebble.inv, fixtures.pebble.facts, { name: "Pebble", accent: "#3C7BF0" }, 0),
+      "demo-comet": mk(fixtures.comet.inv, fixtures.comet.facts, { name: "Comet", accent: "#7C5CE0" }, 0),
     };
     const board = this.pcs["demo-atlas"].inv.board;
     this.shelf.seed("demo-atlas", { part: "motherboard", kind: "motherboard", maker: makerName(board.manufacturer), model: board.product, source: "detected" });
@@ -147,7 +157,7 @@ export class DemoClient implements RigClient {
     for (const s of snap.sensors) { see(p.seen, s); [s.min, s.max] = p.seen[s.id] ?? [null, null]; }
     // The alerts read a month of history only for its games ("hotter than usual" compares a game with itself), so the
     // demo works out just the windows with a game in them: about one in eight, and the first open doesn't wait on the rest.
-    if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now, (from) => sampled(from).some((at) => activityAt(p.inv.machine.kind, at).game)) };
+    if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now, (from) => sampled(from).some((at) => activityAt(weekFor(p.inv), at).game)) };
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
@@ -158,7 +168,7 @@ export class DemoClient implements RigClient {
       p.today = { at: now, points: this.points(p, Math.min(midnight, now - 3 * 36e5) - 36e5, now) };
     }
     const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now });
-    return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: "Demo PC" }, alerts);
+    return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: `Demo ${machineWord(pc.kind)}` }, alerts);
   }
 
   /** A demo PC's readings now: its weekly schedule, or the busy moment the slow-or-loud check set going. */
@@ -175,7 +185,7 @@ export class DemoClient implements RigClient {
     const p = this.pcs[id];
     if (!p) return null;
     const now = Date.now();
-    if (p.inv.machine.kind !== "tower") return demoProcesses(p.inv, now);
+    if (p.inv.machine.kind !== "tower") return cleanProcesses(demoProcesses(p.inv, now), Infinity, cardChip(p.inv));
     const act = p.scene && now < p.scene.until ? p.scene.act : activityAt(p.inv.machine.kind, now);
     if (!act.game) { p.scene = { until: now + 15 * 60_000, act: { cpu: 0.55, gpu: 1, game: "Cyberpunk 2077" } }; this.emit(id); }
     const playing = p.scene && now < p.scene.until ? p.scene.act : act;
@@ -268,7 +278,7 @@ export class DemoClient implements RigClient {
       let point = kept.get(from);
       if (!point) {
         const dust = p.dust * Math.max(0, 1 - (this.born - from) / rangeMs["30d"]);
-        const w = new HistoryWindow(from);
+        const w = new HistoryWindow(from, cardChip(p.inv));
         for (const at of sampled(from)) w.add(simulate(p.inv, at, { dust }));
         if (w.onBattery) for (const at of sampled(from)) w.addApps(demoProcesses(p.inv, at));
         kept.set(from, point = w.point());
@@ -288,7 +298,8 @@ export class DemoClient implements RigClient {
     if (!r) throw new Error(`The demo has requirements for ${demoRequirements.map((x) => x.game).join(", ").replace(/, ([^,]*)$/, " and $1")}. Try one of those.`);
     return r;
   }
-  async games(id: string) { return this.pcs[id].inv.gpus.some((g) => !g.integrated) ? demoGames : []; }
+  /** Atlas's sample frame rates, measured at its screen's size. Other demo PCs have none. */
+  async games(id: string) { return this.pcs[id].inv.machine.kind === "tower" ? demoGames : []; }
 
   async events(id: string) { const p = this.pcs[id]; return p ? cleanEvents(demoEvents(p.inv.machine.kind, Date.now())) : []; }
 

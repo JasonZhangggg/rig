@@ -199,7 +199,7 @@ function Story() {
   }, []);
   const go = (k: number) => steps.current[k]?.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "center" });
   return (
-    <section className="ip-story ip-gut" ref={story} aria-labelledby="ip-in">
+    <section className="ip-story" ref={story} aria-labelledby="ip-in">
       <div className="ip-wrap">
         <div className="ip-intro" ref={intro}><h2 id="ip-in">What's in the app</h2><p>The numbers on this page are examples.</p></div>
         <div className="ip-sgrid">
@@ -306,11 +306,9 @@ function Landing() {
         )}
       </section>
 
-      <div className="ip-gut">
-        <div className="ip-band">
-          <Art load={fans} className="ip-band-art" />
-          <img src="/shots/home.jpg" alt="Rig's Home screen with the demo PC's readings" width="1440" height="900" />
-        </div>
+      <div className="ip-band">
+        <Art load={fans} className="ip-band-art" />
+        <img src="/shots/home.jpg" alt="Rig's Home screen with the demo PC's readings" width="1440" height="900" />
       </div>
 
       <main>

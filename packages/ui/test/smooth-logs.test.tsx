@@ -189,7 +189,7 @@ describe("Logs", () => {
     await start();
     await go("events");
     const strip = await screen.findByRole("group", { name: "Last 30 days" });
-    const day = within(strip).getByRole("button", { name: /1 entry: The PC turned off without shutting down/ });
+    const day = within(strip).getByRole("button", { name: /1 entry: Turned off without shutting down/ });
 
     fireEvent.pointerDown(day, { pointerType: "touch" });
     fireEvent.pointerEnter(day, { pointerType: "touch" });
@@ -200,7 +200,7 @@ describe("Logs", () => {
     fireEvent.blur(day);
 
     fireEvent.pointerEnter(day, { pointerType: "mouse" });
-    expect(within(strip).getByRole("tooltip").textContent).toMatch(/The PC turned off without shutting down/);
+    expect(within(strip).getByRole("tooltip").textContent).toMatch(/Turned off without shutting down/);
     fireEvent.pointerLeave(day, { pointerType: "mouse" });
     expect(within(strip).queryByRole("tooltip")).toBeNull();
   });

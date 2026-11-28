@@ -101,6 +101,7 @@ public static class RecorderSetup
     public static void RemoveSelf()
     {
         RaiseProtections("uninstall");
+        HelperTask.RemoveAll(SetupLog);
         try { Scm.Delete(RecorderPaths.ServiceName); } catch { }
         try { DeleteFolder(RecorderPaths.Data); } catch { }
         // Its own program can't be deleted while it runs: a hidden command does it a few seconds after the service stops.

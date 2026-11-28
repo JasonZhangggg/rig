@@ -47,8 +47,8 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
     client.events(pc.id).then((e) => live && setEvents(e)).catch(() => live && setEvents([]));
     return () => { live = false; };
   }, [client, pc.id]);
-  const caught = useMemo(() => (rec && sum && !active && !info.background ? caughtProblem(rec, sum, { limits, history: history ?? undefined, events: events ?? undefined }) : null),
-    [rec, sum, active, info.background, history, events, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const caught = useMemo(() => (rec && sum && !active && !info.background ? caughtProblem(rec, sum, { limits, history: history ?? undefined, events: events ?? undefined, kind: pc.kind }) : null),
+    [rec, sum, active, info.background, history, events, limits.cpu, limits.gpu, pc.kind]); // eslint-disable-line react-hooks/exhaustive-deps
   const temps: HistoryPoint[] = (rec?.samples ?? []).map((s) => ({ t: s.t, cpu: s.cpu ?? null, gpu: s.gpu ?? null, busy: false }));
   const loads: HistoryPoint[] = (rec?.samples ?? []).map((s) => ({ t: s.t, cpu: s.cpuLoad ?? null, gpu: s.gpuLoad ?? null, busy: false }));
   const marks = (sum?.moments ?? []).map((m, i) => ({ t: m.t, until: m.until, n: i + 1, strong: m.severity === "bad" }));
@@ -60,7 +60,8 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const top = sum?.offenders[0];
   const [stopping, setStopping] = useState(false);
   const stop = () => { setStopping(true); void stopRecording(info.id).finally(() => setStopping(false)); };
-  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec) : null), [rec]);
+  const chip = pc.parts?.gpu?.chip;
+  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec, chip) : null), [rec, chip]);
   const start = info.startedAt, end = info.finishedAt ?? info.endsAt ?? info.startedAt;
   const kind = info.id.startsWith("bg-a-") ? "Closer look" : info.background ? "Background log" : info.by === "rig" ? "Recording Rig started" : "Recording you started";
   const title = caught ? caught.title : info.state === "done" || info.state === "cancelled" ? logTitle(info) : info.reason;

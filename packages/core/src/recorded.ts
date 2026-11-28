@@ -6,6 +6,7 @@ import type { HistoryPoint, Reading } from "./model";
 import type { Recording, RecordingInfo, SensorRef } from "./recordings";
 import type { HardwareKind, SensorType } from "./telemetry";
 import { isSetting, sensorName } from "./sensors";
+import { chipSensorName } from "./limits";
 
 /** One sensor of a recording, filed under a part. */
 export interface RecordedSensor extends SensorRef { part: string }
@@ -20,8 +21,9 @@ export interface Recorded { sensors: RecordedSensor[]; parts: RecordedPart[]; po
 
 const partNames: [string, string][] = [["cpu", "Processor"], ["gpu", "Graphics card"], ["ram", "Memory"], ["ssd", "Storage"], ["motherboard", "Motherboard"], ["fans", "Fans"], ["battery", "Battery"]];
 
-function partOf(s: SensorRef): string | null {
-  if (s.hw === "gpu") return "gpu";
+/** `chip`: the name the graphics card's sensors carry. A second graphics chip's, a laptop's built-in graphics, are left out, as in the live view. */
+function partOf(s: SensorRef, chip?: string | null): string | null {
+  if (s.hw === "gpu") return chip === undefined || s.hwName === chip ? "gpu" : null;
   if (s.type === "fan" || s.type === "control" || s.hw === "cooler") return "fans";
   switch (s.hw) {
     case "cpu": return "cpu";
@@ -96,14 +98,15 @@ function sensorOrder(keep: readonly Reading[]): object {
   return lastOrder.token;
 }
 
-/** A recording's readings sensor by sensor. Sensors that never read anything are left out. */
-export function recorded(rec: Pick<Recording, "samples" | "sensors">): Recorded {
+/** A recording's readings sensor by sensor. Sensors that never read anything are left out. `chip`: the graphics card's name (PC.parts.gpu.name). */
+export function recorded(rec: Pick<Recording, "samples" | "sensors">, chip?: string): Recorded {
   const full = !!rec.sensors?.length && rec.samples.some((s) => s.all);
   let sensors: RecordedSensor[];
   let points: RecordedPoint[];
   if (full) {
-    const keep = rec.sensors!.map((s, i) => [s, i] as const).filter(([s, i]) => partOf(s) && !isSetting(s) && rec.samples.some((x) => x.all?.[i] != null));
-    sensors = keep.map(([s]) => ({ ...s, name: sensorName(s), part: partOf(s)! }));
+    const own = chip == null ? undefined : chipSensorName(rec.sensors, chip) ?? null;
+    const keep = rec.sensors!.map((s, i) => [s, i] as const).filter(([s, i]) => partOf(s, own) && !isSetting(s) && rec.samples.some((x) => x.all?.[i] != null));
+    sensors = keep.map(([s]) => ({ ...s, name: sensorName(s), part: partOf(s, own)! }));
     points = rec.samples.map((x) => ({ t: x.t, v: keep.map(([, i]) => x.all?.[i] ?? null) }));
   } else {
     const keep = main.filter(([k]) => rec.samples.some((x) => x[k] != null));

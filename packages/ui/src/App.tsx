@@ -142,7 +142,8 @@ function SceneFeed() {
 
   // Picking a part in any 3D view opens its page, where it's shown alone. The view also reports the part a link
   // already opened (a finding that opens the battery's Upgrade tab), and that keeps the tab the link asked for.
-  useEffect(() => { getStage().onSelect = (id) => { set((u) => (u.selected === id ? {} : { selected: id, tab: "live" })); if (id && ui.route !== "pc") go("pc"); }; }, [set, go, ui.route]);
+  // Wired during the commit, so a part clicked the instant the page draws isn't lost before effects run.
+  useLayoutEffect(() => { getStage().onSelect = (id) => { set((u) => (u.selected === id ? {} : { selected: id, tab: "live" })); if (id && ui.route !== "pc") go("pc"); }; }, [set, go, ui.route]);
 
   // Rebuild the 3D model only when its shape or colors change; otherwise just feed it new readings.
   const look = useAppearance();

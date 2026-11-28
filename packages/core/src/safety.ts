@@ -5,6 +5,8 @@
 // never says something is fine that Rig didn't see.
 
 import type { Finding } from "./diagnose";
+import type { PC } from "./model";
+import { machineWord } from "./machineWord";
 
 /** One antivirus Windows Security Center knows about. `upToDate` is missing when Security Center didn't say. */
 export interface AntivirusProduct { name: string; enabled: boolean; upToDate?: boolean }
@@ -97,10 +99,10 @@ const isDefender = (name: string) => /defender/i.test(name);
 
 type Check = Omit<SafetyRow, "id" | "title"> & { finding?: Omit<Finding, "category" | "id"> & { id: string } };
 
-function updates(u: UpdateStatus | undefined, now: number): Check {
+function updates(u: UpdateStatus | undefined, now: number, w: string): Check {
   const action = "Ask about updates";
   if (!u || (u.lastInstalledAt == null && u.restartPending == null)) {
-    return { state: "unknown", line: "Rig couldn't read Windows Update", why: "Windows didn't say when it last installed an update.", action, ask: "How do I check that Windows Update is working on my PC?" };
+    return { state: "unknown", line: "Rig couldn't read Windows Update", why: "Windows didn't say when it last installed an update.", action, ask: `How do I check that Windows Update is working on my ${w}?` };
   }
   const last = u.lastInstalledAt != null ? daysSince(u.lastInstalledAt, now) : null;
   const lastLine = last != null ? `Last update ${agoWords(last)}` : "Rig couldn't tell when the last update was";
@@ -109,7 +111,7 @@ function updates(u: UpdateStatus | undefined, now: number): Check {
     const since = `${waited} days`;
     return {
       state: "look", chip: "Restart waiting", line: `${lastLine} · waiting ${since}`,
-      why: `An update installed ${since} ago and waits for a restart to finish. Until then it isn't protecting this PC.`,
+      why: `An update installed ${since} ago and waits for a restart to finish. Until then it isn't protecting this ${w}.`,
       steps: "Save your work, then open Start, Power and choose Update and restart.",
       action: "Ask about it", ask: `A Windows update has waited ${since} for a restart. Is it safe to restart now, and what does it fix?`,
       finding: {
@@ -124,11 +126,11 @@ function updates(u: UpdateStatus | undefined, now: number): Check {
       state: "look", chip: `${last} days`, line: lastLine,
       why: `Windows usually installs an update at least once a month. The last one here was ${last} days ago, so updates may be paused or failing.`,
       steps: "Open Settings, Windows Update, and choose Check for updates. If updates are paused, choose Resume updates.",
-      action: "Ask what to do", ask: `Windows hasn't installed an update on my PC in ${last} days. How do I get it updating again?`,
+      action: "Ask what to do", ask: `Windows hasn't installed an update on my ${w} in ${last} days. How do I get it updating again?`,
       finding: {
         id: "update-old", weight: 15, severity: "warn", part: "windows", confidence: "sure", evidence: [`Last update installed ${last} days ago`],
         title: `No Windows update in ${last} days`, body: "Windows usually installs one every month. Open Settings, Windows Update, and choose Check for updates.",
-        action: "Ask what to do", go: "chat", ask: `Windows hasn't installed an update on my PC in ${last} days. How do I get it updating again?`,
+        action: "Ask what to do", go: "chat", ask: `Windows hasn't installed an update on my ${w} in ${last} days. How do I get it updating again?`,
       },
     };
   }
@@ -136,11 +138,11 @@ function updates(u: UpdateStatus | undefined, now: number): Check {
   return {
     state: last != null ? "ok" : "unknown", line: `${lastLine}${pending}`,
     why: u.restartPending ? "Windows is up to date apart from one restart to finish an update. Restart when it suits you." : "Windows installs updates by itself. Rig checks that they keep coming.",
-    action, ask: "Is my PC up to date with Windows updates?",
+    action, ask: `Is my ${w} up to date with Windows updates?`,
   };
 }
 
-function antivirus(products: AntivirusProduct[] | undefined, d: DefenderStatus | undefined): Check {
+function antivirus(products: AntivirusProduct[] | undefined, d: DefenderStatus | undefined, w: string): Check {
   const action = "Ask about it";
   if (!products && !d) {
     return { state: "unknown", line: "Rig couldn't read virus protection", why: "Windows Security didn't answer, so Rig can't say which antivirus is on.", action, ask: "How do I check that virus protection is on in Windows?" };
@@ -185,8 +187,8 @@ function antivirus(products: AntivirusProduct[] | undefined, d: DefenderStatus |
     const scan = d?.quickScanAgeDays;
     return {
       state: "ok", line: age != null ? `Microsoft Defender, on, updated ${agoWords(age)}` : "Microsoft Defender, on",
-      why: `Defender checks files as you open them${scan != null ? `, and last scanned the PC ${agoWords(scan)}` : ""}.`,
-      action, ask: "Is Microsoft Defender enough protection for my PC?",
+      why: `Defender checks files as you open them${scan != null ? `, and last scanned the ${w} ${agoWords(scan)}` : ""}.`,
+      action, ask: `Is Microsoft Defender enough protection for my ${w}?`,
     };
   }
   const p = on[0];
@@ -203,12 +205,12 @@ function antivirus(products: AntivirusProduct[] | undefined, d: DefenderStatus |
       },
     };
   }
-  return { state: "ok", line: `${p.name}, on`, why: `${p.name} checks files as you open them, and tells Windows it's up to date.`, action, ask: `Is ${p.name} enough protection for my PC?` };
+  return { state: "ok", line: `${p.name}, on`, why: `${p.name} checks files as you open them, and tells Windows it's up to date.`, action, ask: `Is ${p.name} enough protection for my ${w}?` };
 }
 
 const PROFILES = [["domain", "work domain"], ["private", "private"], ["public", "public"]] as const;
 
-function firewall(f: FirewallStatus | undefined): Check {
+function firewall(f: FirewallStatus | undefined, w: string): Check {
   const action = "Ask about it";
   const read = PROFILES.filter(([k]) => f?.[k] != null);
   if (!f || !read.length) {
@@ -219,22 +221,22 @@ function firewall(f: FirewallStatus | undefined): Check {
   if (!off.length) {
     return {
       state: "ok", line: read.length === 3 ? "On for every network" : `On for ${list(read.map(([, w]) => w))} networks`,
-      why: "Windows Firewall keeps other devices on your networks from reaching this PC uninvited.",
-      action, ask: "Is Windows Firewall set up well on my PC?",
+      why: `Windows Firewall keeps other devices on your networks from reaching this ${w} uninvited.`,
+      action, ask: `Is Windows Firewall set up well on my ${w}?`,
     };
   }
   const where = `${list(off)} networks`;
   if (other) {
-    return { state: "ok", line: `${other.name}, on`, why: `Windows Firewall is off on ${where}, and ${other.name} looks after those instead.`, action, ask: `Is ${other.name} protecting my PC instead of Windows Firewall?` };
+    return { state: "ok", line: `${other.name}, on`, why: `Windows Firewall is off on ${where}, and ${other.name} looks after those instead.`, action, ask: `Is ${other.name} protecting my ${w} instead of Windows Firewall?` };
   }
   return {
     state: "look", chip: "Off", line: `Off on ${where}`,
-    why: `Other devices on ${where} can reach this PC while the firewall is off there.`,
+    why: `Other devices on ${where} can reach this ${w} while the firewall is off there.`,
     steps: `Open Windows Security, Firewall & network protection, and turn it on for ${where}.`,
     action: "Ask what to do", ask: `Windows Firewall is off on ${where}. Should I turn it back on?`,
     finding: {
       id: "firewall-off", weight: 25, severity: "bad", part: "windows", confidence: "sure", evidence: [`Windows Firewall off on ${where}`],
-      title: `Windows Firewall is off on ${where}`, body: `Other devices there can reach this PC. Open Windows Security, Firewall & network protection, and turn it on.`,
+      title: `Windows Firewall is off on ${where}`, body: `Other devices there can reach this ${w}. Open Windows Security, Firewall & network protection, and turn it on.`,
       action: "Ask what to do", go: "chat", ask: `Windows Firewall is off on ${where}. Should I turn it back on?`,
     },
   };
@@ -260,19 +262,20 @@ function backup(b: BackupStatus | undefined, now: number): Check {
 
 const TITLES: Record<SafetyId, string> = { updates: "Windows updates", antivirus: "Virus protection", firewall: "Firewall", backup: "Backup" };
 
-function checks(s: SecurityFacts | undefined, now: number): [SafetyId, Check][] {
-  return [["updates", updates(s?.updates, now)], ["antivirus", antivirus(s?.antivirus, s?.defender)], ["firewall", firewall(s?.firewall)], ["backup", backup(s?.backup, now)]];
+function checks(s: SecurityFacts | undefined, now: number, kind?: PC["kind"]): [SafetyId, Check][] {
+  const w = machineWord(kind);
+  return [["updates", updates(s?.updates, now, w)], ["antivirus", antivirus(s?.antivirus, s?.defender, w)], ["firewall", firewall(s?.firewall, w)], ["backup", backup(s?.backup, now)]];
 }
 
 /** The four rows, in order. With nothing read, all four say so. */
-export function safetyRows(s: SecurityFacts | undefined, now = Date.now()): SafetyRow[] {
-  return checks(s, now).map(([id, { finding: _f, ...c }]) => ({ id, title: TITLES[id], ...c }));
+export function safetyRows(s: SecurityFacts | undefined, now = Date.now(), kind?: PC["kind"]): SafetyRow[] {
+  return checks(s, now, kind).map(([id, { finding: _f, ...c }]) => ({ id, title: TITLES[id], ...c }));
 }
 
 /** The health findings for what needs a look, under "Drivers and updates". None when nothing was read. */
-export function safetyFindings(s: SecurityFacts | undefined, now = Date.now()): Finding[] {
+export function safetyFindings(s: SecurityFacts | undefined, now = Date.now(), kind?: PC["kind"]): Finding[] {
   if (!s) return [];
-  return checks(s, now).flatMap(([, c]) => (c.finding ? [{ ...c.finding, category: "Drivers and updates" }] : []));
+  return checks(s, now, kind).flatMap(([, c]) => (c.finding ? [{ ...c.finding, category: "Drivers and updates" }] : []));
 }
 
 /** A short line for the whole section: how many need a look. */

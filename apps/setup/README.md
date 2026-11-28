@@ -40,8 +40,9 @@ These belong to Windows and no app can restyle them:
 - **"Windows protected your PC"** (SmartScreen), because the setup isn't
   code-signed yet. Signing it is the fix (docs/releasing.md).
 - **"Do you want to allow this app to make changes?"** (UAC), once per install
-  or update, for the background recorder and PawnIO. The welcome screen says
-  it's coming.
+  or update, for the background recorder, PawnIO and the task that starts
+  Rig's helper with admin rights, so opening Rig doesn't ask again. The
+  welcome screen says it's coming.
 - **Notifications** in the corner of the screen, which Windows draws.
 - **The WebView2 runtime's own installer**, on the few PCs without it.
 

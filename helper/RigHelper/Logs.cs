@@ -10,7 +10,10 @@ using System.Text.RegularExpressions;
 namespace Rig.Helper;
 
 public record EventDto(long T, string Log, string Source, int Id, string Level, string Message);
-public record ProcessDto(string Name, double Cpu, long MemMb, double? Gpu);
+/// Gpu is the share of the busiest graphics chip the app used; Gpus, each chip's share by the chip's name, so on a
+/// laptop with built-in and dedicated graphics each share belongs to its own chip. Gpus is left out when a chip
+/// couldn't be named, and Gpu then still never adds two chips together.
+public record ProcessDto(string Name, double Cpu, long MemMb, double? Gpu, IReadOnlyDictionary<string, double>? Gpus = null);
 
 public static class EventLogs
 {
@@ -104,7 +107,8 @@ public static class Processes
     static Dictionary<int, TimeSpan>? lastCpu;
     static long lastAt;
     static Dictionary<string, CounterSample>? lastGpu;
-    static Dictionary<int, double>? gpuShare;
+    /// Each process's share of each graphics chip, by the chip's adapter id (its LUID, as the counters write it).
+    static Dictionary<int, Dictionary<string, double>>? gpuShare;
     // When gpuShare was worked out; 0 until there's a share to reuse.
     static long gpuShareAt;
 
@@ -156,8 +160,10 @@ public static class Processes
             var now = Sample();
             double elapsed = Stopwatch.GetElapsedTime(lastAt).TotalMilliseconds;
             var gpu = GpuShare(fresh);
-            var rows = Rank(now.Select(s => (s.Name, s.Bytes, Ms: lastCpu.TryGetValue(s.Pid, out var before) ? (s.Cpu - before).TotalMilliseconds : 0, Gpu: gpu != null && gpu.TryGetValue(s.Pid, out double g) ? g : (double?)null)),
-                elapsed, Environment.ProcessorCount, top);
+            var names = gpu != null ? Adapters.Names(gpu.Values.SelectMany(d => d.Keys)) : null;
+            var rows = Rank(now.Select(s => (s.Name, s.Bytes, Ms: lastCpu.TryGetValue(s.Pid, out var before) ? (s.Cpu - before).TotalMilliseconds : 0,
+                    Gpu: gpu != null && gpu.TryGetValue(s.Pid, out var g) ? (IReadOnlyDictionary<string, double>)g : null)),
+                elapsed, Environment.ProcessorCount, top, names);
             lastCpu = CpuByPid(now);
             lastAt = Stopwatch.GetTimestamp();
             return rows;
@@ -167,7 +173,7 @@ public static class Processes
     static bool GpuReusable() => gpuShareAt != 0 && Stopwatch.GetElapsedTime(gpuShareAt) < GpuEvery;
 
     /// Each app's graphics share: read now, or the last one while it's recent enough and fresh isn't asked for.
-    static Dictionary<int, double>? GpuShare(bool fresh)
+    static Dictionary<int, Dictionary<string, double>>? GpuShare(bool fresh)
     {
         if (!fresh && GpuReusable()) return gpuShare;
         bool hadFirst = lastGpu != null;
@@ -178,15 +184,27 @@ public static class Processes
         return gpuShare;
     }
 
-    /// Pure part of Top: turns per-process processor time over a stretch into shares of the whole processor.
-    public static List<ProcessDto> Rank(IEnumerable<(string Name, long Bytes, double Ms, double? Gpu)> procs, double elapsedMs, int cores, int top)
+    /// Pure part of Top: turns per-process processor time over a stretch into shares of the whole processor, and each
+    /// app's graphics use into its share of each chip. An app's processes add up on the same chip, never across chips.
+    /// names: each adapter id's chip name; Gpus is given only when every chip the app used has one.
+    public static List<ProcessDto> Rank(IEnumerable<(string Name, long Bytes, double Ms, IReadOnlyDictionary<string, double>? Gpu)> procs, double elapsedMs, int cores, int top,
+        IReadOnlyDictionary<string, string>? names = null)
     {
         double whole = Math.Max(1, elapsedMs) * Math.Max(1, cores);
-        var groups = procs.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).Select(g => new ProcessDto(
-            NoExe.Contains(g.Key) ? g.Key : g.Key + ".exe",
-            Math.Round(Math.Clamp(g.Sum(p => Math.Max(0, p.Ms)) / whole * 100, 0, 100), 1),
-            g.Sum(p => p.Bytes) / (1024 * 1024),
-            g.Any(p => p.Gpu != null) ? Math.Round(Math.Min(100, g.Sum(p => p.Gpu ?? 0))) : null)).ToList();
+        var groups = procs.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).Select(g =>
+        {
+            var byChip = new Dictionary<string, double>();
+            foreach (var p in g) if (p.Gpu != null) foreach (var (chip, v) in p.Gpu) byChip[chip] = byChip.GetValueOrDefault(chip) + v;
+            var shares = byChip.ToDictionary(e => e.Key, e => Math.Round(Math.Min(100, e.Value)));
+            var named = shares.Count > 0 && names != null && shares.Keys.All(names.ContainsKey)
+                ? shares.GroupBy(e => names[e.Key]).ToDictionary(n => n.Key, n => Math.Min(100, n.Sum(e => e.Value))) : null;
+            return new ProcessDto(
+                NoExe.Contains(g.Key) ? g.Key : g.Key + ".exe",
+                Math.Round(Math.Clamp(g.Sum(p => Math.Max(0, p.Ms)) / whole * 100, 0, 100), 1),
+                g.Sum(p => p.Bytes) / (1024 * 1024),
+                shares.Count > 0 ? shares.Values.Max() : null,
+                named);
+        }).ToList();
         var byCpu = groups.OrderByDescending(p => p.Cpu).ThenByDescending(p => p.MemMb).Take(top);
         var byMem = groups.OrderByDescending(p => p.MemMb).Take(3);
         return byCpu.Union(byMem).OrderByDescending(p => p.Cpu).ThenByDescending(p => p.MemMb).Take(MaxTop).ToList();
@@ -201,9 +219,19 @@ public static class Processes
         return end > 0 && int.TryParse(rest[..end], System.Globalization.NumberStyles.None, null, out int pid) ? pid : -1;
     }
 
-    /// Share of the graphics card's 3D engine per process id, from Windows' own counters, since the last reading.
-    /// Null on the first reading and when the counters aren't there.
-    static Dictionary<int, double>? Gpu()
+    /// The graphics adapter in a GPU Engine instance name ("pid_1234_luid_0x00000000_0x0000D1B2_phys_0_..."):
+    /// "luid_0x00000000_0x0000D1B2", the way Adapters names it, or null.
+    public static string? GpuLuid(string instance)
+    {
+        int at = instance.IndexOf("_luid_0x", StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return null;
+        var m = Regex.Match(instance.AsSpan(at + 1).ToString(), @"^luid_0x([0-9A-Fa-f]{8})_0x([0-9A-Fa-f]{8})");
+        return m.Success ? $"luid_0x{m.Groups[1].Value.ToUpperInvariant()}_0x{m.Groups[2].Value.ToUpperInvariant()}" : null;
+    }
+
+    /// Share of each graphics chip's 3D engine per process id, from Windows' own counters, since the last reading,
+    /// kept apart by chip. Null on the first reading and when the counters aren't there.
+    static Dictionary<int, Dictionary<string, double>>? Gpu()
     {
         try
         {
@@ -211,16 +239,18 @@ public static class Processes
             var data = new PerformanceCounterCategory("GPU Engine").ReadCategory();
             if (data["Utilization Percentage"] is not InstanceDataCollection util) return null;
             var now = new Dictionary<string, CounterSample>(lastGpu?.Count ?? 64);
-            var use = new Dictionary<int, double>();
+            var use = new Dictionary<int, Dictionary<string, double>>();
             foreach (InstanceData inst in util.Values)
             {
                 if (!inst.InstanceName.EndsWith("engtype_3D", StringComparison.OrdinalIgnoreCase)) continue;
                 now[inst.InstanceName] = inst.Sample;
                 int pid = GpuPid(inst.InstanceName);
-                if (pid < 0 || lastGpu == null || !lastGpu.TryGetValue(inst.InstanceName, out var before)) continue;
+                string? chip = GpuLuid(inst.InstanceName);
+                if (pid < 0 || chip == null || lastGpu == null || !lastGpu.TryGetValue(inst.InstanceName, out var before)) continue;
                 double v = CounterSample.Calculate(before, inst.Sample);
                 if (double.IsNaN(v) || v <= 0) continue;
-                use[pid] = use.GetValueOrDefault(pid) + v;
+                if (!use.TryGetValue(pid, out var mine)) use[pid] = mine = [];
+                mine[chip] = mine.GetValueOrDefault(chip) + v;
             }
             bool first = lastGpu == null;
             lastGpu = now;

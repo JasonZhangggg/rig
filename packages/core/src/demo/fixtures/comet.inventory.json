@@ -1,0 +1,14 @@
+{
+  "machine": { "id": "demo-comet", "hostname": "Comet", "manufacturer": "ASUSTeK COMPUTER INC.", "model": "ROG Zephyrus G14 GA403UV", "kind": "laptop", "os": { "name": "Windows 11 Home", "version": "24H2", "build": "26100.2314" } },
+  "cpu": { "name": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics", "cores": 8, "threads": 16, "maxClockMhz": 4000 },
+  "gpus": [
+    { "name": "AMD Radeon(TM) 780M Graphics", "vendor": "amd", "vramMb": 512, "driverVersion": "32.0.21025.1024", "driverDate": "Aug 2026", "integrated": true },
+    { "name": "NVIDIA GeForce RTX 4060 Laptop GPU", "vendor": "nvidia", "subsysVendor": "1043", "subsysId": "3ab3", "vramMb": 8188, "driverVersion": "581.42", "driverDate": "Oct 2, 2026", "integrated": false }
+  ],
+  "board": { "manufacturer": "ASUSTeK COMPUTER INC.", "product": "GA403UV", "biosVersion": "GA403UV.317", "biosDate": "Jul 2026" },
+  "memory": { "totalMb": 16384, "modules": [ { "capacityMb": 16384, "speedMhz": 6400 } ] },
+  "disks": [ { "model": "Micron 2400 MTFDKBA1T0QFM", "sizeGb": 1000, "media": "nvme", "healthPercent": 96, "writtenTb": 11.4, "status": "healthy", "number": 0, "powerOnHours": 2380 } ],
+  "volumes": [ { "letter": "C:", "sizeGb": 951, "freeGb": 214, "disk": 0 } ],
+  "battery": { "designWh": 73, "fullWh": 68.9, "cycles": 141 },
+  "displays": [ { "name": "Built-in display", "width": 2880, "height": 1800, "refreshHz": 120, "maxRefreshHz": 120, "primary": true, "connection": "internal", "gpu": "AMD Radeon(TM) 780M Graphics" } ]
+}

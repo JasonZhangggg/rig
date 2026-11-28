@@ -1,9 +1,9 @@
-import type { ChatMessage, Issue, StillPC } from "@rig/core";
+import { machineWord, type ChatMessage, type Issue, type StillPC } from "@rig/core";
 import { Icon } from "../../components/common";
 import { useActions, useData, useStillPC, useTempText } from "../../state";
 import { useManuals } from "../../manuals/useManuals";
 import { partIcon } from "../shared";
-import { NET_CHECK_QUESTION } from "../../components/NetCheck";
+import { netCheckQuestion } from "../../components/NetCheck";
 
 /** check: opens that check's dialog instead of asking. */
 export interface Starter { q: string; why: string; part?: string; topic?: string; check?: "network" }
@@ -16,7 +16,7 @@ function generic(pc: StillPC): Starter[] {
   return [
     { q: `Why is ${pc.name} loud?`, why: "Noise usually comes from fans working harder than they need to.", part: "fans" },
     { q: "Why is startup slow?", why: "Apps that start with Windows add up over time.", part: "ssd", topic: "startup" },
-    { q: NET_CHECK_QUESTION, why: `A quick check of ${pc.name}'s connection, your router and the internet.`, part: "network", topic: "network", check: "network" },
+    { q: netCheckQuestion(machineWord(pc.kind)), why: `A quick check of ${pc.name}'s connection, your router and the internet.`, part: "network", topic: "network", check: "network" },
     { q: "Can my screen look smoother?", why: "Many screens run slower than they can after a new cable or driver.", part: "gpu" },
     { q: "What should I upgrade first?", why: "See what fits and what you would notice most.", part: "ram" },
   ];

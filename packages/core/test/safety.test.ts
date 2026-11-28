@@ -19,6 +19,15 @@ const row = (s: SecurityFacts | undefined, id: string) => safetyRows(s, now).fin
 const titles = (s: SecurityFacts | undefined) => safetyFindings(s, now).map((f) => f.title);
 
 describe("safe and up to date", () => {
+  it("calls a laptop a laptop in what it says and asks", () => {
+    const off = { ...fine(), firewall: { domain: true, private: true, public: false } };
+    const laptop = safetyRows(off, now, "laptop").find((r) => r.id === "firewall")!;
+    expect(laptop.why).toBe("Other devices on public networks can reach this laptop while the firewall is off there.");
+    expect(safetyRows(fine(), now, "laptop").map((r) => r.ask)).toContain("Is my laptop up to date with Windows updates?");
+    expect(safetyFindings(off, now, "laptop")[0].body).toMatch(/^Other devices there can reach this laptop\./);
+    expect(row(off, "firewall").why).toMatch(/reach this PC/);
+  });
+
   it("says what it read when everything is fine, with no chips and no findings", () => {
     const rows = safetyRows(fine(), now);
     expect(rows.map((r) => [r.title, r.line, r.state, r.chip])).toEqual([

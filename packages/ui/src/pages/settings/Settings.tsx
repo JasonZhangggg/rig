@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { reducedMotion } from "../../appearance";
-import { useActions } from "../../state";
-import { FoldedSection, SettingsSection, onFocusSection, peekFocusSection, sectionAnchor, settingsSections, takeFocusSection } from "./sections";
+import { useActions, useMachineWord } from "../../state";
+import { FoldedSection, SettingsSection, introOf, onFocusSection, peekFocusSection, sectionAnchor, settingsSections, takeFocusSection } from "./sections";
 
 export function Settings() {
   const ctx = useActions();
+  const word = useMachineWord();
   const shown = settingsSections.filter((s) => s.show?.(ctx) ?? true);
   const main = shown.filter((s) => !s.folded), folded = shown.filter((s) => s.folded);
   const [open, setOpen] = useState<string[]>(() => { const id = peekFocusSection(); return id ? [id] : []; });
@@ -24,7 +25,7 @@ export function Settings() {
   return (
     <div className="page set-page">
       <div className="page-head">
-        <div><h1>Settings</h1><p className="sub">How Rig looks and alerts you{ctx.client.kind === "desktop" ? " on this PC" : ""}, your account and your data.</p></div>
+        <div><h1>Settings</h1><p className="sub">How Rig looks and alerts you{ctx.client.kind === "desktop" ? ` on this ${word}` : ""}, your account and your data.</p></div>
       </div>
       <div className="set-layout">
         <nav className="set-nav" aria-label="Settings sections">
@@ -33,11 +34,11 @@ export function Settings() {
           {folded.map((s) => <button key={s.id} type="button" onClick={() => jump(s.id)}>{s.title}</button>)}
         </nav>
         <div className="set-list">
-          {main.map(({ id, title, intro, Body }) => <SettingsSection key={id} id={id} title={title} intro={intro}><Body /></SettingsSection>)}
+          {main.map((s) => <SettingsSection key={s.id} id={s.id} title={s.title} intro={introOf(s, word)}><s.Body /></SettingsSection>)}
           {folded.length > 0 && (
             <div className="card set-folds">
-              {folded.map(({ id, title, intro, Body }) => (
-                <FoldedSection key={id} id={id} title={title} intro={intro} open={open.includes(id)} onToggle={() => toggle(id)}><Body /></FoldedSection>
+              {folded.map((s) => (
+                <FoldedSection key={s.id} id={s.id} title={s.title} intro={introOf(s, word)} open={open.includes(s.id)} onToggle={() => toggle(s.id)}><s.Body /></FoldedSection>
               ))}
             </div>
           )}

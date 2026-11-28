@@ -2,7 +2,7 @@
 // review sheet with those changes, and nothing on the PC changes until the person approves it there.
 import { useEffect, useRef, useState } from "react";
 import { fixSteps, startupGuide, type ActionCall, type StartupAppView } from "@rig/core";
-import { useActions, useAppSelector, useUI } from "../state";
+import { useActions, useAppSelector, useMachineWord, useUI } from "../state";
 import { Row, Rows } from "./Rows";
 import { useModal } from "./modal";
 
@@ -16,14 +16,14 @@ export function StartupApps() {
 }
 
 /** The one grey line: what the app is, and whether Rig suggests it, or what will happen once approved. */
-function metaFor(a: StartupAppView, on: boolean) {
+function metaFor(a: StartupAppView, on: boolean, word: string) {
   const g = startupGuide(a.name);
   const state = on !== a.enabled ? (on ? "On after review" : "Off after review")
     : !a.enabled ? "Turned off"
     : g?.suggest === "off" ? "Fine to turn off"
     : g?.suggest === "keep" ? "Best left on"
     : null;
-  const what = g?.what ?? (state ? null : a.scope === "machine" ? "Starts for everyone on this PC" : "Starts when you sign in");
+  const what = g?.what ?? (state ? null : a.scope === "machine" ? `Starts for everyone on this ${word}` : "Starts when you sign in");
   return [what, state].filter(Boolean).join(" · ");
 }
 
@@ -31,6 +31,7 @@ function OpenStartupApps() {
   const { set, review, ask, client } = useActions();
   const ui = useUI();
   const pc = useAppSelector((c) => ({ name: c.pc.name, apps: c.pc.settings?.startup }));
+  const word = useMachineWord();
   const apps = pc.apps ?? [];
   const canChange = client.caps.applyChanges;
   // The person's picks, by name. The list keeps the order it opened in, so a row doesn't jump when its switch flips.
@@ -93,7 +94,7 @@ function OpenStartupApps() {
               {list.map((a) => {
                 const on = onOf(a);
                 return (
-                  <Row key={a.name} name={a.name} title={a.name} meta={metaFor(a, on)}
+                  <Row key={a.name} name={a.name} title={a.name} meta={metaFor(a, on, word)}
                     action={<button type="button" className="switch set-toggle" role="switch" aria-checked={on} aria-label={a.name} disabled={!canChange || busy}
                       onClick={() => setWant((w) => ({ ...w, [a.name]: !on }))}><i /></button>} />
                 );

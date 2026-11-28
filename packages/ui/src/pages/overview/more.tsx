@@ -2,7 +2,7 @@
 // logs and manuals. Each is a list of hairline rows under a heading, opening its page when a row is pressed.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { eventKinds, eventTitle, gameLibrary, insightContext, isActive, safetyRows, safetySummary, type Game, type HistoryPoint, type Manual, type PCEvent, type RecordingInfo, type Severity } from "@rig/core";
-import { useActions, useApp, useData, useHistory, useTemp } from "../../state";
+import { useActions, useApp, useData, useHistory, useMachineWord, useTemp } from "../../state";
 import { useEvents } from "../Logs";
 import { ago, hours } from "../games/words";
 import { serious } from "../logs/summary";
@@ -402,7 +402,7 @@ export function SafetyWidget(props: WidgetProps) {
   const { style, opts } = props;
   const { pc, go } = useApp();
   const now = Date.now();
-  const rows = safetyRows(pc.security, now);
+  const rows = safetyRows(pc.security, now, pc.kind);
   const summary = safetySummary(rows);
   const lines: Line[] = rows.map((r) => ({
     key: r.id, title: r.title, meta: r.line,
@@ -425,6 +425,7 @@ export function LogsWidget(props: WidgetProps) {
   const { recordings } = useData("recordings");
   const list = opts.daily === true ? recordings : recordings.filter((r) => !r.background);
   const running = list.find((r) => r.state === "recording");
+  const word = useMachineWord();
   const now = Date.now();
   const lines: Line[] = list.map((r: RecordingInfo) => {
     const share = r.state === "recording" && r.startedAt && r.endsAt ? (now - r.startedAt) / (r.endsAt - r.startedAt) : undefined;
@@ -441,7 +442,7 @@ export function LogsWidget(props: WidgetProps) {
   });
   return (
     <section className="f-list" data-style={style}>
-      <Head title="Logs" sub={running ? "Recording now" : list.length ? `${plural(list.length, "log")} on this PC` : undefined} />
+      <Head title="Logs" sub={running ? "Recording now" : list.length ? `${plural(list.length, "log")} on this ${word}` : undefined} />
       {lines.length ? (
         <RowList lines={lines} fit={fixed(props)} watch={`${style}${opts.daily}${opts.found}`} more={(n) => `${n} more`} onMore={() => { location.hash = "logs"; }} />
       ) : (
