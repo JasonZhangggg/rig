@@ -3,7 +3,7 @@ import { findReadings, sensorGroups, type PartsView, type Recorded, type Recorde
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
 import { dateText } from "../../dateText";
-import { PartSummary, partLines } from "./PartSummary";
+import { PartSummary, partLines, type Device } from "./PartSummary";
 
 type Temp = ReturnType<typeof useTemp>;
 
@@ -695,11 +695,13 @@ function ShowPicker({ pick, onPick, parts, kinds }: {
  * on each part's row as on Home over its main charts; one part, with all of its sensors; or one kind of reading across
  * every part. A search finds any sensor on the PC.
  */
-export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, live, week }: {
+export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, live, week, device }: {
   r: Recorded; /** Every reading, not thinned, so the lowest and highest are exact. */ whole?: Recorded | null;
   from: number; to: number; limits: { cpu?: number; gpu?: number }; bands?: Band[]; marks?: ChartMark[]; compact?: boolean; live?: boolean;
   /** Each part's usual from the last week, for the part rows. */
   week?: PartsView | null;
+  /** A laptop's words and battery for the part rows. */
+  device?: Device;
 }) {
   const [picked, setPick] = useState<Pick>({ part: "all" });
   const [query, setQuery] = useState("");
@@ -735,7 +737,7 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
           {finding && <span className="faint num" aria-live="polite">{count} of {r.sensors.length}</span>}
         </div>
       </div>
-      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} onPick={(id) => choose({ part: id })} />}
+      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} device={device} onPick={(id) => choose({ part: id })} />}
       {finding && !lanes.length ? <p className="muted ln-none">No sensor matches “{finding}”. Try a part, like processor, a kind, like voltage, or a sensor, like core 3.</p>
         : <Lanes key={finding ? "find" : kind ?? part} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
     </div>
