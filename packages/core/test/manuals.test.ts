@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  LocalClient, MemoryStore, clampPages, findDiagrams, joinTextItems, makerName, manualLink, manualTargets, parseManualLink, searchPages,
+  LocalClient, MemoryStore, buildPC, clampPages, driverRows, findDiagrams, laptopDriverNote, joinTextItems, makerName, manualLink, manualTargets, parseManualLink, searchPages,
   MANUAL_PAGE_CHARS, type ChatEvent, type HelperLink, type Manual, type ManualPage, type PC,
 } from "../src";
 import { DemoClient, SimulatedLink, fixtures, renderSampleManual, sampleBoardManual, sampleLaptopGuide } from "../src/demo";
@@ -71,6 +71,37 @@ const caseManual = {
   panel: "Front panel I/O\nPower SW\nReset SW\nPower LED\nHDD LED\nUSB 3.2 Gen 1\nUSB Type-C\nAudio",
   install: "Installing the motherboard\nStep 1: Install the I/O shield.\nStep 2: Lower the motherboard onto the standoffs.\nStep 3: Screw it in with the M3 screws.",
 };
+
+describe("driverRows", () => {
+  const laptop = (machine: Partial<typeof fixtures.pebble.inv.machine>, gpus = fixtures.pebble.inv.gpus) =>
+    buildPC({ ...fixtures.pebble.inv, machine: { ...fixtures.pebble.inv.machine, ...machine }, gpus }, null, null);
+  const brief = (pc: PC) => driverRows(pc).map((r) => [r.name, r.what, r.installed ?? "", r.link?.label ?? r.ask?.label ?? ""]);
+
+  it("gives a gaming laptop's maker page, both graphics drivers and the BIOS", () => {
+    const pc = laptop({ manufacturer: "LENOVO", model: "Legion 5 16IRX9" }, [
+      { name: "NVIDIA GeForce RTX 4060 Laptop GPU", vendor: "nvidia", driverVersion: "566.14", integrated: false },
+      { name: "Intel UHD Graphics", vendor: "intel", driverVersion: "31.0.101.5186", integrated: true },
+    ]);
+    expect(brief(pc)).toEqual([
+      ["Lenovo Legion 5 16IRX9", "Drivers, BIOS and manual", "", "Lenovo support"],
+      ["NVIDIA GeForce RTX 4060 Laptop GPU", "Graphics driver", "NVIDIA 566.14", "NVIDIA downloads"],
+      ["Intel UHD Graphics", "Graphics driver", "Intel 31.0.101.5186", "Intel downloads"],
+      ["ASUSTeK UX3405MA", "BIOS", "UX3405MA.308", "Ask if there's a newer one"],
+    ]);
+    expect(laptopDriverNote(pc)).toMatch(/^Lenovo's own graphics driver/);
+  });
+
+  it("asks Rig where to look when Rig doesn't know the laptop maker's site, and doesn't repeat a maker in the model", () => {
+    const pc = laptop({ manufacturer: "Acme Inc.", model: "Acme Book 14" });
+    expect(driverRows(pc)[0]).toMatchObject({ name: "Acme Book 14", link: undefined, ask: { label: "Ask where to get them", question: "Where do I get the drivers, BIOS and manual for my Acme Book 14?" } });
+  });
+
+  it("keeps a desktop to its parts' drivers and BIOS, with no laptop note", async () => {
+    const [atlas] = await new DemoClient().machines();
+    expect(driverRows(atlas).map((r) => r.what)).toEqual(["Graphics card driver", "BIOS"]);
+    expect(laptopDriverNote(atlas)).toBeNull();
+  });
+});
 
 describe("findDiagrams", () => {
   it("marks the diagram pages of an ASUS style manual and skips the contents and a page that mentions headers in passing", () => {

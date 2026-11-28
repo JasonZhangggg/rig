@@ -85,3 +85,115 @@ export function extraPartKey(kind: ManualKind, maker: string, model: string): st
   const slug = `${kind} ${maker} ${model}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
   return `extra:${slug}`;
 }
+
+// ----- Drivers and BIOS -----
+
+/** Each graphics chip maker's own driver page. */
+export const chipDriverPages: Record<string, string> = {
+  NVIDIA: "https://www.nvidia.com/en-us/drivers/",
+  AMD: "https://www.amd.com/en/support/download/drivers.html",
+  Intel: "https://www.intel.com/content/www/us/en/support/detect.html",
+};
+
+/**
+ * Laptop makers' support sites, where the drivers, BIOS and manual for a model are found by typing the model in.
+ * Only landing pages, on the domains the server already trusts for each maker's manuals: a page deep inside a
+ * maker's site moves too often to keep.
+ */
+export const laptopSupportPages: Record<string, string> = {
+  ASUS: "https://www.asus.com/support/download-center/",
+  Lenovo: "https://pcsupport.lenovo.com/",
+  Dell: "https://www.dell.com/support/home/",
+  HP: "https://support.hp.com/drivers",
+  MSI: "https://www.msi.com/support",
+  Gigabyte: "https://www.gigabyte.com/Support",
+  Razer: "https://mysupport.razer.com/",
+};
+
+/** One row of Drivers and BIOS on the Manuals tab. */
+export interface DriverRow {
+  /** The part's key on My PC; "laptop" for a laptop's support site; "graphics:<chip>" for a chip with no part of its own. */
+  id: string;
+  /** In bold: the part, chip or laptop. */
+  name: string;
+  /** What the row is about: "BIOS", "Graphics driver", "Graphics card driver", "Drivers, BIOS and manual". */
+  what: string;
+  /** The version installed, like "Intel 32.0.101.6078" or "UX3405MA.308". */
+  installed?: string;
+  /** A newer version Rig knows is out. */
+  latest?: string;
+  /** What to ask Rig, and the button's words. */
+  ask?: { label: string; question: string };
+  /** Where to get it on the maker's own site. */
+  link?: { label: string; href: string };
+}
+
+/** The maker of a laptop as people write it, like "ASUS" for "ASUSTeK COMPUTER INC.". */
+const laptopMaker = (pc: StillPC) => makerName(pc.parts?.chassis?.maker);
+
+/**
+ * What a laptop's maker says about its graphics driver: its own build is tested on that model, so it can be the
+ * safer pick than the chip maker's newer one. Missing on a desktop or a laptop with no graphics row.
+ */
+export function laptopDriverNote(pc: StillPC): string | null {
+  if (pc.kind !== "laptop" || !(pc.parts?.gpu || pc.graphics?.length)) return null;
+  const maker = laptopMaker(pc);
+  return `${maker ? `${maker}'s` : "The laptop maker's"} own graphics driver is tested on this laptop, so it can be the safer pick than the newest one from the chip maker.`;
+}
+
+/**
+ * Each driver and BIOS Rig read, with where to get it. A desktop lists its parts' drivers and BIOS. A laptop gets its
+ * drivers from its maker, so it leads with the maker's support site for that model, then each graphics chip (the
+ * processor's own graphics included, which a laptop shows no part for) and the BIOS.
+ */
+export function driverRows(pc: StillPC): DriverRow[] {
+  const laptop = pc.kind === "laptop";
+  const parts = pc.parts ?? {};
+  const rows: DriverRow[] = [];
+
+  if (laptop) {
+    const c = parts.chassis;
+    const maker = laptopMaker(pc);
+    const model = c?.model && real(c.model) ? (c.model.toLowerCase().startsWith(maker.toLowerCase()) ? c.model : `${maker} ${c.model}`.trim()) : "";
+    if (model) {
+      const href = laptopSupportPages[maker];
+      rows.push({
+        id: "laptop", name: model, what: "Drivers, BIOS and manual",
+        link: href ? { label: `${maker} support`, href } : undefined,
+        ask: href ? undefined : { label: "Ask where to get them", question: `Where do I get the drivers, BIOS and manual for my ${model}?` },
+      });
+    }
+  }
+
+  const fromParts: DriverRow[] = Object.entries(parts).flatMap(([id, p]): DriverRow[] => {
+    const d = p.driver;
+    if (!d) return [];
+    const isBios = d.installed.startsWith("BIOS");
+    const chip = Object.keys(chipDriverPages).find((k) => d.installed.startsWith(k) || p.name.includes(k));
+    return [{
+      id, name: p.name,
+      what: isBios ? "BIOS" : laptop && id === "gpu" ? "Graphics driver" : `${p.type} driver`,
+      installed: isBios ? d.installed.replace(/^BIOS\s*/, "") : d.installed,
+      latest: d.latest,
+      ask: { label: "Ask if there's a newer one", question: `Is there a newer ${isBios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.` },
+      link: chip ? { label: `${chip} downloads`, href: chipDriverPages[chip] } : undefined,
+    }];
+  });
+  // A desktop lists them in its parts' order.
+  if (!laptop) return fromParts;
+
+  // The processor's own graphics: a laptop shows no part for it, but its driver matters as much.
+  const shown = parts.gpu?.name;
+  const chips = (pc.graphics ?? []).filter((g) => g.name !== shown && !/microsoft basic/i.test(g.name)).map((g): DriverRow => {
+    const installed = g.driver ? `${g.maker ?? "Driver"} ${g.driver}` : undefined;
+    const href = g.maker ? chipDriverPages[g.maker] : undefined;
+    return {
+      id: `graphics:${g.name}`, name: g.name, what: "Graphics driver", installed,
+      ask: { label: "Ask if there's a newer one", question: `Is there a newer driver for my ${g.name}?${installed ? ` I have ${installed}.` : ""}` },
+      link: href ? { label: `${g.maker} downloads`, href } : undefined,
+    };
+  });
+  // Graphics first, the BIOS last.
+  const isBios = (r: DriverRow) => r.what === "BIOS";
+  return [...rows, ...fromParts.filter((r) => !isBios(r)), ...chips, ...fromParts.filter(isBios)];
+}

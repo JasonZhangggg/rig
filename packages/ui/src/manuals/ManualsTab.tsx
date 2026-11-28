@@ -2,7 +2,7 @@
 // drivers and BIOS Rig read, with the maker's download page.
 
 import { memo, useState } from "react";
-import type { ManualKind } from "@rig/core";
+import { driverRows, laptopDriverNote, type ManualKind } from "@rig/core";
 import { useActions, useStillPC } from "../state";
 import { AddManual } from "./AddManual";
 import { ManualCard } from "./ManualCard";
@@ -12,13 +12,9 @@ import { openManual } from "./viewerState";
 import { manualRows } from "./words";
 import { Row, Rows } from "../components/Rows";
 
-const driverPages: Record<string, string> = {
-  NVIDIA: "https://www.nvidia.com/en-us/drivers/",
-  AMD: "https://www.amd.com/en/support/download/drivers.html",
-  Intel: "https://www.intel.com/content/www/us/en/support/detect.html",
-};
-
 const addable: ManualKind[] = ["monitor", "cooler", "case", "psu", "memory", "storage", "other"];
+/** A laptop has no case, cooler or power supply to add; a dock, mouse or charger goes under Other. */
+const laptopAddable: ManualKind[] = ["monitor", "other", "storage"];
 
 /** Drawn again only when the manuals or the PC's parts change, not on every reading of the page around it. */
 export const ManualsTab = memo(function ManualsTab() {
@@ -29,11 +25,13 @@ export const ManualsTab = memo(function ManualsTab() {
   const { hits, error } = useManualSearch(q);
   const rows = state.manuals ? manualRows(pc, state) : [];
   const ready = state.manuals?.filter((m) => m.indexed).length ?? 0;
+  const laptop = pc.kind === "laptop";
+  const addHint = laptop ? "For your dock, monitor, mouse or charger" : "For your monitor, case, cooler or anything else";
   return (
     <div className="mt">
       <section className="mt-search" aria-label="Search the manuals">
         <input className="input mt-q" type="search" value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder={ready ? 'Like "front panel" or "M.2"' : "Search the manuals"} aria-label="Search the manuals" />
+          placeholder={ready ? (laptop ? 'Like "battery" or "M.2"' : 'Like "front panel" or "M.2"') : "Search the manuals"} aria-label="Search the manuals" />
         {q.trim().length >= 2 && (
           <div className="mt-results" role="region" aria-live="polite" aria-label="Pages that match">
             {error ? <p className="callout warn">{error}</p>
@@ -53,9 +51,10 @@ export const ManualsTab = memo(function ManualsTab() {
               {rows.map((r) => <ManualCard key={r.target.part} row={r} store={state.store} />)}
               <li className="mn-row mt-add">
                 {adding
-                  ? <AddManual kinds={addable} intro="A monitor, a cooler or anything else Windows can't see. Tell Rig the model and it finds the maker's manual." onDone={() => setAdding(false)} />
-                  : <button type="button" className="btn ghost sm mt-add-btn" onClick={() => setAdding(true)}>Add a manual<span className="sr-only">, for your monitor, case, cooler or anything else</span></button>}
-                {!adding && <span className="mt-add-hint" aria-hidden="true">For your monitor, case, cooler or anything else</span>}
+                  ? <AddManual kinds={laptop ? laptopAddable : addable} onDone={() => setAdding(false)}
+                      intro={laptop ? "A dock, a monitor, a mouse or anything else you use with it. Tell Rig the model and it finds the maker's manual." : "A monitor, a cooler or anything else Windows can't see. Tell Rig the model and it finds the maker's manual."} />
+                  : <button type="button" className="btn ghost sm mt-add-btn" onClick={() => setAdding(true)}>Add a manual<span className="sr-only">, {addHint.toLowerCase()}</span></button>}
+                {!adding && <span className="mt-add-hint" aria-hidden="true">{addHint}</span>}
               </li>
             </ul>
           </>
@@ -67,33 +66,32 @@ export const ManualsTab = memo(function ManualsTab() {
   );
 });
 
-/** Each part with a driver or BIOS: what's installed, whether there's newer, and where to get it. */
+/** Each driver and BIOS Rig read, whether there's newer, and where to get it. A laptop leads with its maker's support site. */
 function Drivers() {
   const { ask } = useActions();
   const pc = useStillPC();
-  const list = Object.entries(pc.parts ?? {}).filter(([, p]) => p.driver);
-  if (!list.length) return null;
+  const rows = driverRows(pc);
+  if (!rows.length) return null;
+  const note = laptopDriverNote(pc);
   return (
     <section aria-labelledby="mt-drv-h">
       <h2 id="mt-drv-h" className="mt-h">Drivers and BIOS</h2>
       <Rows>
-        {list.map(([id, p]) => {
-          const d = p.driver!;
-          const bios = d.installed.startsWith("BIOS");
-          const maker = Object.keys(driverPages).find((k) => d.installed.startsWith(k) || p.name.includes(k));
-          const newer = !!d.latest && d.latest !== d.installed;
+        {rows.map((r) => {
+          const newer = !!r.latest && r.latest !== r.installed;
           return (
-            <Row key={id} name={p.name} title={p.name}
-              meta={<span className="mn-meta">{bios ? <><span>BIOS</span><span>{d.installed.replace(/^BIOS\s*/, "")}</span></> : <><span>{p.type} driver</span><span>{d.installed}</span></>}</span>}
-              tag={newer ? <span className="chip warn">{d.latest} is out</span> : null}
+            <Row key={r.id} name={r.name} title={r.name}
+              meta={<span className="mn-meta"><span>{r.what}</span>{r.installed && <span>{r.installed}</span>}</span>}
+              tag={newer ? <span className="chip warn">{r.latest} is out</span> : null}
               action={<>
                 {/* Unless Rig already knows a newer one is out, the first question is whether there is one, so that's always offered. */}
-                {!newer && <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>}
-                {maker && <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>}
+                {r.ask && !newer && <button type="button" className="btn sm" onClick={() => ask(r.ask!.question)}>{r.ask.label}</button>}
+                {r.link && <a className="btn sm" href={r.link.href} target="_blank" rel="noreferrer">{r.link.label}</a>}
               </>} />
           );
         })}
       </Rows>
+      {note && <p className="faint mt-note">{note}</p>}
       <p className="faint mt-note">Rig never installs drivers or BIOS updates by itself.</p>
     </section>
   );

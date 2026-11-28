@@ -148,8 +148,22 @@ export interface PC {
   displays?: DisplayLink[];
   /** The graphics card's PCI subsystem vendor and id, which tell its maker and exact model. Missing from older helpers. */
   gpuSubsys?: { vendor: string; id?: string };
+  /** Every graphics chip Windows lists, the processor's own included, with its driver: a laptop's driver rows come from these. */
+  graphics?: GraphicsChip[];
   /** A laptop's battery: how long it lasts, what drained it today and ways to stretch it (battery.ts). Missing on desktops. */
   battery?: BatteryView;
+}
+
+/** A graphics chip as Windows lists it. */
+export interface GraphicsChip {
+  /** "Intel Arc Graphics", "NVIDIA GeForce RTX 4060 Laptop GPU". */
+  name: string;
+  /** Who makes the chip and its driver: "Intel", "AMD" or "NVIDIA". Missing for anyone else. */
+  maker?: string;
+  /** The driver version Windows reports, like "32.0.101.6078". */
+  driver?: string;
+  /** Built into the processor. */
+  integrated: boolean;
 }
 
 /** One screen and where it's plugged in, as far as Windows can say. */

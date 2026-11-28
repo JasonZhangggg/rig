@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PC, Upgrade } from "@rig/core";
 import { ManualRef } from "../../manuals/ManualRef";
 import { useActions, useAppSelector, useStillPC } from "../../state";
-import { bestPick, roomPart, type Pick } from "./pick";
+import { bestPick, ideaText, roomPart, type Pick } from "./pick";
 import { roomIn, type Room } from "./room";
 
 const fitChip: Record<Upgrade["fit"], JSX.Element> = {
@@ -77,7 +77,7 @@ export function PartUpgrade({ ideas, ups }: { ideas: Upgrade[]; ups: PCUpgrades 
           <li key={u.title} className="pc-up-idea">
             <div className="pc-up-top">{isPick ? <span className="chip ok no-dot">Rig's pick</span> : fitChip[u.fit]}<span className="faint">{fitWords[u.fit]}</span></div>
             <h3>{u.title}</h3>
-            <p className="muted">{isPick && ups.pick!.pressing ? `${ups.pick!.why} ` : ""}{u.detail}{u.gain ? ` ${u.gain}.` : ""}</p>
+            <p className="muted">{ideaText(u, ups.pick)}</p>
             {r && <p className="faint up-row-room"><Meter r={r} /><span>{r.figure} {r.unit}. {r.note}</span></p>}
             <ManualRef part={u.part} />
             <div className="pc-up-go"><AskBuy u={u} primary={isPick} /></div>
