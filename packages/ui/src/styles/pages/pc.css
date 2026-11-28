@@ -143,13 +143,14 @@
 .shop-free { background: transparent !important; box-shadow: inset 0 0 0 1px var(--line); }
 
 .shop-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: clamp(24px, 3vw, 48px); align-items: start; }
-.shop-rail { position: sticky; top: 16px; display: grid; gap: 14px; }
+/* The kinds' words line up with the page edge; the fill of the picked one reaches past it. */
+.shop-rail { position: sticky; top: 16px; display: grid; gap: 14px; margin-left: -12px; }
 .shop-rail ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .shop-rail button { width: 100%; display: grid; gap: 2px; padding: 10px 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: transform .16s var(--ease-out); }
 .shop-rail button:active { transform: scale(.98); }
-.shop-rail button[aria-current="true"] { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--text); }
-.shop-rail-l { font-weight: 600; font-size: 14.5px; }
-.shop-rail-have { color: var(--text-3); font-size: 12.5px; line-height: 1.35; }
+.shop-rail button[aria-current="true"] { background: var(--sel); }
+.shop-rail-l { font-weight: 600; font-size: 15px; }
+.shop-rail-have { color: var(--text-3); font-size: 13px; line-height: 1.35; }
 .shop-rail-list { border-top: 1px solid var(--line) !important; border-radius: 0 0 var(--r-sm) var(--r-sm) !important; padding-top: 14px !important; }
 .shop-closed { margin: 0; padding: 0 12px; font-size: 12.5px; line-height: 1.45; }
 
@@ -171,7 +172,7 @@
 .shop-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .shop-item { border-bottom: 1px solid var(--line); }
 .shop-row { display: flex; align-items: center; gap: 12px; }
-.shop-row-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr) 112px 104px 18px; align-items: center; gap: 16px; padding: 14px 4px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.shop-row-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr) 112px 104px 18px; align-items: center; gap: 16px; padding: 14px 0; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .shop-row-main.is-static { grid-template-columns: 44px minmax(0, 1fr) 112px 104px; cursor: default; }
 .shop-row-main .chip { justify-self: start; }
 .shop-name { display: grid; gap: 3px; min-width: 0; }
@@ -182,9 +183,10 @@
 .shop-price .faint { font-size: 12px; }
 .shop-chev { width: 18px; height: 18px; color: var(--text-3); transition: transform .2s var(--ease-out); }
 .shop-item.is-open .shop-chev { transform: rotate(180deg); }
-.shop-add { flex: none; min-width: 112px; }
+/* As wide as "On your list", so the row doesn't shift when it toggles; "Add" sits at the right edge of that room. */
+.shop-add { flex: none; min-width: 112px; justify-content: flex-end; }
 .shop-add:active, .shop-lead .btn:active { transform: scale(.97); }
-.shop-detail { display: grid; gap: 18px; padding: 4px 4px 22px; animation: shop-in .2s var(--ease-out); }
+.shop-detail { display: grid; gap: 18px; padding: 4px 0 22px; animation: shop-in .2s var(--ease-out); }
 @keyframes shop-in { from { opacity: 0; transform: translateY(-4px); } }
 .shop-fit { display: grid; gap: 4px; }
 .shop-fit p { margin: 0; max-width: 70ch; }
@@ -237,7 +239,8 @@
 @media (prefers-reduced-motion: reduce) { .shop-detail { animation: none; } .shop-chev { transition: none; } }
 @media (max-width: 900px) {
   .shop-grid { grid-template-columns: 1fr; }
-  .shop-rail { position: static; display: flex; gap: 2px; overflow-x: auto; }
+  /* A strip that scrolls to the screen's edges, its first word in line with the page. */
+  .shop-rail { position: static; display: flex; gap: 2px; overflow-x: auto; margin-inline: -26px; padding-inline: 14px; scrollbar-width: none; }
   .shop-rail ul { display: flex; gap: 2px; }
   .shop-rail button { width: auto; white-space: nowrap; }
   .shop-rail-list { border-top: 0 !important; border-left: 1px solid var(--line) !important; border-radius: var(--r-sm) !important; padding-top: 10px !important; }
