@@ -4,6 +4,7 @@
 import type { ActionCall } from "./actions";
 import type { DisplayConnection, FillKind, SensorType } from "./telemetry";
 import type { BuildShape, Picks } from "./build";
+import type { BatteryView } from "./battery";
 import type { SecurityFacts } from "./safety";
 
 export type Severity = "warn" | "info" | "ok" | "bad";
@@ -147,6 +148,8 @@ export interface PC {
   displays?: DisplayLink[];
   /** The graphics card's PCI subsystem vendor and id, which tell its maker and exact model. Missing from older helpers. */
   gpuSubsys?: { vendor: string; id?: string };
+  /** A laptop's battery: how long it lasts, what drained it today and ways to stretch it (battery.ts). Missing on desktops. */
+  battery?: BatteryView;
 }
 
 /** One screen and where it's plugged in, as far as Windows can say. */
@@ -174,7 +177,7 @@ export interface BoardFacts {
 }
 
 /** What a PC reads moment to moment: these change with nearly every reading. */
-export type LivePCKey = "health" | "seenAt" | "lastSync" | "online" | "stats" | "breakdown" | "fans" | "alerts" | "readings" | "drives";
+export type LivePCKey = "health" | "seenAt" | "lastSync" | "online" | "stats" | "breakdown" | "fans" | "alerts" | "readings" | "drives" | "battery";
 export type LivePartKey = "temp" | "tempMax" | "load" | "clock" | "fan" | "warn";
 /** A row of a part's specs that is a live reading (memory in use, power drawn, a fan's speed), not a fact about the part. */
 export const liveSpec = ([label, value]: [string, string]) => label === "In use" || label === "Drawing now" || / rpm$/.test(value);
@@ -247,6 +250,13 @@ export interface HistoryPoint {
   drive?: number | null;
   /** The motherboard, in °C. */
   board?: number | null;
+  // A laptop's battery. Missing on PCs without one and on points recorded before Rig kept them.
+  /** Charge left at the end of the window, in percent. */
+  batt?: number | null;
+  /** Watts drawn from the battery, averaged over the readings on battery. Null when it was plugged in all window. */
+  drain?: number | null;
+  /** The apps that kept the processor busy while on battery (program names, busiest first). Kept on this PC only; the account doesn't store them. */
+  apps?: string[];
 }
 
 /** The readings a HistoryPoint holds, each a line a chart can draw. */

@@ -56,6 +56,7 @@ export * from "./recorded";
 export * from "./partByPart";
 export * from "./caught";
 export * from "./weekStory";
+export * from "./battery";
 export * from "./network";
 export * from "./slowLoud";
 export * from "./canItRun";
