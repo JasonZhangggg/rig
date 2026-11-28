@@ -11,8 +11,8 @@
 .f-home[data-corners="square"] .dash { --dr: 4px; }
 .dash[data-cols="1"] { display: flex; flex-direction: column; gap: var(--dgap); }
 .dash[data-cols="1"] > .dg { position: relative; }
-/* Room below the last tile while customizing, so it can scroll clear of the floating bar. Nothing above it moves. */
-.dash.editing { padding-bottom: 104px; }
+/* Room below the last tile while customizing, so it can scroll clear of an Undo note. Nothing above it moves. */
+.dash.editing { padding-bottom: 72px; }
 /* Nothing on the grid or the bar selects while customizing, so a press always picks a tile up instead of dragging text. */
 .dash.editing, .dash-bar { -webkit-user-select: none; user-select: none; }
 /* The phone's list opens up while customizing, so each tile's buttons get a strip of their own above it. */
@@ -179,8 +179,7 @@
 /* Motion picked in Settings: the stylesheet tokens already stop transitions and animations; a lifted tile stays its size. */
 :root[data-motion="reduce"] .dg[data-lift] > .dw, :root[data-motion="reduce"] .dg.react-draggable-dragging > .dw { scale: none; }
 
-/* The dock: floats at the bottom of the window and takes no room, so customizing never moves the page.
-   It carries the customize bar and, after a change, a note with Undo. On a short page the page still reaches the bottom
+/* The dock: floats at the bottom of the window and takes no room, so a note with Undo never moves the page. On a short page the page still reaches the bottom
    of the window and the dock sits at its foot, so the bar never floats halfway up. */
 .page:has(> .dash-dock) { min-height: 100%; }
 .dash-dock {
@@ -188,14 +187,6 @@
 }
 .dash-dock-in { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 12px; }
 .dash-dock-in > * { pointer-events: auto; }
-.dash-bar {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 22px; max-width: 100%;
-  padding: 10px 10px 10px 24px; border-radius: var(--r-pill); box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, .06);
-  animation: dash-rise .28s var(--spring) both;
-}
-.dash-bar p { display: grid; gap: 1px; color: var(--text-2); font-size: 13px; font-weight: 500; line-height: 1.3; }
-.dash-bar p b { color: var(--text); font-size: 14.5px; font-weight: 600; }
-.dash-bar-tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .dash-toast {
   display: flex; align-items: center; gap: 14px; max-width: min(560px, 100%); padding: 8px 8px 8px 20px; border-radius: var(--r-pill);
   box-shadow: var(--shadow-lg); color: var(--text); font-size: 14px; font-weight: 500; animation: dash-rise .24s var(--spring) both;
@@ -203,19 +194,35 @@
 .dash-toast span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-toast button { flex: none; height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: var(--graphite); color: var(--primary-text); font: 600 13.5px var(--font); cursor: pointer; }
 @keyframes dash-rise { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+
+/* The customize bar: at the top, over the greeting it stands in for, and stuck there as the page scrolls. It takes no room,
+   so starting to customize never moves a tile. */
+.dash-top { position: sticky; z-index: 40; top: 16px; height: 0; margin-bottom: calc(-1 * var(--home-gap, 40px)); }
+.f-home[data-editing] > .f-head { visibility: hidden; }
+.dash-bar {
+  position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px 6px;
+  padding: 10px 10px 10px 24px; border-radius: var(--r-pill); box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, .06);
+  animation: dash-drop .26s var(--ease-out) both;
+}
+.dash-bar p { flex: 1; min-width: 0; display: grid; gap: 1px; margin-right: 16px; color: var(--text-2); font-size: 13px; font-weight: 500; line-height: 1.3; }
+.dash-bar p b { color: var(--text); font-size: 14.5px; font-weight: 600; }
+.dash-bar-tools { display: flex; gap: 6px; }
+@keyframes dash-drop { from { opacity: 0; transform: translateY(-10px); } }
 @media (prefers-reduced-motion: reduce) {
   .dash-bar, .dash-toast { animation: none; }
 }
-@container home (max-width: 640px) {
-  .dash.editing { padding-bottom: 150px; }
-  .dash-bar { border-radius: calc(var(--r) - 6px); padding: 12px; width: 100%; }
-  .dash-bar p { padding: 0 6px; }
-  .dash-bar p span { display: none; }
-  .dash-bar-tools { width: 100%; }
-  .dash-bar-tools .dbtn { flex: 1 1 auto; height: 38px; padding: 0 12px; }
+@media (max-width: 760px) {
+  /* Under the phone's own top bar. */
+  .dash-top { top: 66px; }
 }
-/* In the phone's list the hint says how to move a tile at all, so it stays even on a narrow screen. */
-.page:has(> .dash[data-cols="1"]) .dash-bar p span { display: revert; }
+@container home (max-width: 640px) {
+  .dash-bar { display: grid; grid-template-columns: 1fr auto; padding: 10px 10px 10px 18px; border-radius: calc(var(--r) - 6px); }
+  .dash-bar p { margin: 0; }
+  .dash-bar p span { display: none; }
+  .dash-bar-tools { grid-column: 1 / -1; grid-row: 2; }
+  .dash-bar-tools .dbtn { flex: 1 1 0; height: 38px; padding: 0 10px; }
+  .dash-bar > .dbtn.primary { height: 38px; }
+}
 
 .dbtn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-pill);
@@ -283,17 +290,74 @@
 .dfoot-row .dbtn { flex: 1 1 auto; }
 .dfoot-row.end { justify-content: flex-end; margin-top: 16px; }
 .dfoot-row.end .dbtn { flex: 0 0 auto; }
-.dlib { display: grid; gap: 8px; margin: 0; padding: 4px 0 0; list-style: none; }
-.dlib button { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 14px 14px 18px; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; transition: background-color 150ms ease, transform 160ms var(--ease-out); }
-.dlib button:active { transform: scale(.98); }
-.dlib button > span { flex: 1; min-width: 0; display: grid; gap: 3px; }
-.dlib b { font-size: 15px; font-weight: 600; }
-.dlib small { color: var(--text-2); font-size: 13px; font-weight: 500; line-height: 1.4; }
-.dlib button > i { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--graphite); color: #FFFFFF; }
-.dlib button > i svg { width: 16px; height: 16px; }
-@media (hover: hover) and (pointer: fine) {
-  .dlib button:hover { background: color-mix(in srgb, var(--text) 8%, var(--surface-2)); }
+/* ----- Add widget: every widget not on Home, drawn as it would look there, in a few shelves ----- */
+.dgal-scrim { position: fixed; inset: 0; z-index: 69; background: var(--scrim); animation: dgal-fade .18s var(--ease-out); transition: opacity .18s var(--ease-out); }
+.dgal {
+  position: fixed; z-index: 70; top: 50%; left: 50%; width: min(1080px, calc(100vw - 48px)); max-height: min(860px, calc(100vh - 48px));
+  display: flex; flex-direction: column; overflow: hidden; border-radius: calc(var(--r) - 2px);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg), 0 0 0 1px var(--line); font-family: var(--font);
+  transform: translate(-50%, -50%); animation: dgal-in .22s var(--ease-out); transition: opacity .18s var(--ease-out), transform .18s var(--ease-out);
 }
+/* While a widget is dragged out, the library steps aside so the whole of Home is there to drop on. */
+.dgal[data-away] { opacity: 0; transform: translate(-50%, -48%) scale(.98); pointer-events: none; }
+.dgal-scrim[data-away] { opacity: 0; pointer-events: none; }
+@keyframes dgal-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } }
+@keyframes dgal-fade { from { opacity: 0; } }
+.dgal-head { flex: none; display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 14px 12px; padding: 22px 18px 16px 28px; border-bottom: 1px solid var(--line); }
+.dgal-title h2 { font: 600 20px/1.2 var(--font); letter-spacing: -.015em; }
+.dgal-title p { margin-top: 4px; color: var(--text-2); font-size: 14px; font-weight: 500; }
+.dgal-find { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; height: 42px; max-width: 420px; padding: 0 14px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); }
+.dgal-find svg { width: 17px; height: 17px; flex: none; }
+.dgal-find input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--text); font: 500 14.5px var(--font); outline: none; }
+.dgal-find:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--focus); }
+.dgal:focus { outline: none; }
+.dgal-body { min-height: 0; overflow-y: auto; padding: 8px 28px 28px; scrollbar-width: thin; }
+.dgal-body > .dnote { padding: 20px 0; }
+.dgal-shelf { padding-top: 18px; }
+.dgal-shelf h3 { margin-bottom: 12px; color: var(--text-3); font-size: 12.5px; font-weight: 600; }
+.dgal-shelf ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.dgal-card { display: flex; flex-direction: column; overflow: hidden; border-radius: var(--r-sm); background: var(--surface-2); transition: box-shadow .16s var(--ease-out), opacity .16s; }
+.dgal-card[data-drag] { cursor: grab; -webkit-user-select: none; user-select: none; }
+.dgal-card[data-held] { opacity: .4; }
+@media (hover: hover) and (pointer: fine) { .dgal-card[data-drag]:hover { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm, 0 2px 8px rgba(27, 27, 31, .08)); } }
+/* The preview sits on the page's own colour, so a light tile reads as a tile and an open one as part of the page. */
+.dgal-prev { --dr: calc(var(--r) - 6px); --pad: 28px; position: relative; height: 172px; overflow: hidden; background: var(--bg); }
+.dgal-scale { position: absolute; top: 50%; left: 50%; transform-origin: center; pointer-events: none; }
+.dgal-scale > .dw { height: 100%; box-shadow: 0 1px 2px rgba(27, 27, 31, .06); }
+.dgal-scale .dw-body:not(:has(> .f-pc)) { container: wbox / size; }
+.dgal-still { height: 100%; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--text-2); font-size: 13.5px; font-weight: 500; }
+.dgal-still svg { width: 44px; height: 44px; }
+.dgal-meta { display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 18px; }
+.dgal-meta > span { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.dgal-meta b { font-size: 15px; font-weight: 600; }
+.dgal-meta small { color: var(--text-2); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.dgal-meta .dbtn { flex: none; height: 36px; padding: 0 14px 0 10px; gap: 6px; background: var(--text); color: var(--surface); }
+.dgal-meta .dbtn svg { width: 16px; height: 16px; }
+/* What the pointer carries while a widget is dragged out: its name, until it's over Home and the widget itself shows there. */
+.dgal-ghost {
+  position: fixed; z-index: 80; top: 0; left: 0; display: flex; align-items: center; gap: 8px; margin: 10px 0 0 12px; padding: 8px 14px 8px 10px;
+  border-radius: var(--r-pill); background: var(--graphite); color: #FFFFFF; box-shadow: var(--shadow-lg); font: 600 13.5px var(--font); pointer-events: none; white-space: nowrap;
+}
+.dgal-ghost svg { width: 16px; height: 10px; opacity: .7; }
+:root[data-placing], :root[data-placing] * { cursor: grabbing !important; }
+/* A widget held over Home shows where it would land, lifted, before it's let go. */
+.dash-grid > .dg[data-incoming] > .dw { animation: none; outline: 2px solid var(--graphite); outline-offset: 5px; box-shadow: var(--shadow-lg); }
+.dash-grid > .dg[data-incoming] > :is(.dw-grip, .dw-del, .dw-opt) { visibility: hidden; }
+/* A widget just added lights up for a moment so the eye finds it. */
+.dg[data-fresh] > .dw { animation: dw-fresh 1.5s var(--ease-out) both; }
+@keyframes dw-fresh { 0%, 30% { box-shadow: 0 0 0 3px var(--focus); } 100% { box-shadow: 0 0 0 3px transparent; } }
+@media (max-width: 760px) {
+  .dgal { top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 92vh; max-height: 92dvh; border-radius: var(--r) var(--r) 0 0; transform: none; padding-bottom: env(safe-area-inset-bottom, 0px); animation: dpop-up .26s var(--ease-drawer); }
+  .dgal-head { padding: 18px 12px 14px 20px; }
+  .dgal-find { max-width: none; }
+  .dgal-body { padding: 4px 16px 24px; }
+  .dgal-shelf ul { grid-template-columns: 1fr; gap: 12px; }
+  .dgal-prev { height: 150px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dgal, .dgal-scrim, .dg[data-fresh] > .dw { animation: none; transition: none; }
+}
+:root[data-motion="reduce"] .dg[data-fresh] > .dw { animation: none; box-shadow: 0 0 0 3px var(--focus); }
 
 /* A resized tile follows the pointer cell by cell with no glide when motion is reduced. */
 @media (prefers-reduced-motion: reduce) { .dash-grid > .dg.resizing[data-hold] { transition: none; } }

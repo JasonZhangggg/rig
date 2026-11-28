@@ -41,6 +41,8 @@ export interface GridProps {
   announce: (text: string) => void;
   /** Which grid shows, so size choices apply to it. */
   onMode?: (mode: Mode) => void;
+  /** A widget being dragged in from the library, drawn where it would land until it's let go. */
+  incoming?: string | null;
 }
 
 const coarse = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
@@ -674,7 +676,7 @@ export function Grid(p: GridProps) {
     const box: TileBox = { size: nearestSize(w.kind, src.w, src.h, n), span: mode === "phone" ? 1 : c.w, rows: src.h, cols };
     const title = titleOf(w);
     return (
-      <div key={w.id} className="dg" data-id={w.id} data-heavy={KINDS[w.kind].heavy ? "" : undefined}>
+      <div key={w.id} className="dg" data-id={w.id} data-heavy={KINDS[w.kind].heavy ? "" : undefined} data-incoming={p.incoming === w.id ? "" : undefined}>
         <Tile
           w={w} box={box} title={title} editing={editing} phone={mode === "phone"} render={render} api={api}
           label={`${title}, ${sizeLabel(w.kind, src.w, src.h, n)}, place ${index + 1} of ${order.length}`}
@@ -682,7 +684,7 @@ export function Grid(p: GridProps) {
         />
       </div>
     );
-  }), [widgets, cells, lg, live, mode, cols, order, editing, render, titleOf]);
+  }), [widgets, cells, lg, live, mode, cols, order, editing, render, titleOf, p.incoming]);
 
   const gridConfig = useMemo(() => ({ cols, rowHeight: row, margin: [gap, gap] as [number, number], containerPadding: [0, 0] as [number, number] }), [cols, row, gap]);
   const dragConfig = useMemo(() => ({ enabled: true, handle: editing && !touch ? undefined : ".dw-grip", cancel: ".dw-ctl", threshold: 4 }), [editing, touch]);

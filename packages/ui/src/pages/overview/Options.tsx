@@ -114,36 +114,8 @@ export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (pa
   );
 }
 
-const Plus = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
 
 /** The hidden widgets, to put back on Home. */
-export function AddWidgets({ hidden, onAdd }: { hidden: Widget[]; onAdd: (id: string) => void }) {
-  // An added widget leaves the list, so focus moves to the one that takes its place, or the one before it.
-  const list = useRef<HTMLUListElement>(null);
-  const added = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    const at = added.current;
-    added.current = null;
-    if (at === null) return;
-    const items = list.current?.querySelectorAll<HTMLElement>("button");
-    if (items?.length) items[Math.min(at, items.length - 1)].focus({ preventScroll: true });
-  }, [hidden]);
-  if (!hidden.length) return <p className="dnote">Every widget is on Home. Hide one from its options and it waits here.</p>;
-  return (
-    <ul className="dlib" ref={list}>
-      {hidden.map((w, i) => (
-        <li key={w.id}>
-          <button type="button" onClick={() => { added.current = i; onAdd(w.id); }}>
-            <span><b>{KINDS[w.kind].title}</b><small>{KINDS[w.kind].blurb}</small></span>
-            <i aria-hidden="true"><Plus /></i>
-            <span className="sr-only">Add</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** Choices for the whole of Home. Corners and density belong to Settings, Appearance, so every screen matches. */
 export function DashOptions({ dash, onSpacing, onTone, onAppearance }: { dash: Dashboard; onSpacing: (spacing: Spacing) => void; onTone: (tone: Tone | "default") => void; onAppearance: () => void }) {
   return (
