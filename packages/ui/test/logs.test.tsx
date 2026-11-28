@@ -1,4 +1,5 @@
 // The Logs screen and the recording card in chat, on the demo PCs.
+import * as React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
@@ -397,7 +398,7 @@ describe("Logs", () => {
       within(within(readings).getByRole("dialog", { name: "Show" })).getByRole("menuitemradio", { name: /^Processor/ });
       fireEvent.keyDown(document, { key: "Escape" });
       // A month's axis names a date every few days, not all thirty weekdays in a row.
-      const dates = [...month.parentElement!.querySelector("svg.ln-axis")!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
+      const dates = [...month.closest(".ln-lane")!.querySelector("svg.ln-axis")!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
       expect(dates.length).toBeGreaterThan(1);
       expect(dates.length).toBeLessThan(15);
     } finally { vi.useRealTimers(); }
@@ -418,7 +419,7 @@ describe("Logs", () => {
       show("Graphics card", "Parts", readings);
       const temps = within(readings).getByRole("table", { name: "Temperatures, every sensor" });
       // Right under its chart.
-      expect(within(readings).getByRole("img", { name: "Temperatures" }).parentElement!.contains(temps)).toBe(true);
+      expect(within(readings).getByRole("img", { name: "Temperatures" }).closest<HTMLElement>(".ln-lane")!.contains(temps)).toBe(true);
       expect(within(temps).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Sensor", "Last", "Lowest", "Highest"]);
       const hot = within(temps).getByRole("row", { name: /^Hot spot/ });
       const [last, low, high] = within(hot).getAllByRole("cell").map((c) => c.textContent ?? "");
@@ -439,7 +440,7 @@ describe("Logs", () => {
       expect(lines().some((c) => / (on|dim)$/.test(c))).toBe(false);
 
       // A search finds a sensor on any part, with its own chart and row.
-      const find = within(readings).getByRole("searchbox", { name: "Find a sensor" });
+      const find = within(readings).getByRole("combobox", { name: "Find a sensor" });
       fireEvent.change(find, { target: { value: "hot spot" } });
       const found = within(readings).getByRole("table", { name: "Graphics card, temperatures, every sensor" });
       expect(within(found).getAllByRole("rowheader").map((r) => r.textContent)).toEqual(["Hot spot"]);
@@ -529,11 +530,11 @@ describe("Logs", () => {
     expect(lines("Temperatures")).toBe(2);
     // Speeds has no line that sums up its cores, so it draws their highest and average.
     expect(lines("Speeds")).toBe(2);
-    const speeds = screen.getByRole("img", { name: "Speeds" }).parentElement!;
+    const speeds = screen.getByRole("img", { name: "Speeds" }).closest<HTMLElement>(".ln-lane")!;
     // Each line is a row under the chart, and the eight cores are one row that opens.
     const names = (lane: HTMLElement) => within(lane).getAllByRole("rowheader").map((r) => r.textContent);
     expect(names(speeds)).toEqual(["Highest", "Average", "P-cores 8"]);
-    const temps = screen.getByRole("img", { name: "Temperatures" }).parentElement!;
+    const temps = screen.getByRole("img", { name: "Temperatures" }).closest<HTMLElement>(".ln-lane")!;
     expect(names(temps)).toEqual(["Package", "Core max", "P-cores 6"]);
     const cores = within(speeds).getByRole("button", { name: "P-cores 8" });
     fireEvent.click(cores);
@@ -563,7 +564,7 @@ describe("Logs", () => {
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
     show("Processor");
-    const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
+    const usage = screen.getByRole("img", { name: "Usage" }).closest<HTMLElement>(".ln-lane")!;
     expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
   });
 
@@ -606,6 +607,154 @@ describe("Logs", () => {
       expect(gpu.getByText("Asleep to save power")).toBeTruthy();
       expect(gpu.getByText("–")).toBeTruthy();
     } finally { localStorage.clear(); }
+  });
+
+  /** Where a chart draws each point of its first line on screen, after the move it makes between readings. */
+  function onScreen(name: string) {
+    const g = screen.getByRole("img", { name }).querySelector<SVGGElement>("g.ln-move")!;
+    const tr = g.getAttribute("transform") ?? "";
+    const m = tr.match(/matrix\(([^)]*)\)/)?.[1].split(",").map(Number);
+    const slide = Number(tr.match(/translate\(([-\d.]+)/)?.[1] ?? 0);
+    const [a, c, e, f] = m ? [m[0], m[3], m[4], m[5]] : [1, 1, slide, 0];
+    const d = g.querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    return [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((p) => [a * Number(p[1]) + e, c * Number(p[2]) + f]);
+  }
+
+  it("moves a live chart that's still filling in smoothly, with no jump when a reading comes in", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Rig opened a minute ago: the chart starts at the first reading and fills in toward now, a reading every 2 s.
+      const opened = Date.now() - 60_000;
+      const at = (n: number) => Array.from({ length: n }, (_, k) => ({ t: opened + k * 2000, v: [50 + Math.sin(k / 3) * 4] }));
+      const lanes = [{ title: "Temperatures", type: "temperature" as const, series: [{ i: 0, cls: "c-ink", name: "Processor" }] }];
+      const chart = (n: number) => <Lanes points={at(n)} lanes={lanes} t0={opened} t1={Date.now()} cursor={null} onCursor={() => {}} live liveSpan={5 * 60_000} rows={[{ last: 50, min: 46, max: 54 }]} />;
+      vi.setSystemTime(opened + 30 * 2000 + 100);
+      const { rerender } = render(chart(31));
+      // A moment before the next reading, then as it comes in.
+      vi.setSystemTime(Date.now() + 1890);
+      rerender(chart(31));
+      const before = onScreen("Temperatures");
+      vi.setSystemTime(Date.now() + 20);
+      rerender(chart(32));
+      const after = onScreen("Temperatures");
+      // Every point already drawn stays where it was, to within a pixel, rather than jumping to a new place.
+      for (const [k, [x, y]] of before.entries()) {
+        expect(Math.abs(after[k][0] - x)).toBeLessThan(1);
+        expect(Math.abs(after[k][1] - y)).toBeLessThan(1);
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("goes from filling in to sliding without a jump, once the readings reach back five minutes", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const T = Date.now();
+      // Rig opened just under five minutes ago, so a few seconds on the readings fill the chart and it starts to slide.
+      const opened = T - 5 * 60_000 + 3000;
+      const upTo = (now: number) => Array.from({ length: Math.floor((now - opened) / 2000) + 1 }, (_, k) => ({ t: opened + k * 2000, v: [50 + Math.sin(k / 5) * 4] }));
+      const lanes = [{ title: "Temperatures", type: "temperature" as const, series: [{ i: 0, cls: "c-ink", name: "Processor" }] }];
+      const chart = (now: number) => {
+        const pts = upTo(now);
+        return <Lanes points={pts} lanes={lanes} t0={now - 5 * 60_000} t1={pts[pts.length - 1].t + 50} cursor={null} onCursor={() => {}} live liveSpan={5 * 60_000} rows={[{ last: 50, min: 46, max: 54 }]} />;
+      };
+      vi.setSystemTime(T + 50);
+      const { rerender } = render(chart(T));
+      let before = onScreen("Temperatures");
+      // Every tenth of a second for twelve seconds, each point moves less than a pixel.
+      for (let k = 1; k <= 120; k++) {
+        vi.setSystemTime(T + 50 + k * 100);
+        rerender(chart(T + k * 100));
+        const after = onScreen("Temperatures");
+        for (const [j, [x, y]] of before.entries()) {
+          expect(Math.abs(after[j][0] - x)).toBeLessThan(1);
+          expect(Math.abs(after[j][1] - y)).toBeLessThan(1);
+        }
+        before = after;
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("slides a live chart without reshaping its line as readings come in", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const start = Date.now();
+      // Readings that flip up and down every 2 s, as a sensor's do.
+      const at = (n: number) => Array.from({ length: n }, (_, k) => ({ t: start + k * 2000, v: [50 + (k % 2 ? 3 : -3) + (k % 7)] }));
+      const lanes = [{ title: "Temperatures", type: "temperature" as const, series: [{ i: 0, cls: "c-ink", name: "Processor" }] }];
+      const chart = (n: number) => <Lanes points={at(n)} lanes={lanes} t0={Date.now() - 5 * 60_000} t1={Date.now()} cursor={null} onCursor={() => {}} live liveSpan={5 * 60_000} rows={[{ last: 50, min: 47, max: 59 }]} />;
+      vi.setSystemTime(start + 200 * 2000 + 50);
+      const { rerender } = render(chart(201));
+      vi.setSystemTime(Date.now() + 1900);
+      rerender(chart(201));
+      const before = onScreen("Temperatures");
+      vi.setSystemTime(Date.now() + 50);
+      rerender(chart(202));
+      const after = onScreen("Temperatures");
+      // Each point on screen before the reading is still there after it, at the same place.
+      const seen = before.filter(([x]) => x >= 42 && x <= 880);
+      expect(seen.length).toBeGreaterThan(50);
+      for (const [x, y] of seen) expect(after.some(([ax, ay]) => Math.abs(ax - x) < 1 && Math.abs(ay - y) < 1)).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("shows the time and each line's reading beside the pointer, and names what each row's bar means", () => {
+    const t0 = Date.now() - 60_000;
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [50 + (k % 4), 60] }));
+    const lanes = [{ title: "Temperatures", type: "temperature" as const, series: [{ i: 0, cls: "c-ink", name: "Processor" }, { i: 1, cls: "c-brass", name: "Graphics card" }] }];
+    const rows = [{ last: 53, min: 50, max: 53 }, { last: 60, min: 60, max: 60 }];
+    function Chart() {
+      const [cursor, setCursor] = React.useState<number | null>(null);
+      return <Lanes points={points} lanes={lanes} t0={t0} t1={t0 + 58_000} cursor={cursor} onCursor={setCursor} rows={rows} />;
+    }
+    render(<Chart />);
+    expect(screen.queryByRole("status")).toBeNull();
+    const chart = screen.getByRole("img", { name: "Temperatures" });
+    fireEvent.pointerMove(chart, { clientX: 42 + 425 });
+    const tip = screen.getByRole("status");
+    expect(tip.textContent).toMatch(/^\d+:\d\d:\d\d [AP]MProcessor5\d°CGraphics card60°C$/);
+    // A dot on each line where the pointer is, and a line down through them.
+    expect(chart.querySelectorAll(".ln-dot")).toHaveLength(2);
+    expect(chart.querySelector(".ln-cross")).not.toBeNull();
+    fireEvent.pointerLeave(chart.closest(".ln")!);
+    expect(screen.queryByRole("status")).toBeNull();
+    // The bars by each row are lowest to highest on the chart's own scale, with its two ends named, and a dot for now.
+    const head = chart.closest(".ln-lane")!.querySelector("th.ln-track-h")!;
+    expect(head.textContent).toMatch(/^\d+°Lowest to highestLast\d+°$/);
+  });
+
+  it("lists what a search finds with a box to tick each, ticks every one found at once, and charts the ticked ones", () => {
+    const t0 = Date.now() - 60_000;
+    const s = (part: string, type: "temperature" | "load", name: string) => ({ id: `${part}-${name}`, hw: part as "cpu", hwName: "", type, name, part });
+    const sensors = [s("cpu", "temperature", "CPU Package"), s("cpu", "temperature", "CPU Core #1"), s("cpu", "temperature", "CPU Core #2"), s("cpu", "load", "CPU Core #1"), s("gpu", "temperature", "GPU Core"), s("gpu", "load", "GPU Fan")];
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [55, 52, 54, 20, 61, 30] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0, 1, 2, 3], lead: 0 }, { id: "gpu", name: "Graphics card", sensors: [4, 5], lead: 4 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
+    const find = screen.getByRole("combobox", { name: "Find a sensor" });
+    fireEvent.focus(find);
+    fireEvent.change(find, { target: { value: "core" } });
+    const list = screen.getByRole("dialog", { name: "Sensors" });
+    // Each part's matches under its name, each with its reading now.
+    expect(within(list).getAllByRole("group").map((g) => g.querySelector("legend")?.textContent)).toEqual(["Processor", "Graphics card"]);
+    const boxes = () => within(list).getAllByRole("checkbox");
+    expect(boxes().map((b) => b.closest("label")!.textContent)).toEqual(["Select all 4 found", "Core 152°C", "Core 254°C", "Core 120%", "Core61°C"]);
+    // One box ticks all four; the charts then show just those, a chart per part and kind.
+    fireEvent.click(within(list).getByRole("checkbox", { name: "Select all 4 found" }));
+    expect(boxes().every((b) => (b as HTMLInputElement).checked)).toBe(true);
+    screen.getByText("picked", { exact: false });
+    expect(screen.getAllByRole("img").map((i) => i.getAttribute("aria-label"))).toEqual(["Processor, temperatures", "Processor, usage", "Graphics card, temperatures"]);
+    // Untick one, then add one from another search: the ticked ones stay ticked.
+    fireEvent.click(within(list).getByRole("checkbox", { name: /^Core 2/ }));
+    fireEvent.change(find, { target: { value: "fan" } });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Sensors" })).getByRole("checkbox", { name: /^Fan/ }));
+    expect(screen.getByText(/picked/).textContent).toBe("4 pickedClear");
+    const names = screen.getAllByRole("rowheader").map((h) => h.textContent);
+    expect(names).toEqual(["Core 1", "Core 1", "Core", "Fan"]);
+    // Escape closes the list, and Clear goes back to the whole PC.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Sensors" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.change(find, { target: { value: "" } });
+    screen.getByRole("region", { name: "Parts" });
   });
 
   it("opens the whole PC on a row per part, and one picker shows a part's every sensor or one reading across every part", () => {

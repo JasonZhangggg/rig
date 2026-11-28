@@ -230,7 +230,23 @@
 .ln-track { padding-left: 20px !important; }
 .ln-track > span { position: relative; display: block; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--text-3) 12%, transparent); }
 .ln-span { position: absolute; top: 3px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-2) 55%, transparent); }
-.ln-now { position: absolute; top: 1px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: var(--text); }
+.ln-now { position: absolute; top: 1px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 1.5px var(--surface); }
+/* The track column's head: the scale's two ends, and what the bar and the dot mean. */
+.ln-rows thead th.ln-track-h { padding-left: 20px; }
+.ln-track-h > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ln-track-h .num { color: var(--text-3); font-weight: 500; }
+.ln-track-h .ln-track-key { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.ln-key-span { width: 14px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-2) 55%, transparent); }
+.ln-key-now { width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--text); }
+/* Pointing at a chart: a card beside the pointer with each line's reading at that moment. */
+.ln-plot { position: relative; }
+.ln-tip { position: absolute; top: 4px; z-index: 5; display: grid; gap: 3px; min-width: 150px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--shadow-lg); font-size: 12.5px; pointer-events: none; transform: translateX(12px); }
+.ln-tip.left { transform: translateX(calc(-100% - 12px)); }
+.ln-tip-when { color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+.ln-tip-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ln-tip-name { flex: 1; color: var(--text-2); }
+.ln-tip-row b { margin-left: 12px; font-weight: 600; }
+.ln-line, .ln-cross { vector-effect: non-scaling-stroke; }
 .ln-track .look .ln-span { background: color-mix(in srgb, var(--look) 60%, transparent); }
 .ln-sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; background: var(--c, var(--line-strong)); flex: none; }
 .ln-svg, .ln-axis { display: block; overflow: visible; }
@@ -344,6 +360,21 @@
 .ln-search { display: flex; align-items: center; gap: 10px; flex: 0 1 300px; }
 .ln-search .input { height: 36px; width: 100%; }
 .ln-search .faint { font-size: 13px; white-space: nowrap; }
+/* The search's list: the sensors it finds, a part at a time, each with a box to tick. */
+.ln-search { position: relative; }
+.ln-find-picked { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
+.ln-find-picked .btn { margin-left: 4px; }
+.ln-find-menu { left: 0; right: 0; min-width: 300px; gap: 4px; transform-origin: top center; }
+.ln-find-all, .ln-find-item { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.ln-find-all { font-weight: 600; border-bottom: 1px solid var(--line); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.ln-find-all input, .ln-find-item input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--text); cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { :is(.ln-find-all, .ln-find-item):hover { background: var(--surface-2); } }
+.ln-find-list { display: flex; flex-direction: column; max-height: min(360px, 55vh); overflow-y: auto; }
+.ln-find-list fieldset { margin: 0; padding: 0; border: 0; }
+.ln-find-list legend { padding: 10px 10px 2px; color: var(--text-3); font-size: 12px; font-weight: 600; }
+.ln-find-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ln-find-now { color: var(--text-3); font-size: 13px; }
+.ln-find-none { margin: 0; padding: 10px; font-size: 13px; }
 .ln-show { position: relative; }
 .ln-show-btn {
   display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 16px; border: 1px solid var(--line); border-radius: var(--r-pill);
