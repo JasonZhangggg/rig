@@ -73,4 +73,24 @@ describe("Two screens, one figure", { timeout: 30000 }, () => {
     // The rate this second's time isn't said beside it, in the tile or in the story under the tabs.
     expect(page).not.toMatch(/at this rate|would last/);
   });
+
+  it("says a night that drained the battery once on Home, where it can be acted on, and once on the battery's page", async () => {
+    await open("demo-comet");
+    const todo = within(screen.getByText("Things to look at").closest("section")!);
+    const item = await todo.findByText("Used 39% of the battery asleep last night");
+    await homeRow(/^Battery$/);
+    const main = document.querySelector("main")!;
+    expect(main.textContent!.match(/39%/g)).toHaveLength(1);
+    // The health tile names the area it costs; the item itself is where to act.
+    expect(screen.getByText("Below full marks: Battery. Every other check passed.")).toBeTruthy();
+    expect(item.closest("button")).toBeTruthy();
+    await openPart(/^Battery/);
+    await screen.findByRole("tab", { name: "Battery life", selected: true });
+    const page = document.querySelector(".part-detail")!;
+    expect(page.textContent!.match(/39%/g)).toHaveLength(1);
+    const night = within(within(page as HTMLElement).getByRole("list", { name: "Recent sleeps on battery" })).getAllByRole("listitem")[0];
+    expect(within(night).getByText("Used a lot")).toBeTruthy();
+    fireEvent.click(within(night).getByRole("button", { name: /^Details/ }));
+    expect(within(night).getByRole("button", { name: /^Ask about it/ })).toBeTruthy();
+  });
 });

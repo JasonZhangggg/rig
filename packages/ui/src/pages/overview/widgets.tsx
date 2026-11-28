@@ -112,10 +112,13 @@ function PCModel({ style, opts, editing, views }: Pick<WidgetProps, "style" | "o
 
 // ----- Health -----
 
-/** What holds the score down, in a line. The page's heading already says how the PC is doing, so this says why. */
+/**
+ * Which areas hold the score down, lowest first, in a line. Only the areas: what's wrong in each is Things to look at's
+ * to say, once, beside what to do about it.
+ */
 export function healthWhy(breakdown: PC["breakdown"], fallback: string) {
-  const low = (breakdown ?? []).filter((b) => b.sev !== "ok").sort((a, b) => a.value - b.value)[0];
-  if (low) return `${low.label}: ${low.note}.`;
+  const low = (breakdown ?? []).filter((b) => b.sev !== "ok").sort((a, b) => a.value - b.value);
+  if (low.length) return `Below full marks: ${low.map((b) => b.label).join(", ")}.${low.length === 1 ? " Every other check passed." : ""}`;
   return breakdown?.length ? "Every check passed." : fallback;
 }
 

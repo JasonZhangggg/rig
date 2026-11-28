@@ -165,13 +165,13 @@ describe("How much battery each sleep used", { timeout: 25000 }, () => {
     expect(await screen.findByText(/^My laptop woke 14 times overnight for its Wi-Fi adapter \(MediaTek Wi-Fi 7 MT7925\) and used 39% of its battery asleep\./)).toBeTruthy();
   });
 
-  it("says so on Home, in Things to look at and on the battery's row", async () => {
+  it("says so on Home in Things to look at, once", async () => {
     location.hash = "";
     localStorage.setItem("rig.pc", "demo-comet");
     render(<RigApp client={new DemoClient()} />);
     const todo = within((await screen.findByText("Things to look at", undefined, { timeout: 10000 })).closest("section")!);
     expect(await todo.findByText("Used 39% of the battery asleep last night")).toBeTruthy();
-    expect(screen.getByText("Used 39% asleep last night")).toBeTruthy();
+    expect(screen.queryByText("Used 39% asleep last night")).toBeNull();
   });
 
   it("shows the other laptop's ordinary week calmly, with nothing flagged", async () => {
