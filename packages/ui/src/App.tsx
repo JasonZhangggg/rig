@@ -71,13 +71,45 @@ export function RigApp({ client, requireAccount, host }: RigAppProps) {
       ? client.kind === "web"
         ? <Splash text="Rig can't reach your PCs right now. Check your internet connection, then try again." retry={retry} />
         : <Splash text="Rig couldn't read this PC." detail={`${reason ?? ""} Try again, and if it keeps happening, restart your PC.`.trim()} retry={retry} logs={logs} />
-      : s === "loading" || client.kind === "web"
-        ? <Splash text={s === "loading" ? "Reading your PC…" : "No PCs yet. Install Rig on a PC and sign in with this account, and it shows up here."} />
-        : <Splash text="Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it." logs={logs} />}>
+      : s === "loading"
+        ? <Splash text="Reading your PC…" />
+        : client.kind === "web"
+          ? <NoPCsYet client={client} account={account} found={retry} />
+          : <Splash text="Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it." logs={logs} />}>
       <Root />
     </AppProvider>
   );
 }
+
+/**
+ * A website account with no PC on it yet. It links to the download and says which account to sign in with on the PC,
+ * then looks again every few seconds so the PC really does show up here on its own.
+ */
+function NoPCsYet({ client, account, found }: { client: RigClient; account: Account | null | undefined; found: () => void }) {
+  const onFound = useRef(found);
+  onFound.current = found;
+  useEffect(() => {
+    let live = true;
+    const look = () => client.machines().then((pcs) => { if (live && pcs.some((p) => p.parts)) onFound.current(); }, () => {});
+    const timer = window.setInterval(look, LOOK_AGAIN_MS);
+    return () => { live = false; clearInterval(timer); };
+  }, [client]);
+  const signOut = () => client.signOut().then(() => { location.hash = "signin"; location.reload(); }, () => {});
+  return (
+    <div className="splash" role="status">
+      <span className="fp-logo">R<i /></span>
+      <p>No PCs yet.</p>
+      <p className="splash-detail">Install Rig on your Windows PC and sign in there{account ? ` as ${account.email}` : " with this account"}. It shows up here on its own.</p>
+      <div className="splash-actions">
+        <a className="btn primary" href="/">Download Rig for Windows</a>
+        {account && <button className="btn ghost" type="button" onClick={() => void signOut()}>Use another account</button>}
+      </div>
+    </div>
+  );
+}
+
+/** How often the "No PCs yet" screen looks for a PC that has just signed in. */
+const LOOK_AGAIN_MS = 10_000;
 
 /** A whole-window message while Rig starts, or when it can't. With `logs`, a problem also offers Rig's log folder, which is what to send along when asking for help. */
 export function Splash({ text, detail, retry, logs }: { text: string; detail?: string; retry?: () => void; logs?: () => Promise<void> }) {
