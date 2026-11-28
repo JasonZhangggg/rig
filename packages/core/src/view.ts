@@ -5,7 +5,7 @@
 import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageSlice } from "./model";
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageScan, type SystemFacts } from "./telemetry";
-import { cardChip, chipSensorName, gpuAsleep, gpuLoad, gpuSensor, graphicsCard } from "./limits";
+import { cardChip, chipSensorName, gpuAsleep, gpuLoad, gpuSensor, graphicsCard, mainDrive, mainDriveTemp } from "./limits";
 import { driveMaps } from "./drives";
 import { batteryView, type PowerNow } from "./battery";
 import type { ChargeRead } from "./chargeLimit";
@@ -59,17 +59,16 @@ function partOf(s: Sensor, laptop: boolean, gpu: true | string | undefined): str
 
 /**
  * The PC's readings right now, in the shape of a history point, so a chart can draw a live line with
- * the same code as the logged history. Temperatures and fan are the highest now; loads as they read.
+ * the same code as the logged history. Temperatures and fan are the highest now, the drive its own (mainDriveTemp); loads as they read.
  */
 export function livePoint(pc: PC, t: number): HistoryPoint {
   const p = pc.parts ?? {};
   const fans = (pc.readings ?? []).filter((r) => r.type === "fan" && r.part === "fans" && r.value != null).map((r) => r.value!);
-  const drives = (pc.readings ?? []).filter((r) => r.type === "temperature" && r.part === "ssd" && r.value != null).map((r) => r.value!);
   const n = (v: number | null | undefined) => (v == null ? null : Math.round(v));
   return {
     t, busy: false, game: null,
     cpu: n(p.cpu?.temp), gpu: n(p.gpu?.temp), cpuLoad: n(p.cpu?.load), gpuLoad: n(p.gpu?.load), mem: n(p.ram?.load),
-    drive: drives.length ? Math.round(Math.max(...drives)) : n(p.ssd?.temp), board: n((p.motherboard ?? p.board)?.temp),
+    drive: n(p.ssd?.temp), board: n((p.motherboard ?? p.board)?.temp),
     fan: fans.length ? Math.round(Math.max(...fans)) : null,
   };
 }
@@ -169,13 +168,10 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   };
 
   // Storage: the system drive
-  const disk = inv.disks.find((d) => d.media === "nvme") ?? inv.disks[0];
+  const disk = mainDrive(inv);
+  // The drive shown, not whichever drive reported first, and its own temperature: the figure Home, Logs and history give it.
+  const st = mainDriveTemp(snap, disk?.model);
   if (disk) {
-    // The drive shown, not whichever drive reported first.
-    const mine = (x: Sensor) => x.hwName.trim().toLowerCase() === disk.model.trim().toLowerCase();
-    const st = snap?.sensors.find((x) => x.hw === "storage" && x.type === "temperature" && x.value != null && mine(x) && /^(composite |)temperature$/i.test(x.name))
-      ?? snap?.sensors.find((x) => x.hw === "storage" && x.type === "temperature" && x.value != null && mine(x))
-      ?? findSensor(snap, "storage", "temperature");
     const sys = inv.volumes.find((v) => v.letter.startsWith("C")) ?? inv.volumes[0];
     parts.ssd = {
       name: disk.model, type: "Storage", modelSource: "generic", temp: round(st?.value), tempMax: st ? round(Math.max(dayMax[st.id] ?? 0, st.value ?? 0)) : undefined,
@@ -234,7 +230,9 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   slices.push({ label: "Free", gb: Math.round(freeGb) });
 
   const drives = new Set(snap?.sensors.filter((x) => x.hw === "storage").map((x) => x.hwName));
-  const readings: Reading[] = (snap?.sensors ?? []).flatMap((x) => {
+  // The drive's own temperature leads its readings, so Logs follows the same sensor as Home and the drive's page.
+  const sensors = st ? [st, ...(snap?.sensors ?? []).filter((x) => x !== st)] : snap?.sensors ?? [];
+  const readings: Reading[] = sensors.flatMap((x) => {
     const part = partOf(x, laptop, !dgpu ? undefined : chip == null ? true : chipSensorName(snap?.sensors, chip));
     if (!part || !parts[part] || x.value == null || isSetting(x)) return [];
     const top = Math.max(x.max ?? -Infinity, dayMax[x.id] ?? -Infinity, x.value);

@@ -14,7 +14,7 @@ import type { PCEvent } from "./recordings";
 import { describeChange, memoryTest, type PCChange } from "./changes";
 import { machineWord } from "./machineWord";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
-import { cardChip, cpuLimit, gpuHotSpot, gpuLimit, gpuLoad, gpuMemTemp, gpuTemp, hotSpotLimit } from "./limits";
+import { cardChip, cpuLimit, driveTemp, gpuHotSpot, gpuLimit, gpuLoad, gpuMemTemp, gpuTemp, hotSpotLimit } from "./limits";
 
 export interface Finding extends Issue { category: string; weight: number }
 
@@ -135,7 +135,7 @@ function drives({ inv, snap }: HealthInput, add: Add) {
         action: "See upgrades", go: "upgrades",
       });
     }
-    const temp = own.find((s) => s.type === "temperature" && /^(composite |)temperature$/i.test(s.name))?.value ?? own.find((s) => s.type === "temperature")?.value;
+    const temp = driveTemp(snap, name)?.value;
     const warm = DRIVE_WARM[d.media];
     if (temp != null && temp >= warm) {
       add({
