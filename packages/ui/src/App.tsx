@@ -7,6 +7,7 @@ import { ReviewSheet, Toast, UpdateNotice, navItems } from "./components/Shell";
 import { CardAsk } from "./pages/gpu/CardPick";
 import { Sidebar } from "./components/Sidebar";
 import { Palette } from "./components/Palette";
+import { StartupApps } from "./components/StartupApps";
 import { sceneThemeFor } from "./themes";
 import type { SceneTheme } from "./scene";
 import { Overview } from "./pages/Overview";
@@ -65,24 +66,34 @@ export function RigApp({ client, requireAccount, host }: RigAppProps) {
       onDone={() => { location.hash = "overview"; location.reload(); }}
       onSkip={requireAccount ? undefined : () => { location.hash = "overview"; }} />;
   }
+  const logs = host?.openLogs;
   return (
     <AppProvider client={client} host={host} fallback={(s, retry, reason) => s === "error"
       ? client.kind === "web"
         ? <Splash text="Rig can't reach your PCs right now. Check your internet connection, then try again." retry={retry} />
-        : <Splash text="Rig couldn't read this PC." detail={`${reason ?? ""} Try again, and if it keeps happening, restart your PC.`.trim()} retry={retry} />
-      : <Splash text={s === "loading" ? "Reading your PC…" : client.kind === "web" ? "No PCs yet. Install Rig on a PC and sign in with this account, and it shows up here." : "Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it."} />}>
+        : <Splash text="Rig couldn't read this PC." detail={`${reason ?? ""} Try again, and if it keeps happening, restart your PC.`.trim()} retry={retry} logs={logs} />
+      : s === "loading" || client.kind === "web"
+        ? <Splash text={s === "loading" ? "Reading your PC…" : "No PCs yet. Install Rig on a PC and sign in with this account, and it shows up here."} />
+        : <Splash text="Rig couldn't read this PC. Restart Rig, and if it keeps happening, reinstall it." logs={logs} />}>
       <Root />
     </AppProvider>
   );
 }
 
-function Splash({ text, detail, retry }: { text: string; detail?: string; retry?: () => void }) {
+/** A whole-window message while Rig starts, or when it can't. With `logs`, a problem also offers Rig's log folder, which is what to send along when asking for help. */
+export function Splash({ text, detail, retry, logs }: { text: string; detail?: string; retry?: () => void; logs?: () => Promise<void> }) {
+  const problem = !!(retry || logs);
   return (
-    <div className="splash" role={retry ? "alert" : "status"}>
+    <div className="splash" role={problem ? "alert" : "status"}>
       <span className="fp-logo">R<i /></span>
       <p>{text}</p>
       {detail && <p className="splash-detail">{detail}</p>}
-      {retry && <button className="btn" type="button" onClick={retry}>Try again</button>}
+      {problem && (
+        <div className="splash-actions">
+          {retry && <button className="btn" type="button" onClick={retry}>Try again</button>}
+          {logs && <button className="btn ghost" type="button" onClick={() => void logs().catch(() => {})}>Open logs folder</button>}
+        </div>
+      )}
     </div>
   );
 }
@@ -142,6 +153,8 @@ function Root() {
     <>
       <SceneFeed />
       <Sidebar><Page /></Sidebar>
+      {/* Before the review sheet, which opens over it. */}
+      <StartupApps />
       <ReviewSheet />
       <CardAsk />
       <ManualViewer />

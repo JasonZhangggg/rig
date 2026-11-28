@@ -46,7 +46,9 @@ export function fakeClaude(rounds: FakeRound[]) {
 }
 
 export async function setup(env: Partial<Env> = {}, claude?: Streamer, fetch?: Fetch, wait?: (ms: number) => Promise<void>) {
-  const db = await testDb<RigTables & AuthTables>();
+  // Every query the server runs, so a test can check what a request reads.
+  const queries: string[] = [];
+  const db = await testDb<RigTables & AuthTables>((q) => queries.push(q));
   const e: Env = { WEB_ORIGIN: ORIGIN, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-1234567890", ANTHROPIC_API_KEY: "test", CHAT_STATE_SECRET: "test-chat-state-secret-0123456789abcdef", ...env };
   const app = createApp({ claude: () => claude!, database: () => ({ db, close: async () => {} }), fetch, wait });
   const call = (path: string, init: RequestInit & { json?: unknown; cookie?: string; token?: string } = {}) => {
@@ -62,7 +64,7 @@ export async function setup(env: Partial<Env> = {}, claude?: Streamer, fetch?: F
     const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
     return cookie;
   };
-  return { call, signUp, env: e, db };
+  return { call, signUp, env: e, db, queries };
 }
 
 export async function syncPayload(over: Partial<MachineSync> = {}): Promise<MachineSync> {

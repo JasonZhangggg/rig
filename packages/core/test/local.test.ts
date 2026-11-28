@@ -325,6 +325,19 @@ describe("LocalClient", () => {
     await on.client.deleteAccount!();
     expect(cloud.deleteAccount).toHaveBeenCalledTimes(1);
   });
+  it("shows the account's own shop list for another of the account's PCs, not this PC's", async () => {
+    const theirs = { region: "us", picks: [] };
+    const cloud = { signedIn: async () => true, sync: async () => ({ identity: {} }), machines: async () => [], account: async () => null, shop: vi.fn(async () => theirs) } as unknown as CloudClient;
+    const { client } = setup({}, cloud);
+    await client.start();
+    const other = await client.shop("another-pc");
+    const own = await client.shop(client.id);
+    client.stop();
+    expect(other).toBe(theirs);
+    expect(cloud.shop).toHaveBeenCalledWith("another-pc");
+    expect(own).not.toBe(theirs);
+  });
+
   it("keeps at most five days of history for the account while signed out", async () => {
     let signedIn = false;
     const synced: MachineSync[] = [];

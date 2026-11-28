@@ -37,5 +37,5 @@ export const settingsSections: SettingsSectionDef[] = [
   { id: "updates", title: "Updates", intro: "Which version of Rig this is, and getting the newest one.", keywords: "update updates upgrade new version newest latest install check release download", show: ({ host }) => !!host.updates, Body: UpdatesSection },
   { id: "account", title: "Account", intro: "Who's signed in, and deleting the account.", keywords: "account sign in sign out email delete remove", Body: AccountSection },
   { id: "data", title: "Your data", intro: "A copy of everything Rig keeps for you.", folded: true, keywords: "data download export backup json history copy", show: ({ client }) => !!client.exportData, Body: DataSection },
-  { id: "about", title: "About", intro: "Which version of Rig this is, and its logs.", folded: true, keywords: "about version release build number server logs log debug troubleshoot", Body: AboutSection },
+  { id: "about", title: "About", intro: "Which version of Rig this is, and its logs.", folded: true, keywords: "about version release build number server logs log rig.log folder file open debug troubleshoot bug report support", Body: AboutSection },
 ];

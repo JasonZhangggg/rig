@@ -1,5 +1,6 @@
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "../manuals";
 import { describeCall } from "../actions";
+import { suggestedOff } from "../startup";
 import { appliedHelperStep, cardTier, fixSteps, runRows, stepsTitle, type AppliedStep, type ApplyReply, type FixStep, type HelperStep, type PreviewReply, type Step, type UndoReply } from "../change";
 import { demoApply, demoCards, demoCardByNonce, demoCardByStep, demoCardByUndo, demoCardFor, demoPreview, demoProposal, demoStep, demoUndo } from "./cards";
 import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage, type RigClient, type Range } from "../client";
@@ -10,6 +11,7 @@ import { suggestUpgrades } from "../upgrades";
 import { shopFor } from "../shop";
 import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
+import { activityAt } from "./schedule";
 import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts, demoNow, demoSaverPower } from "./apply";
@@ -40,7 +42,7 @@ export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } fr
 export { writePdf, PdfPage } from "./pdf";
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; today?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -60,6 +62,9 @@ function see(seen: Record<string, [number, number]>, s: Sensor) {
 function fixesOnly(steps: Step[]): FixStep[] {
   return steps.map((s) => { if (s.kind !== "fix") throw new Error("A command step runs from its own card."); return s; });
 }
+
+/** The moments a demo history window reads the PC at. */
+const sampled = (from: number) => [from, from + HISTORY_WINDOW_MS / 2];
 
 export class DemoClient implements RigClient {
   /** How long approval steps pretend to take, as a share of the website's pace. Tests set 0. */
@@ -117,12 +122,19 @@ export class DemoClient implements RigClient {
       for (let t = now - 6 * 36e5; t < now; t += HISTORY_WINDOW_MS / 2) for (const s of simulate(p.inv, t, { dust: p.dust }).sensors) see(p.seen, s);
     }
     for (const s of snap.sensors) { see(p.seen, s); [s.min, s.max] = p.seen[s.id] ?? [null, null]; }
-    if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now) };
+    // The alerts read a month of history only for its games ("hotter than usual" compares a game with itself), so the
+    // demo works out just the windows with a game in them: about one in eight, and the first open doesn't wait on the rest.
+    if (!p.recent || now - p.recent.at > HISTORY_WINDOW_MS) p.recent = { at: now, points: this.points(p, now - USUAL.baselineFrom * 864e5, now, (from) => sampled(from).some((at) => activityAt(p.inv.machine.kind, at).game)) };
     const { state, alerts } = stepAlerts(p.alerts, { inv: p.inv, snap, history: p.recent.points, now });
     p.alerts = state;
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan });
-    // The battery page reads the history and the power settings, which the rest of the demo view goes without.
-    const battery = batteryView(p.inv, snap, p.facts, { history: p.recent.points, power: demoSaverPower(p.inv, p.facts), now });
+    // The battery page reads today's history (and the hour before, for a stretch that started late last night) and the
+    // power settings, which the rest of the demo view goes without. Only laptops have one, and only today's windows are worked out.
+    if (p.inv.machine.kind === "laptop" && (!p.today || now - p.today.at > HISTORY_WINDOW_MS)) {
+      const midnight = new Date(now).setHours(0, 0, 0, 0);
+      p.today = { at: now, points: this.points(p, Math.min(midnight, now - 3 * 36e5) - 36e5, now) };
+    }
+    const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now });
     return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: "Demo PC" }, alerts);
   }
 
@@ -186,17 +198,18 @@ export class DemoClient implements RigClient {
   }
 
   /** Each window is worked out once and kept, since a closed window never changes: a month is thousands of them. */
-  private points(p: DemoPC, since: number, now: number): HistoryPoint[] {
+  private points(p: DemoPC, since: number, now: number, only?: (from: number) => boolean): HistoryPoint[] {
     const kept = p.windows ??= new Map();
     const first = Math.ceil(since / HISTORY_WINDOW_MS) * HISTORY_WINDOW_MS;
     const out: HistoryPoint[] = [];
     for (let from = first; from + HISTORY_WINDOW_MS <= now; from += HISTORY_WINDOW_MS) {
+      if (only && !only(from)) continue;
       let point = kept.get(from);
       if (!point) {
         const dust = p.dust * Math.max(0, 1 - (this.born - from) / rangeMs["30d"]);
         const w = new HistoryWindow(from);
-        for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.add(simulate(p.inv, at, { dust }));
-        if (w.onBattery) for (const at of [from, from + HISTORY_WINDOW_MS / 2]) w.addApps(demoProcesses(p.inv, at));
+        for (const at of sampled(from)) w.add(simulate(p.inv, at, { dust }));
+        if (w.onBattery) for (const at of sampled(from)) w.addApps(demoProcesses(p.inv, at));
         kept.set(from, point = w.point());
       }
       out.push(point);
@@ -398,7 +411,7 @@ export class DemoClient implements RigClient {
         onEvent({ type: "recording", request: toRequest(info), queued: false });
       }
     } else if (/startup|slow|boot/.test(q)) {
-      const on = p.facts.startupApps.filter((a) => a.enabled && !/onedrive|teams/i.test(a.name)).slice(0, 4);
+      const on = suggestedOff(p.facts.startupApps);
       await say(`${on.length} apps start with Windows that you can open yourself when you need them. Turning them off makes startup faster and frees memory. You can still open each one normally.`);
       const steps = fixSteps(on.map((a) => ({ kind: "startup.app", name: a.name, enabled: false })));
       onEvent({ type: "proposal", proposal: { id: uid(), title: stepsTitle(steps), steps, tier: 1, rows: await this.preview(id, steps), status: "waiting" } });

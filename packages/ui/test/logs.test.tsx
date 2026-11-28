@@ -37,7 +37,7 @@ describe("Logs", () => {
     expect(screen.getByRole("link", { name: /Logs/ }).getAttribute("href")).toBe("#logs");
     await open("logs");
     const tabs = await screen.findByRole("navigation", { name: "Logs" });
-    expect(within(tabs).getAllByRole("link").map((a) => a.textContent)).toEqual(["Readings", "Events"]);
+    expect(within(tabs).getAllByRole("link").map((a) => a.textContent)).toEqual(["Readings", "Events", "Games"]);
     fireEvent.click(within(tabs).getByRole("link", { name: "Events" }));
     await open("events");
     const counts = await screen.findByRole("group", { name: "Show only" });
@@ -282,7 +282,7 @@ describe("Logs", () => {
     const log = await screen.findByRole("region", { name: "Log" });
     (await within(log).findAllByText("The graphics driver stopped and recovered"));
     within(log).getByText(/Discord's memory and processor use/);
-    fireEvent.click(within(log).getByRole("button", { name: /^Problems/ }));
+    fireEvent.click(within(log).getByRole("button", { name: /Problems/ }));
     expect(within(log).queryByText(/Discord's memory and processor use/)).toBeNull();
     within(log).getAllByText("The graphics driver stopped and recovered");
   }, 15000);
@@ -545,6 +545,23 @@ describe("Logs", () => {
     fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
     const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
     expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
+  });
+
+  it("opens a drive's readings without freezing, with a few round steps up its transfer chart", () => {
+    // A drive's transfer rates are in bytes a second, so hundreds of millions; stepping up them by a fixed 20 froze the page.
+    const t0 = Date.now() - 60_000;
+    const ssd = (name: string, type: "temperature" | "throughput" | "data") => ({ id: name, hw: "storage" as const, hwName: "", type, name, part: "ssd" });
+    const sensors = [ssd("Temperature", "temperature"), ssd("Read Rate", "throughput"), ssd("Write Rate", "throughput"), ssd("Data Written", "data")];
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [39, (k % 5) * 120e6, 3.5e9, 41_250] }));
+    const r = { sensors, points, full: true, parts: [{ id: "ssd", name: "Storage", sensors: [0, 1, 2, 3], lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
+    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Storage/ }));
+    const steps = (name: string) => [...screen.getByRole("img", { name }).querySelectorAll("text.chart-tick")].map((t) => t.textContent);
+    const transfer = steps("Transfer");
+    expect(transfer.length).toBeGreaterThan(1);
+    expect(transfer.length).toBeLessThanOrEqual(6);
+    expect(transfer.every((x) => /B\/s$/.test(x ?? ""))).toBe(true);
+    expect(steps("Data").length).toBeLessThanOrEqual(6);
   });
 
   it("labels the start and end of a chart with only a few readings", () => {

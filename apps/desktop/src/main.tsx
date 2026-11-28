@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CloudClient, LocalClient, MemoryStore, type HelperLink } from "@rig/core";
 import { SimulatedLink, fixtures } from "@rig/core/demo";
-import { RigApp } from "@rig/ui";
+import { RigApp, Splash } from "@rig/ui";
 import { approveStep, inTauri, openLogs, tauriAutostart, tauriLink, tauriRecorder, tauriStore, tauriToken } from "./tauri";
 import { notifyAlerts, notifyRecording } from "./notify";
 import { quietWhenHidden } from "./quiet";
@@ -31,18 +31,31 @@ async function pickLink(): Promise<HelperLink> {
 if (inTauri) { logUncaught(); watchForUpdates(); installContextMenu(); }
 
 const root = createRoot(document.getElementById("root")!);
-pickLink().then((link) => {
-  const cloud = inTauri ? new CloudClient({ base: api, token: tauriToken, openUrl: (u) => void openUrl(u), log }) : null;
-  // The background recorder only exists with the Windows helper, not with the pretend PC.
-  const recorder = inTauri && link === tauriLink ? tauriRecorder : null;
-  const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording, recorder, log, ...(link === tauriLink ? { approveStep } : {}) } : { log });
-  root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api, openLogs, updates: tauriUpdates, ...(recorder ? { recorder } : {}) } : undefined} />);
-  if (inTauri) { quietWhenHidden(client); client.start().then(() => notifyAlerts(client), () => {}); }
-}).catch((e: unknown) => {
-  root.render(
-    <div className="splash" role="alert">
-      <p>Rig couldn't start its helper. {String(e)}</p>
-      <p>Restart Rig and choose Yes when Windows asks. If it keeps happening, reinstall Rig.</p>
-    </div>,
-  );
-});
+
+/** What went wrong starting the helper, without repeating the headline above it. */
+const helperProblem = (e: unknown) => String(e).replace(/^Error:\s*/, "").replace(/^Rig couldn't start its helper\.\s*/, "");
+
+function start() {
+  // The helper starts behind the Windows admin prompt, so the window says what's coming instead of staying blank.
+  root.render(<Splash text="Starting Rig…" detail={inTauri ? "If Windows asks whether Rig can make changes, choose Yes so it can read every sensor." : undefined} />);
+  pickLink().then((link) => {
+    const cloud = inTauri ? new CloudClient({ base: api, token: tauriToken, openUrl: (u) => void openUrl(u), log }) : null;
+    // The background recorder only exists with the Windows helper, not with the pretend PC.
+    const recorder = inTauri && link === tauriLink ? tauriRecorder : null;
+    const client = new LocalClient(link, inTauri ? tauriStore : new MemoryStore(), cloud, inTauri ? { notify: notifyRecording, recorder, log, ...(link === tauriLink ? { approveStep } : {}) } : { log });
+    root.render(<RigApp client={client} host={inTauri ? { autostart: tauriAutostart, server: api, openLogs, updates: tauriUpdates, ...(recorder ? { recorder } : {}) } : undefined} />);
+    if (inTauri) { quietWhenHidden(client); client.start().then(() => notifyAlerts(client), () => {}); }
+  }).catch((e: unknown) => {
+    // Trying again starts the helper afresh, with the Windows prompt again, so there's no need to quit Rig first.
+    root.render(
+      <Splash
+        text="Rig couldn't start its helper, which reads your PC's sensors."
+        detail={`${helperProblem(e)} Try again, and if it keeps happening, reinstall Rig.`.trim()}
+        retry={start}
+        logs={inTauri ? openLogs : undefined}
+      />,
+    );
+  });
+}
+
+start();

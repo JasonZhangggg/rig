@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Account, RigClient } from "@rig/core";
+import { ApiError, type Account, type RigClient } from "@rig/core";
 import { AsciiArt, type AsciiArtData } from "../components/AsciiArt";
 import board from "../art/board.json";
 
@@ -11,6 +11,15 @@ export function SignInArt() {
       <AsciiArt art={board as AsciiArtData} className="signin-ink" />
     </div>
   );
+}
+
+/** The server's sign-in errors in Rig's words: what happened and what to do next. */
+function signInProblem(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 401) return "That email and password don't match an account. Check them and try again.";
+    if (e.status === 429) return "Too many tries in a row. Wait a minute, then try again.";
+  }
+  return e instanceof Error && e.message ? e.message : "That didn't work. Try again.";
 }
 
 /** Sign-in for the website (email or Google) and the desktop app (a code approved in the browser). */
@@ -25,8 +34,24 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
 
   const run = async (f: () => Promise<Account | void>) => {
     setBusy(true); setError(null);
-    try { const a = await f(); if (a) onDone(a); } catch (e) { setError(e instanceof Error ? e.message : "That didn't work. Try again."); } finally { setBusy(false); }
+    try { const a = await f(); if (a) onDone(a); } catch (e) { setError(signInProblem(e)); } finally { setBusy(false); }
   };
+
+  // Creating an account with an email that already has one usually means the person meant to sign in, so Rig tries that
+  // with what they typed. Only if the password doesn't match does it ask them to sign in instead.
+  const email_ = () => run(async () => {
+    if (mode === "in") return client.signInEmail!(email, password, undefined);
+    try {
+      return await client.signInEmail!(email, password, { name: name || email.split("@")[0] });
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 422)) throw e;
+      try { return await client.signInEmail!(email, password, undefined); } catch (again) {
+        if (!(again instanceof ApiError && again.status === 401)) throw again;
+        setMode("in");
+        throw new ApiError(422, `There's already an account for ${email}. Sign in with its password.`);
+      }
+    }
+  });
 
   const browser = () => run(async () => {
     const s = await client.signInWithBrowser!();
@@ -62,7 +87,7 @@ export function SignIn({ client, onDone, onSkip, note }: { client: RigClient; on
             {onSkip && <button className="btn ghost" type="button" onClick={onSkip}>Not now</button>}
           </div>
         ) : (
-          <form className="signin-box" onSubmit={(e) => { e.preventDefault(); run(() => client.signInEmail!(email, password, mode === "up" ? { name: name || email.split("@")[0] } : undefined)); }}>
+          <form className="signin-box" onSubmit={(e) => { e.preventDefault(); void email_(); }}>
             <h1>{mode === "in" ? "Sign in" : "Create an account"}</h1>
             {note && <p className="muted">{note}</p>}
             {mode === "up" && <div className="field"><label className="label" htmlFor="name">Name</label><input className="input" id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></div>}

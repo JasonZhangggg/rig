@@ -143,6 +143,23 @@ describe("each part's readings", () => {
     expect(Object.keys(pc.parts!)).toEqual(expect.arrayContaining([...new Set(pc.readings!.map((r) => r.part))]));
   });
 
+  it("leaves out a memory stick's limit settings, and names virtual memory as such", () => {
+    const snap = simulate(atlas(), at3am);
+    const mem = (id: string, hwName: string, type: Snapshot["sensors"][number]["type"], name: string, value: number) => ({ id, hw: "memory" as const, hwName, type, name, value });
+    snap.sensors.push(
+      mem("/dimm/0/t/0", "DIMM #1", "temperature", "DIMM #1", 37),
+      mem("/dimm/0/t/1", "DIMM #1", "temperature", "Temperature Sensor Resolution", 0),
+      mem("/dimm/0/t/2", "DIMM #1", "temperature", "Thermal Sensor High Limit", 0),
+      mem("/vram/load/0", "Virtual Memory", "load", "Memory", 68),
+    );
+    const pc = buildPC(atlas(), snap, facts());
+    const ram = pc.readings!.filter((r) => r.part === "ram").map((r) => r.name);
+    expect(ram).toContain("DIMM #1");
+    expect(ram.filter((n) => /limit|resolution/i.test(n))).toEqual([]);
+    expect(ram.filter((n) => n === "Memory")).toHaveLength(1);
+    expect(ram).toContain("Virtual Memory");
+  });
+
   it("logs each part's use and temperature per window: loads averaged, temperatures at their highest", () => {
     const inv = atlas();
     const w = new HistoryWindow(0);

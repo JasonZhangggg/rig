@@ -8,7 +8,7 @@ import {
 import { LAYOUT_MODEL, LAYOUT_RETRY_MS, LAYOUT_STALE_MS, readBoardLayout } from "./boardLayout";
 import type { AppHono, C } from "./app";
 import type { Streamer } from "./chat";
-import type { BoardLayoutRow, MachineRow } from "./db";
+import type { BoardLayoutRow, MachineParts } from "./db";
 import type { Env } from "./env";
 import {
   MISS_DAYS, checkPages, checkTarget, findManualAddress, openPdf, pdfStream, sourceKey, trimSnippet,
@@ -17,7 +17,7 @@ import {
 
 export interface ManualDeps {
   validId: (id: string) => boolean;
-  machine: (c: C) => Promise<MachineRow | null>;
+  machine: (c: C) => Promise<MachineParts<never> | null>;
   notFound: (c: C) => Response;
   now: () => Date;
   claude: (env: Env) => Streamer;
@@ -33,7 +33,7 @@ export function manualRoutes(app: AppHono, d: ManualDeps) {
   const { validId } = d;
   const base = "/api/machines/:id/manuals";
   const noManual = (c: C) => c.json({ message: "That manual isn't on this PC." }, 404);
-  const manualOf = async (c: C, m: MachineRow) => {
+  const manualOf = async (c: C, m: { id: string }) => {
     const mid = c.req.param("mid")!;
     return validId(mid) ? c.get("store").manual(c.get("user").id, m.id, mid) : null;
   };

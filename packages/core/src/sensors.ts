@@ -6,6 +6,21 @@
 import type { Reading } from "./model";
 import type { SensorType } from "./telemetry";
 
+/**
+ * A setting a sensor chip reports beside its readings, not a reading: a memory stick's alarm limits and the step its
+ * thermometer reads in ("Thermal Sensor High Limit", "Temperature Sensor Resolution"). They never move, so they're left out.
+ */
+export const isSetting = (s: { type: SensorType; name: string }) => s.type === "temperature" && /\b(?:limit|resolution|threshold)\b/i.test(s.name);
+
+/**
+ * A sensor's name, told apart from a twin on other hardware: Windows' virtual memory reports "Memory", "Memory Used"
+ * and "Memory Available" just as the physical memory does, so those read "Virtual Memory", and so on.
+ */
+export function sensorName(s: { hw: string; hwName: string; name: string }): string {
+  if (s.hw === "memory" && /virtual/i.test(s.hwName) && !/virtual/i.test(s.name)) return `Virtual ${s.name}`;
+  return s.name;
+}
+
 /** One core of the processor: how busy it is (and each of its threads), its clock, temperature and power, where the chip reports them. */
 export interface Core {
   /** "P-core 3", "E-core 1" or "Core 3". */
