@@ -1,7 +1,7 @@
 {
   "name": "rig",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Rig, a helper app that reads, explains and fixes PCs and laptops.",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
