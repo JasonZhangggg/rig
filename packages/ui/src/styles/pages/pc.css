@@ -129,6 +129,11 @@
   .pc-view, .pc-page.is-part .pc-view { grid-template-columns: 1fr; }
   .pc-view { --stage-h: clamp(360px, 60dvh, 620px); gap: 28px; }
 }
+/* On a phone a picked part's 3D view is a picture of the part, not the page: kept short so its readings show first.
+   The board and graphics card close-ups keep their room. */
+@media (max-width: 760px) {
+  .pc-page.is-part .pc-view:not(:has(.closeup)) .stage-card { min-height: 0; height: clamp(220px, 32dvh, 300px); }
+}
 
 /* ---------- My PC tabs ---------- */
 .pc-views + * { margin-top: 0; }

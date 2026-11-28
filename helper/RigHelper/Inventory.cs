@@ -37,7 +37,12 @@ public static class Inventory
         var lhm = hw.Hardware.ToList();
         var cs = Query("SELECT Manufacturer, Model, PCSystemType FROM Win32_ComputerSystem").FirstOrDefault();
         var os = Query("SELECT Caption, BuildNumber FROM Win32_OperatingSystem").FirstOrDefault();
-        var battery = Battery();
+        var chassis = Query("SELECT ChassisTypes FROM Win32_SystemEnclosure")
+            .SelectMany(e => e["ChassisTypes"] is ushort[] t ? t.Select(x => (long)x) : []).ToList();
+        var batteries = Query("SELECT Name, Chemistry FROM Win32_Battery").Select(x => new PcKind.Battery(Str(x, "Name"), Num(x, "Chemistry"))).ToList();
+        // A UPS on a USB cable is a battery to Windows too, so the case and power profile decide first (PcKind).
+        bool laptop = PcKind.Laptop(cs != null ? Num(cs, "PCSystemType") : 0, chassis, batteries);
+        var battery = laptop && batteries.Any(PcKind.Internal) ? Battery() : null;
 
         string build = os != null ? Str(os, "BuildNumber") : Environment.OSVersion.Version.Build.ToString();
         using var cv = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
@@ -45,8 +50,6 @@ public static class Inventory
         string osName = (os != null ? Str(os, "Caption") : "Windows").Replace("Microsoft ", "");
         // Windows 11 still reports itself as 10 in some places; the build number settles it.
         if (int.TryParse(build.Split('.')[0], out int b) && b >= 22000) osName = osName.Replace("Windows 10", "Windows 11");
-
-        bool laptop = (cs != null && Num(cs, "PCSystemType") == 2) || battery != null;
 
         return new
         {
@@ -149,7 +152,11 @@ public static class Inventory
 
     static object Memory()
     {
-        var mods = Query("SELECT Capacity, ConfiguredClockSpeed, Speed, Manufacturer, PartNumber, DeviceLocator FROM Win32_PhysicalMemory")
+        const string fields = "Capacity, ConfiguredClockSpeed, Speed, Manufacturer, PartNumber, DeviceLocator";
+        // SMBIOSMemoryType is missing from Windows before 10 1709, and asking for it there fails the whole query.
+        var rows = Query($"SELECT {fields}, FormFactor, SMBIOSMemoryType FROM Win32_PhysicalMemory").ToList();
+        if (rows.Count == 0) rows = Query($"SELECT {fields} FROM Win32_PhysicalMemory").ToList();
+        var mods = rows
             .Select(m =>
             {
                 long speed = Num(m, "ConfiguredClockSpeed");
@@ -162,6 +169,9 @@ public static class Inventory
                     capacityMb = Num(m, "Capacity") / (1024 * 1024),
                     speedMhz = speed > 0 ? (long?)speed : null,
                     slot = Str(m, "DeviceLocator") is { Length: > 0 } s ? s : null,
+                    // Core decides soldered memory from these (shop.ts solderedMemory); 0 is Windows' "unknown".
+                    formFactor = Opt(m, "FormFactor") is long ff and > 0 ? (long?)ff : null,
+                    smbiosType = Opt(m, "SMBIOSMemoryType") is long t and > 0 ? (long?)t : null,
                 };
             }).ToList();
         long slots = Query("SELECT MemoryDevices FROM Win32_PhysicalMemoryArray").Sum(a => Num(a, "MemoryDevices"));
@@ -238,9 +248,8 @@ public static class Inventory
             }).ToList();
     }
 
-    static object? Battery()
+    static object Battery()
     {
-        if (!Query("SELECT Name FROM Win32_Battery").Any()) return null;
         long design = Query("SELECT DesignedCapacity FROM BatteryStaticData", @"root\wmi").Sum(x => Num(x, "DesignedCapacity"));
         long full = Query("SELECT FullChargedCapacity FROM BatteryFullChargedCapacity", @"root\wmi").Sum(x => Num(x, "FullChargedCapacity"));
         long cycles = Query("SELECT CycleCount FROM BatteryCycleCount", @"root\wmi").Sum(x => Num(x, "CycleCount"));

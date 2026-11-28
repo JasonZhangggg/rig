@@ -1,8 +1,11 @@
 // A laptop's battery on its part page: how long it lasts, what drained it today, and changes that stretch it, each
 // through the usual review. Desktops show none of it.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import postcss from "postcss";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DemoClient } from "@rig/core/demo";
+import { DemoClient, fixtures } from "@rig/core/demo";
 
 vi.mock("../src/scene", () => ({
   createScene: (_el: HTMLElement, { onSelect }: { onSelect: (id: string | null) => void }) =>
@@ -47,6 +50,23 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     expect(within(savers()).getAllByRole("listitem")).toHaveLength(2);
   });
 
+  it("opens a worn battery's finding on the battery's own replacement", async () => {
+    // A battery worn under 70%, built for this test from the demo laptop.
+    const kept = fixtures.pebble.inv.battery;
+    fixtures.pebble.inv.battery = { designWh: 75, fullWh: 45, cycles: 820 };
+    try {
+      location.hash = "";
+      localStorage.setItem("rig.pc", "demo-pebble");
+      render(<RigApp client={new DemoClient()} />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Battery holds 60% of its original charge/ }, { timeout: 10000 }));
+      expect(await screen.findByRole("tab", { name: "Upgrade", selected: true })).toBeTruthy();
+      expect(location.hash).toBe("#pc");
+      expect(await screen.findByText("Replace the battery")).toBeTruthy();
+    } finally {
+      fixtures.pebble.inv.battery = kept;
+    }
+  });
+
   it("shows nothing of it on a desktop", async () => {
     render(<RigApp client={new DemoClient()} />);
     await screen.findByRole("button", { name: /^Processor/ }, { timeout: 10000 });
@@ -55,5 +75,18 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     await screen.findByRole("tab", { name: "Specs" });
     expect(screen.queryByRole("tab", { name: "Battery life" })).toBeNull();
     expect(screen.queryByText("Left on battery")).toBeNull();
+  });
+});
+
+describe("The battery's page on a phone", () => {
+  it("keeps a picked part's 3D view short, so the charge shows without scrolling past an empty picture", () => {
+    const decls: Record<string, string> = {};
+    postcss.parse(readFileSync(join(__dirname, "../src/styles/pages/pc.css"), "utf8")).walkAtRules("media", (at) => {
+      if (!/max-width: 760px/.test(at.params)) return;
+      at.walkRules((r) => { if (/\.is-part/.test(r.selector) && /\.stage-card/.test(r.selector)) r.walkDecls((d) => { decls[d.prop] = d.value; }); });
+    });
+    expect(decls["min-height"]).toBe("0");
+    const most = Math.max(...[...decls.height.matchAll(/(\d+)px/g)].map((m) => +m[1]));
+    expect(most).toBeLessThanOrEqual(320);
   });
 });

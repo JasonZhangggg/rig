@@ -102,6 +102,35 @@ describe("partByPart", () => {
     expect(none.rows[0]).toMatchObject({ usual: null, high: { value: 41, at: NOW }, ranHot: false, state: "calm" });
   });
 
+  it("follows a laptop's battery by its charge, with how low it ran this week, and leaves out the parts Rig never reads", () => {
+    const pc = tower();
+    const laptop: PC = {
+      ...pc, kind: "laptop",
+      parts: { cpu: pc.parts!.cpu, board: part("ASUS UX3405MA", "Motherboard", { temp: 44 }), ram: pc.parts!.ram, battery: part("75 Wh battery", "Battery"), chassis: part("Zenbook 14", "Laptop") },
+      battery: { level: 58, state: "discharging", watts: 10.9, savers: [] },
+    };
+    // Plugged in and full most of the week, run down to 31% one afternoon.
+    const charged = [...windows(150, 10, { batt: 100 }), ...windows(50, 2, { batt: 31 }), ...windows(20, 18, { batt: 100 })];
+    const view = partByPart(laptop, charged, NOW);
+    expect(view.rows.map((r) => r.id)).toEqual(["cpu", "ram", "board", "battery"]);
+    const battery = view.rows.find((r) => r.id === "battery")!;
+    expect(battery).toMatchObject({ unit: "percent", now: 58, usual: { lo: 100, hi: 100 }, high: null, low: { value: 31, at: NOW - 50 * HOUR }, limit: null, state: "calm" });
+    expect(battery.scale).toEqual({ min: 0, max: 100 });
+    // Lower than usual is no worry for a battery, and above usual can't happen past full.
+    expect(partByPart(laptop, windows(30, 20, { batt: 40 }), NOW).rows.find((r) => r.id === "battery")!.state).toBe("calm");
+    // A battery Rig can't read now still has its row: it's a part Rig follows.
+    const unread = partByPart({ ...laptop, battery: undefined }, [], NOW).rows.find((r) => r.id === "battery")!;
+    expect(unread.state).toBe("unread");
+    // A tower keeps its case and power supply rows, with nothing on them.
+    expect(partByPart(tower(), week, NOW).rows.map((r) => r.id)).toContain("case");
+  });
+
+  it("says the usual comes from busy work, not games, when games weren't most of the busy windows", () => {
+    const work = [...windows(100, 8, { busy: true, game: null, cpu: 70 }), ...windows(30, 2, play(80))];
+    expect(partByPart(tower(), work, NOW).usualWhen).toBe("busy");
+    expect(partByPart(tower(), week, NOW).usualWhen).toBe("playing");
+  });
+
   it("leaves out points older than a week or after now", () => {
     const old = windows(9 * 24, 2, play(87));
     const later = [{ t: NOW + HOUR, cpu: 99, gpu: 99, busy: true }];
