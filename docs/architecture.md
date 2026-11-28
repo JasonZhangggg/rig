@@ -36,7 +36,7 @@ How to put it online: [deploy.md](deploy.md).
 
 A change is a list of steps. A step is one of three kinds. The types are in `packages/core/src/change.ts`.
 
-- A **fix** from the fix catalog (`packages/core/src/actions.ts`: power plan, startup apps, Game Mode, visual effects, processor speed cap, screen refresh rate).
+- A **fix** from the fix catalog (`packages/core/src/actions.ts`: power plan, startup apps, Game Mode, visual effects, processor speed cap, screen refresh rate, power settings, and which graphics chip an app uses on a laptop with two).
 - A **command**: a PowerShell change request with `does` (Claude's sentence), `read` (a script that only looks), `run`, an optional `undo`, and `touches` (the registry keys, files, services and devices it changes). Commands reach settings the catalog doesn't name. For the common ones (a registry value, a service, a firewall rule, a policy, a device, a driver, an app) a shorthand writes the command from a few typed fields (see Shorthands).
 - A **native op**: a change PowerShell can't make safely, which the helper's own code makes: a graphics driver setting, values in a settings file, a control in an app's window, a firmware setting, a restart into firmware setup, or a protection turned off for a while (see Native ops).
 

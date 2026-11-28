@@ -145,6 +145,11 @@ export interface ProcessUse {
    * cleanProcesses turns this into `gpu` and leaves it out, so a list it cleaned reads the same cleaned again.
    */
   gpus?: Record<string, number>;
+  /**
+   * On a laptop with two graphics chips, its share of the built-in one: the rest of `gpus` once the card's share is
+   * taken out, kept by cleanProcesses so Rig can tell an app that ran on the wrong chip. Missing when it used none of it.
+   */
+  builtIn?: number;
 }
 
 /** One reading during a recording. A field is missing when that capture is off, null when the PC didn't report it. */
@@ -311,6 +316,17 @@ function cardShare(p: Partial<ProcessUse>, gpus: Record<string, number> | undefi
   return typeof p.gpu === "number" ? Math.round(p.gpu) : undefined;
 }
 
+/** An app's share of the built-in graphics on a PC with two chips (`own` is the card's name there, or null when no app used it). */
+function builtInShare(p: Partial<ProcessUse>, gpus: Record<string, number> | undefined, own: string | null | undefined): number | undefined {
+  if (own === undefined) return undefined;
+  if (gpus) {
+    const rest = Object.entries(gpus).filter(([k]) => k !== own).map(([, v]) => v);
+    const most = rest.length ? Math.max(...rest) : 0;
+    return most > 0 ? most : undefined;
+  }
+  return typeof p.builtIn === "number" && Number.isFinite(p.builtIn) && p.builtIn > 0 ? Math.round(Math.min(100, p.builtIn)) : undefined;
+}
+
 /**
  * The busiest few by processor share, always with the one holding the most memory, so a memory hog that sits idle still shows.
  * `chip` is the graphics card's name (cardChip): an app's graphics share is its share of that chip.
@@ -323,8 +339,8 @@ export function cleanProcesses(raw: unknown, max = TOP_PROCESSES, chip?: string)
   const own = chip == null ? undefined : shares.flatMap((g) => Object.keys(g ?? {})).find((k) => sameChip(k, chip)) ?? null;
   const all = ok
     .map((p, i) => {
-      const gpus = shares[i], gpu = cardShare(p, gpus, own);
-      return { name: p.name!.slice(0, 60), cpu: Math.round(p.cpu! * 10) / 10, memMb: Math.round(p.memMb!), ...(gpu != null ? { gpu } : {}) };
+      const gpus = shares[i], gpu = cardShare(p, gpus, own), builtIn = builtInShare(p, gpus, own);
+      return { name: p.name!.slice(0, 60), cpu: Math.round(p.cpu! * 10) / 10, memMb: Math.round(p.memMb!), ...(gpu != null ? { gpu } : {}), ...(builtIn != null ? { builtIn } : {}) };
     })
     .sort((a, b) => b.cpu - a.cpu || b.memMb - a.memMb);
   if (all.length <= max) return all;

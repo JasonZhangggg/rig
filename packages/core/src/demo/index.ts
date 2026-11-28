@@ -74,7 +74,16 @@ export const fixtures = {
   comet: { inv: cometInv as Inventory, facts: cometFacts as SystemFacts },
 };
 
-interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; today?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: { until: number; act: Activity }; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
+interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; today?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: Scene; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
+
+/**
+ * A busy moment the slow-or-loud check sets going, so it has something to find. `unplugged`: the laptop came off the
+ * charger then, at `level` percent, and drains from there.
+ */
+interface Scene { until: number; act: Activity; unplugged?: { at: number; level: number; watts: number } }
+
+/** Comet's moment: unplugged in a lecture, Baldur's Gate 3 running on the built-in Radeon, the power mode saving battery. */
+const COMET_SCENE: Activity = { cpu: 0.45, gpu: 0.9, game: "Baldur's Gate 3", chip: "built-in" };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -173,18 +182,27 @@ export class DemoClient implements RigClient {
 
   /** A demo PC's readings now: its weekly schedule, or the busy moment the slow-or-loud check set going. */
   private snapshot(p: DemoPC, now: number) {
-    return simulate(p.inv, now, { dust: p.dust, activity: p.scene && now < p.scene.until ? p.scene.act : undefined });
+    const scene = p.scene && now < p.scene.until ? p.scene : undefined;
+    const off = scene?.unplugged, fullWh = p.inv.battery?.fullWh ?? 60;
+    const battery = off ? { state: "discharging" as const, watts: off.watts, level: Math.max(5, off.level - ((now - off.at) / 36e5) * (off.watts / fullWh) * 100) } : undefined;
+    return simulate(p.inv, now, { dust: p.dust, activity: scene?.act, battery });
   }
 
   /**
    * The busiest apps on a demo PC. So "Why is it slow or loud?" has something to find whenever it's tried, checking Atlas
    * finds it in a game with a Windows Security scan running beside it: in its evening game if it's playing one, else in
-   * Cyberpunk for the next quarter of an hour, which its readings and Home show too.
+   * Cyberpunk for the next quarter of an hour, which its readings and Home show too. Checking Comet finds it unplugged for
+   * the next quarter of an hour, with Baldur's Gate 3 on its built-in graphics.
    */
   async processes(id: string) {
     const p = this.pcs[id];
     if (!p) return null;
     const now = Date.now();
+    // Checking the gaming laptop finds it unplugged, with a game Windows sent to the built-in graphics.
+    if (weekFor(p.inv) === "gaming") {
+      if (!(p.scene && now < p.scene.until)) { p.scene = { until: now + 15 * 60_000, act: COMET_SCENE, unplugged: { at: now, level: 46, watts: 38 } }; this.emit(id); }
+      return cleanProcesses(demoProcesses(p.inv, now, p.scene.act), Infinity, cardChip(p.inv));
+    }
     if (p.inv.machine.kind !== "tower") return cleanProcesses(demoProcesses(p.inv, now), Infinity, cardChip(p.inv));
     const act = p.scene && now < p.scene.until ? p.scene.act : activityAt(p.inv.machine.kind, now);
     if (!act.game) { p.scene = { until: now + 15 * 60_000, act: { cpu: 0.55, gpu: 1, game: "Cyberpunk 2077" } }; this.emit(id); }

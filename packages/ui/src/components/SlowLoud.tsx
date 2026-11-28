@@ -11,7 +11,7 @@ export const SLOW_LOUD_ASK = "Why is it slow or loud?";
 /**
  * "Why is my PC slow or loud?", answered from Rig's own readings on the spot: it reads the busiest apps once, then
  * lists what it found, each with its one next step. Reading changes nothing, so nothing here asks for approval;
- * a step that changes the PC opens the usual review.
+ * a step that changes the PC opens the usual review, and one only the person can do (plug in) is said in place of a button.
  */
 export function SlowLoudSheet() {
   return useUI().slowLoud ? <OpenSlowLoud /> : null;
@@ -62,7 +62,7 @@ function OpenSlowLoud() {
     if (s.kind === "issue") issueGo(s.issue.ask ? { ...s.issue, ask: inUnit(s.issue.ask) } : s.issue, pc, ctx);
     else if (s.kind === "fix") void review(fixSteps(s.fix), { by: "you", why: s.why });
     else if (s.kind === "ask") ask(inUnit(s.ask));
-    else { if (s.part) set({ selected: s.part, tab: "live" }); go(s.route); }
+    else if (s.kind === "go") { if (s.part) set({ selected: s.part, tab: "live" }); go(s.route); }
   };
 
   const note = read?.failed ? "Rig couldn't read the busiest apps just now, so this is from the readings alone." : answer?.appsNote;
@@ -84,7 +84,9 @@ function OpenSlowLoud() {
                     tag={c.likely && <span className="chip no-dot">Likely</span>}
                     meta={c.evidence ? inUnit(c.evidence) : undefined}
                     details={c.why && <p>{inUnit(c.why)}</p>}
-                    action={<button type="button" className="btn ghost sm" onClick={() => run(c.step)}>{c.step.label}</button>}
+                    action={c.step.kind === "tip"
+                      ? <span className="sl-tip">{c.step.label}</span>
+                      : <button type="button" className="btn ghost sm" onClick={() => run(c.step)}>{c.step.label}</button>}
                   />
                 ))}
               </Rows>

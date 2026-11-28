@@ -29,7 +29,8 @@ export function demoProcesses(inv: Inventory, t: number, act?: Activity): Proces
     { name: "Discord.exe", cpu: 1.2 + wob(3, 0.6), memMb: 520 },
     { name: "dwm.exe", cpu: 0.8 + wob(4, 0.3), memMb: 140, ...on(built ?? card, 2) },
   ];
-  if (act.game) list.push({ name: exe[act.game] ?? `${act.game}.exe`, cpu: 6 + act.cpu * 48 + wob(5, 3), memMb: 6800 + act.gpu * 3400, ...on(card, Math.round(act.gpu * 94)) });
+  // A game Windows sent to the built-in chip uses that one instead.
+  if (act.game) list.push({ name: exe[act.game] ?? `${act.game}.exe`, cpu: 6 + act.cpu * 48 + wob(5, 3), memMb: 6800 + act.gpu * 3400, ...on(built && act.chip === "built-in" ? built : card, Math.round(act.gpu * 94)) });
   else if (act.cpu > 0.9) list.push({ name: "TiWorker.exe", cpu: 58 + wob(6, 6), memMb: 900 });
   else if (act.cpu > 0.2) list.push({ name: "EXCEL.EXE", cpu: 9 + wob(7, 3), memMb: 780 }, { name: "ms-teams.exe", cpu: 6 + wob(8, 2), memMb: 1300 });
   return list;

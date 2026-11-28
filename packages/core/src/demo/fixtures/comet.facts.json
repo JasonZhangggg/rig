@@ -9,5 +9,7 @@
   "gameMode": true,
   "visualEffects": "auto",
   "maxProcessorState": { "ac": 100, "dc": 100 },
+  "powerMode": { "ac": "balanced", "dc": "efficiency", "saver": false },
+  "gpuPreferences": { "steam.exe": "saving" },
   "security": {"readAt": 1795000000000, "antivirus": [{"name": "Microsoft Defender Antivirus", "enabled": true, "upToDate": true}], "defender": {"realTime": true, "signatureAgeDays": 1, "quickScanAgeDays": 2, "mode": "Normal"}, "firewall": {"domain": true, "private": true, "public": true}, "updates": {"lastInstalledAt": 1794654400000, "restartPending": false}, "backup": {"oneDrive": ["Documents"]}}
 }

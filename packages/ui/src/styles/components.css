@@ -96,6 +96,8 @@
 .diff .before { color: var(--text-2); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
 .diff .after { color: var(--text); font-weight: 500; }
 .diff .arrow { width: 18px; padding-inline: 0; color: var(--text-3); }
+/* On a phone two values of a few words each don't fit side by side on one line: let them wrap rather than run off the card. */
+@media (max-width: 760px) { .diff :is(.before, .after) { white-space: normal; } .diff td { padding-inline: 10px; } }
 :is(.change, .sheet) .diff-wrap { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
 
 /* ---------- Menus ---------- */
@@ -184,6 +186,8 @@
 .sl-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 22px 0; }
 .sl-body .rows { margin-top: 4px; }
 .sl-body .row-acts .btn { white-space: nowrap; }
+/* A step only the person can do, like plugging in: the words where a button would be, with no box or hover. */
+.sl-tip { font-size: .92em; color: var(--text-2); white-space: nowrap; padding: 0 0 0 7px; }
 .sl-sub { font-size: 13px; }
 .sl-checked { list-style: none; margin: -6px 0 0; padding: 0; }
 .sl-checked li { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; font-size: 14px; }

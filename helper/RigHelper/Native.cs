@@ -13,6 +13,9 @@ static partial class Native
         return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
+    /// Battery saver (Energy saver on newer Windows 11) is on: Windows' own flag in the power status.
+    public static bool BatterySaverOn() => GetSystemPowerStatus(out var s) && s.SystemStatusFlag == 1;
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetNamedPipeServerProcessId(IntPtr pipe, out uint processId);
 
