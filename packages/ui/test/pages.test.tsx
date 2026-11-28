@@ -318,6 +318,18 @@ describe("My PC", () => {
     expect(await screen.findByRole("list", { name: "Parts" })).toBeTruthy();
   });
 
+  it("names a part once when Rig only has a stand-in name for it", async () => {
+    await show("pc");
+    const list = await screen.findByRole("list", { name: "Parts" });
+    const psu = within(list).getByRole("button", { name: /Power supply/ });
+    expect(psu.textContent).toBe("Power supply");
+    expect(within(list).getByRole("button", { name: /^Case/ }).textContent).toBe("Case");
+    expect(within(list).getByRole("button", { name: /Motherboard/ }).textContent).toContain("MSI MAG B650");
+    fireEvent.click(psu);
+    const head = await screen.findByRole("heading", { level: 1, name: "Power supply" });
+    expect(head.parentElement!.textContent!.match(/Power supply/g)).toHaveLength(1);
+  });
+
   it("says what will appear when Rig hasn't read a PC's parts yet", async () => {
     const { partsSummary } = await import("../src/pages/PCPage");
     expect(partsSummary([], "Desk PC", true)).toBe("Rig hasn't read Desk PC's parts yet. They show up here once the Rig app on Desk PC sends its first reading.");

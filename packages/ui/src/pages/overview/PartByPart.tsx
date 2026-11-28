@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { partByPart, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
 import { useApp, useTemp } from "../../state";
 import { shortType } from "../shared";
+import { isPlaceholderName } from "../partNames";
 import { useFit } from "./parts";
 import { Go, type TileBox } from "./widgets";
 
@@ -19,9 +20,6 @@ const PLAIN: Record<string, { label: string; job: string; laptopJob?: string }> 
   case: { label: "Case", job: "Holds every part and guides the air" },
   chassis: { label: "Laptop", job: "Holds every part" },
 };
-
-/** Names Rig gives a part it can't name, which add nothing beside the kind of part. */
-const GENERIC = /^(Your case|Power supply|Case fans|Laptop fans|Battery)$/;
 
 /** A model without the chip maker's brand words, which the kind of part already says: "RTX 4070 SUPER", "Ryzen 7 7800X3D". */
 const shortModel = (name: string) => name.replace(/\((R|TM)\)/gi, "").replace(/^(NVIDIA|AMD|Intel)\s+/i, "").replace(/^GeForce\s+/i, "").replace(/\s+/g, " ").trim();
@@ -130,7 +128,7 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
         {view.rows.slice(0, fits).map((r) => {
           const p = pc.parts![r.id];
           const plain = PLAIN[r.id] ?? { label: shortType(p.type), job: "" };
-          const model = names && !GENERIC.test(p.name) ? shortModel(p.model ?? p.name) : null;
+          const model = names && !isPlaceholderName(p.name) ? shortModel(p.model ?? p.name) : null;
           const state = stateOf(r), week = loading && r.state !== "unread" ? null : weekOf(r, !view.usualWhen, fmt.said);
           const [num, unit] = r.now != null ? fmt.parts(r, r.now) : ["–", ""];
           return (

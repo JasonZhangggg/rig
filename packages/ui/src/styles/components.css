@@ -371,3 +371,18 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
   .cc-confirm .input { max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) { .cc-fold summary::before { transition: none; } }
+
+/* "Is it my PC or my internet?" (components/NetCheck.tsx): the findings as rows, then what was measured in one quiet line of figures. */
+.net-check .sheet-head .typing { padding: 6px 0 2px; }
+.net-check-rows { padding: 4px 22px 0; }
+.net-check-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; margin: 12px 22px 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.net-check-facts dt { color: var(--text-3); font-size: 12.5px; font-weight: 500; }
+.net-check-facts dd { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 0; }
+.net-check-facts b { font-weight: 600; }
+.net-check-facts span { color: var(--text-3); font-size: 12.5px; }
+.net-check-facts .look :is(dt, b, span) { color: var(--look-text); }
+@media (max-width: 560px) { .net-check-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* In the dialog the rows keep Details and Ask on the title's line at every width, and Done stays in reach while it scrolls. */
+.net-check .row { grid-template-columns: minmax(0, 1fr) auto; }
+.net-check .row-acts { margin-left: 12px; }
+.net-check .sheet-foot { position: sticky; bottom: 0; background: var(--surface); }

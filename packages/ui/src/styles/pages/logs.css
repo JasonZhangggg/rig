@@ -139,6 +139,9 @@
 .lg-views a:focus-visible { border-radius: 4px; }
 /* The views' underline already separates them from what follows, so the first block under it drops its own line. */
 .lg-head + .card { border-top: 0; }
+.lg-head + .card > .card-head:first-child,
+.lg-head + .lv-feed { padding-top: 4px; }
+.lg-head + .lv-feed { border-top: 0; }
 .lg-views a { padding: 10px 0; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .lg-views a:hover { color: var(--text); } }
 .lg-views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }

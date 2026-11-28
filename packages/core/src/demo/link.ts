@@ -9,6 +9,7 @@ import { applyToFacts, demoNow } from "./apply";
 import { demoEvents, demoProcesses } from "./logs";
 import { simulate } from "./simulate";
 import { demoScan } from "./storage";
+import { demoNetwork } from "./network";
 
 export class SimulatedLink implements HelperLink {
   private inv: Inventory;
@@ -25,6 +26,8 @@ export class SimulatedLink implements HelperLink {
   async processes() { return demoProcesses(this.inv, (this.opts.now ?? Date.now)()); }
   /** The folder scan: finished an hour ago, or just now when asked for a fresh one. */
   async storage(fresh?: boolean) { const now = (this.opts.now ?? Date.now)(); return demoScan(this.inv, fresh ? now : now - 36e5); }
+  /** The connection check finishes at once here. */
+  async network() { return { running: false, reading: demoNetwork(this.inv, (this.opts.now ?? Date.now)()) }; }
   /** Calls are checked as the server checks them, undo calls included. */
   async apply(call: ActionCall): Promise<FixApplied> {
     const bad = validateCall(call);
