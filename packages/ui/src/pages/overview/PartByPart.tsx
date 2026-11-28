@@ -52,7 +52,7 @@ function useFormat() {
 }
 
 /** A laptop's graphics chip switched off to save power: no reading now, but nothing wrong. */
-const ASLEEP = "Asleep to save power";
+export const ASLEEP = "Asleep to save power";
 
 /** How the part is doing now, in a word or two, and rust only when it needs a look. */
 function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: string; look?: boolean } {

@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { HOT_MARGIN, type BatteryView, type PartsView, type Recorded, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
-import { batteryWord, partJob } from "../overview/PartByPart";
+import { ASLEEP, batteryWord, partJob } from "../overview/PartByPart";
 import { value } from "./Lanes";
 import { clock, clockSec } from "./words";
 import { dateText } from "../../dateText";
@@ -72,8 +72,11 @@ function scaleOf(type: SensorType, seen: (number | undefined)[], limit: number |
   return { min, max };
 }
 
-/** The kind of PC the rows are about, for a laptop's words, and its battery now. */
-export interface Device { laptop: boolean; battery?: BatteryView }
+/**
+ * The kind of PC the rows are about, for a laptop's words, its battery now, and the parts asleep now (a laptop's
+ * graphics chip switched off to save power) when the stretch runs up to now.
+ */
+export interface Device { laptop: boolean; battery?: BatteryView; asleep?: readonly string[] }
 
 const share = (l: PartLine, v: number) => Math.max(0, Math.min(100, ((v - l.scale.min) / (l.scale.max - l.scale.min || 1)) * 100));
 
@@ -120,8 +123,12 @@ export function PartSummary({ lines, span, live, device, onPick }: { lines: Part
     <section className="lp-parts" aria-label="Parts">
       <div className="pbp-cols" aria-hidden="true"><span>Part</span><span>{live ? "Now" : "Last"}</span><span>Lowest to highest</span><span>How it's doing</span></div>
       <ul className="pbp-list">
-        {lines.map((l) => {
-          const { head: s, line, look } = doing(l);
+        {lines.map((line0) => {
+          // Asleep now, a part has no reading now: its last one is from before it slept, so it keeps only its stretch.
+          const asleep = !!device?.asleep?.includes(line0.id);
+          const l: PartLine = asleep ? { ...line0, now: null, state: "calm" } : line0;
+          const { head, line, look } = doing(line0);
+          const s = asleep ? { text: ASLEEP } : head;
           const [num, unit] = l.now == null ? ["–", ""] : l.type === "fan" ? [Math.round(l.now).toLocaleString("en-US"), " rpm"] : [said(l, l.now), ""];
           return (
             <li key={l.id}>
