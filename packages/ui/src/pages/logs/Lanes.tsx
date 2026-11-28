@@ -588,16 +588,23 @@ function kindLanes(r: Recorded, kind: SensorType, limits: { cpu?: number; gpu?: 
   return r.parts.flatMap((p) => lanesFor(r, p.id, limits).filter((l) => l.type === kind).map((l) => ({ ...l, title: p.name })));
 }
 
-/** The kinds of reading a part has, or the whole PC has, in a hardware monitor's order, with how many of each. */
-function kindsIn(r: Recorded, part: string) {
-  const idx = part === "all" ? r.sensors.map((_, i) => i) : r.parts.find((p) => p.id === part)?.sensors ?? [];
-  return sensorGroups.map(([type, title]) => ({ type, title, n: idx.filter((i) => r.sensors[i].type === type).length })).filter((k) => k.n > 0);
+/** What the picker calls each kind of reading, across every part. */
+const ACROSS: Partial<Record<SensorType, string>> = {
+  temperature: "All temperatures", load: "All usage", clock: "All clock speeds", fan: "All fan speeds", power: "All power",
+  voltage: "All voltages", current: "All current", throughput: "All transfer speeds", data: "All data", level: "All levels", control: "All fan control",
+};
+
+/** The kinds of reading that two or more parts chart, in a hardware monitor's order: the ones worth comparing across parts. */
+function sharedKinds(r: Recorded, limits: { cpu?: number; gpu?: number }) {
+  const parts = new Map<SensorType, number>();
+  for (const p of r.parts) for (const t of new Set(lanesFor(r, p.id, limits).map((l) => l.type))) parts.set(t as SensorType, (parts.get(t as SensorType) ?? 0) + 1);
+  return sensorGroups.filter(([type]) => (parts.get(type) ?? 0) >= 2 && ACROSS[type]).map(([type]) => ({ type, title: ACROSS[type]! }));
 }
 
 /**
- * Every sensor over a stretch, as a chart and a table in one. Two dropdowns pick what to show: a part, or the whole PC,
- * and a kind of reading, or every kind. The whole PC opens on each part's row, as on Home, over its main charts. A
- * search finds any sensor on the PC.
+ * Every sensor over a stretch, as a chart and a table in one. One picker says what to show: the whole PC, which opens
+ * on each part's row as on Home over its main charts; one part, with all of its sensors; or one kind of reading across
+ * every part. A search finds any sensor on the PC.
  */
 export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, live, week }: {
   r: Recorded; /** Every reading, not thinned, so the lowest and highest are exact. */ whole?: Recorded | null;
@@ -605,14 +612,15 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
   /** Each part's usual from the last week, for the part rows. */
   week?: PartsView | null;
 }) {
-  const [part, setPart] = useState("all");
-  const [kindPick, setKind] = useState<SensorType | "all">("all");
+  // "all", a part's id, or "kind:" and a kind of reading.
+  const [view, setView] = useState("all");
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
   const finding = query.trim();
-  const kinds = useMemo(() => kindsIn(r, part), [r.sensors, r.parts, part]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A part without the kind picked shows all of its kinds.
-  const kind = kinds.some((k) => k.type === kindPick) ? kindPick : "all";
+  const kinds = useMemo(() => sharedKinds(r, limits), [r.sensors, r.parts, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const picked = view.startsWith("kind:") ? (view.slice(5) as SensorType) : null;
+  const kind = picked && kinds.some((k) => k.type === picked) ? picked : null;
+  const part = kind || picked || !r.parts.some((p) => p.id === view) ? "all" : view;
   const one = part !== "all" && !finding;
   // A part's own view adds a Highest and Average line where its sensors have nothing that sums them up.
   const shown = useMemo(() => (one ? withSummaries(r, part) : r), [r, part, one]);
@@ -621,35 +629,37 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
     return statsOf((one ? withSummaries(src, part) : src).points, shown.sensors.length, from, to);
   }, [whole, r, part, one, shown.sensors.length, from, to]);
   const lanes = useMemo(() => (finding ? foundLanes(r, finding, limits)
-    : part === "all" ? (kind === "all" ? lanesFor(shown, "all", limits) : kindLanes(shown, kind, limits))
-    : lanesFor(shown, part, limits).filter((l) => kind === "all" || l.type === kind)).map((l) => ({ ...l, h: undefined })),
+    : kind ? kindLanes(shown, kind, limits)
+    : lanesFor(shown, part, limits)).map((l) => ({ ...l, h: undefined })),
     [shown.sensors, shown.parts, part, kind, finding, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
-  const overview = part === "all" && kind === "all" && !finding;
+  const overview = part === "all" && !kind && !finding;
   const lines = useMemo(() => (overview ? partLines(whole ?? r, from, to, week ?? null, limits) : []), [overview, whole, r, from, to, week, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = lanes.reduce((n, l) => n + l.series.length, 0);
-  const pickPart = (id: string) => { setPart(id); setQuery(""); };
+  const pick = (v: string) => { setView(v); setQuery(""); };
+  const value = finding ? "" : kind ? `kind:${kind}` : part;
   return (
     <div className="ln-all">
       <div className="ln-find" role="group" aria-label="What to show">
-        <label className="ln-pick"><span>Part</span>
-          <select className="input" value={finding ? "" : part} onChange={(e) => pickPart(e.target.value)}>
-            {finding && <option value="" disabled>Search</option>}
+        <label className="ln-pick"><span>Show</span>
+          <select className="input" value={value} onChange={(e) => pick(e.target.value)}>
+            {finding && <option value="" disabled>Search results</option>}
             <option value="all">Whole PC</option>
-            {r.parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-        <label className="ln-pick"><span>Reading</span>
-          <select className="input" value={kind} disabled={!!finding} onChange={(e) => setKind(e.target.value as SensorType | "all")}>
-            <option value="all">Every kind</option>
-            {kinds.map((k) => <option key={k.type} value={k.type}>{k.title}</option>)}
+            <optgroup label="One part, every sensor">
+              {r.parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </optgroup>
+            {kinds.length > 0 && (
+              <optgroup label="One reading, every part">
+                {kinds.map((k) => <option key={k.type} value={`kind:${k.type}`}>{k.title}</option>)}
+              </optgroup>
+            )}
           </select>
         </label>
         <input type="search" className="input" placeholder="Find a sensor, like core 3" aria-label="Find a sensor" value={query} onChange={(e) => setQuery(e.target.value)} />
         {finding && <span className="faint num" aria-live="polite">{count} of {r.sensors.length}</span>}
       </div>
-      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} onPick={pickPart} />}
+      {overview && lines.length > 0 && <PartSummary lines={lines} span={to - from} live={live} onPick={pick} />}
       {finding && !lanes.length ? <p className="muted ln-none">No sensor matches “{finding}”. Try a part, like processor, a kind, like voltage, or a sensor, like core 3.</p>
-        : <Lanes key={`${finding ? "find" : part}|${kind}`} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
+        : <Lanes key={finding ? "find" : value} points={shown.points} lanes={lanes} t0={from} t1={to} cursor={cursor} onCursor={setCursor} bands={bands} marks={marks} compact={compact} live={live} gapMs={live ? 20_000 : undefined} rows={stats} />}
     </div>
   );
 }
