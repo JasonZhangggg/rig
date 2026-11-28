@@ -87,6 +87,11 @@ function OpenPalette() {
       const [sub, keys] = pageWords[route] ?? ["", ""];
       items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
     }
+    const startup = pc.settings?.startup;
+    if (startup) {
+      const on = startup.filter((a) => a.enabled).length;
+      items.push({ id: "startup-apps", kind: "pages", title: "Startup apps", sub: `Choose which apps start with Windows · ${on} of ${startup.length} on`, keys: "startup apps start with windows boot slow autostart sign in login background", searchOnly: true, run: () => { close(); set({ startupApps: true }); } });
+    }
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({
         id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${temp(p.temp)} now` : p.sub].filter(Boolean).join(" · "),
