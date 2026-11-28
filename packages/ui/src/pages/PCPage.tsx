@@ -7,6 +7,7 @@ import { ManualsTab } from "../manuals/ManualsTab";
 import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince, shopCatOf } from "./shared";
+import { isPlaceholderName } from "./partNames";
 import { PartUpgrade, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
 import { UpgradesTab } from "./upgrades/Shop";
 import { arrowKeys } from "../components/modal";
@@ -204,7 +205,7 @@ function PartRow({ id, part, lit }: { id: string; part: Part; lit: boolean }) {
     <li>
       <button type="button" className={lit ? "is-lit" : undefined} onClick={() => getStage().scene.select(id)}
         onPointerEnter={() => hoverPart(id)} onPointerLeave={() => hoverPart(null)} onFocus={() => hoverPart(id)} onBlur={() => hoverPart(null)}>
-        <span className="part-txt"><span className="pt">{part.type}</span><span className="pn">{part.name}</span></span>
+        <span className="part-txt"><span className="pt">{part.type}</span>{!isPlaceholderName(part.name) && <span className="pn">{part.name}</span>}</span>
         {part.temp !== undefined && (
           <span key={Math.round(part.temp)} className={`num part-temp${part.warn ? " look" : ""}`}>{temp(part.temp)}{part.warn && <Warm />}</span>
         )}
@@ -237,7 +238,7 @@ function PartHead({ part }: { part: Part }) {
   return (
     <div className="page-head part-head">
       <div>
-        <p className="part-kind">{part.type}</p>
+        {part.type !== part.name && <p className="part-kind">{part.type}</p>}
         <h1>{part.name}</h1>
         {part.sub && <p className="sub">{part.sub}</p>}
       </div>
