@@ -115,7 +115,14 @@ function OpenPalette() {
   }, [pc, data.changes, data.recordings, extra, temp, manuals, pages.hits]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const words = q.trim().toLowerCase();
-  const matched = all.filter((i) => i.hit || (words ? `${i.title} ${i.sub} ${i.keys ?? ""}`.toLowerCase().includes(words) : !i.searchOnly));
+  // Every word typed has to match, in any order, so "logs folder" finds the same thing as "folder logs".
+  const terms = words.split(/\s+/).filter(Boolean);
+  const matched = all.filter((i) => {
+    if (i.hit) return true;
+    if (!terms.length) return !i.searchOnly;
+    const text = `${i.title} ${i.sub} ${i.keys ?? ""}`.toLowerCase();
+    return terms.every((t) => text.includes(t));
+  });
   const counts = matched.reduce<Record<string, number>>((a, i) => ({ ...a, [i.kind]: (a[i.kind] ?? 0) + 1 }), {});
   const shown = tab === "all"
     ? [...matched.filter((i) => i.kind !== "settings").slice(0, 9), ...matched.filter((i) => i.kind === "settings")]
