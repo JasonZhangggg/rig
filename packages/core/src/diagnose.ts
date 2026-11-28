@@ -8,6 +8,7 @@
 // (confidence), so the chat can explain it and the person can check it.
 // Pure, so the desktop, the demo and the tests agree.
 
+import type { SleepLog } from "./sleeps";
 import type { HistoryPoint, Issue } from "./model";
 import type { PCEvent } from "./recordings";
 import { describeChange, memoryTest, type PCChange } from "./changes";
@@ -27,6 +28,8 @@ export interface HealthInput {
   history?: readonly HistoryPoint[];
   /** Milliseconds since epoch. Defaults to the reading's time, then the clock. */
   now?: number;
+  /** A laptop's sleeps and wakes from the background recorder, for how much battery each sleep used (sleeps.ts). */
+  sleep?: SleepLog;
 }
 
 export const STABILITY = "Crashes and errors";

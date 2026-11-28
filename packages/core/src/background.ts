@@ -10,6 +10,8 @@ import {
   type Limits, type PCEvent, type RawEvent, type Recording, type RecordingSample, type SensorRef,
 } from "./recordings";
 import type { HardwareKind, Sensor, SensorType, Snapshot } from "./telemetry";
+import { readBattery } from "./battery";
+import { wakeName, type SleepLog } from "./sleeps";
 import type { ProbeSpec, ProbeStatus } from "./probes";
 
 /** Where the next read carries on: a log file and a byte offset in it. */
@@ -65,6 +67,8 @@ export const BACKGROUND_DAYS = 7;
 export const LEAD_MS = 5 * 60_000;
 const DAY = 864e5;
 const SOURCE = "Rig recorder";
+/** The background log keeps the battery's charge this often, enough to read a sleep's two ends. */
+const CHARGE_EVERY_MS = 2 * 60_000;
 
 export interface BackgroundSample extends RecordingSample {
   /** Written during a closer look, every few seconds. */
@@ -94,6 +98,8 @@ export class BackgroundLog {
   settled = new Map<number, SettledDay>();
   /** Each finished day's recording, with what it was made from, so a new line today doesn't redo the week. */
   dayRecs = new Map<number, { key: string; rec: Recording }>();
+  /** Sleeps and wakes, what Windows says woke it, and the battery's charge every few minutes, for how much each sleep used. */
+  sleep: SleepLog = { moments: [], wokeBy: [], charge: [] };
   /** Every sensor the recorder has named, in the order first seen. Each reading's `all` lines up with it. */
   sensors: SensorRef[] = [];
   private where = new Map<string, number>();
@@ -131,6 +137,7 @@ export class BackgroundLog {
           this.slots.forEach((slot, i) => { const x = num(v[i]); all[slot] = x == null ? null : Math.round(x * 10) / 10; });
           s.all = all;
           this.samples.push(s);
+          this.charge(t, snap);
           break;
         }
         case "e":
@@ -141,9 +148,23 @@ export class BackgroundLog {
           const charge = pct != null ? ` (${pct}% charged)` : "";
           const ev = (id: number, message: string) => this.events.push({ t, log: "System", source: SOURCE, id, level: "info", message });
           if (r.atStart) break;
-          if (r.what === "sleep") ev(RIG_EVENT.sleep, "Went to sleep.");
-          else if (r.what === "wake") ev(RIG_EVENT.wake, "Woke up.");
-          else if (r.what === "ac") ev(RIG_EVENT.plugged, `Plugged in${charge}.`);
+          if (r.what === "sleep" || r.what === "wake") {
+            // The service's word and Windows' Modern Standby event (win) for the same moment are one.
+            const what = r.what, ac = typeof r.ac === "boolean" ? r.ac : null;
+            const same = this.sleep.moments.find((m) => m.what === what && Math.abs(m.t - t) <= 2 * 60_000);
+            if (same) { same.pct ??= pct; same.ac ??= ac; break; }
+            this.sleep.moments.push({ t, what, pct, ac });
+            // Right as it wakes, Windows can still report the charge from before it slept, so the wake's row doesn't say it.
+            if (what === "sleep") ev(RIG_EVENT.sleep, `Went to sleep${charge}.`);
+            else ev(RIG_EVENT.wake, "Woke up.");
+          } else if (r.what === "wokeBy") {
+            const by = str(r.by).slice(0, 80);
+            if (!by) break;
+            this.sleep.wokeBy.push({ t, by });
+            // The Logs row for that wake says what woke it. Windows logs it a little after waking.
+            const woke = this.events.filter((e) => e.source === SOURCE && e.id === RIG_EVENT.wake && e.t >= t - 5 * 60_000 && e.t <= t + 60_000).sort((a, b) => b.t - a.t)[0];
+            if (woke && !/What woke it/.test(woke.message)) woke.message = `${woke.message} What woke it: ${wakeName(by)}.`;
+          } else if (r.what === "ac") ev(RIG_EVENT.plugged, `Plugged in${charge}.`);
           else if (r.what === "battery") ev(RIG_EVENT.battery, `Unplugged, running on battery${charge}.`);
           break;
         }
@@ -169,8 +190,21 @@ export class BackgroundLog {
     }
   }
 
+  /** Keeps the battery's charge from a reading: one every few minutes, and every time it moves between the charger and the battery. */
+  private charge(t: number, snap: Snapshot) {
+    const b = readBattery(snap);
+    if (b?.level == null) return;
+    const onBattery = b.state == null ? null : b.state === "discharging";
+    const list = this.sleep.charge, last = list[list.length - 1];
+    if (last && t - last.t < CHARGE_EVERY_MS && last.onBattery === onBattery && t >= last.t) return;
+    list.push({ t, pct: Math.round(b.level * 10) / 10, onBattery });
+  }
+
   /** Drops what's older than a time. */
   trim(fromMs: number) {
+    this.sleep = {
+      moments: this.sleep.moments.filter((m) => m.t >= fromMs), wokeBy: this.sleep.wokeBy.filter((w) => w.t >= fromMs), charge: this.sleep.charge.filter((c) => c.t >= fromMs),
+    };
     this.samples = this.samples.filter((s) => s.t >= fromMs);
     this.events = this.events.filter((e) => e.t >= fromMs);
     this.anomalies = this.anomalies.filter((a) => a.t >= fromMs);

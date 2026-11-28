@@ -266,6 +266,55 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         yield return ("System", $"*[System[Provider[{sources}] and (Level=3){time}]]");
         yield return ("System", $"*[System[((Provider[@Name='Microsoft-Windows-Kernel-General'] and (EventID=12 or EventID=13)) or (Provider[@Name='User32'] and EventID=1074)){time}]]");
         yield return ("Application", $"*[System[(Level=1 or Level=2){time}]]");
+        // Windows' own word on sleep, for how much battery each sleep used: what woke it, and Modern Standby starting and ending.
+        yield return ("System", $"*[System[((Provider[@Name='{WakeProvider}'] and EventID=1) or (Provider[@Name='{StandbyProvider}'] and (EventID=506 or EventID=507))){time}]]");
+    }
+
+    const string WakeProvider = "Microsoft-Windows-Power-Troubleshooter", StandbyProvider = "Microsoft-Windows-Kernel-Power";
+
+    /// <summary>
+    /// Windows' sleep events as power lines, which the app reads beside the service's own sleep and wake: Power-Troubleshooter 1
+    /// names what woke it (its WakeSourceText field, which rules/logs.json gives the chat's log reads too), and Kernel-Power
+    /// 506 and 507 are Modern Standby starting and ending, for laptops that never suspend the old way. Handled false for any
+    /// other event. The line is null when the event says nothing Rig keeps, like a wake source that isn't a plain name.
+    /// </summary>
+    public static (bool Handled, JsonObject? Line) SleepLine(EventDto e, Func<string?> xml, bool live)
+    {
+        bool woke = e.Id == 1 && e.Source.Equals(WakeProvider, StringComparison.OrdinalIgnoreCase);
+        bool standby = (e.Id is 506 or 507) && e.Source.Equals(StandbyProvider, StringComparison.OrdinalIgnoreCase);
+        if (!woke && !standby) return (false, null);
+        var o = LogLine.Of("power", e.T);
+        if (woke)
+        {
+            string? by = WakeSource(xml() is string x ? LogParse.EventValues(x).GetValueOrDefault("WakeSourceText") : null);
+            if (by == null) return (true, null);
+            o["what"] = "wokeBy";
+            o["by"] = by;
+            return (true, o);
+        }
+        o["what"] = e.Id == 506 ? "sleep" : "wake";
+        o["win"] = e.Id;
+        // Read as it happens, the charge is the charge then. An event read back later has none.
+        if (live) AddBattery(o);
+        return (true, o);
+    }
+
+    /// What woke it as a plain name: "Device -Intel(R) Wi-Fi 6E AX211 160MHz" as written, a timer as "Timer" (its text names a
+    /// scheduled task's path), and nothing for text that isn't a name.
+    public static string? WakeSource(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        string t = raw.Trim();
+        if (t.StartsWith("Timer", StringComparison.OrdinalIgnoreCase)) return "Timer";
+        return LogParse.FactValue("name", t.Length > 64 ? t[..64].TrimEnd() : t);
+    }
+
+    /// The charge now and whether it's on the charger, on a line. Nothing when the PC has no battery.
+    static void AddBattery(JsonObject o)
+    {
+        if (!Native.GetSystemPowerStatus(out var p) || (p.BatteryFlag & 128) != 0 || p.BatteryFlag == 255) return;
+        if (p.BatteryLifePercent <= 100) o["pct"] = (int)p.BatteryLifePercent;
+        if (p.ACLineStatus <= 1) o["ac"] = p.ACLineStatus == 1;
     }
 
     public static string LevelWord(byte? level) => level switch { 1 => "critical", 2 => "error", 3 => "warning", _ => "info" };
@@ -318,6 +367,13 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
                 if (seenEvents.Count > 5000) seenEvents.Clear();
             }
             var e = new EventDto(new DateTimeOffset(at.ToUniversalTime()).ToUnixTimeMilliseconds(), logName, rec.ProviderName ?? "Unknown", rec.Id, LevelWord(rec.Level), EventLogs.Message(rec));
+            var (sleep, line) = SleepLine(e, () => { try { return rec.ToXml(); } catch (EventLogException) { return null; } }, live);
+            if (sleep)
+            {
+                if (line != null) log.Write(line, essential: true, flush: true);
+                lock (gate) lastEventT = Math.Max(lastEventT, e.T);
+                return;
+            }
             log.Write(LogLine.Event(e), essential: true, flush: true);
             lock (gate) lastEventT = Math.Max(lastEventT, e.T);
             if (live) EventAnomaly(e);
@@ -333,13 +389,14 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         switch (s)
         {
             case PowerBroadcastStatus.Suspend:
-                PowerLine(now, "sleep", null);
+                // The charge and the charger as it goes to sleep and as it wakes, for how much battery the sleep used.
+                PowerLine(now, "sleep", null, battery: true);
                 WriteStatus("asleep");
                 break;
             case PowerBroadcastStatus.ResumeSuspend:
             case PowerBroadcastStatus.ResumeAutomatic:
                 // Windows sends both on a normal wake; write it once.
-                if (now - wokeAt > 30_000) { wokeAt = now; PowerLine(now, "wake", null); WriteStatus("running"); }
+                if (now - wokeAt > 30_000) { wokeAt = now; PowerLine(now, "wake", null, battery: true); WriteStatus("running"); }
                 break;
             case PowerBroadcastStatus.PowerStatusChange:
                 PowerNow();
@@ -359,11 +416,12 @@ public sealed class RecorderCore(string dataDir, Action? onSelfRemove = null)
         PowerLine(Now, ac ? "ac" : "battery", p.BatteryLifePercent <= 100 ? p.BatteryLifePercent : null, first);
     }
 
-    void PowerLine(long t, string what, int? pct, bool atStart = false)
+    void PowerLine(long t, string what, int? pct, bool atStart = false, bool battery = false)
     {
         var o = LogLine.Of("power", t);
         o["what"] = what;
         if (pct != null) o["pct"] = pct;
+        if (battery) AddBattery(o);
         if (atStart) o["atStart"] = true;
         log.Write(o, essential: true, flush: true);
     }

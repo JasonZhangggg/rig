@@ -74,7 +74,7 @@ export function livePoint(pc: PC, t: number): HistoryPoint {
 }
 
 /** What else the checks can read: Windows events (the crash checks run only when these are given) and recorded history. */
-export type Evidence = Pick<HealthInput, "events" | "history" | "now"> & {
+export type Evidence = Pick<HealthInput, "events" | "history" | "now" | "sleep"> & {
   /** The helper's last folder scan, for what fills each drive. Missing: the map shows used and free only. */
   scan?: StorageScan | null;
   /** A laptop's power settings the battery savers look at, as the helper read them (SAVER_SETTINGS). */
@@ -232,7 +232,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   });
 
   const { health, breakdown } = score(laptop, fs, more.events != null);
-  const battery = batteryView(inv, snap, facts, { history: evidence.history, power, now: evidence.now });
+  const battery = batteryView(inv, snap, facts, { history: evidence.history, power, now: evidence.now, sleep: evidence.sleep });
   const issues: Issue[] = fs.length ? fs : [{ id: "all-good", severity: "ok", title: "Nothing needs a look", body: "Temperatures, storage and settings all look normal.", action: "Ask Rig anything", go: "chat" }];
 
   // The maker the short way, as on its own site: "ASUS", not "ASUSTeK COMPUTER INC.".

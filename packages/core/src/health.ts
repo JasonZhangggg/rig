@@ -8,6 +8,7 @@ import { safetyFindings } from "./safety";
 import { machineWord } from "./machineWord";
 import { findSensor, type Inventory, type PCKind } from "./telemetry";
 import { suggestedOff } from "./startup";
+import { clearlyHeavy, perHourText, sleepCause, sleepsOf, sleepWhenSaid } from "./sleeps";
 
 export type { Finding, HealthInput } from "./diagnose";
 export { cpuLimit, cpuTemp, gpuLimit, gpuTemp } from "./limits";
@@ -128,6 +129,22 @@ export function findings(input: HealthInput): Finding[] {
     const wear = Math.min(100, pct(b.fullWh, b.designWh));
     // The replacement is on the battery's own Upgrade tab: the Upgrades page lists parts to buy, and a laptop's are only storage.
     if (wear < 70) add({ id: "battery", category: "Battery", weight: 30, severity: "warn", confidence: "sure", evidence: [`Holds ${b.fullWh} Wh of its original ${b.designWh} Wh${b.cycles ? ` after ${b.cycles} charge cycles` : ""}`], title: `Battery holds ${wear}% of its original charge`, body: "Most people replace it around this point. Rig can find the right part for your model.", action: "See replacement", part: "battery", go: "pc", tab: "upgrade" });
+  }
+
+  // A sleep that used a lot of the battery, only when it clearly did: Battery life lists every sleep.
+  if (laptop) {
+    const now = input.now ?? snap?.at ?? Date.now();
+    const heavy = clearlyHeavy(sleepsOf(inv.machine.kind, input.sleep, input.history ?? [], now), now);
+    if (heavy) {
+      const cause = sleepCause(heavy, word);
+      add({
+        id: "sleep-drain", category: "Battery", weight: 10, severity: "warn", part: "battery", confidence: "sure",
+        evidence: [`Asleep ${heavy.hours} h on battery, ${heavy.fromPct}% to ${heavy.toPct}%`, ...(heavy.woke ? [`Woke ${heavy.woke} times on its own`] : [])],
+        title: `Used ${heavy.used}% of the battery asleep ${sleepWhenSaid(heavy, now)}`,
+        body: `That's ${perHourText(heavy.perHour)}, where under 1% is usual asleep.${cause ? ` ${cause.what}` : ""}`,
+        action: "See battery life", go: "pc", tab: "life", ask: cause?.ask,
+      });
+    }
   }
 
   // Windows version

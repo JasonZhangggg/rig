@@ -9,7 +9,8 @@
 //   sensors  the sensor list the next "s" lines refer to: {list: [[id, hw, hwName, type, name], ...]}
 //   s        one reading: {v: [value per sensor, in list order], top?: [busiest apps], d?: 1 when in a closer look}
 //   e        a Windows event, shaped like RawEvent in packages/core/src/recordings.ts
-//   power    sleep, wake, plugged in or on battery: {what, pct?}
+//   power    sleep, wake, plugged in or on battery: {what, pct?, ac?}; Windows' Modern Standby start and end as sleep and
+//            wake with {win: 506 or 507}; what Windows says woke it: {what: "wokeBy", by}
 //   anomaly  a closer look started: {why, text}
 //   probe    a reading from a specific probe: {name, v}
 //   note     something about the recorder itself: {text}

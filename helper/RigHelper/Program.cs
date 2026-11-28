@@ -257,6 +257,15 @@ public static class Program
         var line = LogLine.Sample(now, [41.5, null], [new ProcessDto("game.exe", 50, 2048, 90)], detail: true).ToJsonString();
         if (line != """{"k":"s","t":1795003200000,"v":[41.5,null],"top":[{"name":"game.exe","cpu":50,"memMb":2048,"gpu":90}],"d":1}""") yield return $"recorder sample line is off: {line}";
 
+        // Windows' sleep events become power lines: what woke it by name, a timer without its task's path, Modern Standby as sleep and wake.
+        const string wakeXml = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System/><EventData><Data Name='SleepTime'>2026-11-18T01:00:00Z</Data><Data Name='WakeSourceType'>5</Data><Data Name='WakeSourceText'>Device -Intel(R) Wi-Fi 6E AX211 160MHz</Data></EventData></Event>";
+        var woke = RecorderCore.SleepLine(new EventDto(now, "System", "Microsoft-Windows-Power-Troubleshooter", 1, "info", ""), () => wakeXml, live: false);
+        if (!woke.Handled || woke.Line?["what"]?.GetValue<string>() != "wokeBy" || woke.Line["by"]?.GetValue<string>() != "Device -Intel(R) Wi-Fi 6E AX211 160MHz") yield return "what woke it wasn't read";
+        if (RecorderCore.WakeSource(@"Timer - Windows will execute 'NT TASK\Microsoft\Windows\UpdateOrchestrator\Reboot' scheduled task") != "Timer" || RecorderCore.WakeSource("<b>") != null) yield return "a wake source that isn't a plain name was kept";
+        var standby = RecorderCore.SleepLine(new EventDto(now, "System", "Microsoft-Windows-Kernel-Power", 507, "info", ""), () => null, live: false);
+        if (standby.Line?["what"]?.GetValue<string>() != "wake" || standby.Line["pct"] != null) yield return "Modern Standby ending wasn't a wake";
+        if (RecorderCore.SleepLine(new EventDto(now, "System", "Microsoft-Windows-Kernel-Power", 41, "critical", ""), () => null, live: false).Handled) yield return "a power loss was taken for a sleep";
+
         var w = new Watch();
         SensorDto S(string hw, string type, string name, double? v) => new($"/{hw}/{name}", hw, hw, type, name, v, null, null);
 

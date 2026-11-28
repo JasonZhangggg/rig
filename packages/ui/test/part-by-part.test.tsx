@@ -87,7 +87,11 @@ describe("Your PC, part by part", () => {
 
   it("says a battery held at one charge all week once, not three times", async () => {
     localStorage.setItem("rig.pc", "demo-comet");
-    render(<RigApp client={new DemoClient()} />);
+    // Without the night off its charger, which the row would say instead (battery.test.tsx).
+    const client = new DemoClient();
+    const watch = client.watch.bind(client);
+    client.watch = (id, cb) => watch(id, (pc) => cb({ ...pc, ...(pc.battery ? { battery: { ...pc.battery, sleeps: undefined } } : {}) }));
+    render(<RigApp client={client} />);
     const { widget } = await partByPart();
     const row = within(widget.getByRole("list", { name: "Parts" })).getAllByRole("button").find((r) => r.textContent?.startsWith("Battery"))!;
     expect(within(row).getByText("80")).toBeTruthy();

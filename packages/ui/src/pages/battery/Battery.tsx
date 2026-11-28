@@ -1,11 +1,12 @@
 // A laptop's battery on its part page: the charge and how long it lasts as
-// big figures, then a tab with today's story on battery and the few changes
-// that would stretch it, each through the usual review. Desktops have none.
+// big figures, then a tab with today's story on battery, how much each recent
+// sleep used, and the few changes that would stretch it, each through the
+// usual review. Desktops have none.
 
 import { useState } from "react";
-import { fixSteps, type BatterySaver, type BatteryView } from "@rig/core";
+import { fixSteps, perHourText, sleepCause, sleepMeta, sleepTitle, sleepWhen, type BatterySaver, type BatteryView, type SleepView } from "@rig/core";
 import { Row, Rows } from "../../components/Rows";
-import { useActions } from "../../state";
+import { useActions, useApp, useMachineWord } from "../../state";
 
 /** The battery's figures for the top of its page: the charge, and the time left or until full. */
 export function batteryTiles(b: BatteryView): JSX.Element[] {
@@ -41,6 +42,7 @@ export function BatteryLife({ battery }: { battery: BatteryView }) {
   return (
     <div className="batt">
       {story && <p className="batt-story">{story}</p>}
+      {battery.sleeps?.length ? <Sleeps sleeps={battery.sleeps} /> : null}
       <section className="batt-savers" aria-labelledby="batt-savers-h">
         <h3 id="batt-savers-h" className="label">Make it last longer</h3>
         {battery.savers.length ? (
@@ -61,5 +63,37 @@ function Saver({ saver }: { saver: BatterySaver }) {
   return (
     <Row name={saver.title} title={saver.title} meta={saver.meta}
       action={<button className="btn ghost sm" type="button" aria-label={`Review: ${saver.title}`} disabled={reading} onClick={open}>{reading ? "Reading settings…" : "Review"}</button>} />
+  );
+}
+
+/** The last week's sleeps on battery, newest first: how long, how much each used, and for one that used a lot, what woke it. */
+function Sleeps({ sleeps }: { sleeps: SleepView[] }) {
+  const now = Date.now();
+  return (
+    <section className="batt-sleeps" aria-labelledby="batt-sleeps-h">
+      <h3 id="batt-sleeps-h" className="label">While asleep</h3>
+      <Rows label="Recent sleeps on battery" timeline>
+        {sleeps.map((s) => <SleepRow key={s.from} sleep={s} now={now} />)}
+      </Rows>
+    </section>
+  );
+}
+
+function SleepRow({ sleep: s, now }: { sleep: SleepView; now: number }) {
+  const { ask } = useApp();
+  const word = useMachineWord();
+  const when = sleepWhen(s, now);
+  const title = sleepTitle(s);
+  const cause = s.heavy ? sleepCause(s, word) : null;
+  return (
+    <Row name={`${when}, ${title}`} time={when} at={new Date(s.from).toISOString()} mark={s.heavy ? "look" : "dot"}
+      title={title} tag={s.heavy && <span className="chip warn">Used a lot</span>} meta={sleepMeta(s)}
+      details={s.heavy ? (
+        <>
+          <p>That's {perHourText(s.perHour)}, where under 1% is usual.{cause ? ` ${cause.what}` : ""}</p>
+          {cause && <p className="muted">{cause.next}</p>}
+          {cause && <button className="btn ghost sm batt-ask" type="button" onClick={() => ask(cause.ask)}>Ask about it</button>}
+        </>
+      ) : undefined} />
   );
 }
