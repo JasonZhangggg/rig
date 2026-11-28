@@ -38,11 +38,21 @@ export interface MachineRow {
 
 type Row = Selectable<RigTables["machine"]>;
 
-const iso = (d: Date | string | null) => (d == null ? null : new Date(d).toISOString());
+/** The parts of a PC's row a route can ask for. Each is one column; identity brings when it changed too. The id and sync time always come. */
+export type MachinePart = "view" | "inventory" | "facts" | "changes" | "games" | "events" | "identity";
+const partColumns = {
+  view: ["view"], inventory: ["inventory"], facts: ["facts"], changes: ["changes"], games: ["games"], events: ["events"], identity: ["identity", "identity_at"],
+} as const satisfies Record<MachinePart, readonly (keyof Row)[]>;
+const allParts = Object.keys(partColumns) as MachinePart[];
+/** A PC's row with only the parts asked for: a route that lists changes doesn't read the 100 KB of events beside them. */
+export type MachineParts<P extends MachinePart> = Pick<MachineRow, "id" | "syncedAt" | P | (P extends "identity" ? "identityAt" : never)>;
+const columnsFor = (parts: readonly MachinePart[]) => ["id", "synced_at", ...new Set(parts.flatMap((p) => partColumns[p]))] as (keyof Row)[];
+
+const iso = (d: Date | string | null | undefined) => (d == null ? null : new Date(d).toISOString());
 /** A reading as a whole number, or null when it's missing or isn't a finite number. */
 const whole = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? null : Math.round(v));
 
-function fromRow(r: Row): MachineRow {
+function fromRow(r: Pick<Row, "id" | "synced_at"> & Partial<Row>): MachineRow {
   return {
     id: r.id, view: r.view as PC, inventory: (r.inventory as Inventory | null) ?? null, facts: (r.facts as SystemFacts | null) ?? null,
     changes: ((r.changes as StoredChange[] | null) ?? []).map(changeOf), games: (r.games as Game[]) ?? [], identity: (r.identity as Identity) ?? {},
@@ -51,7 +61,7 @@ function fromRow(r: Row): MachineRow {
 }
 
 /** The view the website shows: the PC's last upload with the account's name and color on top. */
-export function present(m: MachineRow, now = Date.now()): PC {
+export function present(m: MachineParts<"view" | "identity">, now = Date.now()): PC {
   const seen = Date.parse(m.syncedAt);
   const id = Object.fromEntries(Object.entries(m.identity).filter(([, v]) => v != null)) as Identity;
   return { ...m.view, ...id, id: m.id, lastSync: m.syncedAt, seenAt: m.view.seenAt ?? m.syncedAt, online: now - seen < ONLINE_MS };
@@ -81,20 +91,21 @@ export type BoardLayoutRow = Omit<Selectable<RigTables["board_layouts"]>, "start
 export class Store {
   constructor(private db: DB) {}
 
-  async machines(userId: string): Promise<MachineRow[]> {
-    const rows = await this.db.selectFrom("machine").selectAll().where("user_id", "=", userId).orderBy("synced_at", "desc").execute();
-    return rows.map(fromRow);
+  async machines<P extends MachinePart = MachinePart>(userId: string, parts: readonly P[] = allParts as P[]): Promise<MachineParts<P>[]> {
+    const rows = await this.db.selectFrom("machine").select(columnsFor(parts)).where("user_id", "=", userId).orderBy("synced_at", "desc").execute();
+    return rows.map((r) => fromRow(r as Pick<Row, "id" | "synced_at"> & Partial<Row>));
   }
 
-  async machine(userId: string, id: string): Promise<MachineRow | null> {
-    const r = await this.db.selectFrom("machine").selectAll().where("user_id", "=", userId).where("id", "=", id).executeTakeFirst();
-    return r ? fromRow(r) : null;
+  /** One PC on the account with the parts asked for (all of them when none are named), or null. */
+  async machine<P extends MachinePart = MachinePart>(userId: string, id: string, parts: readonly P[] = allParts as P[]): Promise<MachineParts<P> | null> {
+    const r = await this.db.selectFrom("machine").select(columnsFor(parts)).where("user_id", "=", userId).where("id", "=", id).executeTakeFirst();
+    return r ? fromRow(r as Pick<Row, "id" | "synced_at"> & Partial<Row>) : null;
   }
 
   /** Saves an upload. The identity changed most recently, here or on the web, wins. */
   async sync(userId: string, id: string, s: MachineSync, now = new Date()): Promise<{ identity: Identity; identityAt?: string; recordings: { start: RecordingRequest[]; stop: string[] } }> {
     return this.db.transaction().execute(async (trx) => {
-      const old = await new Store(trx).machine(userId, id);
+      const old = await new Store(trx).machine(userId, id, ["identity"]);
       const keepOld = old?.identityAt && (!s.identityAt || Date.parse(old.identityAt) >= Date.parse(s.identityAt));
       const identity = keepOld ? old!.identity : s.identity ?? {};
       const identityAt = keepOld ? old!.identityAt! : s.identityAt ? new Date(s.identityAt).toISOString() : null;
@@ -350,7 +361,7 @@ export class Store {
 
   /** Website rename, new color or "I cleaned it today". */
   async rename(userId: string, id: string, patch: Identity, now = new Date()): Promise<boolean> {
-    const m = await this.machine(userId, id);
+    const m = await this.machine(userId, id, ["identity"]);
     if (!m) return false;
     await this.db.updateTable("machine").set({ identity: JSON.stringify({ ...m.identity, ...patch }), identity_at: now })
       .where("user_id", "=", userId).where("id", "=", id).execute();
