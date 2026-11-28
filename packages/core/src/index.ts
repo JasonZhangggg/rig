@@ -2,6 +2,7 @@ export * from "./model";
 export * from "./telemetry";
 export * from "./drives";
 export * from "./roomForGames";
+export * from "./freeSpace";
 export * from "./actions";
 export * from "./startup";
 export * from "./change";

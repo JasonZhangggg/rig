@@ -25,6 +25,7 @@ import { checkRead, READ_LIMITS, type PcRead, type PcReadResult, type PcReadSpec
 import { isLook, lookText, screenLookReply, type ScreenLook } from "./screen";
 import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, type PCEvent, type ProcessUse, type RawEvent, type Recording, type RecordingInfo, type RecordingRequest } from "./recordings";
 import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry";
+import { cleanSizes, playedFrom, type CleanupRead, type CleanupSizes } from "./freeSpace";
 import type { NetworkCheckReply, NetworkCheckState } from "./network";
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
@@ -50,6 +51,8 @@ export interface HelperLink {
    * or now when `fresh`. Answers at once. Read-only; missing on helpers before 0.1.8.
    */
   storage?(fresh?: boolean): Promise<StorageScan>;
+  /** How much the usual safe-to-clear places hold now. Read-only, answers within a few seconds, and never throws for a place it can't read. Missing on older helpers. */
+  cleanupSizes?(): Promise<CleanupSizes>;
   /**
    * The connection check: `start` begins one on the helper's own thread (unless one is running) and answers at once, so
    * readings keep coming while it pings; later calls say whether it's still running, and give the last one it finished.
@@ -212,6 +215,7 @@ export class LocalClient implements RigClient {
     if (!cloud?.signInWithBrowser) (this as Partial<Record<"signInWithBrowser", unknown>>).signInWithBrowser = undefined;
     if (!cloud) (this as Partial<Record<"deleteAccount", unknown>>).deleteAccount = undefined;
     if (!link.storage) (this as Partial<Record<"measureDrives", unknown>>).measureDrives = undefined;
+    if (!link.cleanupSizes) (this as Partial<Record<"cleanupSizes", unknown>>).cleanupSizes = undefined;
   }
 
   /** This PC's id, from the helper's inventory (a hash of Windows' machine id). */
@@ -649,6 +653,13 @@ export class LocalClient implements RigClient {
     if (!(await this.isLocal(id))) throw new Error("Open Rig on that PC to measure its drives.");
     await this.readStorage(this.o.now(), true);
     this.emit();
+  }
+
+  async cleanupSizes(id: string): Promise<CleanupRead> {
+    if (!(await this.isLocal(id))) throw new Error("Open Rig on that PC to see what's safe to clear there.");
+    const sizes = cleanSizes(await this.link.cleanupSizes!());
+    // The whole history this PC keeps (90 days), so a game can be called unplayed only when the history reaches back that far.
+    return { sizes, ...playedFrom(await this.store.history(0)) };
   }
 
   /** Reads what the background recorder added since the last read, at most once a minute (on every call while its first read runs). */

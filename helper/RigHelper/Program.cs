@@ -43,6 +43,7 @@ public static class Program
             }
             var problems = SelfChecks(all, weekAgo).ToList();
             problems.AddRange(StorageScan.SelfChecks());
+            problems.AddRange(Cleanup.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
             // Updates, virus protection, the firewall and backup, read in full (a facts request may answer before the first read is done).
             try
@@ -378,6 +379,7 @@ public class Handler(Sensors hw, int? appPid = null)
         "events" => Json.From(EventLogs.Read((long)Json.Num(p?["sinceMs"], 0), (int)Json.Num(p?["max"], EventLogs.MaxEvents))),
         "processes" => Json.From(Processes.Top((int)Json.Num(p?["top"], 8))),
         "storage" => StorageScan.Read(p?["fresh"] is JsonValue fresh && fresh.TryGetValue(out bool f) && f),
+        "cleanup.sizes" => Cleanup.Sizes(owner),
         "network" => NetworkCheck.Read(p?["start"] is JsonValue start && start.TryGetValue(out bool s) && s),
         "fix.read" => Steps.Read(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),
         "apply" => Steps.Apply(p?["call"] as JsonObject ?? throw new RigException("No change was given.")),

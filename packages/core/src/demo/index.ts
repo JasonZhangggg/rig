@@ -22,7 +22,8 @@ import { checkRequest, cleanEvents, limitsOf, toInfo, toRequest, type Recording,
 import { demoBackground } from "./background";
 import { isBackground } from "../background";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
-import { demoScan } from "./storage";
+import { demoCleanup, demoScan } from "./storage";
+import type { CleanupRead } from "../freeSpace";
 import { demoNetwork } from "./network";
 import type { NetworkCheckReply } from "../network";
 import { DemoManuals } from "./manualShelf";
@@ -181,6 +182,15 @@ export class DemoClient implements RigClient {
   private emit(id: string) { this.listeners.get(id)?.forEach((cb) => cb(this.view(id))); }
 
   /** Measures the demo drives again: running for a few seconds, then the same sizes, measured just now. */
+  /** The demo's safe-to-clear places. Storage Sense reads as on once the demo's own card for it was applied and not undone. */
+  async cleanupSizes(machineId: string): Promise<CleanupRead> {
+    const p = this.pcs[machineId];
+    if (!p) throw new Error("Open Rig on that PC to see what's safe to clear there.");
+    await sleep(300 * DemoClient.pace);
+    const on = p.inv.machine.kind === "laptop" || p.changes.some((c) => c.status === "applied" && c.applied.some((a) => a.undo.kind === "command" && a.undo.id === "undo-storageSense"));
+    return demoCleanup(p.inv, Date.now(), on);
+  }
+
   async measureDrives(machineId: string) {
     const p = this.pcs[machineId];
     if (!p) throw new Error("Open Rig on that PC to measure its drives.");

@@ -50,6 +50,8 @@ export interface Issue {
   go: Route;
   /** A question to start the chat with when the issue is opened. */
   ask?: string;
+  /** The tab of the part to open on My PC, when it's not the usual one. "drives" opens the storage map at Free up space. */
+  tab?: string;
   /** A dialog that opening the issue shows, in place of the chat or a page: startup, the startup apps list. */
   open?: "startup";
   /** A change that fixes it, shown for review before anything happens. */
