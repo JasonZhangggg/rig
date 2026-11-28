@@ -25,7 +25,7 @@ import { demoSleepLog } from "./battery";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
 import { checkRequest, cleanEvents, cleanProcesses, limitsOf, toInfo, toRequest, type Recording, type RecordingInfo } from "../recordings";
-import { cardChip } from "../limits";
+import { cardChip, mainDrive } from "../limits";
 import { demoBackground } from "./background";
 import { isBackground } from "../background";
 import { DEMO_RECORDING_ID, demoConversation, demoEvents, demoProcesses, demoRecording } from "./logs";
@@ -314,7 +314,7 @@ export class DemoClient implements RigClient {
       let point = kept.get(from);
       if (!point) {
         const dust = p.dust * Math.max(0, 1 - (this.born - from) / rangeMs["30d"]);
-        const w = new HistoryWindow(from, cardChip(p.inv));
+        const w = new HistoryWindow(from, cardChip(p.inv), mainDrive(p.inv)?.model);
         for (const at of sampled(from)) w.add(simulate(p.inv, at, { dust }));
         if (w.onBattery) for (const at of sampled(from)) w.addApps(demoProcesses(p.inv, at));
         kept.set(from, point = w.point());

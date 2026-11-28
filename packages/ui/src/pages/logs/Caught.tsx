@@ -1,7 +1,7 @@
 // A recording that caught a problem: what happened and its most likely cause first, then the temperature it followed
 // against the game's usual range, what the recording rules out, and what to do. The figures come from caughtProblem.
 import { useMemo, useState } from "react";
-import { RECORD_HOT_MARGIN, smoothed, toUnit, type Caught, type RecordingInfo, type RecordingSample } from "@rig/core";
+import { graphicsWord, RECORD_HOT_MARGIN, smoothed, toUnit, type Caught, type RecordingInfo, type PC, type RecordingSample } from "@rig/core";
 import { Row, Rows } from "../../components/Rows";
 import { useActions, useData, useStillPC, useTemp, useTempText, useTempUnit } from "../../state";
 import { useWidth } from "./Lanes";
@@ -29,13 +29,13 @@ export function CaughtLead({ caught }: { caught: Caught }) {
 }
 
 /** The part's temperature over the recording, with the game's usual range shaded, the stretch above it in rust and the moment marked. */
-export function CaughtChart({ samples, caught, limit, minutes }: { samples: RecordingSample[]; caught: Caught; limit?: number; minutes: number }) {
+export function CaughtChart({ samples, caught, limit, minutes, kind }: { samples: RecordingSample[]; caught: Caught; limit?: number; minutes: number; kind?: PC["kind"] }) {
   const [ref, w] = useWidth<HTMLDivElement>(860);
   const unit = useTempUnit();
   const temp = useTemp();
   const compact = w < 560 || isPhone();
   const part = caught.part;
-  const name = part === "gpu" ? "Graphics card" : "Processor";
+  const name = part === "gpu" ? graphicsWord(kind) : "Processor";
   const usualText = caught.usualAt ? `Your normal in ${caught.usualAt.game}, ${temp(caught.usualAt.lo, { mark: "none" })} to ${temp(caught.usualAt.hi)}` : null;
   return (
     <section className="card card-pad cg-chart" aria-labelledby="cg-chart-h">

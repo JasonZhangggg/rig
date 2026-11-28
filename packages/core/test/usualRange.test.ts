@@ -14,10 +14,10 @@ describe("usualRange", () => {
   const rest = windows(2 * DAY, [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 60]);
   const games = windows(DAY, [70, 72, 74, 74, 75, 76, 77, 78, 79, 86], playing("Cyberpunk 2077"));
 
-  it("gives the middle of the week's busy and resting readings, leaving out the odd spike", () => {
+  it("gives the middle half of the week's busy and resting readings, leaving out the odd spike", () => {
     const r = usualRange([...rest, ...games], "gpu", NOW);
     expect(r.busy).toEqual({ low: 74, high: 78, count: 10 });
-    expect(r.resting).toEqual({ low: 42, high: 48, count: 11 });
+    expect(r.resting).toEqual({ low: 43, high: 48, count: 11 });
     expect(r.gaming).toBe(true);
     expect(r.peak).toEqual({ temp: 86, at: games[9].t, game: "Cyberpunk 2077" });
   });

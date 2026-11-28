@@ -6,6 +6,7 @@
 import type { DriveFill, DriveMap, Severity } from "./model";
 import type { Disk, FillKind, Inventory, Snapshot, StorageScan, Volume } from "./telemetry";
 import { WEAR_CRITICAL, WEAR_LOW } from "./diagnose";
+import { driveTemp } from "./limits";
 
 export const fillLabel: Record<DriveFill["kind"], string> = {
   windows: "Windows", apps: "Apps", games: "Games", files: "Your files", system: "Page and sleep files", other: "Other", free: "Free",
@@ -92,8 +93,7 @@ function unknownOf(d: Disk): string[] {
 
 /** The drive's own temperature now: its main sensor when it names one. */
 function tempOf(d: Disk, snap: Snapshot | null | undefined): number | undefined {
-  const mine = (snap?.sensors ?? []).filter((x) => x.hw === "storage" && x.type === "temperature" && x.value != null && x.hwName.trim().toLowerCase() === d.model.trim().toLowerCase());
-  const s = mine.find((x) => /^(composite |)temperature$/i.test(x.name)) ?? mine[0];
+  const s = driveTemp(snap, d.model);
   return s?.value == null ? undefined : Math.round(s.value);
 }
 

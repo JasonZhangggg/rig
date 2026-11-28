@@ -170,7 +170,9 @@ describe("each part's readings", () => {
     const read = (s: typeof quiet, hw: string, type: string, name: RegExp) => s.sensors.find((x) => x.hw === hw && x.type === type && name.test(x.name))!.value!;
     expect(p.cpuLoad).toBe(Math.round((read(quiet, "cpu", "load", /total/i) + read(flat, "cpu", "load", /total/i)) / 2));
     expect(p.mem).toBe(Math.round((read(quiet, "memory", "load", /^memory$/i) + read(flat, "memory", "load", /^memory$/i)) / 2));
-    expect(p.drive).toBe(Math.round(Math.max(...flat.sensors.filter((x) => x.hw === "storage" && x.type === "temperature").map((x) => x.value!))));
+    // The drive's own temperature, as its page shows it, not the hottest of its sensors.
+    expect(p.drive).toBe(Math.round(Math.max(read(quiet, "storage", "temperature", /^temperature$/i), read(flat, "storage", "temperature", /^temperature$/i))));
+    expect(p.drive).toBeLessThan(Math.round(Math.max(...flat.sensors.filter((x) => x.hw === "storage" && x.type === "temperature").map((x) => x.value!))));
     expect(p.board).toBe(Math.round(read(flat, "board", "temperature", /system/i)));
     expect(new HistoryWindow(0).point()).toMatchObject({ cpuLoad: null, gpuLoad: null, mem: null, drive: null, board: null });
   });
@@ -178,7 +180,7 @@ describe("each part's readings", () => {
   it("reads the PC as it is now in the shape of a history point, for the live charts", () => {
     const pc = buildPC(atlas(), simulate(atlas(), at3am), facts());
     const p = livePoint(pc, 5);
-    expect(p).toMatchObject({ t: 5, cpu: pc.parts!.cpu.temp, gpu: pc.parts!.gpu.temp, cpuLoad: pc.parts!.cpu.load, mem: pc.parts!.ram.load, board: pc.parts!.motherboard.temp });
+    expect(p).toMatchObject({ t: 5, cpu: pc.parts!.cpu.temp, gpu: pc.parts!.gpu.temp, cpuLoad: pc.parts!.cpu.load, mem: pc.parts!.ram.load, board: pc.parts!.motherboard.temp, drive: pc.parts!.ssd.temp });
     expect(p.fan).toBe(Math.max(...pc.readings!.filter((r) => r.part === "fans").map((r) => Math.round(r.value!))));
     expect(livePoint({ ...pc, parts: {}, readings: [] }, 5)).toMatchObject({ cpu: null, gpu: null, fan: null, mem: null });
   });

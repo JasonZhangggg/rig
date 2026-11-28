@@ -2,7 +2,7 @@
 // shop feed, and a made-up price is worse than none.
 
 import type { Upgrade } from "./model";
-import { solderedMemory } from "./shop";
+import { builtInWords, solderedMemory } from "./shop";
 import type { Inventory } from "./telemetry";
 
 export function suggestUpgrades(inv: Inventory): Upgrade[] {
@@ -14,7 +14,8 @@ export function suggestUpgrades(inv: Inventory): Upgrade[] {
   // Memory. Soldered memory takes no sticks, whatever slot count Windows reports.
   const soldered = solderedMemory(inv);
   if (soldered === "likely") {
-    out.push({ part: "Memory", fit: "check", title: "Memory may be soldered", detail: "Most thin laptops have memory built into the board. Rig will check your model's service guide.", gain: "", price: "" });
+    // The same fact Upgrades gives (builtInWords), so the two never disagree.
+    out.push({ part: "Memory", fit: "check", title: `Memory is ${builtInWords("likely")}`, detail: "Most thin laptops take no memory sticks. Its manual says for sure.", gain: "", price: "" });
   } else if (!soldered && m.slotsTotal && m.modules.length < m.slotsTotal) {
     const first = m.modules[0];
     const free = m.slotsTotal - m.modules.length;

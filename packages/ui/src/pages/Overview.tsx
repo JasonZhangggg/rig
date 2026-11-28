@@ -157,7 +157,7 @@ export function Overview() {
       case "safety": return <SafetyWidget {...props} />;
       case "temps": return (
         <TempsCard
-          temps={week?.temps ?? null} name={pc.name} style={w.style as TempsStyle} days={Number(o.days)} compact={compact}
+          temps={week?.temps ?? null} name={pc.name} kind={pc.kind} style={w.style as TempsStyle} days={Number(o.days)} compact={compact}
           show={{ idle: o.idle !== false, typical: o.typical !== false, peak: o.peak !== false }} figure={o.figure !== false} legend={o.legend !== false}
         />
       );

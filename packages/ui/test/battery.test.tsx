@@ -29,7 +29,7 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     expect(screen.getByText("Charge")).toBeTruthy();
     expect(screen.getByText("58%")).toBeTruthy();
     expect(screen.getByText("Left on battery")).toBeTruthy();
-    expect(screen.getByText("at this rate")).toBeTruthy();
+    expect(screen.getByText("at the last hour's rate")).toBeTruthy();
     expect(screen.getByText(/^Went from 100% to 58% in 2 h [12]0 min\. The fastest drop was .+, while (Teams and Chrome|Chrome and Teams) were busy\./)).toBeTruthy();
     expect(within(savers()).getAllByRole("listitem").map((li) => li.querySelector(".row-title")!.textContent)).toEqual([
       "Turn off processor boost on battery", "Turn the screen off after 5 minutes on battery", "Sleep after 15 minutes on battery", "Stop charging at 80%",
@@ -165,13 +165,13 @@ describe("How much battery each sleep used", { timeout: 25000 }, () => {
     expect(await screen.findByText(/^My laptop woke 14 times overnight for its Wi-Fi adapter \(MediaTek Wi-Fi 7 MT7925\) and used 39% of its battery asleep\./)).toBeTruthy();
   });
 
-  it("says so on Home, in Things to look at and on the battery's row", async () => {
+  it("says so on Home in Things to look at, once", async () => {
     location.hash = "";
     localStorage.setItem("rig.pc", "demo-comet");
     render(<RigApp client={new DemoClient()} />);
     const todo = within((await screen.findByText("Things to look at", undefined, { timeout: 10000 })).closest("section")!);
     expect(await todo.findByText("Used 39% of the battery asleep last night")).toBeTruthy();
-    expect(screen.getByText("Used 39% asleep last night")).toBeTruthy();
+    expect(screen.queryByText("Used 39% asleep last night")).toBeNull();
   });
 
   it("shows the other laptop's ordinary week calmly, with nothing flagged", async () => {

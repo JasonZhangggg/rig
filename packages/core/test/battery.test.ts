@@ -28,11 +28,11 @@ describe("reading the battery", () => {
 });
 
 describe("time left", () => {
-  it("says how long it lasts at the rate it's going, and the last hour's average when that's quite different", () => {
+  it("gives one time left: at the last hour's average when there is one, else at the rate it's going", () => {
     expect(timeLeft({ level: 58, state: "discharging", watts: 11 }, 66.8)).toEqual({ text: "About 3 h 30 min left at this rate", figure: "3 h 30 min", label: "Left on battery", basis: "at this rate" });
-    expect(timeLeft({ level: 58, state: "discharging", watts: 11 }, 66.8, 16)?.note).toBe("At the last hour's average it would last about 2 h 30 min");
-    // Close to the rate now: nothing more to say.
-    expect(timeLeft({ level: 58, state: "discharging", watts: 11 }, 66.8, 11.5)?.note).toBeUndefined();
+    // The rate this second jumps with every app that wakes, so the hour's average leads once it's known, and alone.
+    expect(timeLeft({ level: 58, state: "discharging", watts: 11 }, 66.8, 16)).toEqual({ text: "About 2 h 30 min left at the last hour's rate", figure: "2 h 30 min", label: "Left on battery", basis: "at the last hour's rate" });
+    expect(timeLeft({ level: 58, state: "discharging", watts: 11 }, 66.8, 11.5)?.figure).toBe("3 h 20 min");
     expect(timeLeft({ level: 8, state: "discharging", watts: 12 }, 66.8)?.text).toBe("About 25 min left at this rate");
   });
 
@@ -161,7 +161,7 @@ describe("the battery in history and on the PC view", () => {
     expect(p.battery).toMatchObject({ level: 58, state: "discharging", time: { label: "Left on battery" } });
     expect(p.battery!.watts).toBeGreaterThan(9);
     expect(p.battery!.watts).toBeLessThan(14);
-    expect(p.battery!.time!.text).toMatch(/^About \d+ h( \d+ min)? left at this rate$/);
+    expect(p.battery!.time!.text).toMatch(/^About \d+ h( \d+ min)? left at the last hour's rate$/);
     expect(p.battery!.story).toMatch(/^Went from 100% to 58% in 2 h [12]0 min\. The fastest drop was .+, while (Teams and Chrome|Chrome and Teams) were busy\.$/);
     expect(p.battery!.savers.map((s) => s.id)).toEqual(["boost", "screen", "sleep"]);
   });

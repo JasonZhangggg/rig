@@ -145,7 +145,7 @@ describe("why a laptop is slow or loud", () => {
 
   it("says the processor is working at its limit as built, after what keeps it busy", () => {
     const a = ask(reading({ cpu: 100, load: 95 }));
-    expect(a.headline).toBe("Fans are loud because Blender is keeping the processor at 95%, and it's at its 100°C limit.");
+    expect(a.headline).toBe("The fans are loud. Here's why.");
     const lim = a.causes.find((c) => c.id === "cpu-limit")!;
     expect(lim.title).toBe("Processor is working at its 100°C limit");
     expect(lim.why).toBe("Laptop processors are built to run up to their limit under load. There they slow down a little to stay safe, which is called throttling, and the fans run fast. That's normal.");
@@ -164,7 +164,7 @@ describe("why a laptop is slow or loud", () => {
   it("names a laptop's causes when it's hot at rest", () => {
     const a = ask(reading({ cpu: 100, load: 6 }));
     expect(a.causes[0].id).toBe("cpu-hot-rest");
-    expect(a.headline).toBe("Fans are loud, likely because the processor is hot while barely working, which points at the cooling.");
+    expect(a.headline).toBe("The fans are loud. Here's the likely reason.");
     expect(a.causes[0].why).toMatch(/dust in the fan, vents blocked by a soft surface, or a fan that stopped/);
     expect(words(a)).not.toMatch(DESKTOP_ONLY);
   });

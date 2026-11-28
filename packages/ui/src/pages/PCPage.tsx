@@ -259,7 +259,7 @@ function PartDetail({ id, ups }: { id: string; ups: PCUpgrades }) {
   const tab = tabs.some(([t]) => t === ui.tab) ? ui.tab : tabs[0][0];
   return (
     <div className="part-detail">
-      <Readings part={part} id={id} />
+      <Readings part={part} id={id} tab={tab} />
       <div className="tabs" role="tablist" aria-label={`${part.name} details`} onKeyDown={arrowKeys("tab")}>
         {tabs.map(([t, l]) => <button key={t} type="button" role="tab" aria-selected={tab === t} tabIndex={tab === t ? 0 : -1} onClick={() => set({ tab: t })}>{l}</button>)}
       </div>
@@ -348,7 +348,7 @@ function DetailTab({ part, id, tab }: { part: Part; id: string; tab: string }) {
 }
 
 /** What the part is doing now, as numbers you can read from across the room, and anything about it that needs you. */
-function Readings({ part, id }: { part: Part; id: string }) {
+function Readings({ part, id, tab }: { part: Part; id: string; tab?: string }) {
   const { pc } = useApp();
   const temp = useTemp();
   const unit = useTempUnit();
@@ -385,12 +385,14 @@ function Readings({ part, id }: { part: Part; id: string }) {
   if (part.clock) tiles.push(<div key="c" className="live"><span className="label">Clock</span><span className="big">{part.clock}</span></div>);
   if (part.fan) tiles.push(<div key="f" className="live"><span className="label">Fan</span><span className="big">{part.fan.toLocaleString()} rpm</span></div>);
   if (id === "battery" && pc.battery) tiles.push(...batteryTiles(pc.battery));
+  // What needs a look, said over the tabs, unless the open tab is the one that finding points to and says it in full there.
+  const issue = pc.issues?.find((i) => i.part === id);
   return (
     <>
       {tiles.length > 0 && <div className="live-grid">{tiles}</div>}
-      {part.warn && (
+      {part.warn && !(issue?.tab && issue.tab === tab) && (
         <div className="callout warn part-warn">
-          <span>{inUnit(pc.issues?.find((i) => i.part === id)?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</span>
+          <span>{inUnit(issue?.title ?? `${temp(part.temp)}, ${limitWords(part.temp, part.limit, unit)}.`)}</span>
           <a className="btn ghost sm" href="#chat">Ask what to do</a>
         </div>
       )}

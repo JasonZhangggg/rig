@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { caughtProblem, isActive, limitsOf, logTitle, recorded, summarise, type HistoryPoint, type PCEvent, type Recording, type RecordingInfo, type RecordingSummary } from "@rig/core";
+import { caughtProblem, graphicsWord, isActive, limitsOf, logTitle, recorded, summarise, type HistoryPoint, type PCEvent, type Recording, type RecordingInfo, type RecordingSummary } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
 import { useActions, useData, useHistory, useMachineWord, useStillPC, useTemp, useTempText } from "../../state";
@@ -62,7 +62,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const [stopping, setStopping] = useState(false);
   const stop = () => { setStopping(true); void stopRecording(info.id).finally(() => setStopping(false)); };
   const chip = pc.parts?.gpu?.chip;
-  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec, chip) : null), [rec, chip]);
+  const all = useMemo(() => (rec?.sensors?.length ? recorded(rec, chip, pc.kind) : null), [rec, chip, pc.kind]);
   const start = info.startedAt, end = info.finishedAt ?? info.endsAt ?? info.startedAt;
   const kind = info.id.startsWith("bg-a-") ? "Closer look" : info.background ? "Background log" : info.by === "rig" ? "Recording Rig started" : "Recording you started";
   const title = caught ? caught.title : info.state === "done" || info.state === "cancelled" ? logTitle(info) : info.reason;
@@ -73,7 +73,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
       const st = stat(k);
       if (!st) continue;
       const limit = limits[k];
-      figs.push({ label: k === "gpu" ? "Graphics card" : "Processor", v: temp(st.max), note: limit != null ? `limit ${temp(limit)}` : `at ${clock(st.maxAt)}`, look: limit != null && st.max >= limit - 6 });
+      figs.push({ label: k === "gpu" ? graphicsWord(pc.kind) : "Processor", v: temp(st.max), note: limit != null ? `limit ${temp(limit)}` : `at ${clock(st.maxAt)}`, look: limit != null && st.max >= limit - 6 });
     }
     if (top) figs.push({ label: "Busiest app", v: top.name.replace(/\.exe$/i, ""), text: true, note: `${top.cpuAvg}% CPU · ${gb(top.memMaxMb)}` });
     figs.push({ label: "Windows events", v: String(rec?.events.length ?? 0) });
@@ -103,7 +103,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
       {rec === undefined || (caught && history === null) ? <p className="muted">Loading the recording…</p> : !rec || !sum ? <p className="muted">Rig couldn't load this recording. Go back to Logs and open it again.</p> : caught ? (
         <>
           <CaughtLead caught={caught} />
-          <CaughtChart samples={rec.samples} caught={caught} limit={limits[caught.part]} minutes={sum.minutes} />
+          <CaughtChart samples={rec.samples} caught={caught} limit={limits[caught.part]} minutes={sum.minutes} kind={pc.kind} />
           <div className="cg-lower">
             <CaughtChecks caught={caught} />
             <CaughtTodo caught={caught} info={info} />
@@ -139,7 +139,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
                 <h2>Temperatures</h2>
                 <div className="legend">
                   {hasGpu && <span><i className="lg-cpu" />Processor</span>}
-                  <span><i className="lg-gpu" />{hasGpu ? "Graphics card" : "Processor"}</span>
+                  <span><i className="lg-gpu" />{hasGpu ? graphicsWord(pc.kind) : "Processor"}</span>
                   {mainLimit != null && <span><i className="lg-limit" />Safe limit</span>}
                 </div>
               </div>
@@ -174,6 +174,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
 /** The busiest apps and what Windows logged, behind a toggle at the foot of a recording's page. */
 function MoreAbout({ rec, sum, active }: { rec: Recording; sum: RecordingSummary; active: boolean }) {
   const [more, setMore] = useState(false);
+  const pc = useStillPC();
   return (
     <section className="lg-all" aria-labelledby="rec-more-h">
       <h2 id="rec-more-h" className="lg-h">
@@ -188,7 +189,7 @@ function MoreAbout({ rec, sum, active }: { rec: Recording; sum: RecordingSummary
               <section className="rec-apps">
                 <h2>Busiest apps</h2>
                 <table className="kv rec-table">
-                  <thead><tr><th>App</th><th>Processor, typical</th><th>Processor, highest</th><th>Memory, most</th>{sum.offenders.some((o) => o.gpuMax != null) && <th>Graphics card, highest</th>}</tr></thead>
+                  <thead><tr><th>App</th><th>Processor, typical</th><th>Processor, highest</th><th>Memory, most</th>{sum.offenders.some((o) => o.gpuMax != null) && <th>{graphicsWord(pc.kind)}, highest</th>}</tr></thead>
                   <tbody>
                     {sum.offenders.map((o) => (
                       <tr key={o.name}><td>{o.name}</td><td className="num">{o.cpuAvg}%</td><td className="num">{o.cpuMax}%</td><td className="num">{gb(o.memMaxMb)}</td>{sum.offenders.some((x) => x.gpuMax != null) && <td className="num">{o.gpuMax != null ? `${o.gpuMax}%` : "–"}</td>}</tr>

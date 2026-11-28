@@ -126,7 +126,7 @@ export const UpgradesTab = memo(function UpgradesTab({ ups }: { ups: PCUpgrades 
               </li>
             ))}
           </ul>
-          {closed.length > 0 && <p className="faint shop-closed">Built into {pc.name}'s board, so not upgradable: {andList(closed.map((s) => closedWord[s.key]!))}.</p>}
+          {closed.length > 0 && <p className="faint shop-closed">Built into {pc.name}'s board, so not upgradable: {andList(closed.map((s) => (s.key === "memory" && facts.memory.soldered === "likely" ? "memory (most likely)" : closedWord[s.key]!)))}.</p>}
           <button type="button" className="shop-rail-list" aria-current={cat === "list" ? "true" : undefined} onClick={() => pick("list")}>
             <span className="shop-rail-l">Your list</span>
             <span className="shop-rail-have">{count ? `${count} ${count === 1 ? "part" : "parts"}, ${money(total)}` : "Nothing yet"}</span>

@@ -71,6 +71,32 @@ export function cardChip(inv: Pick<Inventory, "gpus" | "machine">): string | und
   return inv.gpus.length > 1 ? graphicsCard(inv)?.name : undefined;
 }
 
+/** The drive Rig shows as the PC's drive, on Home, its own page and in Logs: its first NVMe drive, or its first drive. */
+export function mainDrive<D extends Inventory["disks"][number]>(inv: { disks: readonly D[] }): D | undefined {
+  return inv.disks.find((d) => d.media === "nvme") ?? inv.disks[0];
+}
+
+/**
+ * A drive's own temperature: the sensor the drive itself calls its temperature (an NVMe drive's composite, the one its
+ * slow-down point is set against), else its first. Never the hottest of its sensors, which is often the controller's.
+ */
+export function driveTemp(s: Snapshot | null | undefined, model: string): Sensor | undefined {
+  const key = model.trim().toLowerCase();
+  const mine = (s?.sensors ?? []).filter((x) => x.hw === "storage" && x.type === "temperature" && x.value != null && x.hwName.trim().toLowerCase() === key);
+  return mine.find((x) => /^(composite |)temperature$/i.test(x.name)) ?? mine[0];
+}
+
+/**
+ * The one temperature Rig gives the PC's drive, everywhere it gives one: Home, the drive's own page, Logs and the
+ * recorded history. `model` is mainDrive's; when its sensors go by another name, the first drive that reports one.
+ */
+export function mainDriveTemp(s: Snapshot | null | undefined, model: string | undefined): Sensor | undefined {
+  const own = model ? driveTemp(s, model) : undefined;
+  if (own) return own;
+  const first = s?.sensors.find((x) => x.hw === "storage" && x.type === "temperature" && x.value != null);
+  return first && driveTemp(s, first.hwName);
+}
+
 /** The graphics card's temperature. With `chip` (cardChip), that chip's own; nothing when it has none, never another chip's. */
 export const gpuTemp = (s: Snapshot | null, chip?: string) =>
   pickSensor(s, "gpu", "temperature", [/^gpu core$/i, /^gpu$/i, /edge/i, /core/i], NOT_GPU, chip);

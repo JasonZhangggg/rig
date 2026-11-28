@@ -5,7 +5,7 @@ import { readBattery } from "./battery";
 import { cpuTemp, gpuTemp } from "./health";
 import type { HistoryPoint } from "./model";
 import type { ProcessUse } from "./recordings";
-import { gpuLoad } from "./limits";
+import { gpuLoad, mainDriveTemp } from "./limits";
 import { findSensor, type Snapshot } from "./telemetry";
 
 const max = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
@@ -28,6 +28,7 @@ export function isBusy(s: Snapshot, chip?: string): boolean {
 /**
  * The readings of one history window: the highest temperatures and fan speed, whether it was busy, and the games seen.
  * `chip` is the graphics card's name (cardChip), so a laptop's built-in graphics never stand in for its dedicated chip.
+ * The drive's is its own temperature (mainDriveTemp), the figure its page shows, not the hottest of its sensors.
  */
 export class HistoryWindow {
   private cpu: number | null = null;
@@ -44,7 +45,8 @@ export class HistoryWindow {
   private appUse = new Map<string, number>();
   private appReads = 0;
 
-  constructor(readonly from: number, private readonly chip?: string) {}
+  /** `drive`: the shown drive's model (mainDrive), so history follows the same drive and sensor as the drive's own page. */
+  constructor(readonly from: number, private readonly chip?: string, private readonly driveModel?: string) {}
 
   add(s: Snapshot) {
     this.cpu = max(this.cpu, cpuTemp(s)?.value ?? null);
@@ -52,8 +54,8 @@ export class HistoryWindow {
     for (const x of s.sensors) {
       if (x.value == null) continue;
       if (x.type === "fan" && x.value > 0) this.fan = max(this.fan, x.value);
-      if (x.type === "temperature" && x.hw === "storage") this.drive = max(this.drive, x.value);
     }
+    this.drive = max(this.drive, mainDriveTemp(s, this.driveModel)?.value ?? null);
     this.board = max(this.board, (findSensor(s, "board", "temperature", /system|motherboard|board/i) ?? findSensor(s, "board", "temperature"))?.value ?? null);
     this.loads.cpuLoad.add(findSensor(s, "cpu", "load", /total/i)?.value);
     this.loads.gpuLoad.add(gpuLoad(s, this.chip)?.value);

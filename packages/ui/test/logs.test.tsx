@@ -624,7 +624,7 @@ describe("Logs", () => {
       const readings = await screen.findByRole("region", { name: "Readings" });
       fireEvent.click(within(within(readings).getByRole("group", { name: "How far back" })).getByRole("button", { name: "Day" }));
       const parts = await within(readings).findByRole("region", { name: "Parts" });
-      const gpu = within(within(parts).getAllByRole("button").find((b) => b.textContent?.startsWith("Graphics card"))!);
+      const gpu = within(within(parts).getAllByRole("button").find((b) => b.textContent?.startsWith("Graphics"))!);
       expect(gpu.getByText("Asleep to save power")).toBeTruthy();
       expect(gpu.getByText("–")).toBeTruthy();
     } finally { localStorage.clear(); }

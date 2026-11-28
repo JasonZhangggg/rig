@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { clearlyHeavy, partByPart, sleepWhenSaid, type BatteryView, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
+import { graphicsWord, partByPart, type BatteryView, type HistoryPoint, type PartRow, type PartsView } from "@rig/core";
 import { useApp, useTemp } from "../../state";
 import { shortType } from "../shared";
 import { isPlaceholderName } from "../partNames";
@@ -69,13 +69,11 @@ function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: st
 }
 
 /** What the week says about the part: its highest, in rust only when that came close to where it slows down. */
-function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string, asleep: boolean, battery?: BatteryView): { text: string; look?: boolean } {
+function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string, asleep: boolean): { text: string; look?: boolean } {
   if (asleep && !r.high) return { text: "It wakes when a game needs it" };
   if (r.state === "unread" && !asleep) return { text: r.id === "case" ? "Nothing in it to read" : "No sensor Windows can read" };
   if (r.id === "battery") {
-    // A sleep that used a lot says so before the week's lowest: it's the one thing to look at.
-    const now = Date.now(), heavy = clearlyHeavy(battery?.sleeps ?? [], now);
-    if (heavy) return { text: `Used ${heavy.used}% asleep ${sleepWhenSaid(heavy, now)}`, look: true };
+    // A sleep that used a lot is Things to look at's to say, beside what to do about it, so the row keeps to the week.
     if (!r.low) return { text: "Rig is still learning its usual" };
     // The charge is already beside the row, so a low that's the charge now isn't said again.
     if (r.now == null || Math.round(r.low.value) !== Math.round(r.now)) return { text: `Lowest ${said(r, r.low.value)} this week` };
@@ -168,13 +166,13 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
           const model = names && !isPlaceholderName(p.name) ? shortModel(p.model ?? p.name) : null;
           // Asleep, the part keeps its week: the usual band and highest from when it last worked.
           const asleep = r.now == null && !!p.asleep;
-          const state = stateOf(r, asleep, pc.battery), week = loading && (r.state !== "unread" || asleep) ? null : weekOf(r, !view.usualWhen, fmt.said, asleep, pc.battery);
+          const state = stateOf(r, asleep, pc.battery), week = loading && (r.state !== "unread" || asleep) ? null : weekOf(r, !view.usualWhen, fmt.said, asleep);
           const [num, unit] = r.now != null ? fmt.parts(r, r.now) : ["–", ""];
           return (
             <li key={r.id}>
               <button type="button" className={`pbp-row${r.state === "unread" && !asleep ? " unread" : ""}`} onClick={() => open(r.id)}>
                 <span className="pbp-name">
-                  <b>{plain.label}{model && <small> {model}</small>}</b>
+                  <b>{r.id === "gpu" ? graphicsWord(pc.kind) : plain.label}{model && <small> {model}</small>}</b>
                   <span>{partJob(r.id, laptop) || plain.job}</span>
                 </span>
                 <span className="pbp-now">

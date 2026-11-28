@@ -6,6 +6,7 @@ import { DRIVE_WARM } from "./diagnose";
 import { BUSY_LOAD, cpuLimitByDesign } from "./health";
 import { HOT_MARGIN } from "./insights";
 import type { HistoryKey, HistoryPoint, PC, ReadingUnit } from "./model";
+import { MIN_WINDOWS, usualBand } from "./usualRange";
 import { livePoint } from "./view";
 
 /** The parts in the order the view lists them: what games lean on first, the parts Rig can't read last. */
@@ -24,7 +25,7 @@ const TRACKS: Record<string, { key: HistoryKey | "batt"; unit: ReadingUnit }> = 
 };
 
 /** The usual band needs at least this many windows (an hour) behind it, so one evening doesn't set it. */
-export const USUAL_MIN_WINDOWS = 6;
+export const USUAL_MIN_WINDOWS = MIN_WINDOWS;
 
 /** How a part is doing right now. */
 export type PartState =
@@ -75,16 +76,10 @@ export interface PartsView {
   busyNow: boolean | null;
 }
 
-/** The value at a share of the way through sorted readings, rounded. */
-function quantile(sorted: number[], q: number) {
-  const at = (sorted.length - 1) * q;
-  const lo = Math.floor(at), hi = Math.ceil(at);
-  return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo));
-}
-
-function usualBand(points: readonly HistoryPoint[], key: HistoryKey | "batt") {
-  const xs = points.map((p) => p[key]).filter((v): v is number => v != null).sort((a, b) => a - b);
-  return xs.length >= USUAL_MIN_WINDOWS ? { lo: quantile(xs, 0.25), hi: quantile(xs, 0.75) } : null;
+/** A part's usual band, from usualBand: the same one its own page and Logs give. */
+function bandOf(points: readonly HistoryPoint[], key: HistoryKey | "batt") {
+  const b = usualBand(points.map((p) => p[key]).filter((v): v is number => v != null));
+  return b && { lo: b.low, hi: b.high };
 }
 
 /** Where a drive slows itself down, from the kind of drive Windows runs from. */
@@ -143,7 +138,7 @@ export function partByPart(pc: PC, points: readonly HistoryPoint[], now = Date.n
       ? { value: bottom[key]!, at: bottom.t }
       : nowValue != null ? { value: nowValue, at: now } : null;
     // A battery's usual charge is over the whole week: what games or work leaned on says nothing about it.
-    const usual = usualBand(battery ? week : source, key);
+    const usual = bandOf(battery ? week : source, key);
     const seen = [nowValue, high?.value, usual?.lo, usual?.hi].filter((v): v is number => v != null);
     // A processor built to run at its limit, at it under load, is working as built unless Things to look at says otherwise.
     const byDesign = (load: number | null | undefined) => id === "cpu" && cpuLimitByDesign(parts.cpu.name, pc.kind, load);

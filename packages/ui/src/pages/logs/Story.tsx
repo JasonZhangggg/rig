@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { insightContext, weekStory, type StoryMark, type WeekStory as Story } from "@rig/core";
+import { graphicsWord, insightContext, type PC, weekStory, type StoryMark, type WeekStory as Story } from "@rig/core";
 import { ChartNote } from "../../chart";
 import { Row, Rows } from "../../components/Rows";
 import { useActions, useData, useHistory, useStillPC, useTemp, useTempText } from "../../state";
@@ -46,7 +46,7 @@ export function WeekStory() {
           </div>
         )}
       </div>
-      {story.points.length > 0 ? <WeekChart story={story} temp={temp} /> : <ChartNote>{`Nothing logged on ${pc.name} in the last 7 days.`}</ChartNote>}
+      {story.points.length > 0 ? <WeekChart story={story} temp={temp} kind={pc.kind} /> : <ChartNote>{`Nothing logged on ${pc.name} in the last 7 days.`}</ChartNote>}
       {story.marks.length > 0 && (
         <Rows label="What happened this week">
           {[...story.marks].reverse().map((m) => (
@@ -100,7 +100,7 @@ function placeFlags(marks: StoryMark[], x: (t: number) => number, value: (t: num
   return out;
 }
 
-function WeekChart({ story, temp }: { story: Story; temp: Temp }) {
+function WeekChart({ story, temp, kind }: { story: Story; temp: Temp; kind: PC["kind"] }) {
   const [ref, w] = useWidth<HTMLDivElement>(900);
   const narrow = w < 560;
   const rowH = 18;
@@ -163,7 +163,7 @@ function WeekChart({ story, temp }: { story: Story; temp: Temp }) {
         <li><i className="ws-sw ws-resting" />Resting temperature</li>
       </ul>
       <div ref={ref} className="ws-plot">
-        <svg width={w} height={h} role="img" aria-label={`${story.subject === "gpu" ? "Graphics card" : "Processor"} temperature, last 7 days`}>
+        <svg width={w} height={h} role="img" aria-label={`${story.subject === "gpu" ? graphicsWord(kind) : "Processor"} temperature, last 7 days`}>
           {grid.map((v) => (
             <g key={v}>
               <line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} className="chart-grid" />

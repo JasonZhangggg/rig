@@ -33,8 +33,11 @@ export interface UsualRange {
 const DAY = 864e5;
 /** An hour of ten-minute windows: less than that is a moment, not a usual range. */
 export const MIN_WINDOWS = 6;
-/** The share of readings cut from each end, so a usual range isn't stretched by a spike or a cold start. */
-const TRIM = 0.2;
+/**
+ * The share of readings cut from each end, so a usual range isn't stretched by a spike or a cold start: the middle half.
+ * Every usual range Rig shows comes from usualBand, so Home, Logs and a part's own page give the same one.
+ */
+const TRIM = 0.25;
 
 /** The value below which a share of the sorted readings fall, interpolated between neighbours. */
 function quantile(sorted: number[], q: number) {
@@ -43,7 +46,8 @@ function quantile(sorted: number[], q: number) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
 }
 
-function band(xs: number[]): Band | null {
+/** The middle half of some readings, rounded: where they usually sit. Null from under an hour of ten-minute windows. */
+export function usualBand(xs: readonly number[]): Band | null {
   if (xs.length < MIN_WINDOWS) return null;
   const s = [...xs].sort((a, b) => a - b);
   return { low: Math.round(quantile(s, TRIM)), high: Math.round(quantile(s, 1 - TRIM)), count: xs.length };
@@ -61,9 +65,9 @@ export function usualRange(points: readonly HistoryPoint[], part: RangePart, now
   for (const p of span) if (!peak || p[part]! > peak.temp) peak = { temp: Math.round(p[part]!), at: p.t, game: p.game ?? null };
   return {
     part,
-    busy: band(busy.map((p) => p[part]!)),
+    busy: usualBand(busy.map((p) => p[part]!)),
     gaming: busy.length > 0 && busy.filter((p) => p.game).length * 2 > busy.length,
-    resting: band(span.filter((p) => !p.busy).map((p) => p[part]!)),
+    resting: usualBand(span.filter((p) => !p.busy).map((p) => p[part]!)),
     peak,
   };
 }

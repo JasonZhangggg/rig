@@ -71,7 +71,7 @@ export interface HardwareFacts {
   cpu: { name: string; short: string; socket?: string; cores: number; watts: number };
   gpu: { name: string; short: string; vramGb?: number; watts: number } | null;
   board: { name: string; m2Slots?: number; maxRamGb?: number; bios?: string; biosLabel?: string };
-  memory: { ddr?: 4 | 5; slotsTotal?: number; used: number; stickGb?: number; totalGb: number; speed?: number; partNumber?: string; soldered: boolean };
+  memory: { ddr?: 4 | 5; slotsTotal?: number; used: number; stickGb?: number; totalGb: number; speed?: number; partNumber?: string; soldered: "reported" | "likely" | false };
   storage: { nvme: number; sata: number; totalTb: number; drive?: string };
   /** Estimated draw at full load, from the parts' typical draw. */
   draw: { cpu: number; gpu: number; rest: number; total: number };
@@ -150,6 +150,12 @@ export function solderedMemory(inv: Inventory): "reported" | "likely" | undefine
   return inv.machine.kind === "laptop" && !slotsTotal && modules.length <= 1 ? "likely" : undefined;
 }
 
+/**
+ * How Rig says memory is built into the board, the same on the Upgrade tab and on Upgrades: plainly when the modules
+ * say so (solderedMemory's "reported"), "most likely" when it goes by a laptop's one module and no slot count.
+ */
+export const builtInWords = (how: "reported" | "likely") => (how === "reported" ? "built into the board" : "most likely built into the board");
+
 export function hardwareFacts(inv: Inventory): HardwareFacts {
   const laptop = inv.machine.kind === "laptop";
   const m = inv.memory;
@@ -171,7 +177,7 @@ export function hardwareFacts(inv: Inventory): HardwareFacts {
     memory: {
       ddr, slotsTotal: m.slotsTotal, used: m.modules.length, stickGb: first ? Math.round(first.capacityMb / 1024) : undefined,
       totalGb: Math.round(m.totalMb / 1024), speed, partNumber: first?.partNumber,
-      soldered: !!solderedMemory(inv),
+      soldered: solderedMemory(inv) ?? false,
     },
     storage: {
       nvme: inv.disks.filter((d) => d.media === "nvme").length,
@@ -209,7 +215,7 @@ export function fitOf(item: ShopItem, f: HardwareFacts, psuW?: number): Fit {
   switch (item.category) {
     case "memory": {
       const m = f.memory;
-      if (m.soldered) return fit("no", `${pc}'s memory is built into the board${f.laptop ? ", like most thin laptops" : ""}.`);
+      if (m.soldered) return fit("no", `${pc}'s memory is ${builtInWords(m.soldered)}${f.laptop ? ", like most thin laptops" : ""}.`);
       if (is.sodimm && !f.laptop) return fit("no", "This is laptop memory (SO-DIMM). It doesn't fit a desktop board.");
       if (!is.sodimm && f.laptop) return fit("no", "This is desktop memory. Laptops take the smaller SO-DIMM sticks.");
       if (m.ddr && is.ddr && is.ddr !== m.ddr) return fit("no", `DDR${is.ddr} doesn't fit ${pc}'s DDR${m.ddr} board.`);
@@ -305,7 +311,7 @@ export function categoryState(key: ShopCategory, f: HardwareFacts, psuW?: number
   const closed = (have: string): CategoryState => ({ key, label, open: false, have });
   switch (key) {
     case "memory": {
-      if (m.soldered) return closed(`${m.totalGb} GB, built into the board`);
+      if (m.soldered) return closed(`${m.totalGb} GB, ${builtInWords(m.soldered)}`);
       const kit = m.stickGb ? `${m.used} × ${m.stickGb} GB${m.ddr ? ` DDR${m.ddr}` : ""}${m.speed ? ` at ${m.speed} MT/s` : ""}` : `${m.totalGb} GB`;
       const free = m.slotsTotal != null ? m.slotsTotal - m.used : undefined;
       return { key, label, open: true, have: kit, room: free == null ? undefined : free ? `${free} of ${m.slotsTotal} slots free` : "Every slot in use" };
