@@ -45,6 +45,7 @@ public static class Program
             problems.AddRange(StorageScan.SelfChecks());
             problems.AddRange(Cleanup.SelfChecks());
             problems.AddRange(Reads.SelfChecks());
+            problems.AddRange(PcKind.SelfChecks());
             // Updates, virus protection, the firewall and backup, read in full (a facts request may answer before the first read is done).
             try
             {
