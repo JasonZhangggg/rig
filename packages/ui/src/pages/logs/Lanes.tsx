@@ -726,7 +726,7 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
   const temp = useTemp();
   const parts = [{ id: "all", name: `Whole ${machineWord(device?.laptop ? "laptop" : undefined)}` }, ...r.parts.map((p) => {
     const l = lines.find((x) => x.id === p.id);
-    return { id: p.id, name: p.name, now: l?.now != null ? value(temp, l.type, l.now) : undefined };
+    return { id: p.id, name: p.name, now: device?.asleep?.includes(p.id) ? "Asleep" : l?.now != null ? value(temp, l.type, l.now) : undefined };
   })];
   const choose = (p: Pick) => { setPick(p); setQuery(""); };
   return (
