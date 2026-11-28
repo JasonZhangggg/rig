@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { historyRecorded, isActive, joinRecordings, limitsOf, liveRecorded, recorded, type Range as HistoryRange, type Recorded, type Recording, type RecordingInfo } from "@rig/core";
+import { historyRecorded, isActive, joinRecordings, limitsOf, liveRecorded, partByPart, recorded, type Range as HistoryRange, type Recorded, type Recording, type RecordingInfo } from "@rig/core";
 import { ChartNote } from "../../chart";
 import { Icon } from "../../components/common";
 import { useActions, useAppSelector, useData, useHistory, useStillPC, useUI } from "../../state";
@@ -90,6 +90,9 @@ export function Readings() {
   const need = !logged ? [] : dayInfo ? [dayInfo] : days.filter((d) => d.startedAt != null && d.startedAt < to && startOfDay(d.startedAt) + DAY > from);
   const recs = useDays(need);
   const history = useHistory(historyRange(span));
+  // Each part's usual over the last week, as Home shows it, for the part rows.
+  const weekPoints = useHistory("7d");
+  const week = useMemo(() => (weekPoints ? partByPart(full, weekPoints) : null), [full, weekPoints]);
 
   const shown = useMemo((): Shown => {
     const title = span === "5m" ? "Last 5 minutes" : span === "1h" ? "Last hour" : span === "6h" ? "Last 6 hours" : span === "day" ? (dayInfo ? dayName(from) : "Last 24 hours") : span === "week" ? "Last 7 days" : "Last 30 days";
@@ -164,7 +167,7 @@ export function Readings() {
           </span>
         </div>}
         {story ? <WeekStory /> : !shown.r ? <ChartNote>{shown.empty ?? "Nothing to show."}</ChartNote>
-          : <AllSensors r={shown.r} whole={shown.whole} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} />}
+          : <AllSensors r={shown.r} whole={shown.whole} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} week={week} />}
         {!story && shown.r && shown.note && <p className="faint lv-since">{shown.note}</p>}
       </section>
       <div className="rc-lower">

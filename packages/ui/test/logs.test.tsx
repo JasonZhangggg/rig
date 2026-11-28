@@ -319,7 +319,7 @@ describe("Logs", () => {
       // A day keeps a set number of readings, so the newest one replaces an old one: same count, later finish.
       const today = list.filter((r) => r.id.startsWith("bg-d-")).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))[0];
       await act(async () => { send(list.map((r) => (r.id === today.id ? { ...r, finishedAt: (r.finishedAt ?? 0) + 30_000 } : r))); });
-      await waitFor(() => expect(within(readings).getByText(/ to /).textContent).not.toBe(before));
+      await waitFor(() => expect(within(readings).getByText(/ to .*, every 30 s$/).textContent).not.toBe(before));
     } finally { vi.useRealTimers(); }
   });
 
@@ -337,7 +337,7 @@ describe("Logs", () => {
       const readings = screen.getByRole("region", { name: "Readings" });
       await within(readings).findByRole("img", { name: "Temperatures" });
       within(readings).getByRole("img", { name: "Fans" });
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
+      fireEvent.change(within(readings).getByRole("combobox", { name: "Part" }), { target: { value: "gpu" } });
       within(readings).getByRole("rowheader", { name: "Hot spot" });
       within(readings).getByRole("img", { name: "Power" });
 
@@ -379,7 +379,7 @@ describe("Logs", () => {
       within(readings).getByRole("heading", { name: "Last 30 days" });
       within(readings).getByText("Every 10 minutes while Rig was open");
       const month = await within(readings).findByRole("img", { name: "Temperatures" });
-      within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ });
+      within(within(readings).getByRole("combobox", { name: "Part" })).getByRole("option", { name: "Processor" });
       // A month's axis names a date every few days, not all thirty weekdays in a row.
       const dates = [...month.parentElement!.querySelector("svg.ln-axis")!.querySelectorAll("text.chart-tick")].map((t) => t.textContent ?? "").filter((x) => /^[A-Z][a-z]{2} \d+$/.test(x));
       expect(dates.length).toBeGreaterThan(1);
@@ -399,7 +399,7 @@ describe("Logs", () => {
       await within(readings).findByRole("img", { name: "Temperatures" });
       // One view: no separate table to switch to.
       expect(within(readings).queryByRole("button", { name: "Table" })).toBeNull();
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Graphics card/ }));
+      fireEvent.change(within(readings).getByRole("combobox", { name: "Part" }), { target: { value: "gpu" } });
       const temps = within(readings).getByRole("table", { name: "Temperatures, every sensor" });
       // Right under its chart.
       expect(within(readings).getByRole("img", { name: "Temperatures" }).parentElement!.contains(temps)).toBe(true);
@@ -431,7 +431,7 @@ describe("Logs", () => {
       within(readings).getByText(/^1 of \d+$/);
       fireEvent.change(find, { target: { value: "nothing like this" } });
       within(readings).getByText(/No sensor matches/);
-      fireEvent.click(within(within(readings).getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Whole PC/ }));
+      fireEvent.change(within(readings).getByRole("combobox", { name: "Part" }), { target: { value: "all" } });
       expect((find as HTMLInputElement).value).toBe("");
       await within(readings).findByRole("table", { name: "Temperatures, every sensor" });
     } finally { vi.useRealTimers(); }
@@ -507,7 +507,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s, i) => (s.type === "clock" ? (k + i) % 2 ? 800 : 5300 : 50 + ((k + i) % 6))) }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Part" }), { target: { value: "cpu" } });
     const lines = (name: string) => screen.getByRole("img", { name }).querySelectorAll("path.ln-line").length;
     // Temperatures: the package and the hottest core, not all eight.
     expect(lines("Temperatures")).toBe(2);
@@ -546,9 +546,73 @@ describe("Logs", () => {
     const points = Array.from({ length: 10 }, (_, k) => ({ t: t0 + k * 2000, v: sensors.map((s) => (s.name === "CPU Memory" ? null : 10 + k)) }));
     const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: sensors.map((_, i) => i), lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Processor/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Part" }), { target: { value: "cpu" } });
     const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
     expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
+  });
+
+  it("opens the whole PC on a row per part, and shows one kind of reading for every part or every reading for one part", () => {
+    const t0 = Date.now() - 5 * 60_000;
+    const s = (hw: "cpu" | "gpu", part: string, type: "temperature" | "load", name: string) => ({ id: `${part}-${name}`, hw, hwName: "", type, name, part });
+    const sensors = [s("cpu", "cpu", "temperature", "CPU Package"), s("cpu", "cpu", "load", "CPU Total"), s("gpu", "gpu", "temperature", "GPU Core"), s("gpu", "gpu", "load", "GPU Core")];
+    // A reading every 2 s for five minutes, the processor peaking at 81°C a minute in.
+    const points = Array.from({ length: 150 }, (_, k) => ({ t: t0 + k * 2000, v: [k === 30 ? 81 : 55 + (k % 4), 20 + (k % 7), 60 + (k % 3), 90] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0, 1], lead: 0 }, { id: "gpu", name: "Graphics card", sensors: [2, 3], lead: 2 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{ cpu: 95 }} live />);
+
+    // The whole PC: a row per part with its reading now, its lowest to highest and its highest with the time.
+    const parts = screen.getByRole("region", { name: "Parts" });
+    const rows = within(parts).getAllByRole("button");
+    expect(rows.map((b) => b.querySelector("b")?.textContent)).toEqual(["Processor", "Graphics card"]);
+    within(rows[0]).getByText(/^55°C to 81°C$/);
+    within(rows[0]).getByText(/^Highest 81°C at /);
+    within(rows[0]).getByText("Calm");
+
+    // One kind of reading: a chart for each part, named for the part, and no part rows.
+    const reading = screen.getByRole("combobox", { name: "Reading" });
+    expect(within(reading).getAllByRole("option").map((o) => o.textContent)).toEqual(["Every kind", "Temperatures", "Usage"]);
+    fireEvent.change(reading, { target: { value: "temperature" } });
+    expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
+    screen.getByRole("img", { name: "Processor" });
+    screen.getByRole("img", { name: "Graphics card" });
+    expect(screen.queryByRole("img", { name: "Usage" })).toBeNull();
+
+    // A part's row opens every reading of that part.
+    fireEvent.change(reading, { target: { value: "all" } });
+    fireEvent.click(within(screen.getByRole("region", { name: "Parts" })).getAllByRole("button")[1]);
+    expect((screen.getByRole("combobox", { name: "Part" }) as HTMLSelectElement).value).toBe("gpu");
+    screen.getByRole("img", { name: "Temperatures" });
+    screen.getByRole("img", { name: "Usage" });
+    expect(screen.queryByRole("region", { name: "Parts" })).toBeNull();
+  });
+
+  it("draws a part's charts tall, with readings a couple of seconds apart smoothed into a calm line", () => {
+    // On a whole minute, so the stretch starts and ends on whole buckets.
+    const t0 = Math.floor(Date.now() / 60_000) * 60_000 - 5 * 60_000;
+    const sensors = [{ id: "t", hw: "cpu" as const, hwName: "", type: "temperature" as const, name: "CPU Package", part: "cpu" }];
+    const points = Array.from({ length: 150 }, (_, k) => ({ t: t0 + k * 2000, v: [k % 2 ? 50 : 60] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{}} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Part" }), { target: { value: "cpu" } });
+    const chart = screen.getByRole("img", { name: "Temperatures" });
+    expect(Number(chart.getAttribute("height") ?? chart.querySelector("svg")?.getAttribute("height"))).toBeGreaterThanOrEqual(150);
+    const d = chart.querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    const ys = [...d.matchAll(/[ML]-?[\d.]+,(-?[\d.]+)/g)].map((m) => Number(m[1]));
+    // Far fewer points than readings, and none at the 50 and 60 it flips between: an even line through the middle.
+    expect(ys.length).toBeLessThan(points.length / 3);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(10);
+  });
+
+  it("draws a line from the first few readings, before there are enough to smooth", () => {
+    const t0 = Math.floor(Date.now() / 60_000) * 60_000 - 5 * 60_000;
+    const sensors = [{ id: "t", hw: "cpu" as const, hwName: "", type: "temperature" as const, name: "CPU Package", part: "cpu" }];
+    // Rig has just opened: four readings, six seconds' worth.
+    const points = [0, 2000, 4000, 6000].map((d, k) => ({ t: t0 + 4 * 60_000 + d, v: [50 + k] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }] };
+    render(<AllSensors r={r} from={t0} to={t0 + 5 * 60_000} limits={{}} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Part" }), { target: { value: "cpu" } });
+    const d = screen.getByRole("img", { name: "Temperatures" }).querySelector("path.ln-line")!.getAttribute("d") ?? "";
+    expect(d.match(/L/g) ?? []).toHaveLength(3);
   });
 
   it("opens a drive's readings without freezing, with a few round steps up its transfer chart", () => {
@@ -559,7 +623,7 @@ describe("Logs", () => {
     const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [39, (k % 5) * 120e6, 3.5e9, 41_250] }));
     const r = { sensors, points, full: true, parts: [{ id: "ssd", name: "Storage", sensors: [0, 1, 2, 3], lead: 0 }] };
     render(<AllSensors r={r} from={t0} to={t0 + 60_000} limits={{}} />);
-    fireEvent.click(within(screen.getByRole("group", { name: "Parts" })).getByRole("button", { name: /^Storage/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Part" }), { target: { value: "ssd" } });
     const steps = (name: string) => [...screen.getByRole("img", { name }).querySelectorAll("text.chart-tick")].map((t) => t.textContent);
     const transfer = steps("Transfer");
     expect(transfer.length).toBeGreaterThan(1);

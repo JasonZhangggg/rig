@@ -182,11 +182,13 @@
 .c-brass { --c: var(--good-mark); }
 .c-grey { --c: var(--expected); }
 .c-faint { --c: color-mix(in srgb, var(--text-3) 55%, transparent); }
-.ln-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
-.ln-rail { position: sticky; top: 16px; }
-.ln-rail .pf-part-now .faint { font-size: 12px; }
-.ln-rail .pf-part-now b.look { color: var(--look-text); }
-.ln-spark { height: 26px; }
+/* Every sensor: two dropdowns and a search over the charts. The whole PC opens on Home's part-by-part rows. */
+.ln-all { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.lp-parts { container: pbp / inline-size; display: flex; flex-direction: column; gap: 10px; }
+.lp-parts .pbp-list { margin: 0; padding: 0; }
+.lp-parts .pbp-row { width: 100%; margin: 0; }
+.pbp-span { top: 7px; bottom: 7px; border-radius: var(--r-pill); background: var(--text-3); opacity: .55; }
+.pbp-key .k-span { width: 18px; height: 4px; border-radius: var(--r-pill); background: var(--text-3); opacity: .55; }
 .ln { display: flex; flex-direction: column; min-width: 0; touch-action: pan-y; cursor: crosshair; }
 .ln-lane { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
 .ln-lane:first-child { border-top: 0; padding-top: 0; }
@@ -197,10 +199,14 @@
 .ln-key b { min-width: 3.2em; color: var(--text); font-weight: 600; text-align: right; }
 .ln-more { padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .ln-more:hover { color: var(--text); }
-.ln-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.ln-find { display: flex; align-items: center; gap: 14px; }
-.ln-find .input { flex: 1; max-width: 360px; height: 36px; }
+.ln-find { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.ln-find > .input { flex: 1 1 220px; max-width: 320px; height: 36px; }
 .ln-find .faint { font-size: 13px; }
+.ln-pick { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; font-weight: 500; }
+.ln-pick select.input { width: auto; min-width: 150px; height: 36px; padding-right: 28px; color: var(--text); }
+/* Two charts to a row on a wide screen, each with its sensors under it. */
+.ln.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; row-gap: 22px; align-items: start; }
+.ln.two .ln-lane:nth-child(2) { border-top: 0; padding-top: 0; }
 .ln-none { margin: 0; }
 .ln-line.dim { opacity: .22; }
 .ln-line.on { stroke-width: 2.25; }
@@ -277,13 +283,13 @@
   .rc-lower { grid-template-columns: minmax(0, 1fr); }
   .rc-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rc-log h1 { font-size: 22px; }
-  .ln-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .ln-rail { position: static; flex-direction: row; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
   .ln-rows th, .ln-rows td { padding: 4px 5px; }
   .ln-rows thead :is(th, td):first-child { width: auto; }
   .ln-rows thead th:is(:nth-child(2), :nth-child(3), :nth-child(4)) { width: 62px; }
-  .ln-find .input { max-width: none; }
-  .ln-rail .pf-part { flex: 0 0 140px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "now" "spark"; }
+  .ln-find > .input { max-width: none; flex-basis: 100%; }
+  /* Each dropdown takes half the row, its name above it, so "Every kind" isn't cut short. */
+  .ln-pick { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: stretch; gap: 4px; }
+  .ln-pick select.input { width: 100%; min-width: 0; }
 }
 
 /* ---------- A recording that caught a problem (pages/logs/Caught.tsx) ----------
