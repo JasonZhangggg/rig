@@ -92,6 +92,35 @@ describe("PCs", () => {
     expect(await (await call("/api/machines", { cookie: other })).json()).toEqual([]);
   });
 
+  it("reads only what each page shows, so the website's refresh every 15 seconds stays small", async () => {
+    const { call, signUp, queries } = await setup();
+    const cookie = await signUp("lee@example.com");
+    const step = { kind: "fix" as const, action: "power-plan", value: "balanced" };
+    const changes = Array.from({ length: 200 }, (_, i) => ({ id: `c${i}`, title: "Power plan to Balanced", at: new Date(Date.now() - i * 60_000).toISOString(), steps: [step], state: "applied" }));
+    const s = await syncPayload({ changes: changes as never });
+    const id = s.inventory.machine.id;
+    expect((await call(`/api/machines/${id}/sync`, { method: "PUT", json: s, cookie })).status).toBe(200);
+
+    // Each column of the PC's row that a request reads from the database.
+    const read = async (path: string) => {
+      queries.length = 0;
+      const res = await call(path, { cookie });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const cols = queries.filter((q) => /^select\b.*\bfrom "machine"/s.test(q))
+        .flatMap((q) => [...q.slice(0, q.indexOf(' from "machine"')).matchAll(/"(\w+)"/g)].map((m) => m[1]));
+      return { body, cols: [...new Set(cols)].sort() };
+    };
+    const pc = await read(`/api/machines/${id}`);
+    expect(pc.body).toMatchObject({ id, online: true });
+    expect(pc.cols).toEqual(["id", "identity", "identity_at", "synced_at", "view"]);
+    expect((await read("/api/machines")).cols).toEqual(["id", "identity", "identity_at", "synced_at", "view"]);
+    expect((await read(`/api/machines/${id}/recordings`)).cols).toEqual(["id", "synced_at"]);
+    const list = await read(`/api/machines/${id}/changes`);
+    expect(list.body).toHaveLength(200);
+    expect(list.cols).toEqual(["changes", "id", "synced_at"]);
+  });
+
   it("keeps fan speed, game and each part's readings per point, and still takes points from older apps", async () => {
     const { call, signUp } = await setup();
     const cookie = await signUp("kit@example.com");

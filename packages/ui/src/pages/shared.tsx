@@ -21,6 +21,7 @@ export const shopCatOf: Record<string, string> = { ram: "memory", ssd: "storage"
 // What clicking an issue does everywhere
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
   if (i.fix) { ctx.review(fixSteps(i.fix), { by: "you", why: i.title }); return; }
+  if (i.open === "startup") { ctx.set({ startupApps: true }); return; }
   if (i.ask) { ctx.ask(i.ask); return; }
   if (i.part && i.go === "upgrades") ctx.set({ shopCat: shopCatOf[i.part] ?? null });
   else if (i.part && i.go === "pc") ctx.set({ selected: i.part, tab: pc.parts?.[i.part]?.driver ? "drivers" : "live" });

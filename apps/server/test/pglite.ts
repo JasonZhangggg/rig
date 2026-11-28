@@ -8,8 +8,9 @@ import {
 } from "kysely";
 
 class Connection implements DatabaseConnection {
-  constructor(private pg: PGlite) {}
+  constructor(private pg: PGlite, private seen?: (sql: string) => void) {}
   async executeQuery<R>(q: CompiledQuery): Promise<QueryResult<R>> {
+    this.seen?.(q.sql);
     const r = await this.pg.query<R>(q.sql, q.parameters as unknown[]);
     return { rows: r.rows, numAffectedRows: r.affectedRows !== undefined ? BigInt(r.affectedRows) : undefined };
   }
@@ -22,7 +23,7 @@ class PGliteDriver implements Driver {
   private conn: Connection;
   private queue: Promise<void> = Promise.resolve();
   private release_: (() => void) | null = null;
-  constructor(pg: PGlite) { this.conn = new Connection(pg); }
+  constructor(pg: PGlite, seen?: (sql: string) => void) { this.conn = new Connection(pg, seen); }
   async init() {}
   async acquireConnection() {
     const prev = this.queue;
@@ -39,17 +40,17 @@ class PGliteDriver implements Driver {
   async destroy() {}
 }
 
-export const pgliteDialect = (pg: PGlite): Dialect => ({
+export const pgliteDialect = (pg: PGlite, seen?: (sql: string) => void): Dialect => ({
   createAdapter: () => new PostgresAdapter(),
-  createDriver: () => new PGliteDriver(pg),
+  createDriver: () => new PGliteDriver(pg, seen),
   createIntrospector: (db: Kysely<unknown>) => new PostgresIntrospector(db),
   createQueryCompiler: () => new PostgresQueryCompiler(),
 });
 
-/** A fresh in-memory Postgres with Rig's migrations applied. */
-export async function testDb<DB>(): Promise<Kysely<DB>> {
+/** A fresh in-memory Postgres with Rig's migrations applied. `seen` hears each query's SQL. */
+export async function testDb<DB>(seen?: (sql: string) => void): Promise<Kysely<DB>> {
   const pg = new PGlite();
   const dir = new URL("../migrations/", import.meta.url);
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) await pg.exec(readFileSync(new URL(f, dir), "utf8"));
-  return new Kysely<DB>({ dialect: pgliteDialect(pg) });
+  return new Kysely<DB>({ dialect: pgliteDialect(pg, seen) });
 }

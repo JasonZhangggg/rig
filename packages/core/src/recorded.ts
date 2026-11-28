@@ -5,6 +5,7 @@
 import type { HistoryPoint, Reading } from "./model";
 import type { Recording, RecordingInfo, SensorRef } from "./recordings";
 import type { HardwareKind, SensorType } from "./telemetry";
+import { isSetting, sensorName } from "./sensors";
 
 /** One sensor of a recording, filed under a part. */
 export interface RecordedSensor extends SensorRef { part: string }
@@ -72,8 +73,27 @@ const liveHw: Record<string, HardwareKind> = { cpu: "cpu", gpu: "gpu", ram: "mem
 export function liveRecorded(readings: readonly Reading[], samples: readonly LiveSample[]): Recorded {
   const keep = readings.filter((r) => r.type !== "data" && liveHw[r.part]);
   const sensors: RecordedSensor[] = keep.map((r) => ({ id: r.id, hw: liveHw[r.part], hwName: "", type: r.type, name: r.name, part: r.part === "board" ? "motherboard" : r.part }));
-  const points = samples.map((s) => ({ t: s.t, v: keep.map((r) => s.vals[r.id] ?? null) }));
+  const order = sensorOrder(keep);
+  const points = samples.map((s) => {
+    const made = liveRows.get(s);
+    if (made?.order === order) return made.point;
+    const point = { t: s.t, v: keep.map((r) => s.vals[r.id] ?? null) };
+    liveRows.set(s, { order, point });
+    return point;
+  });
   return withParts(sensors, points, true);
+}
+
+/**
+ * Each live reading lined up with the sensors, kept: the Logs page lines up the last hour's readings, about 1,800 of
+ * them, on every new one, and only the newest has changed. A reading is lined up again when the sensors change.
+ */
+const liveRows = new WeakMap<LiveSample, { order: object; point: RecordedPoint }>();
+let lastOrder = { ids: "", token: {} };
+function sensorOrder(keep: readonly Reading[]): object {
+  const ids = keep.map((r) => r.id).join("\n");
+  if (ids !== lastOrder.ids) lastOrder = { ids, token: {} };
+  return lastOrder.token;
 }
 
 /** A recording's readings sensor by sensor. Sensors that never read anything are left out. */
@@ -82,8 +102,8 @@ export function recorded(rec: Pick<Recording, "samples" | "sensors">): Recorded 
   let sensors: RecordedSensor[];
   let points: RecordedPoint[];
   if (full) {
-    const keep = rec.sensors!.map((s, i) => [s, i] as const).filter(([s, i]) => partOf(s) && rec.samples.some((x) => x.all?.[i] != null));
-    sensors = keep.map(([s]) => ({ ...s, part: partOf(s)! }));
+    const keep = rec.sensors!.map((s, i) => [s, i] as const).filter(([s, i]) => partOf(s) && !isSetting(s) && rec.samples.some((x) => x.all?.[i] != null));
+    sensors = keep.map(([s]) => ({ ...s, name: sensorName(s), part: partOf(s)! }));
     points = rec.samples.map((x) => ({ t: x.t, v: keep.map(([, i]) => x.all?.[i] ?? null) }));
   } else {
     const keep = main.filter(([k]) => rec.samples.some((x) => x[k] != null));
