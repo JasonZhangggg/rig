@@ -42,6 +42,22 @@ describe("stylesheet", () => {
     expect(pressed).toMatchObject({ background: "var(--sel)", color: "var(--text)" });
   });
 
+  // At 390px My PC's tabs ran 2px past their row, so Safety showed cut off and the row slid sideways under a finger.
+  it("fits My PC's tabs across a phone, and never lets a wide row widen the page", () => {
+    const phone = {};
+    for (const file of cssFiles(stylesDir)) {
+      postcss.parse(readFileSync(file, "utf8")).walkRules((rule) => {
+        if (rule.parent?.type !== "atrule" || !/max-width:\s*760px/.test(rule.parent.params)) return;
+        for (const sel of rule.selectors) { phone[sel] ??= {}; rule.walkDecls((d) => { phone[sel][d.prop] = d.value; }); }
+      });
+    }
+    // Parts, Upgrades, Manuals and drivers and Safety measure 275px at 15px. The row has 346px, less 8px of room for focus
+    // rings and 15px for a scroll bar where Windows draws one.
+    const gap = parseFloat(phone[".lg-views"]?.gap ?? "22");
+    expect(275 + 3 * gap).toBeLessThanOrEqual(346 - 8 - 15);
+    expect(phone[".fp-frame"]?.["grid-template-columns"] ?? phone[".shell-fpanel.mini .fp-frame"]["grid-template-columns"]).toMatch(/^minmax\(0,\s*1fr\)$/);
+  });
+
   // A row that scrolls sideways but is a pixel taller than itself (a tab's underline pulled down over the line)
   // gets a vertical scroll bar too, and Windows draws its arrows beside the tabs.
   it("lets tab rows scroll only sideways, with nothing hanging below them", () => {
