@@ -14,7 +14,7 @@ import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
 import { MAX_RESUMES, answer, type ChatContext, type Progress, type Streamer, type Turn } from "./chat";
 import { open, sha256, sign } from "./seal";
-import { present, Store } from "./db";
+import { present, Store, type MachinePart } from "./db";
 import type { Env } from "./env";
 import { bestBuyFeed, type RetailFeed } from "./retail";
 import type { Fetch } from "./manuals";
@@ -123,18 +123,19 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/machines", async (c) => {
-    const rows = await c.get("store").machines(c.get("user").id);
+    const rows = await c.get("store").machines(c.get("user").id, ["view", "identity"]);
     return c.json(rows.map((m) => present(m, now().getTime())));
   });
 
-  const machine = async (c: C) => {
+  /** The PC in the address, with only the parts of it the route uses; with none, just whether it's on this account. */
+  const machine = async <P extends MachinePart = never>(c: C, parts: readonly P[] = []) => {
     const id = c.req.param("id")!;
-    return validId(id) ? c.get("store").machine(c.get("user").id, id) : null;
+    return validId(id) ? c.get("store").machine(c.get("user").id, id, parts) : null;
   };
   const notFound = (c: C) => c.json({ message: "That PC isn't on this account." }, 404);
 
   app.get("/api/machines/:id", async (c) => {
-    const m = await machine(c);
+    const m = await machine(c, ["view", "identity"]);
     return m ? c.json(present(m, now().getTime())) : notFound(c);
   });
 
@@ -162,10 +163,10 @@ export function createApp(deps: AppDeps = {}) {
     return c.json(await c.get("store").history(c.get("user").id, m.id, now().getTime() - rangeMs[range]));
   });
 
-  app.get("/api/machines/:id/changes", async (c) => { const m = await machine(c); return m ? c.json(m.changes) : notFound(c); });
-  app.get("/api/machines/:id/games", async (c) => { const m = await machine(c); return m ? c.json(m.games) : notFound(c); });
+  app.get("/api/machines/:id/changes", async (c) => { const m = await machine(c, ["changes"]); return m ? c.json(m.changes) : notFound(c); });
+  app.get("/api/machines/:id/games", async (c) => { const m = await machine(c, ["games"]); return m ? c.json(m.games) : notFound(c); });
   app.get("/api/machines/:id/upgrades", async (c) => {
-    const m = await machine(c);
+    const m = await machine(c, ["inventory"]);
     return m ? c.json(m.inventory ? suggestUpgrades(m.inventory) : []) : notFound(c);
   });
 
@@ -179,7 +180,7 @@ export function createApp(deps: AppDeps = {}) {
   };
 
   app.get("/api/machines/:id/shop", async (c) => {
-    const m = await machine(c);
+    const m = await machine(c, ["inventory"]);
     if (!m) return notFound(c);
     if (!m.inventory) return c.json(null);
     const feed = feedFor(c.env);
@@ -194,7 +195,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json(shopFor(m.inventory, { from: feed.from, hits: got.hits }));
   });
 
-  app.get("/api/machines/:id/events", async (c) => { const m = await machine(c); return m ? c.json(m.events) : notFound(c); });
+  app.get("/api/machines/:id/events", async (c) => { const m = await machine(c, ["events"]); return m ? c.json(m.events) : notFound(c); });
 
   app.get("/api/machines/:id/recordings", async (c) => {
     const m = await machine(c);
@@ -203,7 +204,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // Asked for on the website (or by the app for another PC): it waits for that PC's next sync.
   app.post("/api/machines/:id/recordings", async (c) => {
-    const m = await machine(c);
+    const m = await machine(c, ["view", "identity"]);
     if (!m) return notFound(c);
     const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
     const req = checkRequest({ reason: body?.reason, minutes: body?.minutes, question: body?.question }, { id: newId(), by: "you", now: now() });

@@ -5,6 +5,7 @@
 import type { HistoryPoint, Reading } from "./model";
 import type { Recording, RecordingInfo, SensorRef } from "./recordings";
 import type { HardwareKind, SensorType } from "./telemetry";
+import { isSetting, sensorName } from "./sensors";
 
 /** One sensor of a recording, filed under a part. */
 export interface RecordedSensor extends SensorRef { part: string }
@@ -82,8 +83,8 @@ export function recorded(rec: Pick<Recording, "samples" | "sensors">): Recorded 
   let sensors: RecordedSensor[];
   let points: RecordedPoint[];
   if (full) {
-    const keep = rec.sensors!.map((s, i) => [s, i] as const).filter(([s, i]) => partOf(s) && rec.samples.some((x) => x.all?.[i] != null));
-    sensors = keep.map(([s]) => ({ ...s, part: partOf(s)! }));
+    const keep = rec.sensors!.map((s, i) => [s, i] as const).filter(([s, i]) => partOf(s) && !isSetting(s) && rec.samples.some((x) => x.all?.[i] != null));
+    sensors = keep.map(([s]) => ({ ...s, name: sensorName(s), part: partOf(s)! }));
     points = rec.samples.map((x) => ({ t: x.t, v: keep.map(([, i]) => x.all?.[i] ?? null) }));
   } else {
     const keep = main.filter(([k]) => rec.samples.some((x) => x[k] != null));
