@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { APPROVE_DECLINED, STEP_DIFFERS, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcRead, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
+import { APPROVE_DECLINED, ApiError, SYNC_SEND_ALL, STEP_DIFFERS, checkStep, stepHash, fixSteps, LocalClient, MemoryStore, type ActionCall, type Allowed, type ApplyReply, type ChatEvent, type ChatMessage, type Command, type StepRpc, type HelperLink, type HelperStep, type MachineSync, type PC, type PcRead, type PcReadResult, type PcReadSpec, type PreviewReply, type Snapshot, type Step, type UndoReply } from "../src";
 import { SimulatedLink, fixtures } from "../src/demo";
 import type { CloudClient } from "../src/cloud";
 
@@ -353,6 +353,42 @@ describe("LocalClient", () => {
     expect(month).toEqual(await read(Date.parse("2026-11-17T21:00:00") - 30 * 864e5));
     expect(month.length).toBeGreaterThan(2000);
     expect(week).toEqual(month.filter((p) => p.t >= Date.parse("2026-11-17T21:00:00") - 7 * 864e5));
+  });
+
+  it("uploads only the parts of this PC that changed since the account last took them", async () => {
+    const sent: MachineSync[] = [];
+    let answer: (p: MachineSync) => Promise<unknown> = async () => ({ identity: {} });
+    const cloud = { signedIn: async () => true, sync: async (_id: string, p: MachineSync) => { sent.push(structuredClone(p)); return answer(p); }, machines: async () => [], account: async () => null } as unknown as CloudClient;
+    const { client, advance } = setup({ events: async () => [] }, cloud);
+    await client.start();
+    await client.sync();
+    const parts = (p: MachineSync) => ["inventory", "facts", "changes", "games", "events"].filter((k) => k in p);
+    const all = ["inventory", "facts", "changes", "games", "events"];
+    expect(parts(sent.at(-1)!)).toEqual(all);
+    advance(5 * 60_000);
+    await client.tick();
+    await client.sync();
+    expect(parts(sent.at(-1)!)).toEqual([]);
+    expect(sent.at(-1)!.view.parts?.cpu.temp).toBeGreaterThan(20);
+    // An upload that didn't get through leaves Rig unsure what the account has, so the next one sends it all.
+    answer = async () => { throw new ApiError(0, "Can't reach Rig's server."); };
+    await client.sync();
+    answer = async () => ({ identity: {} });
+    await client.sync();
+    expect(sent.slice(-2).map(parts)).toEqual([[], all]);
+
+    // Signed in to an account that hasn't seen this PC: it asks for everything, and gets it straight away.
+    answer = async (p) => { if (!("inventory" in p)) throw new ApiError(SYNC_SEND_ALL, "Send all of it."); return { identity: {} }; };
+    const before = sent.length;
+    await client.sync();
+    expect(sent.slice(before).map(parts)).toEqual([[], all]);
+
+    // A server from before it took uploads with parts left out turns them down: everything goes, every time, from then on.
+    answer = async (p) => { if (!("inventory" in p)) throw new ApiError(400, "That upload isn't in the shape Rig expects."); return { identity: {} }; };
+    await client.sync();
+    await client.sync();
+    client.stop();
+    expect(sent.slice(before + 2).map(parts)).toEqual([[], all, all]);
   });
 
   it("keeps at most five days of history for the account while signed out", async () => {
