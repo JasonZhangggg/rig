@@ -80,6 +80,8 @@ export interface UI {
   netCheck: boolean;
   /** "Why is it slow or loud?" is open (components/SlowLoud.tsx). */
   slowLoud: boolean;
+  /** "Can it run a game?" is open, with the game it was opened for ("" for none yet) (components/CanItRun.tsx). */
+  canRun: string | null;
   /** The startup apps dialog is open. */
   startupApps: boolean;
   sideMini: boolean;
@@ -347,7 +349,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
     route: routeFromHash(),
     pcId: storage.get("rig.pc"),
     exploded: false, selected: null, tab: "live", shopCat: null, range: "7d",
-    review: null, toast: null, palette: false, slowLoud: false, netCheck: false, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
+    review: null, toast: null, palette: false, slowLoud: false, netCheck: false, canRun: null, startupApps: false, sideMini: storage.get("rig.sideMini") === "1", recordingId: null,
     tempUnit: storedTempUnit(),
   }));
   const [data, setData] = useState<Data>({ account: null, pcs: [], pc: null, changes: [], chat: [], answering: false, recordings: [], unseenChanges: 0, live: [] });

@@ -9,6 +9,7 @@ import type { Identity } from "./view";
 import type { DataExport } from "./export";
 import type { DiffRow, HistoryPoint, PC, Upgrade, Game } from "./model";
 import type { Shop } from "./shop";
+import type { GameRequirements } from "./canItRun";
 import type { Manual, ManualDiagram, ManualHit, ManualPage, ManualTarget } from "./manuals";
 import type { BoardLayoutReply, ReadLayoutRequest } from "./api";
 import type { PCEvent, ProcessUse, Recording, RecordingInfo, RecordingRequest } from "./recordings";
@@ -164,6 +165,11 @@ export interface RigClient {
   /** Parts that could go in the PC, to check against it. Null before Rig has read its parts. Prices are demo data while Shop.demo is true. */
   shop(machineId: string): Promise<Shop | null>;
   games(machineId: string): Promise<Game[]>;
+  /**
+   * A game's minimum and recommended requirements, read from its store or publisher page. Null when Rig couldn't find
+   * them. Needs the server (signed in), except in the demo; missing where it can't be done.
+   */
+  gameRequirements?(game: string): Promise<GameRequirements | null>;
 
   changes(machineId: string): Promise<Change[]>;
   /** Fills in the current values so the person sees exactly what will change. */

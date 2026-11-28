@@ -59,3 +59,4 @@ export * from "./weekStory";
 export * from "./battery";
 export * from "./network";
 export * from "./slowLoud";
+export * from "./canItRun";

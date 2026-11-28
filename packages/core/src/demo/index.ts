@@ -8,6 +8,8 @@ import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC 
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
 import { suggestUpgrades } from "../upgrades";
+import type { GameRequirements } from "../canItRun";
+import { demoRequirements, demoRequirementsFor } from "./requirements";
 import { shopFor } from "../shop";
 import { makeExport, type DataExport } from "../export";
 import { simulate } from "./simulate";
@@ -44,6 +46,7 @@ export { demoNetwork } from "./network";
 export { demoApply, demoCards, demoNativeCards, demoPreview, demoProposal, demoStep, demoUndo, demoUndoRecord, type AnyDemoCard, type DemoCard, type DemoNativeCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
+export { demoRequirements, demoRequirementsFor } from "./requirements";
 /** The fixtures' safety readings were taken at a fixed time. Moved so they read as a few minutes ago, and every age stays as written. */
 export function freshSecurity(facts: SystemFacts, now: number): SystemFacts {
   const s = facts.security;
@@ -278,6 +281,13 @@ export class DemoClient implements RigClient {
 
   async upgrades(id: string) { return suggestUpgrades(this.pcs[id].inv); }
   async shop(id: string) { const p = this.pcs[id]; return p ? shopFor(p.inv) : null; }
+  /** Samples read once from the Steam store, for a few games; others aren't in the demo. */
+  async gameRequirements(game: string): Promise<GameRequirements | null> {
+    await sleep(900);
+    const r = demoRequirementsFor(game);
+    if (!r) throw new Error(`The demo has requirements for ${demoRequirements.map((x) => x.game).join(", ").replace(/, ([^,]*)$/, " and $1")}. Try one of those.`);
+    return r;
+  }
   async games(id: string) { return this.pcs[id].inv.gpus.some((g) => !g.integrated) ? demoGames : []; }
 
   async events(id: string) { const p = this.pcs[id]; return p ? cleanEvents(demoEvents(p.inv.machine.kind, Date.now())) : []; }

@@ -5,7 +5,7 @@
 import { sql, type Selectable } from "kysely";
 import {
   changeOf, cleanEvents, isActive, makeExport, newRecording, toInfo, toRequest,
-  type Change, type DataExport, type StoredChange, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type Manual, type ManualDiagram,
+  type Change, type DataExport, type GameRequirements, type StoredChange, type Game, type HistoryPoint, type Identity, type Inventory, type MachineSync, type Manual, type ManualDiagram,
   type ManualKind, type ManualPage, type PC, type PCEvent, type Recording, type RecordingInfo, type RecordingRequest, type SystemFacts,
 } from "@rig/core";
 import type { Found } from "./manuals";
@@ -314,6 +314,22 @@ export class Store {
       ) r
       order by r.rank desc, r.added_at desc, r.n`.execute(this.db);
     return r.rows.map((x) => ({ manualId: x.manual_id, title: x.title, model: x.model, part: x.part, page: x.n, text: x.text, snippet: x.snippet }));
+  }
+
+  /** What Rig last read about a game's requirements, shared by every account: found, or a miss and when. */
+  async gameRequirements(key: string): Promise<{ found: GameRequirements } | { missedAt: Date } | null> {
+    const r = await this.db.selectFrom("game_requirements").selectAll().where("key", "=", key).executeTakeFirst();
+    if (r?.data) return { found: r.data as GameRequirements };
+    return r?.missed_at ? { missedAt: new Date(r.missed_at) } : null;
+  }
+
+  /** Remembers a game's requirements, or that Rig found none (null). */
+  async saveGameRequirements(key: string, found: GameRequirements | null, now = new Date()): Promise<void> {
+    const values = found
+      ? { data: JSON.stringify(found), read_at: now, missed_at: null }
+      : { data: null, read_at: null, missed_at: now };
+    await this.db.insertInto("game_requirements").values({ key, ...values })
+      .onConflict((oc) => oc.column("key").doUpdateSet(values)).execute();
   }
 
   /** What the finder last found for a part ("kind|maker|model"), shared by every account. */
