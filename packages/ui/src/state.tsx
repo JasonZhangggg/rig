@@ -546,7 +546,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           setData((d) => ({ ...d, changes: [change, ...d.changes.filter((c) => c.id !== change.id)] }));
           if (r.proposalId) patchProposal(r.proposalId, { status: "applied", changeId: change.id });
           set({ review: null });
-          toast(r.steps.length === 1 ? "Done." : `${r.steps.length} changes made.`, change.id);
+          toast(r.steps.length === 1 ? `Done: ${change.title}.` : `Done: ${change.title}. ${r.steps.length} settings changed.`, change.id);
         } catch (e) {
           set({ review: { ...r, busy: false, error: e instanceof Error ? e.message : "Rig couldn't make this change, so nothing was changed. Try again, and if it keeps happening, restart Rig." } });
         }
@@ -697,7 +697,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         try {
           const next = c.status === "applied" ? await client.undo(pcId, id) : await client.redo(pcId, id);
           setData((d) => ({ ...d, changes: d.changes.map((x) => (x.id === id ? next : x)), chat: d.chat.map((m) => (m.proposal?.changeId === id ? { ...m, proposal: { ...m.proposal, status: next.status === "applied" ? "applied" : "waiting" } } : m)) }));
-          toast(next.status === "undone" ? `Undone. ${c.title} is back to how it was.` : `Made again: ${c.title}.`);
+          toast(next.status === "undone" ? `Undid “${c.title}”. Your PC is back to how it was before.` : `Redid “${c.title}”. The change is back on.`);
         } catch (e) {
           toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }

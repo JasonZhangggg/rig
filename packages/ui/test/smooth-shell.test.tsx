@@ -166,7 +166,7 @@ describe("Presses that take a moment", () => {
     const undo = await screen.findByRole("button", { name: "Undo" }, { timeout: 3000 });
     fireEvent.click(undo);
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
-    expect(await screen.findByText(/^Undone\./, {}, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText(/^Undid “/, {}, { timeout: 3000 })).toBeTruthy();
   });
 
   it("says it's signing out, and says so when it can't", async () => {
