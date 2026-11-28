@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { freeSpaceWords, freeUpSpace, helperStep, spaceText, type Cleanup, type CleanupRead, type PreviewReply, type StepOutcome, type StorageSenseOffer } from "@rig/core";
 import { DayLabel, Row, RowFigure, Rows } from "../../components/Rows";
 import { StepCard } from "../../components/change";
-import { useActions, useAppSelector } from "../../state";
+import { useActions, useAppSelector, useMachineWord } from "../../state";
 import { FREE_SPACE_ID } from "../shared";
 
 type Load = { state: "reading" } | { state: "read"; read: CleanupRead } | { state: "failed"; why: string };
@@ -109,6 +109,7 @@ function CleanupRow({ c }: { c: Cleanup }) {
 /** The one change Rig makes here: Windows' own Storage Sense, through the same card as any change Rig makes. */
 function StorageSenseRow({ offer, pc, onChanged, toast }: { offer: StorageSenseOffer; pc: { id: string; name: string }; onChanged: () => Promise<void>; toast: (m: string) => void }) {
   const { client } = useActions();
+  const word = useMachineWord();
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewReply | null>(null);
   const [outcome, setOutcome] = useState<StepOutcome | null>(null);
@@ -135,7 +136,7 @@ function StorageSenseRow({ offer, pc, onChanged, toast }: { offer: StorageSenseO
       {steps && <li className="fs-card"><p className="muted">To do it yourself: open Settings, go to System &gt; Storage, and turn on Storage Sense.</p></li>}
       {open && (
         <li className="fs-card">
-          <StepCard step={offer.step} byPerson preview={preview} outcome={outcome} pcName={pc.name} canApply={client.caps.applyChanges}
+          <StepCard step={offer.step} byPerson preview={preview} outcome={outcome} pcName={pc.name} word={word} canApply={client.caps.applyChanges}
             onRead={read}
             onApply={() => run("turn on Storage Sense", async () => {
               if (preview?.outcome !== "ready" || !client.applyStep) return;

@@ -52,7 +52,7 @@ function useFormat() {
 }
 
 /** A laptop's graphics chip switched off to save power: no reading now, but nothing wrong. */
-const ASLEEP = "Asleep to save power";
+export const ASLEEP = "Asleep to save power";
 
 /** How the part is doing now, in a word or two, and rust only when it needs a look. */
 function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: string; look?: boolean } {
@@ -62,6 +62,7 @@ function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: st
     case "unread": return { text: "Rig can't read it" };
     case "slowing": return { text: "Slowing itself down", look: true };
     case "hot": return { text: "Running hot", look: true };
+    case "design": return { text: "At its limit, as built" };
     case "above": return { text: r.unit === "percent" ? "Fuller than usual" : r.unit === "rpm" ? "Faster than usual" : "Warmer than usual" };
     default: return { text: "Calm" };
   }
@@ -71,23 +72,34 @@ function stateOf(r: PartRow, asleep: boolean, battery?: BatteryView): { text: st
 function weekOf(r: PartRow, learning: boolean, said: (r: PartRow, v: number) => string, asleep: boolean): { text: string; look?: boolean } {
   if (asleep && !r.high) return { text: "It wakes when a game needs it" };
   if (r.state === "unread" && !asleep) return { text: r.id === "case" ? "Nothing in it to read" : "No sensor Windows can read" };
-  if (r.id === "battery") return r.low ? { text: `Lowest ${said(r, r.low.value)} this week` } : { text: "Rig is still learning its usual" };
+  if (r.id === "battery") {
+    if (!r.low) return { text: "Rig is still learning its usual" };
+    // The charge is already beside the row, so a low that's the charge now isn't said again.
+    if (r.now == null || Math.round(r.low.value) !== Math.round(r.now)) return { text: `Lowest ${said(r, r.low.value)} this week` };
+    return { text: steady(r) ? "Held there all week" : "Its lowest this week" };
+  }
   if (learning || !r.high) return { text: "Rig is still learning its usual" };
   const { value, at: when, game } = r.high;
   if (r.ranHot) return { text: `Hit ${said(r, value)}${game ? ` in ${game}` : ""}, ${dayFmt.format(when)}`, look: true };
   return { text: `${said(r, value)} at most this week` };
 }
 
+/** A battery that sat at the same charge all week, like one held at 80% on the charger. */
+const steady = (r: PartRow) => r.usual != null && r.now != null && r.usual.lo === r.usual.hi && Math.round(r.usual.hi) === Math.round(r.now);
+
 /** The sentence over the list: how the PC is now, then what the week held. */
 function headline(view: PartsView, name: string, online: boolean, laptop: boolean) {
   const label = (r: PartRow) => PLAIN[r.id]?.label.toLowerCase() ?? r.id;
   const slowing = view.rows.filter((r) => r.state === "slowing"), hot = view.rows.filter((r) => r.state === "hot" || r.state === "slowing");
   const above = view.rows.filter((r) => r.state === "above");
+  const design = view.rows.filter((r) => r.state === "design");
   const ranHot = view.rows.filter((r) => r.ranHot);
   const doing = view.busyNow == null ? null : view.busyNow ? "working hard" : "resting";
   let title: string;
   if (!online) title = `${name} is offline, so these are its last readings`;
   else if (hot.length) title = `Right now the ${and(hot.map(label))} ${hot.length > 1 ? "are" : "is"} ${slowing.length === hot.length ? "slowing down to stay safe" : "running hot"}`;
+  // Only a processor runs at its limit by design, so there's one at most.
+  else if (design.length && !above.length) title = `Right now ${name} is ${doing ?? "on"}, and the ${label(design[0])} is at its limit, as built`;
   else if (above.length) title = `Right now ${name} is ${doing ?? "on"}, and the ${and(above.map(label))} ${above.length > 1 ? "are" : "is"} above usual`;
   else title = doing ? `Right now ${name} is ${doing}, and every part is calm` : `Right now every part of ${name} is calm`;
   const now = !online ? "" : view.busyNow === false ? "Nothing heavy is running." : view.busyNow ? "A game or something heavy is running." : "";
@@ -158,7 +170,7 @@ export function PartByPart({ points, names, box }: { points: HistoryPoint[] | nu
                 </span>
                 <span className="pbp-week">
                   <Track r={r} asleep={asleep} />
-                  {r.usual && <span>usual {fmt.range(r, r.usual.lo, r.usual.hi)}</span>}
+                  {r.usual && !(r.id === "battery" && steady(r)) && <span>usual {fmt.range(r, r.usual.lo, r.usual.hi)}</span>}
                 </span>
                 <span className="pbp-state">
                   <b className={state.look ? "look" : undefined}>{state.text}</b>

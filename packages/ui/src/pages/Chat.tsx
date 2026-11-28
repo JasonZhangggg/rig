@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import type { ChatMessage, Proposal } from "@rig/core";
+import { machineWord, type ChatMessage, type Proposal } from "@rig/core";
 import { ChangeCards } from "../components/change";
 import { useActions, useData, useStillPC, useTempText } from "../state";
 import { RecordingCard } from "./logs/RecordingCard";
@@ -97,7 +97,7 @@ function ProposalCard({ p }: { p: Proposal }) {
   const { client, ask, review, declineProposal, commandStep } = useActions();
   const pc = useStillPC();
   return (
-    <ChangeCards proposal={p} previews={p.previews} outcomes={p.outcomes} tainted={p.tainted} pcName={pc.name} canApply={client.caps.applyChanges}
+    <ChangeCards proposal={p} previews={p.previews} outcomes={p.outcomes} tainted={p.tainted} pcName={pc.name} word={machineWord(pc.kind)} canApply={client.caps.applyChanges}
       onReviewFixes={() => review(p.steps.filter((s) => s.kind === "fix"), { title: p.title, by: "rig", why: p.why, proposalId: p.id })}
       onDecline={() => declineProposal(p.id)}
       onCommandStep={(index, act) => commandStep(p.id, index, act)}

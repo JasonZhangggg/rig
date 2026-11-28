@@ -21,9 +21,9 @@ interface NativePart<O extends NativeOp> {
   /** Each value, from the helper's read before and, once it ran, after. */
   changes(op: O, before?: string, after?: string, look?: ScreenLook): NativeChange[];
   /** What else the person should see from the helper's read. */
-  more?(op: O, read: string | undefined, pcName: string, look?: ScreenLook): ReactNode;
+  more?(op: O, read: string | undefined, pcName: string, look?: ScreenLook, word?: string): ReactNode;
   /** A tier 3 card's words, when it isn't the usual "lowers a protection" with Undo. */
-  red?(op: O): NativeRed;
+  red?(op: O, word?: string): NativeRed;
   /** What the person ticks to say they're ready, from the helper's read, or null when nothing needs ticking. */
   confirm?(op: O, read: string | undefined): string | null;
   /** What the result says once it ran, in place of the values before and after; `undone` once Undo put it back. */
@@ -134,13 +134,13 @@ const firmware: NativePart<FirmwareOp> = {
     return [{ label: "Setting", value: firmwareSetting(op.setting)?.name ?? op.setting }, ...(maker ? [{ label: "Maker", value: maker }] : [])];
   },
   changes: (op, before, after) => firmwareRows(op, before, after).map(([place, was, to]) => ({ place, before: was, after: to })),
-  more: (op, read) => {
+  more: (op, read, _pcName, _look, word = "PC") => {
     const s = firmwareSetting(op.setting);
     const maker = FIRMWARE_MAKERS.find((m) => FIRMWARE_MAKER_NAMES[m] === firmwareMaker(read));
     const asks = maker && s?.makers[maker]?.asks;
     return (
       <>
-        <p className="cc-note">{s?.says} It applies at the next restart. Rig won't restart the PC for you.</p>
+        <p className="cc-note">{s?.says} It applies at the next restart. Rig won't restart the {word} for you.</p>
         {asks && <p className="cc-note">{asks}</p>}
         {firmwareSealed(read) && <p className="cc-note cc-no" role="note">{sealedLine}</p>}
       </>
@@ -160,7 +160,7 @@ const restartToFirmware: NativePart<RestartFirmwareOp> = {
   where: () => [],
   changes: () => [{ place: RESTART_WORDS.row[0], before: RESTART_WORDS.row[1], after: RESTART_WORDS.row[2] }],
   more: (_op, read) => (firmwareSealed(read) ? <p className="cc-note cc-no" role="note">{sealedLine}</p> : null),
-  red: () => ({ kind: "lowers", words: { head: "This restarts your PC in one minute.", chip: "Restarts the PC", word: "restart" }, undo: "Cancel stops the restart during that minute.", noUndo: false }),
+  red: (_op, word = "PC") => ({ kind: "lowers", words: { head: `This restarts your ${word} in one minute.`, chip: `Restarts the ${word}`, word: "restart" }, undo: "Cancel stops the restart during that minute.", noUndo: false }),
   confirm: (_op, read) => (firmwareSealed(read) ? recoveryKey : null),
 };
 
@@ -172,13 +172,13 @@ const protection: NativePart<ProtectionOp> = {
   title: (op) => `Turns off ${rowName(op.id)} for ${revertWords(op.revertAfter)}`,
   where: (op) => [{ label: "Protection", value: rowName(op.id) }, { label: "Off for", value: revertWords(op.revertAfter) }],
   changes: (op, before, after) => [{ place: rowName(op.id), before: before?.trim() || "On", after: after?.trim() || `Off for ${revertWords(op.revertAfter)}` }],
-  more: (op) => (
+  more: (op, _read, _pcName, _look, word = "PC") => (
     <>
       <p className="cc-note">{protectionRow(op.id)?.risk}</p>
-      <p className="cc-note">Rig turns it back on by itself after {revertWords(op.revertAfter)}, also if the PC restarts or Rig is closed. You can turn it back on sooner in Changes. Keeping it off is a separate choice only you can make there.</p>
+      <p className="cc-note">Rig turns it back on by itself after {revertWords(op.revertAfter)}, also if the {word} restarts or Rig is closed. You can turn it back on sooner in Changes. Keeping it off is a separate choice only you can make there.</p>
     </>
   ),
-  red: () => ({ kind: "lowers", undo: `Yes. Rig turns it back on by itself, and ${TURN_BACK_ON} does it sooner. Until then, the PC is less protected.`, noUndo: false }),
+  red: (_op, word = "PC") => ({ kind: "lowers", undo: `Yes. Rig turns it back on by itself, and ${TURN_BACK_ON} does it sooner. Until then, the ${word} is less protected.`, noUndo: false }),
   done: (op, result, _look, undone) => (
     <p className="cc-note" role="status">
       {undone ? `${rowName(op.id)} is back on.` : <>{rowName(op.id)} is off. {result.revert ? <Countdown dueAt={result.revert.dueAt} /> : `Rig turns it back on by itself after ${revertWords(op.revertAfter)}.`}</>}

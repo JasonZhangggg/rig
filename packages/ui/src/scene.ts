@@ -13,7 +13,7 @@ import { createSceneLabels, type LabelPoint } from "./sceneLabels";
 import { FAN_FPS, fanHitArea, fanSpeed, isSharedTexture, makeCooler, makeFan, makeGpu, makeRam, mm, realMaterial, span, type Kit, type MakeMat, type MatOpts } from "./parts3d";
 import { makeBoard } from "./board3d";
 import { makeCase, makePsu } from "./case3d";
-import { LAPTOP, makeLaptopBody } from "./laptop3d";
+import { BOARD, LAPTOP, makeLaptopBody } from "./laptop3d";
 
 export interface SceneTheme {
   bg: string; floor: string; caseColor: string; trim: string; glass: string; glassOpacity: number;
@@ -598,20 +598,30 @@ export function createScene(
     const floor = LAPTOP.cover;
     // The board fills the back between the two fans, with a few small chips of its own.
     const boardG = new THREE.Group();
-    boardG.add(box(1.72, 0.012, 0.9, M(th.board), 0.05, floor + 0.008, -0.5));
+    boardG.add(box(BOARD.board.w, 0.012, BOARD.board.d, M(th.board), BOARD.board.x, floor + 0.008, BOARD.board.z));
     const smd = M(th.heatsink);
     for (const [x, z, w, d] of [[-0.62, -0.8, 0.12, 0.08], [0.42, -0.82, 0.16, 0.1], [-0.6, -0.2, 0.1, 0.1], [0.5, -0.12, 0.2, 0.06]]) boardG.add(box(w, 0.01, d, smd, x, floor + 0.018, z));
     add(boardG, "board", [0, 0.42, 0.4]);
     // The processor: dies on a small green package, soldered to the board.
-    const cpu = new THREE.Group();
-    cpu.add(box(0.3, 0.008, 0.22, M(th.ssd), 0.1, floor + 0.018, -0.5));
-    cpu.add(box(0.15, 0.006, 0.12, M(th.chip), 0.07, floor + 0.025, -0.5));
-    cpu.add(box(0.06, 0.006, 0.12, M(th.chip), 0.2, floor + 0.025, -0.5));
+    const cpu = new THREE.Group(), c = BOARD.cpu;
+    cpu.add(box(c.w, 0.008, c.d, M(th.ssd), c.x, floor + 0.018, c.z));
+    cpu.add(box(0.15, 0.006, 0.12, M(th.chip), c.x - 0.03, floor + 0.025, c.z));
+    cpu.add(box(0.06, 0.006, 0.12, M(th.chip), c.x + 0.1, floor + 0.025, c.z));
     add(cpu, "cpu", [0, 0.78, 0.4]);
+    // A gaming laptop's graphics chip, beside the processor under the same heatpipes: one die ringed by its memory.
+    let gpu: THREE.Group | null = null;
+    if (pc.parts?.gpu) {
+      const g = BOARD.gpu, vram = M(th.chip);
+      gpu = new THREE.Group();
+      gpu.add(box(g.w, 0.008, g.d, M(th.ssd), g.x, floor + 0.018, g.z));
+      gpu.add(box(0.12, 0.006, 0.12, M(th.chip), g.x, floor + 0.025, g.z));
+      for (const [dx, dz] of [[-0.09, -0.08], [0.09, -0.08], [-0.09, 0.08], [0.09, 0.08]]) gpu.add(box(0.05, 0.005, 0.05, vram, g.x + dx, floor + 0.024, g.z + dz));
+      add(gpu, "gpu", [0, 0.78, 0.4]);
+    }
     // Memory soldered beside the processor, as on a thin laptop.
     const ram = new THREE.Group();
     const ramMat = M(th.chip);
-    for (let i = 0; i < 4; i++) ram.add(box(0.13, 0.012, 0.14, ramMat, -0.36 + (i % 2) * 0.16, floor + 0.02, -0.58 + Math.floor(i / 2) * 0.17));
+    for (let i = 0; i < 4; i++) ram.add(box(0.13, 0.012, 0.14, ramMat, BOARD.ram.x - 0.08 + (i % 2) * 0.16, floor + 0.02, BOARD.ram.z - 0.085 + Math.floor(i / 2) * 0.17));
     add(ram, "ram", [0, 0.62, 0.4]);
     const lfans = new THREE.Group();
     for (const x of [-1.12, 1.22]) {
@@ -632,7 +642,7 @@ export function createScene(
     const bat = roundBox(2.4, 0.034, 0.8, 0.05, M(th.battery), 0, floor + 0.022, 0.55);
     add(bat, "battery", [0, 0.22, 0.4]);
     // An M.2 drive (22 by 80 mm) between the processor and the right fan.
-    const ssd = box(0.22, 0.008, 0.8, M(th.ssd), 0.72, floor + 0.022, -0.45);
+    const ssd = box(BOARD.ssd.w, 0.008, BOARD.ssd.d, M(th.ssd), BOARD.ssd.x, floor + 0.022, BOARD.ssd.z);
     // Its controller and two flash chips.
     for (const [z, d] of [[-0.25, 0.14], [0, 0.2], [0.24, 0.2]]) ssd.add(box(0.16, 0.006, d, M(th.chip), 0, 0.006, z));
     add(ssd, "ssd", [0.2, 0.62, 0.6]);
@@ -641,10 +651,11 @@ export function createScene(
     add(body.deck, "chassis", [0, 1.9, -1.1]);
 
     // Markers spread across the width, so on a phone their numbered dots don't sit on top of each other.
-    addLabel("cpu", cpu, [0.12, floor + 0.04, -0.5]);
-    addLabel("ram", ram, [-0.28, floor + 0.03, -0.42]);
+    addLabel("cpu", cpu, [gpu ? 0 : 0.12, floor + 0.04, -0.5]);
+    if (gpu) addLabel("gpu", gpu, [BOARD.gpu.x + 0.06, floor + 0.04, BOARD.gpu.z - 0.04]);
+    addLabel("ram", ram, [gpu ? -0.38 : -0.28, floor + 0.03, -0.42]);
     addLabel("battery", bat, [0.95, 0, 0.05]);
-    addLabel("ssd", ssd, [0, 0.01, 0.2]);
+    addLabel("ssd", ssd, [0, 0.01, gpu ? 0.34 : 0.2]);
     addLabel("fans", lfans, [-1.12, floor + 0.03, -0.6]);
     addLabel("board", boardG, [-0.66, floor + 0.02, -0.15]);
 

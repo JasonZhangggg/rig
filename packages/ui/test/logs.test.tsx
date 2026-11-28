@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
-import type { RecordingInfo } from "@rig/core";
+import type { PC, RecordingInfo } from "@rig/core";
 
 vi.mock("../src/scene", () => ({ createScene: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("../src/styles/index.css", () => ({}));
@@ -565,6 +565,47 @@ describe("Logs", () => {
     show("Processor");
     const usage = screen.getByRole("img", { name: "Usage" }).parentElement!;
     expect(within(usage).getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["Total", "Core max", "Threads 4"]);
+  });
+
+  it("shows a laptop's graphics chip asleep now, not its last reading from before it slept", () => {
+    const t0 = Date.now() - 24 * 36e5;
+    const s = (hw: "cpu" | "gpu", part: string, name: string) => ({ id: `${part}-${name}`, hw, hwName: "", type: "temperature" as const, name, part });
+    const sensors = [s("cpu", "cpu", "CPU Package"), s("gpu", "gpu", "GPU Core")];
+    // The chip ran an evening game at up to 71°C, then switched off: no graphics readings after that.
+    const points = Array.from({ length: 144 }, (_, k) => ({ t: t0 + k * 600_000, v: [50 + (k % 5), k < 100 ? 63 + (k % 9) : null] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0], lead: 0 }, { id: "gpu", name: "Graphics card", sensors: [1], lead: 1 }] };
+    const { rerender } = render(<AllSensors r={r} from={t0} to={Date.now()} limits={{ cpu: 95, gpu: 87 }} device={{ laptop: true, asleep: ["gpu"] }} />);
+    const gpu = () => within(within(screen.getByRole("region", { name: "Parts" })).getAllByRole("button")[1]);
+    expect(gpu().getByText("–")).toBeTruthy();
+    expect(gpu().getByText("Asleep to save power")).toBeTruthy();
+    expect(gpu().getByText(/^Highest 71°C at /)).toBeTruthy();
+    expect(gpu().queryByText(/^6\d°C$/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show Whole laptop" }));
+    expect(within(screen.getByRole("dialog", { name: "Show" })).getAllByRole("menuitemradio").map((o) => o.textContent)).toEqual(["Whole laptop", "Processor53°C", "Graphics cardAsleep"]);
+    // Awake, or on a day gone by, it shows its last reading as before.
+    rerender(<AllSensors r={r} from={t0} to={Date.now()} limits={{ cpu: 95, gpu: 87 }} device={{ laptop: true }} />);
+    expect(gpu().queryByText("Asleep to save power")).toBeNull();
+  });
+
+  it("tells the part rows the graphics chip is asleep over a stretch up to now", async () => {
+    /** Comet with its graphics chip switched off to save power. */
+    class Asleep extends DemoClient {
+      override watch(id: string, cb: (pc: PC) => void) {
+        return super.watch(id, (pc) => cb({ ...pc, parts: { ...pc.parts, gpu: { ...pc.parts!.gpu, temp: undefined, asleep: true } } }));
+      }
+    }
+    localStorage.setItem("rig.pc", "demo-comet");
+    try {
+      render(<RigApp client={new Asleep()} />);
+      await screen.findByText(/Things to look at/i);
+      await open("logs");
+      const readings = await screen.findByRole("region", { name: "Readings" });
+      fireEvent.click(within(within(readings).getByRole("group", { name: "How far back" })).getByRole("button", { name: "Day" }));
+      const parts = await within(readings).findByRole("region", { name: "Parts" });
+      const gpu = within(within(parts).getAllByRole("button").find((b) => b.textContent?.startsWith("Graphics card"))!);
+      expect(gpu.getByText("Asleep to save power")).toBeTruthy();
+      expect(gpu.getByText("–")).toBeTruthy();
+    } finally { localStorage.clear(); }
   });
 
   it("opens the whole PC on a row per part, and one picker shows a part's every sensor or one reading across every part", () => {

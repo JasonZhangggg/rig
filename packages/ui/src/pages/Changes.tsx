@@ -5,7 +5,7 @@ import { nativeNoUndo, recordRuns, StepCard, StepRecord, undoReach } from "../co
 import { TURN_BACK_ON } from "../components/change/native";
 import { Countdown } from "../components/change/Revert";
 import { DayLabel, Row, Rows } from "../components/Rows";
-import { useActions, useAppSelector, useLatest } from "../state";
+import { useActions, useAppSelector, useLatest, useMachineWord } from "../state";
 import { Counts, HowChangesWork, type Filter } from "./changes/Counts";
 import { NoChanges } from "./changes/Empty";
 import { bySeverity, issueGo } from "./shared";
@@ -162,6 +162,7 @@ function OffForNow() {
 function KeepOff({ revert, onClose, onDone }: { revert: OpenRevert; onClose: () => void; onDone: () => Promise<unknown> }) {
   const { client, toast } = useActions();
   const pc = useAppSelector((c) => ({ id: c.pc.id, name: c.pc.name }));
+  const word = useMachineWord();
   const [preview, setPreview] = useState<PreviewReply | null>(null);
   const [outcome, setOutcome] = useState<StepOutcome | null>(null);
   if (!client.previewKeepOff || !client.applyStep) return null;
@@ -171,7 +172,7 @@ function KeepOff({ revert, onClose, onDone }: { revert: OpenRevert; onClose: () 
   };
   return (
     <div className="ch-keep">
-      <StepCard step={step} byPerson preview={preview} outcome={outcome} pcName={pc.name} canApply={client.caps.applyChanges}
+      <StepCard step={step} byPerson preview={preview} outcome={outcome} pcName={pc.name} word={word} canApply={client.caps.applyChanges}
         onRead={() => run("read it", async () => { setOutcome(null); setPreview(await client.previewKeepOff!(pc.id, revert.changeId)); })}
         onApply={() => run("keep it off", async () => {
           if (preview?.outcome !== "ready") return;

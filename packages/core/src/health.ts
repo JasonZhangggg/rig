@@ -5,7 +5,8 @@ import type { HealthPart, Issue, Severity } from "./model";
 import { diagnose, STABILITY, WEAR_CRITICAL, WEAR_LOW, type Finding, type HealthInput } from "./diagnose";
 import { boostsToLimit, cardChip, cpuLimit, cpuTemp, gpuLimit, gpuTemp, mobileChip, throttlingHard } from "./limits";
 import { safetyFindings } from "./safety";
-import { findSensor, type Inventory } from "./telemetry";
+import { machineWord } from "./machineWord";
+import { findSensor, type Inventory, type PCKind } from "./telemetry";
 import { suggestedOff } from "./startup";
 
 export type { Finding, HealthInput } from "./diagnose";
@@ -24,8 +25,13 @@ export const BUSY_LOAD = 60;
  * from BUSY_LOAD.
  */
 export function limitByDesign(inv: Inventory, load: number | null | undefined): boolean {
-  if (load == null || !boostsToLimit(inv.cpu.name, inv.machine.kind)) return false;
-  return inv.machine.kind === "laptop" || mobileChip(inv.cpu.name) ? load > REST_LOAD : load >= BUSY_LOAD;
+  return cpuLimitByDesign(inv.cpu.name, inv.machine.kind, load);
+}
+
+/** limitByDesign from the processor's name and the machine's kind, for screens that have the PC rather than its inventory. */
+export function cpuLimitByDesign(cpu: string, kind: PCKind | undefined, load: number | null | undefined): boolean {
+  if (load == null || !boostsToLimit(cpu, kind)) return false;
+  return kind === "laptop" || mobileChip(cpu) ? load > REST_LOAD : load >= BUSY_LOAD;
 }
 
 const ghz = (mhz: number) => `${(mhz / 1000).toFixed(1)} GHz`;
@@ -34,12 +40,13 @@ export function findings(input: HealthInput): Finding[] {
   const { inv, snap, facts } = input;
   const out: Finding[] = [];
   const add = (f: Omit<Finding, "id"> & { id?: string }) => out.push({ id: f.id ?? `${f.category}-${out.length}`, ...f } as Finding);
+  const word = machineWord(inv.machine.kind);
 
   // Permission for sensors
   if (snap && !snap.elevated) {
     add({ id: "needs-admin", category: "Temperatures", weight: 0, severity: "info", title: "Rig can't read every temperature yet", body: "Windows only shares processor and board temperatures with apps that have admin permission. Restart Rig and choose Yes when Windows asks.", action: "How this works", go: "chat", ask: "Why does Rig need admin permission to read temperatures?" });
   } else if (snap?.driver && !snap.driver.installed) {
-    add({ id: "needs-driver", category: "Temperatures", weight: 0, severity: "info", title: "Rig can't read processor temperatures yet", body: "They come through PawnIO, a small signed driver that installs with Rig, and it isn't on this PC. Run Rig's installer again and choose Yes when Windows asks.", action: "How this works", go: "chat", ask: "What is PawnIO and why does Rig need it for processor temperatures?" });
+    add({ id: "needs-driver", category: "Temperatures", weight: 0, severity: "info", title: "Rig can't read processor temperatures yet", body: `They come through PawnIO, a small signed driver that installs with Rig, and it isn't on this ${word}. Run Rig's installer again and choose Yes when Windows asks.`, action: "How this works", go: "chat", ask: "What is PawnIO and why does Rig need it for processor temperatures?" });
   }
 
   // Processor temperature, read against how hard it's working: at its limit under load is how laptops and some desktop chips are built; at its limit at rest is a cooling fault.
@@ -124,10 +131,10 @@ export function findings(input: HealthInput): Finding[] {
   }
 
   // Windows version
-  if (/windows 10/i.test(inv.machine.os.name)) add({ id: "win10", category: "Drivers and updates", weight: 25, severity: "warn", title: "Windows 10 no longer gets security updates", body: "Support ended in October 2025. Rig can check whether this PC can move to Windows 11.", action: "Ask about Windows 11", go: "chat", ask: "Can this PC run Windows 11?" });
+  if (/windows 10/i.test(inv.machine.os.name)) add({ id: "win10", category: "Drivers and updates", weight: 25, severity: "warn", title: "Windows 10 no longer gets security updates", body: `Support ended in October 2025. Rig can check whether this ${word} can move to Windows 11.`, action: "Ask about Windows 11", go: "chat", ask: `Can this ${word} run Windows 11?` });
 
   // Updates, virus protection and the firewall, only for real problems in what the helper read.
-  for (const f of safetyFindings(facts?.security, input.now ?? snap?.at ?? Date.now())) add(f);
+  for (const f of safetyFindings(facts?.security, input.now ?? snap?.at ?? Date.now(), inv.machine.kind)) add(f);
 
   diagnose(input, (f) => add(f));
   return out;

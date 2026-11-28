@@ -512,7 +512,7 @@ export class LocalClient implements RigClient {
         changes: await this.changes(this.id), games: await this.games(this.id), history: await this.store.history(0),
         events: await this.events(this.id), recordings: [...await this.recorder.all(), ...this.bgRecs],
       }],
-      notes: ["Exported from the Rig app on this PC while signed out."],
+      notes: [`Exported from the Rig app on this ${this.word} while signed out.`],
       now: new Date(this.o.now()),
     });
   }
@@ -748,7 +748,7 @@ export class LocalClient implements RigClient {
   /** Sets up or turns off a custom log the chat asked for. Scripts never come this way: the person approves them. Returns why it failed, if it did. */
   private async applyProbe(e: Extract<ChatEvent, { type: "probe" }>): Promise<string | undefined> {
     const rec = this.o.recorder;
-    if (!rec?.probes) return "This PC's background recorder can't keep custom logs.";
+    if (!rec?.probes) return `This ${this.word}'s background recorder can't keep custom logs.`;
     try {
       if (e.op === "add") {
         if (e.probe.source.kind === "script") return "A script runs only once you approve it.";
@@ -923,7 +923,7 @@ export class LocalClient implements RigClient {
   }
 
   private stepLink(): StepLink["step"] {
-    if (!this.link.step) throw new Error("This PC's Rig helper is too old for this change. Update Rig, then ask again.");
+    if (!this.link.step) throw new Error(`This ${this.word}'s Rig helper is too old for this change. Update Rig, then ask again.`);
     return this.link.step.bind(this.link);
   }
 
@@ -1065,7 +1065,7 @@ export class LocalClient implements RigClient {
   private pagesKey(mid: string) { return `manualPages:${mid}`; }
   private async localManual(id: string, mid: string): Promise<Manual> {
     const m = (await this.isLocal(id)) ? (await this.localManuals()).find((x) => x.id === mid) : undefined;
-    if (!m) throw new Error("That manual isn't on this PC.");
+    if (!m) throw new Error(`That manual isn't on this ${this.word}.`);
     return m;
   }
 
@@ -1102,7 +1102,7 @@ export class LocalClient implements RigClient {
   async manualFile(id: string, mid: string): Promise<ArrayBuffer> {
     if (await this.signedIn()) return this.cloud!.manualFile(id, mid);
     await this.localManual(id, mid);
-    throw new Error("This PDF was added from a file, so only the copy on this PC has it.");
+    throw new Error(`This PDF was added from a file, so only the copy on this ${this.word} has it.`);
   }
 
   async saveManualPages(id: string, mid: string, pages: ManualPage[], diagrams: ManualDiagram[]): Promise<Manual> {
@@ -1194,7 +1194,7 @@ export class LocalClient implements RigClient {
       const command = this.link.step?.bind(this.link);
       if (spec.kind === "screen") { out.push(await this.lookForChat(id, spec)); continue; }
       const script = spec.kind === "cmdlet" ? spec.command : spec.kind === "script" ? spec.script : null;
-      if (!(script !== null && command) && !this.link.read) { out.push({ id, ok: false, error: "This PC's Rig helper can't look at settings yet. Update Rig." }); continue; }
+      if (!(script !== null && command) && !this.link.read) { out.push({ id, ok: false, error: `This ${this.word}'s Rig helper can't look at settings yet. Update Rig.` }); continue; }
       try {
         let text: string;
         if (script !== null && command) {
@@ -1212,7 +1212,7 @@ export class LocalClient implements RigClient {
 
   /** A look in an app's window for the chat, through the helper. Its answer is parsed here, and a look it found is kept for the card. */
   private async lookForChat(id: string, spec: Extract<PcReadSpec, { kind: "screen" }>): Promise<PcReadResult> {
-    if (!this.link.step) return { id, ok: false, error: "This PC's Rig helper can't look in an app's window yet. Update Rig." };
+    if (!this.link.step) return { id, ok: false, error: `This ${this.word}'s Rig helper can't look in an app's window yet. Update Rig.` };
     try {
       const look = screenLookReply(await this.link.step("screen.look", { app: spec.app, goal: spec.goal }));
       if (!look) return { id, ok: false, error: "Rig's helper answered with something that isn't a look." };

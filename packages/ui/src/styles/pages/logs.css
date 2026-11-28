@@ -135,6 +135,8 @@
      line is drawn inside that room where the shadow used to be. */
   padding: 4px; margin: -4px; background: linear-gradient(var(--line), var(--line)) 4px calc(100% - 4px) / calc(100% - 8px) 1px no-repeat;
 }
+/* On a phone the tabs sit closer, so My PC's four fit across a 390px screen without scrolling. */
+@media (max-width: 760px) { .lg-views { gap: 16px; } }
 .lg-views a { transition: color 150ms ease; }
 .lg-views a:focus-visible { border-radius: 4px; }
 /* The views' underline already separates them from what follows, so the first block under it drops its own line. */

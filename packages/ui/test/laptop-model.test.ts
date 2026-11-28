@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { keyboardLayout, LAPTOP, makeLaptopBody } from "../src/laptop3d";
+import { BOARD, keyboardLayout, LAPTOP, makeLaptopBody, type Spot } from "../src/laptop3d";
 
 const colors = { shell: "#D9DAD7", keys: "#2B2D31", trackpad: "#C6C7C4", screenBg: "#0B0C0F", screenPanel: "#232C3D", screenLine: "#6A7793" };
 const mat = (color: THREE.ColorRepresentation) => new THREE.MeshStandardMaterial({ color });
@@ -20,6 +20,17 @@ function firstSeen(root: THREE.Object3D, eye: THREE.Vector3, at: THREE.Vector3) 
 }
 
 describe("laptop model", () => {
+  it("has room on the board for a gaming laptop's graphics chip beside the processor, clear of the other chips", () => {
+    const apart = (a: Spot, b: Spot) => Math.abs(a.x - b.x) >= (a.w + b.w) / 2 || Math.abs(a.z - b.z) >= (a.d + b.d) / 2;
+    const on = (a: Spot, b: Spot) => Math.abs(a.x - b.x) + a.w / 2 <= b.w / 2 && Math.abs(a.z - b.z) + a.d / 2 <= b.d / 2;
+    const { board, ...chips } = BOARD;
+    expect(Object.keys(chips)).toContain("gpu");
+    for (const c of Object.values(chips)) expect(on(c, board) || c === chips.ssd).toBe(true);
+    const list = Object.values(chips);
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) expect(apart(list[i], list[j])).toBe(true);
+  });
+
+
   it("shows the screen on the inside of the lid, not hidden in it", () => {
     const { body, root } = build();
     const glass = new THREE.Box3().setFromObject(body.screen).getCenter(new THREE.Vector3());

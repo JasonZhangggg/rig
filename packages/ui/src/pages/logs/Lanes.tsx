@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type PointerEvent, type RefObject } from "react";
-import { findReadings, sensorGroups, type PartsView, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
+import { findReadings, machineWord, sensorGroups, type PartsView, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
 import { dateText } from "../../dateText";
@@ -627,7 +627,8 @@ function ShowPicker({ pick, onPick, parts, kinds }: {
     document.addEventListener("keydown", key, true);
     return () => { document.removeEventListener("click", click); document.removeEventListener("keydown", key, true); };
   }, [open]);
-  const label = "kind" in pick ? kinds.find((k) => k.type === pick.kind)?.title ?? "Readings" : pick.part === "all" ? "Whole PC" : parts.find((p) => p.id === pick.part)?.name ?? "Whole PC";
+  const whole = parts.find((p) => p.id === "all")?.name ?? "Whole PC";
+  const label = "kind" in pick ? kinds.find((k) => k.type === pick.kind)?.title ?? "Readings" : parts.find((p) => p.id === pick.part)?.name ?? whole;
   const choose = (p: Pick) => { onPick(p); setOpen(false); btn.current?.focus(); };
   const toggle = () => { if (!open) setSide("kind" in pick ? "readings" : "parts"); setOpen(!open); };
   const arrows = (e: KeyEvent<HTMLElement>) => {
@@ -723,9 +724,9 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
   const lines = useMemo(() => partLines(whole ?? r, from, to, week ?? null, limits), [whole, r, from, to, week, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = lanes.reduce((n, l) => n + l.series.length, 0);
   const temp = useTemp();
-  const parts = [{ id: "all", name: "Whole PC" }, ...r.parts.map((p) => {
+  const parts = [{ id: "all", name: `Whole ${machineWord(device?.laptop ? "laptop" : undefined)}` }, ...r.parts.map((p) => {
     const l = lines.find((x) => x.id === p.id);
-    return { id: p.id, name: p.name, now: l?.now != null ? value(temp, l.type, l.now) : undefined };
+    return { id: p.id, name: p.name, now: device?.asleep?.includes(p.id) ? "Asleep" : l?.now != null ? value(temp, l.type, l.now) : undefined };
   })];
   const choose = (p: Pick) => { setPick(p); setQuery(""); };
   return (
