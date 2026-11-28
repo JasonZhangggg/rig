@@ -21,6 +21,14 @@ describe("Games", () => {
   beforeEach(() => { location.hash = ""; localStorage.clear(); });
   afterEach(() => cleanup());
 
+  it("is a tab of Logs, marked as the one open", async () => {
+    await openGames();
+    await screen.findByRole("list", { name: "Games" });
+    const tabs = screen.getByRole("navigation", { name: "Logs" });
+    expect(within(tabs).getByRole("link", { name: "Games" }).getAttribute("aria-current")).toBe("page");
+    expect(within(tabs).getByRole("link", { name: "Readings" }).getAttribute("aria-current")).toBeNull();
+  });
+
   it("lists the week's games most played first and opens one", async () => {
     await openGames();
     const list = await screen.findByRole("list", { name: "Games" });

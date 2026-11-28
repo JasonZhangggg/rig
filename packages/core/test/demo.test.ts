@@ -72,6 +72,12 @@ describe("demo alerts", () => {
     expect(new Date(pc.alerts![0].since).getTime()).toBeLessThan(Date.now() - 864e5);
     expect(pc.health).toBeGreaterThanOrEqual(75);
     expect(pc.summary).toBe("Running well. One thing needs a look.");
+    // The temperatures it quotes are the ones the month of history on the PC page shows.
+    const month = await new DemoClient().history("demo-atlas", "30d");
+    const game = /^In (.+?) it's/.exec(pc.alerts![0].detail)![1], day = 864e5;
+    const temps = (from: number, to: number) => month.filter((x) => x.busy && x.game === game && x.gpu != null && Date.now() - x.t >= from * day && Date.now() - x.t < to * day).map((x) => x.gpu!);
+    const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    expect(pc.alerts![0].detail).toContain(`at ${Math.round(median(temps(0, 7)))}°C lately, up from its usual ${Math.round(median(temps(14, 30)))}°C`);
     const { pc: laptop } = await demoWeek("demo-pebble");
     expect(laptop.alerts).toBeUndefined();
   });

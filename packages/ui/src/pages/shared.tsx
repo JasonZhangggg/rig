@@ -21,6 +21,7 @@ export const shopCatOf: Record<string, string> = { ram: "memory", ssd: "storage"
 // What clicking an issue does everywhere
 export function issueGo(i: Issue, pc: PC, ctx: Pick<Ctx, "set" | "go" | "ask" | "review">) {
   if (i.fix) { ctx.review(fixSteps(i.fix), { by: "you", why: i.title }); return; }
+  if (i.open === "startup") { ctx.set({ startupApps: true }); return; }
   // A full drive opens the storage map's Free up space list where the PC has a map, and asks Rig where it doesn't.
   const map = i.tab === "drives" && !!pc.drives?.length;
   if (i.ask && !map) { ctx.ask(i.ask); return; }

@@ -50,6 +50,8 @@ export interface Issue {
   ask?: string;
   /** The tab of the part to open on My PC, when it's not the usual one. "drives" opens the storage map at Free up space. */
   tab?: string;
+  /** A dialog that opening the issue shows, in place of the chat or a page: startup, the startup apps list. */
+  open?: "startup";
   /** A change that fixes it, shown for review before anything happens. */
   fix?: ActionCall[];
   /** What Rig saw that led here, one plain line each, so the chat (and the person) can check the reasoning. */
@@ -204,6 +206,16 @@ export interface PCSettings {
   visualEffects: "auto" | "appearance" | "performance" | "custom";
   powerPlans: { guid: string; name: string; active: boolean }[];
   startupOn: number;
+  /** Every app that starts with Windows, in Windows' order. Older views don't have it. */
+  startup?: StartupAppView[];
+}
+
+/** One app that starts with Windows, as the PC view carries it: no command, which can hold paths in the person's folders. */
+export interface StartupAppView {
+  name: string;
+  enabled: boolean;
+  /** user: starts for this account. machine: for everyone on the PC. */
+  scope: "user" | "machine";
 }
 
 /** How long one HistoryPoint covers. The desktop records one per window; insights read them back on this grid. */
