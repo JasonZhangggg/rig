@@ -20,6 +20,12 @@ describe("manualTargets", () => {
     expect(manualTargets(pebble)).toEqual([{ part: "chassis", kind: "laptop", maker: "ASUS", model: "Zenbook 14 OLED UX3405MA", source: "detected" }]);
   });
 
+  it("finds a gaming laptop's own manual, not one for its soldered graphics chip", async () => {
+    const comet = (await new DemoClient().machines()).find((m) => m.id === "demo-comet")!;
+    expect(comet.parts?.gpu?.name).toBe("NVIDIA GeForce RTX 4060 Laptop GPU");
+    expect(manualTargets(comet).map((t) => t.kind)).toEqual(["laptop"]);
+  });
+
   it("skips placeholders, built-in graphics and the generic case and power supply", () => {
     const pc: PC = {
       id: "x", name: "X", kind: "tower", accent: "", nickname: "", os: "", health: 90, lastSync: "", online: true, summary: "",
