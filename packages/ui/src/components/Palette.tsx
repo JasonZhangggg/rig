@@ -19,6 +19,7 @@ const pageWords: Partial<Record<Route, [string, string]>> = {
   games: ["In Logs: how your games ran and how warm they got", "games fps gaming performance tuning"],
   upgrades: ["On My PC: parts that fit, with prices", "upgrades buy parts price prices compatible compatibility ram memory ssd storage graphics card gpu cpu processor cooler fan power supply psu wattage"],
   manuals: ["On My PC: every part's manual, drivers and BIOS", "manuals manual diagrams pdf drivers driver bios"],
+  safety: ["On My PC: Windows updates, virus protection, the firewall and backup", "safety safe secure security up to date windows update updates restart antivirus anti-virus virus defender malware firewall backup onedrive file history protection"],
   chat: ["Ask Rig anything about your PC", "ask chat help question"],
   logs: ["Every sensor, live or back to the last month", "logs readings live now real time realtime sensors temperature history temps heat chart graph day week month usage load cpu gpu memory ram fans performance task manager hwmonitor recordings recorded background log closer look custom log yesterday"],
   events: ["In Logs: everything that happened, newest first", "events log feed tail alerts windows event log crashes errors blue screen driver shutdown problems closer look"],

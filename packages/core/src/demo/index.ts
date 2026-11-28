@@ -40,6 +40,22 @@ export { demoScan } from "./storage";
 export { demoApply, demoCards, demoNativeCards, demoPreview, demoProposal, demoStep, demoUndo, demoUndoRecord, type AnyDemoCard, type DemoCard, type DemoNativeCard } from "./cards";
 export { sampleBoardManual, sampleLaptopGuide, render as renderSampleManual } from "./manuals";
 export { writePdf, PdfPage } from "./pdf";
+/** The fixtures' safety readings were taken at a fixed time. Moved so they read as a few minutes ago, and every age stays as written. */
+export function freshSecurity(facts: SystemFacts, now: number): SystemFacts {
+  const s = facts.security;
+  if (!s) return facts;
+  const by = now - 5 * 60_000 - s.readAt;
+  const at = (t: number | undefined) => (t == null ? t : t + by);
+  return {
+    ...facts,
+    security: {
+      ...s, readAt: s.readAt + by,
+      updates: s.updates && { ...s.updates, lastInstalledAt: at(s.updates.lastInstalledAt), restartSince: at(s.updates.restartSince) },
+      backup: s.backup && { ...s.backup, fileHistoryAt: at(s.backup.fileHistoryAt) },
+    },
+  };
+}
+
 export const fixtures = { atlas: { inv: atlasInv as Inventory, facts: atlasFacts as SystemFacts }, pebble: { inv: pebbleInv as Inventory, facts: pebbleFacts as SystemFacts } };
 
 interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: { until: number; act: Activity }; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
@@ -94,7 +110,7 @@ export class DemoClient implements RigClient {
         source: { events: async (since) => demoEvents(inv.machine.kind, Date.now(), since), processes: async () => demoProcesses(inv, Date.now()) },
         onChange: () => { const p = this.pcs[inv.machine.id]; if (p) recListeners.forEach((cb) => cb(this.recordingList(p))); },
       });
-      return { inv: structuredClone(inv), facts: structuredClone(facts), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners, scan: demoScan(inv, Date.now() - 3 * 36e5) };
+      return { inv: structuredClone(inv), facts: freshSecurity(structuredClone(facts), Date.now()), id, dust, dayMax: {}, changes: [], alerts: emptyAlertState(), recorder, recListeners, scan: demoScan(inv, Date.now() - 3 * 36e5) };
     };
     this.pcs = {
       // Atlas's owner already told Rig which graphics card it is, since Windows' ids don't name it.
