@@ -24,6 +24,8 @@
 /* Held clear while the PC flies most of the way in, then eased in: one animation, so no wait before it starts. */
 @keyframes closeup-in { 0%, 40% { opacity: 0; animation-timing-function: ease-in-out; } 100% { opacity: 1; } }
 @keyframes closeup-out { to { opacity: 0; } }
+/* Exploded view, while on, reads as chosen in the toolbar's quiet grey, like a picked row, not a dark button. */
+.stage-tools .btn[aria-pressed="true"] { background: var(--sel); border-color: transparent; color: var(--text); }
 .stage-tools { position: absolute; z-index: 2; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); overflow-x: auto; scrollbar-width: none; display: flex; gap: 6px; padding: 6px; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 
 .customize { position: absolute; z-index: 5; top: 16px; right: 16px; width: 260px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-lg); }

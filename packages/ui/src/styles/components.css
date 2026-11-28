@@ -5,7 +5,8 @@
   background: var(--surface); color: var(--text); font-weight: 600; white-space: nowrap; text-decoration: none; cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
 }
-@media (hover: hover) and (pointer: fine) { .btn:not(:disabled, [aria-disabled="true"]):hover { background: var(--surface-2); } }
+/* A pressed button keeps its pressed look under the pointer, so its words stay readable. */
+@media (hover: hover) and (pointer: fine) { .btn:not(:disabled, [aria-disabled="true"], [aria-pressed="true"]):hover { background: var(--surface-2); } }
 /* A press answers at once: the button gives a little under the finger. */
 .btn:not(:disabled, [aria-disabled="true"]):active { transform: scale(.97); }
 .btn:is(:disabled, [aria-disabled="true"]) { opacity: .55; cursor: default; }
