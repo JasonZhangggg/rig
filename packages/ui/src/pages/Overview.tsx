@@ -14,6 +14,7 @@ import { ChangesWidget, DriversWidget, DrivesWidget, EventsWidget, GamesWidget, 
 import { Arrow, AsksWidget, HealthWidget, LiveWidget, PCWidget, PartsWidget, StorageWidget, TodoWidget, checkupQuestion, scored, sourceItems, useHomeIssues, useOpenIssue, type TileBox } from "./overview/widgets";
 import { focusSection } from "./settings/sections";
 import { firstName, greeting } from "./shared";
+import { dateText } from "../dateText";
 
 const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
 const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
@@ -259,7 +260,7 @@ export function Overview() {
           <p>{pc.online ? `${known ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}.` : `Rig is getting to know ${pc.name}.`} ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
         </div>
         <div className="f-head-tools">
-          <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
+          <div className="f-date"><b>{now.getDate()}</b><span>{dateText(now, { weekday: "short" })},<br />{dateText(now, { month: "long" })}</span></div>
           {top && (
             <button type="button" className="f-cta" onClick={() => openIssue(top)}>
               <span>{open.length ? "Review" : "See what's new"}</span>

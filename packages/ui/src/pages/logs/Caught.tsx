@@ -6,6 +6,7 @@ import { Row, Rows } from "../../components/Rows";
 import { useActions, useData, useStillPC, useTemp, useTempText, useTempUnit } from "../../state";
 import { useWidth } from "./Lanes";
 import { clock, dayName, isPhone } from "./words";
+import { dateText } from "../../dateText";
 
 const MIN = 60_000;
 const lower = (s: string) => s[0].toLowerCase() + s.slice(1);
@@ -216,7 +217,7 @@ export function CaughtTodo({ caught, info }: { caught: Caught; info: RecordingIn
   const game = caught.game;
   const record = () => {
     setStarting(true);
-    const why = `Check ${caught.part === "gpu" ? "the graphics card" : "the processor"}${game ? ` in ${game}` : ""} after ${caught.moment.toLowerCase()} on ${new Date(caught.event.t).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.`;
+    const why = `Check ${caught.part === "gpu" ? "the graphics card" : "the processor"}${game ? ` in ${game}` : ""} after ${caught.moment.toLowerCase()} on ${dateText(new Date(caught.event.t), { month: "short", day: "numeric" })}.`;
     void startRecording(info.minutes, why).finally(() => setStarting(false));
   };
   const clean = () => {

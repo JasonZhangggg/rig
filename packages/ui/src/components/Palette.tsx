@@ -10,6 +10,7 @@ import { useManuals } from "../manuals/useManuals";
 import { openManual } from "../manuals/viewerState";
 import { partOf } from "../pages/upgrades/PCUpgrades";
 import { shopCatOf } from "../pages/shared";
+import { dateText } from "../dateText";
 
 /** What a page is about, so a search in a person's own words finds it. */
 const pageWords: Partial<Record<Route, [string, string]>> = {
@@ -99,7 +100,7 @@ function OpenPalette() {
         run: () => open("pc", { selected: id, tab: "live" }),
       });
     }
-    for (const c of data.changes) items.push({ id: `c-${c.id}`, kind: "changes", title: c.title, sub: `${new Date(c.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${c.by === "you" ? "You" : "Rig"}`, badge: { text: c.status === "applied" ? "Applied" : "Undone", tone: c.status === "applied" ? "ok" : "muted" }, run: () => open("changes") });
+    for (const c of data.changes) items.push({ id: `c-${c.id}`, kind: "changes", title: c.title, sub: `${dateText(new Date(c.at), { month: "short", day: "numeric" })} · ${c.by === "you" ? "You" : "Rig"}`, badge: { text: c.status === "applied" ? "Applied" : "Undone", tone: c.status === "applied" ? "ok" : "muted" }, run: () => open("changes") });
     for (const g of extra.games) items.push({ id: `g-${g.id}`, kind: "games", title: g.name, sub: [g.res, g.now && `${g.now.avg} FPS`].filter(Boolean).join(" · "), badge: g.now && g.tuned ? { text: `+${g.tuned.avg - g.now.avg} FPS possible`, tone: "info" } : undefined, run: () => open("games") });
     for (const u of extra.upgrades) items.push({ id: `u-${u.title}`, kind: "upgrades", title: u.title, sub: [u.part, u.price].filter(Boolean).join(" · "), badge: u.fit === "fits" ? { text: "Fits", tone: "ok" } : u.fit === "check" ? { text: "Check first", tone: "warn" } : undefined, run: () => { const id = partOf(u, pc); open("upgrades", { shopCat: id ? shopCatOf[id] ?? null : null }); } });
     for (const r of data.recordings) items.push({ id: `r-${r.id}`, kind: "logs", title: r.reason, sub: `Recording · ${whenRan(r)} · ${minutes(r.minutes)}`, keys: r.headline, badge: { text: stateWord[r.state], tone: recTone[r.state] }, run: () => { openRecording(r.id); close(); } });

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { HOT_MARGIN, formatTemp, headroom, standing, tempZones, usualRange, type Part, type RangePart, type Standing, type TempUnit, type UsualRange, type ZoneId } from "@rig/core";
 import { useHistory, useTempUnit } from "../state";
+import { dateText } from "../dateText";
 
 /** The parts whose history Rig keeps, so a ribbon can show where they usually sit. */
 export const rangePart = (id: string): RangePart | null => (id === "gpu" || id === "cpu" ? id : null);
@@ -12,7 +13,7 @@ function dayWord(t: number, now = new Date()) {
   const d = new Date(t), y = new Date(now);
   y.setDate(y.getDate() - 1);
   const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  return same(d, now) ? "today" : same(d, y) ? "yesterday" : d.toLocaleDateString(undefined, { weekday: "long" });
+  return same(d, now) ? "today" : same(d, y) ? "yesterday" : dateText(d, { weekday: "long" });
 }
 
 /** The headline and the line under it: how the temperature now compares with where this part usually sits. */
