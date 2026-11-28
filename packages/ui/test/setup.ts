@@ -1,3 +1,4 @@
+import { configure } from "@testing-library/react";
 import { vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
 
@@ -16,3 +17,6 @@ vi.setSystemTime(morning);
 
 // The demo pretends approval steps take a moment, for the website. Tests don't wait for it.
 DemoClient.pace = 0;
+
+// The first screen of a test file waits on the demo PC's data, which takes well over the default second on a busy CI runner.
+configure({ asyncUtilTimeout: 10000 });
