@@ -62,6 +62,26 @@ describe("demo history", () => {
     expect(at(6).every((c) => c.level! < 0.5)).toBe(true);
     expect(Math.max(...at(18).map((c) => c.level!))).toBe(1);
   });
+  it("reads the same month as before for the PC page and the data download", async () => {
+    // The readings follow the clock, so the month is pinned in one time zone.
+    const zone = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 17, 21, 0));
+      const demo = new DemoClient();
+      await demo.machines();
+      const month = async (id: string) => {
+        const m = await demo.history(id, "30d");
+        const sum = (k: keyof HistoryPoint) => Math.round(m.reduce((s, p) => s + (Number(p[k]) || 0), 0));
+        return { points: m.length, cpu: sum("cpu"), gpu: sum("gpu"), fan: sum("fan"), cpuLoad: sum("cpuLoad"), mem: sum("mem"), busy: m.filter((p) => p.busy).length };
+      };
+      expect(await month("demo-atlas")).toEqual({ points: 4320, cpu: 204654, gpu: 203201, fan: 4844198, cpuLoad: 80905, mem: 140815, busy: 600 });
+      expect(await month("demo-pebble")).toEqual({ points: 4320, cpu: 253305, gpu: 0, fan: 9629280, cpuLoad: 75900, mem: 259376, busy: 354 });
+    } finally {
+      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+    }
+  });
 });
 
 describe("demo alerts", () => {
