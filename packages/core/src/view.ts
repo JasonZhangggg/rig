@@ -84,6 +84,12 @@ export type Evidence = Pick<HealthInput, "events" | "history" | "now" | "sleep">
   charge?: ChargeRead | null;
 };
 
+/** A board or laptop by its maker as people write it: "ASUS GA403UV", not "ASUSTeK COMPUTER INC. GA403UV". */
+function madeBy(maker: string | undefined, model: string | undefined): string {
+  const m = (model ?? "").trim(), by = makerName(maker);
+  return by && !m.toLowerCase().startsWith(by.toLowerCase()) ? `${by} ${m}`.trim() : m || by;
+}
+
 export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}, more: Evidence = {}): PC & { findings: Finding[] } {
   const laptop = inv.machine.kind === "laptop";
   const parts: Record<string, Part> = {};
@@ -128,7 +134,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   // Board
   const boardTemp = findSensor(snap, "board", "temperature", /system|motherboard|board/i) ?? findSensor(snap, "board", "temperature");
   const boardPart: Part = {
-    name: `${inv.board.manufacturer} ${inv.board.product}`.trim(), type: "Motherboard", modelSource: "generic",
+    name: madeBy(inv.board.manufacturer, inv.board.product), type: "Motherboard", modelSource: "generic",
     maker: inv.board.manufacturer || undefined, model: inv.board.product || undefined,
     temp: round(boardTemp?.value), tempMax: boardTemp ? round(Math.max(dayMax[boardTemp.id] ?? 0, boardTemp.value ?? 0)) : undefined,
     specs: [["BIOS", inv.board.biosVersion + (inv.board.biosDate ? ` (${inv.board.biosDate})` : "")]],
@@ -191,13 +197,14 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   const fans: FanReading[] = fanSensors.map((s) => ({ label: s.hw === "gpu" ? "Graphics" : s.name.replace(/^Fan #?/, "Fan "), rpm: Math.round(s.value!), max: Math.max(2000, Math.round(s.max ?? 0)) }));
   parts.fans = {
     name: laptop ? "Laptop fans" : "Case fans", type: "Cooling", modelSource: "generic",
-    fan: fans.length ? Math.round(fans.reduce((n, f) => n + f.rpm, 0) / fans.length) : undefined,
+    // The fastest fan, as Home and Logs count the fans, so the figure agrees wherever it shows.
+    fan: fans.length ? Math.max(...fans.map((f) => f.rpm)) : undefined,
     specs: fans.length ? fans.map((f) => [f.label, `${f.rpm.toLocaleString("en-US")} rpm`] as [string, string]) : [["Fans", "No fan speeds reported"]],
     manual: [],
   };
 
   if (laptop) {
-    parts.chassis = { name: `${inv.machine.manufacturer} ${inv.machine.model}`.trim(), type: "Laptop", modelSource: "generic", maker: inv.machine.manufacturer || undefined, model: inv.machine.model || undefined, specs: [["Maker", inv.machine.manufacturer], ["Model", inv.machine.model]], manual: [] };
+    parts.chassis = { name: madeBy(inv.machine.manufacturer, inv.machine.model), type: "Laptop", modelSource: "generic", maker: inv.machine.manufacturer || undefined, model: inv.machine.model || undefined, specs: [["Maker", makerName(inv.machine.manufacturer) || inv.machine.manufacturer], ["Model", inv.machine.model]], manual: [] };
     const b = inv.battery;
     if (b) {
       const wear = b.designWh && b.fullWh ? Math.round((b.fullWh / b.designWh) * 100) : undefined;

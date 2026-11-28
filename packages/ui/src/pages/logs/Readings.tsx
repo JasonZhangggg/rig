@@ -172,7 +172,7 @@ export function Readings() {
           </span>
         </div>}
         {story ? <WeekStory /> : !shown.r ? <ChartNote>{shown.empty ?? "Nothing to show."}</ChartNote>
-          : <AllSensors r={shown.r} whole={shown.whole} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} liveSpan={isLive(span) ? spanMs[span] : undefined} week={week} device={{ laptop: full.kind === "laptop", battery: full.battery, asleep: !dayInfo && full.online && full.parts?.gpu?.asleep ? ["gpu"] : [] }} />}
+          : <AllSensors r={shown.r} whole={shown.whole} from={shown.from} to={shown.to} limits={limits} bands={bands} marks={marks} compact={isPhone()} live={live} liveSpan={isLive(span) ? spanMs[span] : undefined} week={week} device={{ laptop: full.kind === "laptop", battery: full.battery, asleep: !dayInfo && full.online && full.parts?.gpu?.asleep ? ["gpu"] : [], cpu: full.parts?.cpu && { name: full.parts.cpu.name, kind: full.kind, hot: !!full.issues?.some((i) => i.id === "cpu-hot") } }} />}
         {!story && shown.r && shown.note && <p className="faint lv-since">{shown.note}</p>}
       </section>
       <div className="rc-lower">

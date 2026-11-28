@@ -287,7 +287,21 @@ describe("Upgrades", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Battery/ }));
     fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
     const idea = (await screen.findByRole("heading", { level: 3, name: "Battery replacement" })).closest("li")!;
-    expect(idea.querySelector("p.muted")!.textContent).toBe("At 89% there's no need yet. Most people replace it around 70 to 75%.");
+    expect(idea.querySelector("p.muted")!.textContent).toBe("Most people replace it around 70 to 75%.");
+    expect(within(idea).getByText("89% of original capacity.")).toBeTruthy();
+    // Not needed yet, once: the chip, with no words beside it saying it again.
+    expect(idea.textContent!.match(/not needed yet|no need/gi)).toEqual(["Not needed yet"]);
+    expect(idea.textContent!.match(/89%/g)).toHaveLength(1);
+  });
+
+  it("says how a part's upgrade fits once, by its chip", async () => {
+    localStorage.setItem("rig.pc", "demo-comet");
+    await show("pc");
+    fireEvent.click(await screen.findByRole("button", { name: /^Memory/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
+    const idea = (await screen.findByRole("heading", { level: 3, name: "Memory may be soldered" })).closest("li")!;
+    expect(within(idea).getByText("Check first")).toBeTruthy();
+    expect(within(idea).queryByText("Check your model first")).toBeNull();
   });
 
   it("says so before Rig has read the parts", async () => {
@@ -356,7 +370,9 @@ describe("My PC", () => {
     const { partsSummary } = await import("../src/pages/PCPage");
     expect(partsSummary([], "Desk PC", true)).toBe("Rig hasn't read Desk PC's parts yet. They show up here once the Rig app on Desk PC sends its first reading.");
     const hot = { type: "Graphics card", name: "RTX", warn: true, temp: 90, specs: [], manual: [], modelSource: "generic" as const };
-    expect(partsSummary([hot], "Desk PC", true)).toBe("Graphics card has a warning. Open it for details.");
+    // In Rig's calm words, as everywhere else: it needs a look, not "has a warning".
+    expect(partsSummary([hot], "Desk PC", true)).toBe("Graphics card needs a look. Open it to see why.");
+    expect(partsSummary([hot, { ...hot, type: "Battery" }], "Desk PC", true)).toBe("2 parts need a look: graphics card, battery.");
     expect(partsSummary([{ ...hot, limit: 88 }], "Desk PC", true)).toBe("Graphics card is at 90°C, 2° over its 88°C limit.");
   });
 });

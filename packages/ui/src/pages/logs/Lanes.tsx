@@ -949,7 +949,7 @@ export function AllSensors({ r, whole, from, to, limits, bands, marks, compact, 
   const lanes = useMemo(() => (ticked ? foundLanes(r, chosen, limits) : finding ? foundLanes(r, new Set(matchesOf(r, finding)), limits) : kind ? kindLanes(shown, kind, limits) : lanesFor(shown, part, limits)).map((l) => ({ ...l, h: undefined })),
     [shown.sensors, shown.parts, part, kind, finding, chosen, ticked, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
   const overview = part === "all" && !kind && !finding && !ticked;
-  const lines = useMemo(() => partLines(whole ?? r, from, to, week ?? null, limits), [whole, r, from, to, week, limits.cpu, limits.gpu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lines = useMemo(() => partLines(whole ?? r, from, to, week ?? null, limits, device?.cpu), [whole, r, from, to, week, limits.cpu, limits.gpu, device?.cpu?.name, device?.cpu?.kind, device?.cpu?.hot]); // eslint-disable-line react-hooks/exhaustive-deps
   const temp = useTemp();
   const parts = [{ id: "all", name: `Whole ${machineWord(device?.laptop ? "laptop" : undefined)}` }, ...r.parts.map((p) => {
     const l = lines.find((x) => x.id === p.id);

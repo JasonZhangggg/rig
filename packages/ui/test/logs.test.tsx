@@ -588,6 +588,27 @@ describe("Logs", () => {
     expect(gpu().queryByText("Asleep to save power")).toBeNull();
   });
 
+  it("reads a laptop processor held at its limit under load as built, as Home does, not as slowing down", () => {
+    const t0 = Date.now() - 60_000;
+    const s = (type: "temperature" | "load", name: string) => ({ id: `cpu-${name}`, hw: "cpu" as const, hwName: "", type, name, part: "cpu" });
+    const sensors = [s("temperature", "CPU Package"), s("load", "CPU Total")];
+    // Working hard, at its 95°C limit the whole time.
+    const points = Array.from({ length: 30 }, (_, k) => ({ t: t0 + k * 2000, v: [95, 70] }));
+    const r = { sensors, points, full: true, parts: [{ id: "cpu", name: "Processor", sensors: [0, 1], lead: 0 }] };
+    const row = () => within(within(screen.getByRole("region", { name: "Parts" })).getAllByRole("button")[0]);
+    const { rerender } = render(<AllSensors r={r} from={t0} to={Date.now()} limits={{ cpu: 95 }} device={{ laptop: true, cpu: { name: "AMD Ryzen 9 8945HS", kind: "laptop" } }} />);
+    expect(row().getByText("At its limit, as built")).toBeTruthy();
+    expect(row().queryByText("Slowing itself down")).toBeNull();
+    expect(row().getByText(/^Highest 95°C at /).classList.contains("look")).toBe(false);
+    // A desktop chip that isn't built to sit at its limit is still slowing down, in rust.
+    rerender(<AllSensors r={r} from={t0} to={Date.now()} limits={{ cpu: 95 }} device={{ laptop: false, cpu: { name: "AMD Ryzen 7 7800X3D", kind: "tower" } }} />);
+    expect(row().getByText("Slowing itself down")).toBeTruthy();
+    expect(row().getByText(/^Highest 95°C at /).classList.contains("look")).toBe(true);
+    // And so is a laptop's, once Things to look at says its heat needs a look.
+    rerender(<AllSensors r={r} from={t0} to={Date.now()} limits={{ cpu: 95 }} device={{ laptop: true, cpu: { name: "AMD Ryzen 9 8945HS", kind: "laptop", hot: true } }} />);
+    expect(row().getByText("Slowing itself down")).toBeTruthy();
+  });
+
   it("tells the part rows the graphics chip is asleep over a stretch up to now", async () => {
     /** Comet with its graphics chip switched off to save power. */
     class Asleep extends DemoClient {

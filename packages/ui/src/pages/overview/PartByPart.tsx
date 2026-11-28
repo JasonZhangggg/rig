@@ -116,13 +116,22 @@ function headline(view: PartsView, name: string, online: boolean, laptop: boolea
   return { title, now, week };
 }
 
+/**
+ * Where a usual band sits on a track, from its ends as shares of the track. It's never thinner than 4px, so a band near
+ * the end grows back from that end, not past it: a battery usually at 100% keeps its band inside the track.
+ */
+export function bandAt(lo: number, hi: number): CSSProperties {
+  const width = `max(4px, ${hi - lo}%)`;
+  return hi > 50 ? { right: `${100 - hi}%`, width } : { left: `${lo}%`, width };
+}
+
 function Track({ r, asleep }: { r: PartRow; asleep: boolean }) {
   if ((r.state === "unread" && !asleep) || r.unit == null) return <span className="pbp-track none" aria-hidden="true" />;
   const pos = (v: number) => `${at(r, v)}%`;
   return (
     <span className="pbp-track" aria-hidden="true">
       {r.limit != null && r.limit < r.scale.max && <i className="pbp-zone" style={{ left: pos(r.limit) }} />}
-      {r.usual && <i className="pbp-band" style={{ left: pos(r.usual.lo), width: `max(4px, ${at(r, r.usual.hi) - at(r, r.usual.lo)}%)` } as CSSProperties} />}
+      {r.usual && <i className="pbp-band" style={bandAt(at(r, r.usual.lo), at(r, r.usual.hi))} />}
       {r.high && <i className={`pbp-high${r.ranHot ? " look" : ""}`} style={{ left: pos(r.high.value) }} />}
       {r.now != null && <i className={`pbp-dot${r.state === "hot" || r.state === "slowing" ? " look" : ""}`} style={{ left: pos(r.now) }} />}
     </span>

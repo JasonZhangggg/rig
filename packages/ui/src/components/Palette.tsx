@@ -116,7 +116,8 @@ function OpenPalette() {
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({
         id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${temp(p.temp)} now` : p.sub].filter(Boolean).join(" · "),
-        badge: p.warn ? { text: "Running warm", tone: "warn" } : undefined,
+        // A warned part may be hot, worn or draining: the word says only that it needs a look, as its page says why.
+        badge: p.warn ? { text: "Needs a look", tone: "warn" } : undefined,
         run: () => open("pc", { selected: id, tab: "live" }),
       });
     }

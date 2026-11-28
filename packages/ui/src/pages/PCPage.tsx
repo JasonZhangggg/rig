@@ -188,9 +188,9 @@ export function partsSummary(parts: Part[], name: string, online: boolean, unit:
   const hot = parts.filter((p) => p.warn);
   if (hot.length === 1) {
     const p = hot[0];
-    return p.temp != null && p.limit ? `${p.type} is at ${formatTemp(p.temp, unit)}, ${limitWords(p.temp, p.limit, unit)}.` : `${p.type} has a warning. Open it for details.`;
+    return p.temp != null && p.limit ? `${p.type} is at ${formatTemp(p.temp, unit)}, ${limitWords(p.temp, p.limit, unit)}.` : `${p.type} needs a look. Open it to see why.`;
   }
-  if (hot.length > 1) return `${hot.length} parts have warnings: ${hot.map((p) => p.type.toLowerCase()).join(", ")}.`;
+  if (hot.length > 1) return `${hot.length} parts need a look: ${hot.map((p) => p.type.toLowerCase()).join(", ")}.`;
   if (parts.some((p) => p.temp != null)) return online ? "Nothing is running hot right now." : "Nothing was running hot at the last reading.";
   return "Pick one for its specs, manual and drivers.";
 }

@@ -75,10 +75,12 @@ export function PartUpgrade({ ideas, ups }: { ideas: Upgrade[]; ups: PCUpgrades 
         const isPick = ups.pick?.idea === u;
         return (
           <li key={u.title} className="pc-up-idea">
-            <div className="pc-up-top">{isPick ? <span className="chip ok no-dot">Rig's pick</span> : fitChip[u.fit]}<span className="faint">{fitWords[u.fit]}</span></div>
+            {/* The chip says how it fits; beside Rig's pick, the words say it instead. */}
+            <div className="pc-up-top">{isPick ? <><span className="chip ok no-dot">Rig's pick</span><span className="faint">{fitWords[u.fit]}</span></> : fitChip[u.fit]}</div>
             <h3>{u.title}</h3>
             <p className="muted">{ideaText(u, ups.pick)}</p>
-            {r && <p className="faint up-row-room"><Meter r={r} /><span>{r.figure} {r.unit}. {r.note}</span></p>}
+            {/* Not needed yet is the chip's to say, so the room line keeps to its figure. */}
+            {r && <p className="faint up-row-room"><Meter r={r} /><span>{r.figure} {r.unit}.{u.fit === "later" || !r.note ? "" : ` ${r.note}`}</span></p>}
             <ManualRef part={u.part} />
             <div className="pc-up-go"><AskBuy u={u} primary={isPick} /></div>
           </li>

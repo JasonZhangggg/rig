@@ -15,7 +15,8 @@ export function batteryTiles(b: BatteryView): JSX.Element[] {
   if (b.level != null) {
     const how = b.state === "discharging" && b.watts != null ? `Drawing ${b.watts} W`
       : b.state === "charging" && b.watts != null ? `Charging at ${Math.round(b.watts)} W`
-      : b.state === "plugged" ? b.time?.text : undefined;
+      // The charge is the figure above, so held short of full it says what Windows says, not the number again.
+      : b.state === "plugged" ? (b.level < 99 ? "Plugged in, not charging" : b.time?.text) : undefined;
     tiles.push(
       <div key="charge" className="live">
         <span className="label">Charge</span>
@@ -58,7 +59,7 @@ export function BatteryLife({ battery }: { battery: BatteryView }) {
             {offer && <ChargeRow offer={offer} />}
           </Rows>
         ) : <p className="muted batt-none">Nothing to change. The settings Rig can change already go easy on the battery.</p>}
-        {(battery.savers.length > 0 || offer?.op) && <p className="faint batt-foot">Each one can be undone from Changes.</p>}
+        {(battery.savers.length > 0 || offer?.op) && <p className="faint batt-foot">{offer && !offer.op ? `Each one you review can be undone from Changes.` : "Each one can be undone from Changes."}</p>}
       </section>
     </div>
   );

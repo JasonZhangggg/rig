@@ -92,6 +92,9 @@ describe("Stopping charging short of full", { timeout: 25000 }, () => {
     await openBattery("demo-comet");
     expect(screen.getByText("Charging stops at 80% to slow wear.")).toBeTruthy();
     expect(screen.queryByText(/^Stop charging/)).toBeNull();
+    // The charge is the big figure, so the line under it doesn't say 80% a second time.
+    expect(screen.getByText("Plugged in, not charging")).toBeTruthy();
+    expect(screen.queryByText(/holding at 80%/)).toBeNull();
   });
 
   it("on the laptop that sits at 100% on the charger, names its maker's app and asks about it, since Rig can't set it there", async () => {
@@ -101,6 +104,8 @@ describe("Stopping charging short of full", { timeout: 25000 }, () => {
     expect(within(row).getByText("Stop charging at 80%")).toBeTruthy();
     expect(within(row).getByText("Plugged in at 100% most of the time. Set it in MyASUS.")).toBeTruthy();
     expect(within(row).queryByRole("button", { name: /^Review/ })).toBeNull();
+    // The maker's app sets that one, so only the rows Rig reviews are undone from Changes.
+    expect(screen.getByText("Each one you review can be undone from Changes.")).toBeTruthy();
     fireEvent.click(within(row).getByRole("button", { name: "Ask about it: Stop charging at 80%" }));
     expect(await screen.findByText(/^My ASUS laptop is plugged in at 100% most of the time\. How do I make it stop charging at 80% in MyASUS/)).toBeTruthy();
   });

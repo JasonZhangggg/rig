@@ -20,6 +20,12 @@ describe("manualTargets", () => {
     expect(manualTargets(pebble)).toEqual([{ part: "chassis", kind: "laptop", maker: "ASUS", model: "Zenbook 14 OLED UX3405MA", source: "detected" }]);
   });
 
+  it("finds a gaming laptop's own manual, not one for its soldered graphics chip", async () => {
+    const comet = (await new DemoClient().machines()).find((m) => m.id === "demo-comet")!;
+    expect(comet.parts?.gpu?.name).toBe("NVIDIA GeForce RTX 4060 Laptop GPU");
+    expect(manualTargets(comet).map((t) => t.kind)).toEqual(["laptop"]);
+  });
+
   it("skips placeholders, built-in graphics and the generic case and power supply", () => {
     const pc: PC = {
       id: "x", name: "X", kind: "tower", accent: "", nickname: "", os: "", health: 90, lastSync: "", online: true, summary: "",
@@ -86,9 +92,17 @@ describe("driverRows", () => {
       ["Lenovo Legion 5 16IRX9", "Drivers, BIOS and manual", "", "Lenovo support"],
       ["NVIDIA GeForce RTX 4060 Laptop GPU", "Graphics driver", "NVIDIA 566.14", "NVIDIA downloads"],
       ["Intel UHD Graphics", "Graphics driver", "Intel 31.0.101.5186", "Intel downloads"],
-      ["ASUSTeK UX3405MA", "BIOS", "UX3405MA.308", "Ask if there's a newer one"],
+      ["ASUS UX3405MA", "BIOS", "UX3405MA.308", "Ask if there's a newer one"],
     ]);
     expect(laptopDriverNote(pc)).toMatch(/^Lenovo's own graphics driver/);
+  });
+
+  it("names the maker as people write it, and a chip without its trademark marks", () => {
+    const comet = buildPC(fixtures.comet.inv, null, null);
+    expect(comet.parts?.chassis?.name).toBe("ASUS ROG Zephyrus G14 GA403UV");
+    expect(comet.parts?.board?.name).toBe("ASUS GA403UV");
+    const withTM = laptop({}, [{ name: "AMD Radeon(TM) 780M Graphics", vendor: "amd", driverVersion: "32.0.21025.1024", integrated: true }]);
+    expect(brief(withTM).map(([name]) => name)).toContain("AMD Radeon 780M Graphics");
   });
 
   it("asks Rig where to look when Rig doesn't know the laptop maker's site, and doesn't repeat a maker in the model", () => {

@@ -52,8 +52,8 @@ const real = (s: string | undefined): s is string => !!s && !placeholder.test(s.
 export const kindLabel = (k: ManualKind) => manualKinds.find((x) => x.kind === k)?.label ?? "Part";
 
 /**
- * The PC's detected parts worth a manual: the motherboard (or the laptop
- * itself) and a separate graphics card, plus a case or power supply once Rig
+ * The PC's detected parts worth a manual: the motherboard and a separate
+ * graphics card (or the laptop itself), plus a case or power supply once Rig
  * knows its model. Generic stand-ins like "Your case" are left out.
  */
 export function manualTargets(pc: StillPC): PartTarget[] {
@@ -71,8 +71,9 @@ export function manualTargets(pc: StillPC): PartTarget[] {
     const b = parts.motherboard;
     add("motherboard", "motherboard", b?.maker, b?.model);
   }
+  // A laptop's graphics chip is soldered to its board: the laptop's own manual covers it, and there's no card to name.
   const g = parts.gpu;
-  if (g && !integratedGpu.test(g.name)) add("gpu", "gpu", g.maker, g.model ?? g.name, { askModel: true });
+  if (g && pc.kind !== "laptop" && !integratedGpu.test(g.name)) add("gpu", "gpu", g.maker, g.model ?? g.name, { askModel: true });
   for (const [key, kind] of [["case", "case"], ["psu", "psu"], ["cooler", "cooler"]] as const) {
     const p = parts[key];
     if (p?.model) add(key, kind, p.maker, p.model);
@@ -188,7 +189,7 @@ export function driverRows(pc: StillPC): DriverRow[] {
     const installed = g.driver ? `${g.maker ?? "Driver"} ${g.driver}` : undefined;
     const href = g.maker ? chipDriverPages[g.maker] : undefined;
     return {
-      id: `graphics:${g.name}`, name: g.name, what: "Graphics driver", installed,
+      id: `graphics:${g.name}`, name: g.name.replace(/\((tm|r)\)|[®™]/gi, "").replace(/\s+/g, " ").trim(), what: "Graphics driver", installed,
       ask: { label: "Ask if there's a newer one", question: `Is there a newer driver for my ${g.name}?${installed ? ` I have ${installed}.` : ""}` },
       link: href ? { label: `${g.maker} downloads`, href } : undefined,
     };

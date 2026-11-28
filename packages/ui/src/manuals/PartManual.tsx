@@ -22,12 +22,14 @@ export function PartManual({ id, about }: { id: string; about: string }) {
   const state = useManuals();
   const [adding, setAdding] = useState(false);
   if (state.manuals == null) return <p className="muted" role="status">Loading manuals…</p>;
-  const key = pc.kind === "laptop" && id === "board" ? "chassis" : id;
+  // A laptop's parts are built in and covered by the laptop's own manual, all but a drive that can be swapped.
+  const laptop = pc.kind === "laptop";
+  const key = laptop && id !== "ssd" ? "chassis" : id;
   const part = pc.parts?.[id];
   const row = manualRows(pc, state).find((r) => r.target.part === key);
   const main = state.manuals.find((m) => m.indexed && (m.part === "motherboard" || m.part === "chassis") && m.part !== key);
   const related = main && helpsWith[id] && main.diagrams.some((d) => helpsWith[id].includes(d.kind)) ? main : null;
-  const kind = ownKind[id];
+  const kind = laptop && id !== "ssd" ? undefined : ownKind[id];
   const name = id === "cpu" ? "cooler" : part?.type.toLowerCase() ?? "part";
   const add = kind && !row && (askFirst.has(id) || adding)
     ? <AddManual key={id} part={key} kind={kind} maker={part?.maker} model={part?.model} onDone={adding ? () => setAdding(false) : undefined}

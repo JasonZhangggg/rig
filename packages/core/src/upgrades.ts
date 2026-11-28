@@ -47,7 +47,7 @@ export function suggestUpgrades(inv: Inventory): Upgrade[] {
     const wear = Math.round((b.fullWh / b.designWh) * 100);
     out.push(wear < 75
       ? { part: "Battery", fit: "fits", title: "Replace the battery", detail: `It holds ${wear}% of its original charge.`, gain: "Back to full battery life", price: "" }
-      : { part: "Battery", fit: "later", title: "Battery replacement", detail: `At ${wear}% there's no need yet. Most people replace it around 70 to 75%.`, gain: "", price: "" });
+      : { part: "Battery", fit: "later", title: "Battery replacement", detail: "Most people replace it around 70 to 75%.", gain: "", price: "" });
   }
 
   // Cooling for towers with a warm GPU is suggested by the health check, not here.
