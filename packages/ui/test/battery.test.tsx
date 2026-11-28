@@ -2,7 +2,7 @@
 // through the usual review. Desktops show none of it.
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DemoClient } from "@rig/core/demo";
+import { DemoClient, fixtures } from "@rig/core/demo";
 
 vi.mock("../src/scene", () => ({
   createScene: (_el: HTMLElement, { onSelect }: { onSelect: (id: string | null) => void }) =>
@@ -45,6 +45,23 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     fireEvent.click(within(sheet).getByRole("button", { name: "Make this change" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Review: Turn the screen off after 5 minutes on battery" })).toBeNull(), { timeout: 5000 });
     expect(within(savers()).getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("opens a worn battery's finding on the battery's own replacement", async () => {
+    // A battery worn under 70%, built for this test from the demo laptop.
+    const kept = fixtures.pebble.inv.battery;
+    fixtures.pebble.inv.battery = { designWh: 75, fullWh: 45, cycles: 820 };
+    try {
+      location.hash = "";
+      localStorage.setItem("rig.pc", "demo-pebble");
+      render(<RigApp client={new DemoClient()} />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Battery holds 60% of its original charge/ }, { timeout: 10000 }));
+      expect(await screen.findByRole("tab", { name: "Upgrade", selected: true })).toBeTruthy();
+      expect(location.hash).toBe("#pc");
+      expect(await screen.findByText("Replace the battery")).toBeTruthy();
+    } finally {
+      fixtures.pebble.inv.battery = kept;
+    }
   });
 
   it("shows nothing of it on a desktop", async () => {

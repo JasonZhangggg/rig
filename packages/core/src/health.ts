@@ -3,9 +3,9 @@
 
 import type { HealthPart, Issue, Severity } from "./model";
 import { diagnose, STABILITY, WEAR_CRITICAL, WEAR_LOW, type Finding, type HealthInput } from "./diagnose";
-import { boostsToLimit, cpuLimit, cpuTemp, gpuLimit, gpuTemp } from "./limits";
+import { boostsToLimit, cpuLimit, cpuTemp, gpuLimit, gpuTemp, mobileChip, throttlingHard } from "./limits";
 import { safetyFindings } from "./safety";
-import { findSensor } from "./telemetry";
+import { findSensor, type Inventory } from "./telemetry";
 import { suggestedOff } from "./startup";
 
 export type { Finding, HealthInput } from "./diagnose";
@@ -16,6 +16,19 @@ const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 /** Processor load at or under this, in percent, counts as at rest; at or over BUSY_LOAD as working hard. */
 export const REST_LOAD = 30;
 export const BUSY_LOAD = 60;
+
+/**
+ * At its limit as it's built to be: a processor that boosts to its limit (see
+ * boostsToLimit), working hard enough for that to be normal. A laptop's from
+ * just over rest, since its cooling is sized to reach the limit; a desktop's
+ * from BUSY_LOAD.
+ */
+export function limitByDesign(inv: Inventory, load: number | null | undefined): boolean {
+  if (load == null || !boostsToLimit(inv.cpu.name, inv.machine.kind)) return false;
+  return inv.machine.kind === "laptop" || mobileChip(inv.cpu.name) ? load > REST_LOAD : load >= BUSY_LOAD;
+}
+
+const ghz = (mhz: number) => `${(mhz / 1000).toFixed(1)} GHz`;
 
 export function findings(input: HealthInput): Finding[] {
   const { inv, snap, facts } = input;
@@ -29,7 +42,8 @@ export function findings(input: HealthInput): Finding[] {
     add({ id: "needs-driver", category: "Temperatures", weight: 0, severity: "info", title: "Rig can't read processor temperatures yet", body: "They come through PawnIO, a small signed driver that installs with Rig, and it isn't on this PC. Run Rig's installer again and choose Yes when Windows asks.", action: "How this works", go: "chat", ask: "What is PawnIO and why does Rig need it for processor temperatures?" });
   }
 
-  // Processor temperature, read against how hard it's working: at its limit in a long render is how some chips are built; at its limit at rest is a cooling fault.
+  // Processor temperature, read against how hard it's working: at its limit under load is how laptops and some desktop chips are built; at its limit at rest is a cooling fault.
+  const laptop = inv.machine.kind === "laptop";
   const ct = cpuTemp(snap);
   if (ct?.value != null) {
     const lim = cpuLimit(inv.cpu.name, snap);
@@ -37,17 +51,29 @@ export function findings(input: HealthInput): Finding[] {
     const load = findSensor(snap, "cpu", "load", /total/i)?.value;
     const l = load == null ? null : Math.round(load);
     const seen = [`${ct.name} ${t}°C, limit ${lim}°C`, ...(l != null ? [`Processor load ${l}%`] : [])];
-    const byDesign = boostsToLimit(inv.cpu.name) && l != null && l >= BUSY_LOAD;
+    const byDesign = limitByDesign(inv, l);
+    // Laptops: dust in the fan and vents blocked by a bed or a lap. Desktops: the cooler itself.
+    const airCheck = laptop ? "Keep the vents clear and use it on a hard, flat surface." : "Check that the cooler's fan spins and the vents aren't blocked.";
     if (ct.value >= lim) {
-      if (l != null && l <= REST_LOAD) add({ id: "cpu-hot", category: "Temperatures", weight: 40, severity: "bad", part: "cpu", confidence: "likely", evidence: seen, title: `Processor is at its ${lim}°C limit while barely working`, body: `It's at ${t}°C with only ${l}% load. That points at the cooler: a fan or pump that stopped, a cooler that came loose, or dried-out paste. Check that the cooler's fan spins.`, action: "Ask what to do", go: "chat", ask: `My processor is at ${t}°C while doing almost nothing. What should I do?` });
-      else if (byDesign) add({ id: "cpu-hot", category: "Temperatures", weight: 10, severity: "warn", part: "cpu", confidence: "sure", evidence: seen, title: `Processor reached its ${lim}°C limit under heavy load`, body: "This processor is built to run up to its limit when working flat out, and gives up a little speed to stay there. That's safe. A stronger cooler would keep more of the speed.", action: "Ask about it", go: "chat", ask: `My processor hits ${t}°C under heavy load. Is that normal for it?` });
-      else add({ id: "cpu-hot", category: "Temperatures", weight: 40, severity: "bad", part: "cpu", confidence: "sure", evidence: seen, title: `Processor is at its ${lim}°C limit`, body: `It's at ${t}°C and will slow itself down to cool off. Check that the cooler's fan spins and the vents aren't blocked.`, action: "Ask what to do", go: "chat", ask: `My processor is at ${t}°C. What should I do?` });
+      const slow = throttlingHard(snap);
+      if (l != null && l <= REST_LOAD) add({ id: "cpu-hot", category: "Temperatures", weight: 40, severity: "bad", part: "cpu", confidence: "likely", evidence: seen, title: `Processor is at its ${lim}°C limit while barely working`,
+        body: laptop
+          ? `It's at ${t}°C with only ${l}% load. That points at the cooling: dust in the fan, vents blocked by a soft surface, or a fan that stopped. Check that the fan spins and the vents are clear.`
+          : `It's at ${t}°C with only ${l}% load. That points at the cooler: a fan or pump that stopped, a cooler that came loose, or dried-out paste. Check that the cooler's fan spins.`,
+        action: "Ask what to do", go: "chat", ask: `My processor is at ${t}°C while doing almost nothing. What should I do?` });
+      else if (byDesign && slow) add({ id: "cpu-hot", category: "Temperatures", weight: 20, severity: "warn", part: "cpu", confidence: "sure", evidence: [...seen, `Fastest core ${ghz(slow.now)}, up to ${ghz(slow.top)} earlier`],
+        title: "Processor is slowing down to stay cool",
+        body: `It's at its ${lim}°C limit and has dropped to ${ghz(slow.now)}, from ${ghz(slow.top)}. This is called throttling: it slows itself down to stay safe, so apps and games run slower. ${laptop ? "Keep the vents clear and use it on a hard, flat surface. If it started lately, dust in the fan is the usual cause." : airCheck}`,
+        action: "Ask what to do", go: "chat", ask: `My processor drops to ${ghz(slow.now)} when it reaches ${t}°C. What should I do?` });
+      // A laptop at its limit under load, still at speed, is working as built: nothing to look at.
+      else if (byDesign && !laptop) add({ id: "cpu-hot", category: "Temperatures", weight: 10, severity: "warn", part: "cpu", confidence: "sure", evidence: seen, title: `Processor reached its ${lim}°C limit under heavy load`, body: "This processor is built to run up to its limit when working flat out, and gives up a little speed to stay there. That's safe. A stronger cooler would keep more of the speed.", action: "Ask about it", go: "chat", ask: `My processor hits ${t}°C under heavy load. Is that normal for it?` });
+      else if (!byDesign) add({ id: "cpu-hot", category: "Temperatures", weight: 40, severity: "bad", part: "cpu", confidence: "sure", evidence: seen, title: `Processor is at its ${lim}°C limit`, body: `It's at ${t}°C and will slow itself down to cool off, which is called throttling. ${airCheck}`, action: "Ask what to do", go: "chat", ask: `My processor is at ${t}°C. What should I do?` });
     } else if (ct.value >= lim - 8 && !byDesign) {
       add({ id: "cpu-warm", category: "Temperatures", weight: 15, severity: "warn", part: "cpu", confidence: "sure", evidence: seen,
         title: `Processor runs warm at ${t}°C`,
-        body: l != null && l <= REST_LOAD ? `That's ${Math.round(lim - ct.value)}° under its ${lim}°C limit with only ${l}% load, which is warm for a processor at rest. Check the cooler and the vents.` : `That's ${Math.round(lim - ct.value)}° under its ${lim}°C limit. Fine for short bursts, but worth a look if it stays there.`,
+        body: l != null && l <= REST_LOAD ? `That's ${Math.round(lim - ct.value)}° under its ${lim}°C limit with only ${l}% load, which is warm for a processor at rest. ${laptop ? "Check that the vents are clear and the fan spins." : "Check the cooler and the vents."}` : `That's ${Math.round(lim - ct.value)}° under its ${lim}°C limit. Fine for short bursts, but worth a look if it stays there.`,
         action: "Ask about it", go: "chat", ask: `My processor runs at ${t}°C. Is that okay?`,
-        fix: inv.machine.kind === "laptop" && facts && facts.maxProcessorState.ac === 100 ? [{ kind: "power.maxProcessorState", ac: 99, dc: 99 }] : undefined });
+        fix: laptop && facts && facts.maxProcessorState.ac === 100 ? [{ kind: "power.maxProcessorState", ac: 99, dc: 99 }] : undefined });
     }
   }
   const gpu = inv.gpus.find((g) => !g.integrated);
@@ -55,7 +81,7 @@ export function findings(input: HealthInput): Finding[] {
   if (gpu && gt?.value != null) {
     const lim = gpuLimit(gpu.vendor);
     const evidence = [`${gt.name} ${Math.round(gt.value)}°C, limit ${lim}°C`];
-    if (gt.value >= lim) add({ id: "gpu-hot", category: "Temperatures", weight: 35, severity: "bad", confidence: "sure", evidence, title: `Graphics card is at its ${lim}°C limit`, body: `It's at ${Math.round(gt.value)}°C and will lower its speed. Dust on the intake filters is the usual cause.`, action: "Ask what to do", part: "gpu", go: "chat", ask: `My graphics card is at ${Math.round(gt.value)}°C. What should I do?` });
+    if (gt.value >= lim) add({ id: "gpu-hot", category: "Temperatures", weight: 35, severity: "bad", confidence: "sure", evidence, title: `Graphics card is at its ${lim}°C limit`, body: `It's at ${Math.round(gt.value)}°C and will lower its speed to cool off, which is called throttling. ${laptop ? "Dust in the fans or blocked vents is the usual cause. Keep it on a hard, flat surface." : "Dust on the intake filters is the usual cause."}`, action: "Ask what to do", part: "gpu", go: "chat", ask: `My graphics card is at ${Math.round(gt.value)}°C. What should I do?` });
     else if (gt.value >= lim - 6) add({ id: "gpu-warm", category: "Temperatures", weight: 12, severity: "warn", confidence: "sure", evidence, title: `Graphics card runs warm at ${Math.round(gt.value)}°C`, body: `${Math.round(lim - gt.value)}° under its limit. If it's warmer than it used to be at the same settings, dust is the usual cause.`, action: "Ask about it", part: "gpu", go: "chat", ask: `My graphics card runs at ${Math.round(gt.value)}°C while gaming. Is that okay?` });
   }
 
@@ -93,7 +119,8 @@ export function findings(input: HealthInput): Finding[] {
   const b = inv.battery;
   if (b?.designWh && b.fullWh) {
     const wear = Math.min(100, pct(b.fullWh, b.designWh));
-    if (wear < 70) add({ id: "battery", category: "Battery", weight: 30, severity: "warn", confidence: "sure", evidence: [`Holds ${b.fullWh} Wh of its original ${b.designWh} Wh${b.cycles ? ` after ${b.cycles} charge cycles` : ""}`], title: `Battery holds ${wear}% of its original charge`, body: "Most people replace it around this point. Rig can find the right part for your model.", action: "See upgrades", part: "battery", go: "upgrades" });
+    // The replacement is on the battery's own Upgrade tab: the Upgrades page lists parts to buy, and a laptop's are only storage.
+    if (wear < 70) add({ id: "battery", category: "Battery", weight: 30, severity: "warn", confidence: "sure", evidence: [`Holds ${b.fullWh} Wh of its original ${b.designWh} Wh${b.cycles ? ` after ${b.cycles} charge cycles` : ""}`], title: `Battery holds ${wear}% of its original charge`, body: "Most people replace it around this point. Rig can find the right part for your model.", action: "See replacement", part: "battery", go: "pc", tab: "upgrade" });
   }
 
   // Windows version
