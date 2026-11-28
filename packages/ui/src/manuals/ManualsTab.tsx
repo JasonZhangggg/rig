@@ -86,8 +86,11 @@ function Drivers() {
             <Row key={id} name={p.name} title={p.name}
               meta={<span className="mn-meta">{bios ? <><span>BIOS</span><span>{d.installed.replace(/^BIOS\s*/, "")}</span></> : <><span>{p.type} driver</span><span>{d.installed}</span></>}</span>}
               tag={newer ? <span className="chip warn">{d.latest} is out</span> : null}
-              action={maker ? <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>
-                : <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>} />
+              action={<>
+                {/* Unless Rig already knows a newer one is out, the first question is whether there is one, so that's always offered. */}
+                {!newer && <button type="button" className="btn sm" onClick={() => ask(`Is there a newer ${bios ? "BIOS" : "driver"} for my ${p.name}? I have ${d.installed}.`)}>Ask if there's a newer one</button>}
+                {maker && <a className="btn sm" href={driverPages[maker]} target="_blank" rel="noreferrer">{maker} downloads</a>}
+              </>} />
           );
         })}
       </Rows>

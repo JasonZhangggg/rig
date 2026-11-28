@@ -96,6 +96,7 @@ describe("navigation", () => {
     expect(location.hash).toBe("#upgrades");
     const tabs = within(screen.getByRole("navigation", { name: "My PC" }));
     expect(tabs.getByRole("link", { name: "Upgrades" }).getAttribute("aria-current")).toBe("page");
-    expect(tabs.getByRole("link", { name: "Manuals" }).getAttribute("href")).toBe("#manuals");
+    // Drivers live with the manuals, and the tab says so, so someone after a driver finds it.
+    expect(tabs.getByRole("link", { name: "Manuals and drivers" }).getAttribute("href")).toBe("#manuals");
   });
 });

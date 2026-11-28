@@ -12,7 +12,7 @@ export const navItems: [Route, string, string][] = [
   ["chat", "Ask", "M4 5h12v8H9l-4 3v-3H4z"],
   ["changes", "Changes", "M4 10a6 6 0 1 0 2-4.5M4 4v3h3M10 7v3l2 2"],
   ["upgrades", "Upgrades", "M10 16V5M5.5 9.5 10 5l4.5 4.5"],
-  ["manuals", "Manuals", "M5 16.5v-11A1.5 1.5 0 0 1 6.5 4H15v11H6.5A1.5 1.5 0 0 0 5 16.5 1.5 1.5 0 0 0 6.5 18H15"],
+  ["manuals", "Manuals and drivers", "M5 16.5v-11A1.5 1.5 0 0 1 6.5 4H15v11H6.5A1.5 1.5 0 0 0 5 16.5 1.5 1.5 0 0 0 6.5 18H15"],
   ["games", "Games", "M4 8h12v6H4zM7 10v2M6 11h2M13 11h.01M15 11h.01"],
   ["logs", "Logs", "M5 3h7l3 3v11H5zM12 3v3h3M8 10h4M8 13h4"],
   ["events", "Events", "M10 3 2 17h16zM10 8v4M10 14.5v.01"],
