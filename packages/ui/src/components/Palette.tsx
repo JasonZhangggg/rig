@@ -91,6 +91,11 @@ function OpenPalette() {
     }
     // Read-only checks that run on the PC and answer in a dialog.
     items.push({ id: "check-network", kind: "checks", title: NET_CHECK_QUESTION, sub: `Checks ${pc.name}'s connection, your router and the internet`, keys: "internet slow wifi wi-fi wireless network connection lag ping latency router modem dns vpn ethernet cable signal", run: () => { close(); set({ netCheck: true }); } });
+    const startup = pc.settings?.startup;
+    if (startup) {
+      const on = startup.filter((a) => a.enabled).length;
+      items.push({ id: "startup-apps", kind: "pages", title: "Startup apps", sub: `Choose which apps start with Windows · ${on} of ${startup.length} on`, keys: "startup apps start with windows boot slow autostart sign in login background", searchOnly: true, run: () => { close(); set({ startupApps: true }); } });
+    }
     for (const [id, p] of Object.entries(pc.parts ?? {})) {
       items.push({
         id: `p-${id}`, kind: "parts", title: p.name, sub: [p.type, p.temp !== undefined ? `${temp(p.temp)} now` : p.sub].filter(Boolean).join(" · "),

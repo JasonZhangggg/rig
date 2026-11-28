@@ -177,6 +177,17 @@
 .sheet-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px; }
 .sheet .diff-wrap { margin: 10px 22px; }
 .sheet .note { margin: 0 22px; }
+/* Startup apps: the list scrolls between the heading and the buttons, a switch on the right of each row on any width. */
+.sheet.su-sheet { display: flex; flex-direction: column; overflow: hidden; outline: none; }
+.su-suggest { align-self: flex-start; margin: 4px 0 0 -10px; }
+.su-list { flex: 1 1 auto; min-height: 0; overflow: auto; margin-top: 4px; padding: 0 22px; }
+.su-list .row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 11px 0; }
+.su-list .row-acts { margin-left: 16px; }
+.sheet .su-note { margin-top: 12px; }
+.su-ask { margin-right: auto; }
+.scrim.su-behind { visibility: hidden; }
+/* On a phone the two closing buttons stay together, and Ask goes under them. */
+@media (max-width: 560px) { .su-ask { order: 3; } }
 .toast {
   position: fixed; z-index: 60; bottom: max(24px, env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 16px; border-radius: var(--r);

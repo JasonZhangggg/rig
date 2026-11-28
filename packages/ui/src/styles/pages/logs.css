@@ -1,15 +1,13 @@
 .lg-page { gap: 32px; }
 
 /* The glance: one big number per thing that went wrong and when it last happened. Each is a filter. */
-.lg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.lg-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .lg-tile { display: grid; align-content: start; gap: 4px; min-height: 112px; padding: 16px 18px; border: 0; border-radius: var(--r); background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease, transform .16s var(--ease-out); }
 .lg-tile:active { transform: scale(.98); }
 .lg-tile[aria-pressed="true"] { background: var(--surface); box-shadow: inset 0 0 0 2px var(--text); }
 .lg-tile-n { font: var(--t-figure); font-size: 2.5rem; letter-spacing: -.03em; }
 .lg-tile.look .lg-tile-n { color: var(--look-text); }
-.lg-tile.quiet { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 .lg-tile.quiet .lg-tile-n { color: var(--text-2); }
-.lg-tile.quiet[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .lg-tile-label { font-size: 15px; font-weight: 600; line-height: 1.25; }
 .lg-tile-when { color: var(--text-3); font-size: 13px; font-weight: 500; }
 .lg-h { font: var(--t-title); letter-spacing: -.01em; }
@@ -140,7 +138,7 @@
 .lg-views a { transition: color 150ms ease; }
 .lg-views a:focus-visible { border-radius: 4px; }
 /* The views' underline already separates them from what follows, so the first block under it drops its own line. */
-.lg-head + .card,
+.lg-head + .card { border-top: 0; }
 .lg-views a { padding: 10px 0; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .lg-views a:hover { color: var(--text); } }
 .lg-views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }
@@ -253,12 +251,9 @@
 @keyframes lv-beat { 50% { opacity: .35; } }
 .lv-feed { display: flex; flex-direction: column; gap: 10px; }
 .lv-feed { padding-top: 18px; border-top: 1px solid var(--line); }
-.lv-feed .rows { max-width: 900px; }
 .lv-sech { align-items: center; }
 .lv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .lv-tools .faint { font-size: 13px; }
-.lv-tools .seg button { height: 28px; padding: 0 12px; font-size: 13px; }
-.lv-tools .seg .num { margin-left: 4px; color: var(--text-3); font-weight: 500; }
 .lv-more { align-self: flex-start; }
 .lv-since { margin: 8px 0 0; font-size: 13px; }
 .lv-none { margin: 0; }

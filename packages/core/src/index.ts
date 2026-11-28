@@ -3,6 +3,7 @@ export * from "./telemetry";
 export * from "./drives";
 export * from "./roomForGames";
 export * from "./actions";
+export * from "./startup";
 export * from "./change";
 export * from "./screen";
 export * from "./fileEdit";
