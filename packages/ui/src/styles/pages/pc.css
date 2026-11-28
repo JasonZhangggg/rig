@@ -266,7 +266,7 @@
 .mt .rows > .row { padding: 16px 0; }
 /* "Add a manual" is the list's last row: a plain text button whose words line up with the names above it. */
 .mt-add { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
-.mt-add-btn { margin-left: -13px; font-weight: 600; }
+.mt-add-btn { margin-left: calc(-1 * var(--hang)); font-weight: 600; }
 .mt-add-hint { color: var(--text-3); font-size: 13px; }
 .mt-add .mn-form { flex: 1; max-width: 640px; padding: 4px 0; }
 .mt-note { margin: 10px 0 0; font-size: 13px; }

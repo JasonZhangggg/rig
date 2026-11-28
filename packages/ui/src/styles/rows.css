@@ -19,6 +19,8 @@
 .row-fig span { color: var(--text-3); font-size: 13px; }
 .row-fig.look :is(b, span) { color: var(--look-text); }
 .row-acts { display: flex; align-items: center; gap: 6px; margin-left: 16px; }
+/* Plain text buttons hang their padding past the column, so their words line up with the edge above (as .counts does). */
+.row-acts:has(> .btn:not(.primary):last-child) { margin-right: calc(-1 * var(--hang)); }
 /* A row's actions are plain text buttons, like Details, so a long list doesn't stack up boxes. */
 .row-acts .btn:not(.primary) { border-color: transparent; background: transparent; }
 @media (hover: hover) and (pointer: fine) { .row-acts .btn:not(.primary, :disabled):hover { background: var(--surface-2); } }
@@ -34,7 +36,8 @@
 
 /* A timeline: a dot per row, and a line joining them when there's more than one. */
 .rows.timeline > .row { padding-left: 22px; }
-.rows.timeline:has(> .row + .row)::before { content: ""; position: absolute; top: 22px; bottom: 22px; left: 4px; width: 1.5px; background: var(--line-strong); }
+/* The line runs from each dot to the next one, so it stops at the day's last dot however tall that row is. */
+.rows.timeline > .row:not(:last-child)::after { content: ""; position: absolute; top: 29px; bottom: -19px; left: 4px; width: 1.5px; background: var(--line-strong); }
 .rows.timeline > .row::before {
   content: ""; position: absolute; top: 19px; left: 0; width: 10px; height: 10px; box-sizing: border-box; border-radius: 50%;
   background: var(--graphite); box-shadow: 0 0 0 4px var(--surface);
@@ -46,6 +49,8 @@
 @media (max-width: 860px) {
   .row { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
   .row-acts { margin-left: 0; }
+  .row-acts:has(> .btn:not(.primary):first-child) { margin-left: calc(-1 * var(--hang)); }
+  .row-acts:has(> .btn:not(.primary):last-child) { margin-right: 0; }
   .row.has-time .row-more { padding-left: 0; }
 }
 @media (max-width: 560px) {
