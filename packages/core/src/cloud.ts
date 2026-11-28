@@ -25,6 +25,30 @@ const REQUEST_TIMEOUT_MS = 30_000;
 /** The browser page (the website only). */
 const page = () => (globalThis as unknown as { location: { href: string } }).location;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Reads now and every POLL_MS while the page shows. A PC only uploads every 5 minutes, so a tab left in the background
+ * stops asking, and reads again the moment it's shown. A failed read is skipped; the next one tries again.
+ */
+function poll<T>(read: () => Promise<T>, cb: (v: T) => void) {
+  const doc = (globalThis as { document?: Pick<Document, "visibilityState" | "addEventListener" | "removeEventListener"> }).document;
+  const hidden = () => doc?.visibilityState === "hidden";
+  let stopped = false;
+  let reading = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = async () => {
+    timer = undefined;
+    if (stopped || hidden()) return;
+    reading = true;
+    try { const v = await read(); if (!stopped) cb(v); } catch { /* keep showing the last one */ }
+    reading = false;
+    if (!stopped && !hidden()) timer = setTimeout(tick, POLL_MS);
+  };
+  const shown = () => { if (!hidden() && !reading && timer === undefined) void tick(); };
+  doc?.addEventListener("visibilitychange", shown);
+  void tick();
+  return () => { stopped = true; clearTimeout(timer); doc?.removeEventListener("visibilitychange", shown); };
+}
 /** A request's path for the log, with ids and codes left out: "/machines/…/sync". */
 const logPath = (path: string) => "/" + path.split("?")[0].split("/").filter(Boolean).map((s, i, all) => (i === 0 || (i === all.length - 1 && /^[a-z-]+$/.test(s)) ? s : "…")).join("/");
 
@@ -170,16 +194,8 @@ export class CloudClient implements RigClient {
 
   machines() { return this.req<PC[]>(paths.machines); }
 
-  watch(id: string, cb: (pc: PC) => void) {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      try { const pc = await this.req<PC>(paths.machine(id)); if (!stopped) cb(pc); } catch { /* keep showing the last view */ }
-      if (!stopped) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick();
-    return () => { stopped = true; clearTimeout(timer); };
-  }
+  // A failed read keeps showing the last view.
+  watch(id: string, cb: (pc: PC) => void) { return poll(() => this.req<PC>(paths.machine(id)), cb); }
 
   async rename(id: string, patch: Identity) {
     await this.req(paths.machine(id), { method: "PATCH", body: JSON.stringify(patch) });
@@ -194,16 +210,7 @@ export class CloudClient implements RigClient {
   events(id: string) { return this.req<PCEvent[]>(paths.events(id)); }
   recording(id: string, rid: string) { return this.req<Recording | null>(paths.recording(id, rid)).catch(() => null); }
 
-  watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      try { const list = await this.req<RecordingInfo[]>(paths.recordings(id)); if (!stopped) cb(list); } catch { /* keep showing the last list */ }
-      if (!stopped) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick();
-    return () => { stopped = true; clearTimeout(timer); };
-  }
+  watchRecordings(id: string, cb: (list: RecordingInfo[]) => void) { return poll(() => this.req<RecordingInfo[]>(paths.recordings(id)), cb); }
 
   startRecording(id: string, req: { reason: string; minutes: number; question?: string }) {
     return this.req<RecordingInfo>(paths.recordings(id), { method: "POST", body: JSON.stringify(req) });

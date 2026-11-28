@@ -144,3 +144,38 @@ describe("CloudClient chat", () => {
     expect(p.tier).toBe(1);
   });
 });
+
+describe("CloudClient on a website tab", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it("stops asking for a PC while the tab is in the background, and catches up when it's shown", async () => {
+    vi.useFakeTimers();
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => { asked.push(url); return Response.json(url.endsWith("/recordings") ? [] : { id: "pc1" }); });
+    const page = new EventTarget() as EventTarget & { visibilityState: DocumentVisibilityState };
+    page.visibilityState = "visible";
+    vi.stubGlobal("document", page);
+    const views: unknown[] = [];
+    const stop = client().watch("pc1", (pc) => views.push(pc));
+    const stopRecs = client().watchRecordings("pc1", () => {});
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(asked).toHaveLength(6);
+
+    page.visibilityState = "hidden";
+    page.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(asked).toHaveLength(6);
+
+    page.visibilityState = "visible";
+    page.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toHaveLength(8);
+    expect(views).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(asked).toHaveLength(10);
+
+    stop(); stopRecs();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(asked).toHaveLength(10);
+  });
+});
