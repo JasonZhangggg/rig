@@ -227,6 +227,8 @@ export function Overview() {
     setEditing(true);
     announce(list ? "Customizing Home. Use the up and down buttons on a widget, or the arrow keys, to change the order." : "Customizing Home. Drag a widget or use the arrow keys to move it.");
     if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus({ preventScroll: true }));
+    // The greeting's Customize button goes out of sight under the bar, so focus moves onto the bar.
+    else if (document.activeElement?.id === "f-customize") requestAnimationFrame(() => document.querySelector<HTMLElement>(".dash-bar-tools .dbtn")?.focus({ preventScroll: true }));
   };
   useLayoutEffect(() => {
     const a = anchor.current, from = refocus.current;
@@ -395,7 +397,7 @@ export function Overview() {
       )}
       {panel?.type === "add" && (
         <Gallery
-          hidden={hidden} render={render} canDrag={!list && fine()} from={panel.at}
+          hidden={hidden} render={render} canDrag={!list && shown.length > 0 && fine()} from={panel.at}
           onClose={close} onHover={hover} onDrop={addAt}
           onAdd={(id) => { board.add(id); changed(`${KINDS[kindOf(id)].title} added.`); }}
         />

@@ -180,7 +180,7 @@
 :root[data-motion="reduce"] .dg[data-lift] > .dw, :root[data-motion="reduce"] .dg.react-draggable-dragging > .dw { scale: none; }
 
 /* The dock: floats at the bottom of the window and takes no room, so a note with Undo never moves the page. On a short page the page still reaches the bottom
-   of the window and the dock sits at its foot, so the bar never floats halfway up. */
+   of the window and the dock sits at its foot, so the note never floats halfway up. */
 .page:has(> .dash-dock) { min-height: 100%; }
 .dash-dock {
   position: sticky; z-index: 40; bottom: 20px; height: 0; margin-top: auto; margin-bottom: calc(-1 * var(--home-gap, 40px)); pointer-events: none;
@@ -223,6 +223,8 @@
   .dash-bar-tools .dbtn { flex: 1 1 0; height: 38px; padding: 0 10px; }
   .dash-bar > .dbtn.primary { height: 38px; }
 }
+/* The phone list keeps its hint: there the arrows are the only way to move a widget. */
+.page:has(> .dash[data-cols="1"]) .dash-bar p span { display: revert; }
 
 .dbtn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-pill);
@@ -348,6 +350,7 @@
 @keyframes dw-fresh { 0%, 30% { box-shadow: 0 0 0 3px var(--focus); } 100% { box-shadow: 0 0 0 3px transparent; } }
 @media (max-width: 760px) {
   .dgal { top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 92vh; max-height: 92dvh; border-radius: var(--r) var(--r) 0 0; transform: none; padding-bottom: env(safe-area-inset-bottom, 0px); animation: dpop-up .26s var(--ease-drawer); }
+  .dgal[data-away] { transform: translateY(12px); }
   .dgal-head { padding: 18px 12px 14px 20px; }
   .dgal-find { max-width: none; }
   .dgal-body { padding: 4px 16px 24px; }

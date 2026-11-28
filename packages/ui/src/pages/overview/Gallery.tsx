@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { KINDS, presetCells, type Kind, type Widget } from "./layout";
 import type { TileBox } from "./widgets";
@@ -30,7 +30,7 @@ function gridSize() {
 const FRAME_H = 172;
 
 /** One widget drawn as it would sit on Home, shrunk to fit its card. It can't be pressed or focused. */
-function Preview({ w, frame, render }: { w: Widget; frame: number; render: (w: Widget, box: TileBox) => ReactNode }) {
+const Preview = memo(function Preview({ w, frame, render }: { w: Widget; frame: number; render: (w: Widget, box: TileBox) => ReactNode }) {
   const g = useMemo(gridSize, []);
   const kind = w.kind;
   const [cw, ch] = presetCells(kind, KINDS[kind].size, 12);
@@ -55,7 +55,7 @@ function Preview({ w, frame, render }: { w: Widget; frame: number; render: (w: W
       </div>
     </div>
   );
-}
+});
 
 const Plus = () => <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
 const Grab = () => <svg viewBox="0 0 20 12" aria-hidden="true">{[4, 10, 16].flatMap((x) => [3, 9].map((y) => <circle key={`${x}${y}`} cx={x} cy={y} r="1.6" fill="currentColor" />))}</svg>;
@@ -86,6 +86,7 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
   const [query, setQuery] = useState("");
   const [frame, setFrame] = useState(320);
   const [held, setHeld] = useState<{ id: string; x: number; y: number } | null>(null);
+  const ghost = useRef<HTMLDivElement>(null);
   const shut = useRef(onClose), back = useRef(from);
   shut.current = onClose; back.current = from;
 
@@ -101,7 +102,7 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
     return () => ro.disconnect();
   }, [hidden.length > 0]);
 
-  // Focus goes to the library when it opens, so Tab reaches the search box first, and back to the opener when it closes.
+  // Focus goes to the library when it opens, and back to the opener when it closes.
   // Tab stays inside; Escape shuts it.
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
@@ -148,7 +149,7 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
 
   // ----- Dragging a widget out onto Home -----
   const drag = useRef<{ id: string; off: () => void } | null>(null);
-  useEffect(() => () => drag.current?.off(), []);
+  useEffect(() => () => { const d = drag.current; d?.off(); if (d) onHover(d.id, null); }, []);
   const press = (e: ReactPointerEvent, id: string) => {
     if (!canDrag || e.button !== 0 || e.pointerType === "touch" || (e.target as HTMLElement).closest("button")) return;
     // Held down, a card drags rather than starting a text selection.
@@ -169,22 +170,26 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
       raf = requestAnimationFrame(edge);
     };
     const move = (ev: PointerEvent) => {
+      // A release the page never heard about, say over another window, ends the drag where the pointer is.
+      if (!ev.buttons) { up(); return; }
       pt = { x: ev.clientX, y: ev.clientY };
       if (!live) {
         if (Math.hypot(pt.x - start.x, pt.y - start.y) < 6) return;
         live = true;
         document.documentElement.dataset.placing = "";
         raf = requestAnimationFrame(edge);
+        setHeld({ id, ...pt });
       }
       ev.preventDefault();
-      setHeld({ id, ...pt });
+      // The ghost follows the pointer without a render, so the previews stay put.
+      if (ghost.current) ghost.current.style.transform = `translate(${pt.x}px, ${pt.y}px)`;
       onHover(id, pt);
     };
     const finish = (at: Point | null) => {
       off();
       if (!live) return;
       setHeld(null);
-      if (!onDrop(id, at)) ref.current?.querySelector<HTMLElement>(`[data-kind="${id}"] button`)?.focus({ preventScroll: true });
+      if (!onDrop(id, at)) ref.current?.querySelector<HTMLElement>(`[data-kind="${id}"] .dgal-meta .dbtn`)?.focus({ preventScroll: true });
     };
     const up = () => finish(pt);
     const cancel = () => finish(null);
@@ -250,7 +255,7 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
         </div>
       </div>
       {held && (
-        <div className="dgal-ghost" aria-hidden="true" style={{ transform: `translate(${held.x}px, ${held.y}px)` }}>
+        <div ref={ghost} className="dgal-ghost" aria-hidden="true" style={{ transform: `translate(${held.x}px, ${held.y}px)` }}>
           <Grab /><span>{KINDS[hidden.find((w) => w.id === held.id)?.kind ?? "storage"].title}</span>
         </div>
       )}

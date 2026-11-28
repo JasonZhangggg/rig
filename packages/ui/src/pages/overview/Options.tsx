@@ -115,7 +115,6 @@ export function WidgetOptions({ w, onChange, place }: { w: Widget; onChange: (pa
 }
 
 
-/** The hidden widgets, to put back on Home. */
 /** Choices for the whole of Home. Corners and density belong to Settings, Appearance, so every screen matches. */
 export function DashOptions({ dash, onSpacing, onTone, onAppearance }: { dash: Dashboard; onSpacing: (spacing: Spacing) => void; onTone: (tone: Tone | "default") => void; onAppearance: () => void }) {
   return (
