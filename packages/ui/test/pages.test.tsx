@@ -370,7 +370,9 @@ describe("My PC", () => {
     const { partsSummary } = await import("../src/pages/PCPage");
     expect(partsSummary([], "Desk PC", true)).toBe("Rig hasn't read Desk PC's parts yet. They show up here once the Rig app on Desk PC sends its first reading.");
     const hot = { type: "Graphics card", name: "RTX", warn: true, temp: 90, specs: [], manual: [], modelSource: "generic" as const };
-    expect(partsSummary([hot], "Desk PC", true)).toBe("Graphics card has a warning. Open it for details.");
+    // In Rig's calm words, as everywhere else: it needs a look, not "has a warning".
+    expect(partsSummary([hot], "Desk PC", true)).toBe("Graphics card needs a look. Open it to see why.");
+    expect(partsSummary([hot, { ...hot, type: "Battery" }], "Desk PC", true)).toBe("2 parts need a look: graphics card, battery.");
     expect(partsSummary([{ ...hot, limit: 88 }], "Desk PC", true)).toBe("Graphics card is at 90°C, 2° over its 88°C limit.");
   });
 });
