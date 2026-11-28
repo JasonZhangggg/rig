@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { HOT_MARGIN, type BatteryView, type PartsView, type Recorded, type SensorType } from "@rig/core";
+import { HOT_MARGIN, cpuLimitByDesign, type BatteryView, type PCKind, type PartsView, type Recorded, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { ASLEEP, batteryWord, partJob } from "../overview/PartByPart";
 import { value } from "./Lanes";
@@ -25,24 +25,37 @@ export interface PartLine {
   usual: { lo: number; hi: number } | null;
   limit: number | null;
   scale: { min: number; max: number };
-  state: "slowing" | "hot" | "above" | "calm";
+  /** "design": a processor at its limit under load, as it's built to run (Home's cpuLimitByDesign). */
+  state: "slowing" | "hot" | "design" | "above" | "calm";
+  /** Its highest came close to where it slows down, and not as built: the highest is said in rust. */
+  hiHot: boolean;
 }
+
+/** The processor, so one built to run at its limit reads as Home reads it: its name, the machine's kind, and whether Things to look at flags its heat. */
+export interface CpuInfo { name: string; kind?: PCKind; hot?: boolean }
 
 /**
  * Each part's main reading over a stretch, beside its usual from the week and where it slows itself down. Fans read as
  * the fastest fan at each moment, as Home counts them.
  */
-export function partLines(r: Recorded, from: number, to: number, week: PartsView | null, limits: { cpu?: number; gpu?: number }): PartLine[] {
+export function partLines(r: Recorded, from: number, to: number, week: PartsView | null, limits: { cpu?: number; gpu?: number }, cpu?: CpuInfo): PartLine[] {
+  // The processor's load at a moment, for whether its limit was reached as built.
+  const cpuPart = r.parts.find((p) => p.id === "cpu");
+  const loadIdx = cpuPart?.sensors.filter((i) => r.sensors[i].type === "load") ?? [];
+  const load = loadIdx.find((i) => /total|usage/i.test(r.sensors[i].name)) ?? loadIdx[0];
+  const loadAt = (t: number) => (load == null ? null : r.points.find((pt) => pt.t === t)?.v[load] ?? null);
+  const byDesign = (t: number) => !!cpu && !cpu.hot && cpuLimitByDesign(cpu.name, cpu.kind, loadAt(t));
   return r.parts.flatMap((p): PartLine[] => {
     const type = r.sensors[p.lead].type;
     const idx = p.id === "fans" ? p.sensors.filter((i) => r.sensors[i].type === "fan") : [p.lead];
-    let lo = Infinity, hi = -Infinity, hiAt = 0, loAt = 0, now: number | null = null, first: number | null = null;
+    let lo = Infinity, hi = -Infinity, hiAt = 0, loAt = 0, now: number | null = null, nowAt = 0, first: number | null = null;
     for (const pt of r.points) {
       if (pt.t < from || pt.t > to) continue;
       let v: number | null = null;
       for (const i of idx) { const x = pt.v[i]; if (x != null && (v == null || x > v)) v = x; }
       if (v == null) continue;
       now = v;
+      nowAt = pt.t;
       first ??= v;
       if (v < lo) { lo = v; loAt = pt.t; }
       if (v > hi) { hi = v; hiAt = pt.t; }
@@ -53,8 +66,11 @@ export function partLines(r: Recorded, from: number, to: number, week: PartsView
     const usual = same ? row!.usual : null;
     const own = type === "temperature" ? (p.id === "cpu" ? limits.cpu : p.id === "gpu" ? limits.gpu : undefined) : undefined;
     const limit = own ?? (same ? row!.limit : null) ?? null;
-    const state: PartLine["state"] = limit != null && now >= limit ? "slowing" : limit != null && now >= limit - HOT_MARGIN ? "hot" : usual && now > usual.hi ? "above" : "calm";
-    return [{ id: p.id, name: p.name, type, now, lo, hi, hiAt, loAt, first: first!, usual, limit, state, scale: scaleOf(type, [lo, hi, usual?.lo, usual?.hi], limit, same ? row!.scale : null) }];
+    const asBuilt = p.id === "cpu" && type === "temperature";
+    const state: PartLine["state"] = limit != null && now >= limit - HOT_MARGIN && asBuilt && byDesign(nowAt) ? "design"
+      : limit != null && now >= limit ? "slowing" : limit != null && now >= limit - HOT_MARGIN ? "hot" : usual && now > usual.hi ? "above" : "calm";
+    const hiHot = limit != null && hi >= limit - HOT_MARGIN && !(asBuilt && byDesign(hiAt));
+    return [{ id: p.id, name: p.name, type, now, lo, hi, hiAt, loAt, first: first!, usual, limit, state, hiHot, scale: scaleOf(type, [lo, hi, usual?.lo, usual?.hi], limit, same ? row!.scale : null) }];
   });
 }
 
@@ -76,7 +92,7 @@ function scaleOf(type: SensorType, seen: (number | undefined)[], limit: number |
  * The kind of PC the rows are about, for a laptop's words, its battery now, and the parts asleep now (a laptop's
  * graphics chip switched off to save power) when the stretch runs up to now.
  */
-export interface Device { laptop: boolean; battery?: BatteryView; asleep?: readonly string[] }
+export interface Device { laptop: boolean; battery?: BatteryView; asleep?: readonly string[]; cpu?: CpuInfo }
 
 const share = (l: PartLine, v: number) => Math.max(0, Math.min(100, ((v - l.scale.min) / (l.scale.max - l.scale.min || 1)) * 100));
 
@@ -87,7 +103,7 @@ function Track({ l }: { l: PartLine }) {
       {l.limit != null && l.limit < l.scale.max && <i className="pbp-zone" style={{ left: pos(l.limit) }} />}
       {l.usual && <i className="pbp-band" style={{ left: pos(l.usual.lo), width: `max(4px, ${share(l, l.usual.hi) - share(l, l.usual.lo)}%)` } as CSSProperties} />}
       <i className="pbp-span" style={{ left: pos(l.lo), width: `max(2px, ${share(l, l.hi) - share(l, l.lo)}%)` } as CSSProperties} />
-      {l.id !== "battery" && <i className={`pbp-high${l.limit != null && l.hi >= l.limit - HOT_MARGIN ? " look" : ""}`} style={{ left: pos(l.hi) }} />}
+      {l.id !== "battery" && <i className={`pbp-high${l.hiHot ? " look" : ""}`} style={{ left: pos(l.hi) }} />}
       {l.now != null && <i className={`pbp-dot${l.state === "hot" || l.state === "slowing" ? " look" : ""}`} style={{ left: pos(l.now) }} />}
     </span>
   );
@@ -96,6 +112,7 @@ function Track({ l }: { l: PartLine }) {
 function stateWord(l: PartLine): { text: string; look?: boolean } {
   if (l.state === "slowing") return { text: "Slowing itself down", look: true };
   if (l.state === "hot") return { text: "Running hot", look: true };
+  if (l.state === "design") return { text: "At its limit, as built" };
   if (l.state === "above") return { text: l.type === "load" ? "Fuller than usual" : l.type === "fan" ? "Faster than usual" : "Warmer than usual" };
   return { text: "Calm" };
 }
@@ -113,7 +130,7 @@ export function PartSummary({ lines, span, live, device, onPick }: { lines: Part
   const anyUsual = lines.some((l) => l.usual);
   /** How it's doing, in a word, and the line under it. A battery says whether it's on battery and its drain, or how low it ran. */
   const doing = (l: PartLine): { head: { text: string; look?: boolean }; line: string; look?: boolean } => {
-    if (l.id !== "battery") return { head: stateWord(l), line: `Highest ${said(l, l.hi)} at ${when(l.hiAt)}`, look: l.limit != null && l.hi >= l.limit - HOT_MARGIN };
+    if (l.id !== "battery") return { head: stateWord(l), line: `Highest ${said(l, l.hi)} at ${when(l.hiAt)}`, look: l.hiHot };
     const b = live ? device?.battery : undefined;
     const lowest = `Lowest ${said(l, l.lo)} at ${when(l.loAt)}`;
     const head = b?.state ? batteryWord[b.state] : Math.round(l.now!) < Math.round(l.first) ? "Ran down" : Math.round(l.now!) > Math.round(l.first) ? "Charged up" : "Held steady";
