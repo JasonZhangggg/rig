@@ -248,6 +248,14 @@ describe("crashes, shutdowns and errors", () => {
     expect(buildPC(desk, null, null)).toMatchObject({ name: "My PC", lastSync: "Live on this PC" });
   });
 
+  it("names a laptop's maker the short way under its name", () => {
+    expect(buildPC(structuredClone(fixtures.comet.inv), null, null).nickname).toBe("ASUS laptop");
+    expect(buildPC(pebble(), null, null).nickname).toBe("ASUS laptop");
+    const plain = pebble(); plain.machine.manufacturer = "";
+    expect(buildPC(plain, null, null).nickname).toBe("Laptop");
+    expect(buildPC(atlas(), null, null).nickname).toBe("Desktop");
+  });
+
   it("says when a single power cut is all there is", () => {
     expect(ids(atlas(), null, { events: [ev(1 * DAY, "Microsoft-Windows-Kernel-Power", 41, "", "critical")] }).filter((i) => i.startsWith("shutdowns"))).toEqual([]);
   });
