@@ -1,14 +1,15 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { KINDS, presetCells, type Kind, type Widget } from "./layout";
+import { KINDS, kindBlurb, kindTitle, presetCells, type Kind, type Widget } from "./layout";
+import { useMachineWord } from "../../state";
 import type { TileBox } from "./widgets";
 
 /** Where a widget is being dragged to, in screen pixels, or null once it leaves the page. */
 export type Point = { x: number; y: number };
 
 /** Shelves of the library, so a long list reads in a few groups. A kind with no shelf here goes under More. */
-const SHELVES: [string, Kind[]][] = [
-  ["Your PC", ["pc", "health", "todo", "live", "parts", "asks"]],
+const shelvesFor = (word: string): [string, Kind[]][] => [
+  [`Your ${word}`, ["pc", "health", "todo", "live", "parts", "asks"]],
   ["Heat and fans", ["temps", "fans", "trend", "evenings"]],
   ["Storage", ["storage", "drives"]],
   ["What happened", ["changes", "events", "logs", "games"]],
@@ -33,6 +34,7 @@ const FRAME_H = 172;
 const Preview = memo(function Preview({ w, frame, render }: { w: Widget; frame: number; render: (w: Widget, box: TileBox) => ReactNode }) {
   const g = useMemo(gridSize, []);
   const kind = w.kind;
+  const word = useMachineWord();
   const [cw, ch] = presetCells(kind, KINDS[kind].size, 12);
   const colW = (g.width - g.gap * 11) / 12;
   const width = cw * colW + (cw - 1) * g.gap, height = ch * g.row + (ch - 1) * g.gap;
@@ -43,7 +45,7 @@ const Preview = memo(function Preview({ w, frame, render }: { w: Widget; frame: 
     return (
       <div className="dgal-still" aria-hidden="true">
         <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round"><path d="M18 8h28v48H18z" /><path d="M24 16h16M24 22h16" strokeLinecap="round" /><circle cx="32" cy="40" r="7" /></svg>
-        <span>Your PC in 3D, part by part</span>
+        <span>Your {word} in 3D, part by part</span>
       </div>
     );
   }
@@ -84,6 +86,7 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
   const ref = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
+  const word = useMachineWord();
   const [frame, setFrame] = useState(320);
   const [held, setHeld] = useState<{ id: string; x: number; y: number } | null>(null);
   const ghost = useRef<HTMLDivElement>(null);
@@ -139,12 +142,13 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
   };
 
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (w: Widget) => { const m = KINDS[w.kind]; const text = `${m.title} ${m.blurb}`.toLowerCase(); return words.every((x) => text.includes(x)); };
+  const matches = (w: Widget) => { const text = `${kindTitle(w.kind, word)} ${kindBlurb(w.kind, word)}`.toLowerCase(); return words.every((x) => text.includes(x)); };
   const shelves = useMemo(() => {
-    const out: [string, Widget[]][] = SHELVES.map(([t, kinds]) => [t, hidden.filter((w) => kinds.includes(w.kind))]);
-    const rest = hidden.filter((w) => !SHELVES.some(([, kinds]) => kinds.includes(w.kind)));
+    const all = shelvesFor(word);
+    const out: [string, Widget[]][] = all.map(([t, kinds]) => [t, hidden.filter((w) => kinds.includes(w.kind))]);
+    const rest = hidden.filter((w) => !all.some(([, kinds]) => kinds.includes(w.kind)));
     return [...out, ["More", rest] as [string, Widget[]]];
-  }, [hidden]);
+  }, [hidden, word]);
   const shown = shelves.map(([t, list]) => [t, list.filter(matches)] as const).filter(([, list]) => list.length);
 
   // ----- Dragging a widget out onto Home -----
@@ -244,8 +248,8 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
                   <li key={w.id} className="dgal-card" data-kind={w.id} data-drag={canDrag ? "" : undefined} data-held={held?.id === w.id ? "" : undefined} onPointerDown={(e) => press(e, w.id)}>
                     <div className="dgal-prev"><Preview w={w} frame={frame} render={render} /></div>
                     <div className="dgal-meta">
-                      <span><b>{KINDS[w.kind].title}</b><small>{KINDS[w.kind].blurb}</small></span>
-                      <button type="button" className="dbtn" aria-label={`Add ${KINDS[w.kind].title}`} onClick={(e) => add(w.id, e.currentTarget)}><Plus />Add</button>
+                      <span><b>{kindTitle(w.kind, word)}</b><small>{kindBlurb(w.kind, word)}</small></span>
+                      <button type="button" className="dbtn" aria-label={`Add ${kindTitle(w.kind, word)}`} onClick={(e) => add(w.id, e.currentTarget)}><Plus />Add</button>
                     </div>
                   </li>
                 ))}
@@ -256,7 +260,7 @@ export function Gallery({ hidden, render, canDrag, from, onAdd, onClose, onHover
       </div>
       {held && (
         <div ref={ghost} className="dgal-ghost" aria-hidden="true" style={{ transform: `translate(${held.x}px, ${held.y}px)` }}>
-          <Grab /><span>{KINDS[hidden.find((w) => w.id === held.id)?.kind ?? "storage"].title}</span>
+          <Grab /><span>{kindTitle(hidden.find((w) => w.id === held.id)?.kind ?? "storage", word)}</span>
         </div>
       )}
     </>,

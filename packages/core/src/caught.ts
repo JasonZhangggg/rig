@@ -5,7 +5,8 @@
 // and the Windows events. Only what the readings show; a cause is "most likely".
 
 import { USUAL } from "./alerts";
-import type { HistoryPoint } from "./model";
+import type { HistoryPoint, PC } from "./model";
+import { machineWord } from "./machineWord";
 import { PINNED_PERCENT, RECORD_HOT_MARGIN, eventTitle, type EventKind, type Limits, type PCEvent, type Recording, type RecordingSample, type RecordingSummary } from "./recordings";
 
 const MIN = 60_000;
@@ -126,10 +127,10 @@ function aboveStretches(samples: readonly RecordingSample[], part: "gpu" | "cpu"
   });
 }
 
-const words: Record<string, { title: string; moment: string; what: (e: PCEvent) => string }> = {
+const words: Record<string, { title: string; moment: string; what: (e: PCEvent, w: string) => string }> = {
   driver: { title: "The black screen, caught", moment: "Black screen", what: () => "the graphics driver reset" },
   crash: { title: "The crash, caught", moment: "Crash", what: (e) => { const t = eventTitle(e); return t[0].toLowerCase() + t.slice(1); } },
-  shutdown: { title: "The sudden switch-off, caught", moment: "Switched off", what: () => "the PC turned off" },
+  shutdown: { title: "The sudden switch-off, caught", moment: "Switched off", what: (_e, w) => `the ${w} turned off` },
   hardware: { title: "The hardware error, caught", moment: "Hardware error", what: () => "Windows logged a hardware error" },
 };
 
@@ -137,7 +138,7 @@ const words: Record<string, { title: string; moment: string; what: (e: PCEvent) 
  * What a finished recording caught, or null when it caught nothing serious: then its page keeps the usual layout.
  * `history` gives each game's usual range; `events` is the PC's event log, for the times it happened before.
  */
-export function caughtProblem(rec: Pick<Recording, "samples" | "events" | "intervalMs" | "startedAt">, sum: RecordingSummary, opts: { limits?: Limits; history?: readonly HistoryPoint[]; events?: readonly PCEvent[] } = {}): Caught | null {
+export function caughtProblem(rec: Pick<Recording, "samples" | "events" | "intervalMs" | "startedAt">, sum: RecordingSummary, opts: { limits?: Limits; history?: readonly HistoryPoint[]; events?: readonly PCEvent[]; kind?: PC["kind"] } = {}): Caught | null {
   const samples = [...rec.samples].sort((a, b) => a.t - b.t);
   const event = [...rec.events].filter((e) => CAUGHT_KINDS.includes(e.kind)).sort((a, b) => a.t - b.t)[0];
   if (!event || samples.length < 2) return null;
@@ -169,8 +170,8 @@ export function caughtProblem(rec: Pick<Recording, "samples" | "events" | "inter
   }
 
   const kind = words[event.kind] ?? words.hardware;
-  const what = kind.what(event);
-  const checks = checksOf(rec, samples, sum, { part, game, limits: opts.limits ?? {}, event });
+  const what = kind.what(event, machineWord(opts.kind));
+  const checks = checksOf(rec, samples, sum, { part, game, limits: opts.limits ?? {}, event, word: machineWord(opts.kind) });
   const cause = during ? "heat" : "unclear";
   const name = partName[part];
   const summary = cause === "heat"
@@ -188,7 +189,7 @@ export function caughtProblem(rec: Pick<Recording, "samples" | "events" | "inter
 }
 
 /** The rows that rule things in or out: the processor (when the story follows the graphics card), memory, other apps and power. */
-function checksOf(rec: Pick<Recording, "events" | "intervalMs">, samples: readonly RecordingSample[], sum: RecordingSummary, o: { part: "gpu" | "cpu"; game: string | null; limits: Limits; event: PCEvent }): CaughtCheck[] {
+function checksOf(rec: Pick<Recording, "events" | "intervalMs">, samples: readonly RecordingSample[], sum: RecordingSummary, o: { part: "gpu" | "cpu"; game: string | null; limits: Limits; event: PCEvent; word: string }): CaughtCheck[] {
   const out: CaughtCheck[] = [];
   const cpu = sum.stats.cpu;
   if (o.part === "gpu" && cpu) {
@@ -216,8 +217,8 @@ function checksOf(rec: Pick<Recording, "events" | "intervalMs">, samples: readon
     let gap = 0;
     for (let i = 1; i < samples.length; i++) gap = Math.max(gap, samples[i].t - samples[i - 1].t);
     if (power) out.push({ id: "power", ok: false, title: "Windows logged a power change", detail: eventTitle(power) });
-    else if (gap > rec.intervalMs * 3) out.push({ id: "power", ok: false, title: "The readings stopped for a while", detail: `No readings for ${mins(gap)}, so the PC may have restarted` });
-    else out.push({ id: "power", ok: true, title: "The power held", detail: "The PC stayed on, and Windows logged no power problem" });
+    else if (gap > rec.intervalMs * 3) out.push({ id: "power", ok: false, title: "The readings stopped for a while", detail: `No readings for ${mins(gap)}, so the ${o.word} may have restarted` });
+    else out.push({ id: "power", ok: true, title: "The power held", detail: `The ${o.word} stayed on, and Windows logged no power problem` });
   }
   return out;
 }

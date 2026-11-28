@@ -39,6 +39,7 @@ export * from "./local";
 export * from "./summary";
 export * from "./seen";
 export * from "./units";
+export * from "./machineWord";
 export * from "./export";
 export * from "./manuals";
 export * from "./manualParts";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { canItRun, type GameRequirements, type HardwareFacts, type PartCheck, type RunAnswer } from "@rig/core";
+import { canItRun, machineWord, type GameRequirements, type HardwareFacts, type PartCheck, type RunAnswer } from "@rig/core";
 import { useApp, useUI } from "../state";
 import { dateText } from "../dateText";
 import { Row, RowFigure, Rows } from "./Rows";
@@ -76,10 +76,11 @@ function OpenCanItRun({ first }: { first: string }) {
     : look.step === "none" ? `Rig couldn't find ${look.game}'s requirements`
     : answer ? answer.headline
     : `Which game should Rig check on ${pc.name}?`;
-  const sub = facts === null ? "Open Rig on that PC once, and it can compare."
+  const word = machineWord(pc.kind);
+  const sub = facts === null ? `Open Rig on that ${word} once, and it can compare.`
     : look.step === "none" ? "Check the name, or ask Rig to look further."
     : look.step === "error" ? look.message
-    : answer?.sub ?? (look.step === "ask" ? "Rig reads its minimum and recommended specs from the game's store or publisher page and compares them with this PC's parts." : undefined);
+    : answer?.sub ?? (look.step === "ask" ? `Rig reads its minimum and recommended specs from the game's store or publisher page and compares them with this ${word}'s parts.` : undefined);
   const gameName = look.step === "done" ? look.req.game : look.step === "looking" || look.step === "none" ? look.game : name.trim();
 
   return (

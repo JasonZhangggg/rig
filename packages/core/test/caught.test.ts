@@ -15,6 +15,16 @@ const recOf = (samples: RecordingSample[], events: RawEvent[]) => ({ samples, ev
 const limits = { cpu: 95, gpu: 88 };
 
 describe("what a recording caught", () => {
+  it("says the laptop turned off, not the PC, on a laptop", () => {
+    const off: RawEvent = { t: T0 + 10 * MIN, log: "System", source: "Microsoft-Windows-Kernel-Power", id: 41, level: "critical", message: "The system has rebooted without cleanly shutting down first." };
+    const rec = recOf(run(15, () => ({})), [off]);
+    const sum = summarise(rec, limits);
+    const laptop = caughtProblem(rec, sum, { limits, kind: "laptop" })!;
+    expect(laptop.what).toBe("the laptop turned off");
+    expect(laptop.summary).toMatch(/when the laptop turned off\./);
+    expect(caughtProblem(rec, sum, { limits })!.what).toBe("the PC turned off");
+  });
+
   it("tells the demo's black screen as heat, with the game's usual range, what it ruled out and when it happened before", async () => {
     const c = new DemoClient();
     const rec = (await c.recording("demo-atlas", DEMO_RECORDING_ID))!;
