@@ -101,9 +101,9 @@ export function EventLog() {
             {day != null && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${shortDay(day)}`} onClick={() => { setDay(null); reset(); }}>{shortDay(day)}<span aria-hidden="true">×</span></button>}
           </div>
           <div className="lv-tools">
-            <div className="seg" role="group" aria-label="Show">
-              <button type="button" aria-pressed={only === "all"} onClick={() => { setOnly("all"); reset(); }}>All <span className="num">{byPick.length}</span></button>
-              <button type="button" aria-pressed={only === "problems"} onClick={() => { setOnly("problems"); reset(); }}>Problems <span className="num">{problems.length}</span></button>
+            <div className="counts" role="group" aria-label="Show">
+              <button type="button" className="count quiet" aria-pressed={only === "all"} onClick={() => { setOnly("all"); reset(); }}><span className="count-n num">{byPick.length}</span><span className="count-label">All</span></button>
+              <button type="button" className="count" aria-pressed={only === "problems"} onClick={() => { setOnly(only === "problems" ? "all" : "problems"); reset(); }}><span className="count-n num">{problems.length}</span><span className="count-label">Problems</span></button>
             </div>
           </div>
         </div>

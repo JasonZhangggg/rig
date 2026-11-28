@@ -37,7 +37,7 @@ describe("Logs", () => {
     expect(screen.getByRole("link", { name: /Logs/ }).getAttribute("href")).toBe("#logs");
     await open("logs");
     const tabs = await screen.findByRole("navigation", { name: "Logs" });
-    expect(within(tabs).getAllByRole("link").map((a) => a.textContent)).toEqual(["Readings", "Events"]);
+    expect(within(tabs).getAllByRole("link").map((a) => a.textContent)).toEqual(["Readings", "Events", "Games"]);
     fireEvent.click(within(tabs).getByRole("link", { name: "Events" }));
     await open("events");
     const counts = await screen.findByRole("group", { name: "Show only" });
@@ -282,7 +282,7 @@ describe("Logs", () => {
     const log = await screen.findByRole("region", { name: "Log" });
     (await within(log).findAllByText("The graphics driver stopped and recovered"));
     within(log).getByText(/Discord's memory and processor use/);
-    fireEvent.click(within(log).getByRole("button", { name: /^Problems/ }));
+    fireEvent.click(within(log).getByRole("button", { name: /Problems/ }));
     expect(within(log).queryByText(/Discord's memory and processor use/)).toBeNull();
     within(log).getAllByText("The graphics driver stopped and recovered");
   }, 15000);
