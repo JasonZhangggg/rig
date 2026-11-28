@@ -167,10 +167,12 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
     const found = hotIdle ?? issue("cpu-hot", "cpu-warm");
     add({
       id: "cpu-hot-rest", score: 95, noisy: true, likely: true,
-      title: "Processor is hot while barely working", because: "the processor is hot while barely working, which points at the cooler",
+      title: "Processor is hot while barely working", because: `the processor is hot while barely working, which points at the ${laptop ? "cooling" : "cooler"}`,
       evidence: `${r(cpuT)}°C at ${pctOf(cpuLoad)} busy · limit ${cpuLim}°C`,
-      why: "A processor at rest should run well under its limit. That points at the cooler: a fan or pump that stopped, a cooler that came loose, or dried-out paste.",
-      step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: `My processor is at ${r(cpuT)}°C while only ${pctOf(cpuLoad)} busy. Is the cooler failing?` },
+      why: laptop
+        ? "A processor at rest should run well under its limit. On a laptop that points at the cooling: dust in the fan, vents blocked by a soft surface, or a fan that stopped."
+        : "A processor at rest should run well under its limit. That points at the cooler: a fan or pump that stopped, a cooler that came loose, or dried-out paste.",
+      step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: laptop ? `My laptop's processor is at ${r(cpuT)}°C while only ${pctOf(cpuLoad)} busy. Is something wrong with its fan?` : `My processor is at ${r(cpuT)}°C while only ${pctOf(cpuLoad)} busy. Is the cooler failing?` },
     });
   } else if (hotIdle) {
     add({ id: "cpu-hot-rest", score: 85, noisy: true, likely: true, title: hotIdle.title, because: lower(hotIdle.title), evidence: hotIdle.evidence?.[0] ?? hotIdle.body, why: hotIdle.body, step: issueStep(hotIdle) });
@@ -179,11 +181,19 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
   // A part at its limit slows itself down to stay safe, and its fans run flat out.
   if (cpuT != null && cpuLim != null && cpuT >= cpuLim - SL_AT_LIMIT && (cpuLoad == null || cpuLoad > SL_REST)) {
     const found = issue("cpu-hot");
-    add({
+    // A laptop's processor is built to work at its limit. Without a finding (it hasn't lost real speed there) that's how it runs, not a fault.
+    if (laptop && !found && cpuLoad != null) add({
+      id: "cpu-limit", score: 60, noisy: true,
+      title: `Processor is working at its ${cpuLim}°C limit`, because: `the processor is working at its ${cpuLim}°C limit`,
+      evidence: `${r(cpuT)}°C at ${pctOf(cpuLoad)} busy`,
+      why: "Laptop processors are built to run up to their limit under load. There they slow down a little to stay safe, which is called throttling, and the fans run fast. That's normal.",
+      step: { kind: "ask", label: "Ask about it", ask: `My laptop's processor runs at ${r(cpuT)}°C under load. Is that normal, and can I make it quieter?` },
+    });
+    else add({
       id: "cpu-limit", score: 78, noisy: true,
       title: `Processor is at its ${cpuLim}°C limit`, because: `the processor is at its ${cpuLim}°C limit and slowing itself down`,
       evidence: `${r(cpuT)}°C${cpuLoad != null ? ` at ${pctOf(cpuLoad)} busy` : ""}`,
-      why: "At its limit it gives up some speed to stay safe, and its fan runs flat out.",
+      why: "At its limit it gives up some speed to stay safe, which is called throttling, and its fan runs flat out.",
       step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: `My processor is at ${r(cpuT)}°C. What should I do?` },
     });
   }
@@ -193,7 +203,7 @@ export function slowOrLoud({ pc, history = [], processes, now = Date.now() }: Sl
       id: "gpu-limit", score: 78, noisy: true,
       title: `Graphics card is at its ${gpuLim}°C limit`, because: `the graphics card is at its ${gpuLim}°C limit and slowing itself down`,
       evidence: `${r(gpuT)}°C${gpuLoad != null ? ` at ${pctOf(gpuLoad)} busy` : ""}`,
-      why: "At its limit it gives up some speed to stay safe, and its fans run flat out. Dust on the card and the case's filters is the usual cause.",
+      why: `At its limit it gives up some speed to stay safe, which is called throttling, and its fans run flat out. ${laptop ? "Dust in the fans or blocked vents is the usual cause." : "Dust on the card and the case's filters is the usual cause."}`,
       step: found ? issueStep(found) : { kind: "ask", label: "Ask what to do", ask: `My graphics card is at ${r(gpuT)}°C. What should I do?` },
     });
   }

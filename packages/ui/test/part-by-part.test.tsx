@@ -1,5 +1,8 @@
 // Home's PC widget, part by part: a row per part with what it does, its reading now against its usual while you play,
 // and how it's doing. New Homes start with it; a Home saved with the PC in 3D keeps the 3D view.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import postcss from "postcss";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
@@ -45,6 +48,30 @@ describe("Your PC, part by part", () => {
     expect(document.body.textContent).not.toMatch(/NaN|undefined/);
   });
 
+  it("reads a laptop's battery by its charge, and leaves out the parts Rig can never read", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    render(<RigApp client={new DemoClient()} />);
+    const { widget } = await partByPart();
+    const rows = within(widget.getByRole("list", { name: "Parts" })).getAllByRole("button");
+    expect(rows.map((r) => r.querySelector(".pbp-name b")!.firstChild!.textContent)).toEqual(["Processor", "Memory", "Main drive", "Motherboard", "Fans", "Battery"]);
+    const battery = within(rows[5]);
+    expect(battery.getByText("58")).toBeTruthy();
+    expect(battery.getByText("On battery")).toBeTruthy();
+    expect(battery.getByText(/^Lowest \d+% this week$/)).toBeTruthy();
+    expect(widget.queryByText("Rig can't read it")).toBeNull();
+    expect(widget.queryByText("No sensor Windows can read")).toBeNull();
+  });
+
+  it("words the usual for work when the busy hours weren't games", async () => {
+    const client = new DemoClient();
+    const history = client.history.bind(client);
+    client.history = async (...args: Parameters<typeof history>) => (await history(...args)).map((p) => ({ ...p, game: null }));
+    render(<RigApp client={client} />);
+    const { widget } = await partByPart();
+    expect(widget.getByText("Its usual when busy")).toBeTruthy();
+    expect(widget.queryByText("Its usual while you play")).toBeNull();
+  });
+
   it("opens a part in My PC from its row", async () => {
     render(<RigApp client={new DemoClient()} />);
     const { widget } = await partByPart();
@@ -86,5 +113,14 @@ describe("Your PC, part by part", () => {
     localStorage.setItem(KEY, JSON.stringify({ v: 1, widgets: [{ id: "pc", kind: "pc", hidden: false, size: "l" }] }));
     render(<RigApp client={new DemoClient()} />);
     expect(await screen.findByRole("link", { name: "Open 3D view" })).toBeTruthy();
+  });
+});
+
+describe("Part by part's stylesheet", () => {
+  it("gives the reading now room for a fan's figure and its unit, so 2,580 rpm keeps clear of the track", () => {
+    let cols = "";
+    postcss.parse(readFileSync(join(__dirname, "../src/styles/pages/partbypart.css"), "utf8")).walkRules(/^\.pbp-cols, \.pbp-row$/, (r) => r.walkDecls("grid-template-columns", (d) => { cols = d.value; }));
+    const now = cols.split(/\s+(?![^(]*\))/)[1];
+    expect(parseFloat(now)).toBeGreaterThanOrEqual(72);
   });
 });

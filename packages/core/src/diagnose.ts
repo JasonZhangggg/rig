@@ -62,11 +62,14 @@ function graphics({ inv, snap }: HealthInput, add: Add) {
   const core = gpuTemp(snap, chip)?.value, hot = gpuHotSpot(snap, chip)?.value, mem = gpuMemTemp(snap, chip)?.value;
   const load = gpuLoad(snap, chip)?.value;
   const hotLim = hotSpotLimit(gpu.vendor);
+  const laptop = inv.machine.kind === "laptop";
   if (hot != null && hot >= hotLim - 3) {
     add({
       id: "gpu-hotspot-hot", category: "Temperatures", weight: 25, severity: "bad", part: "gpu", confidence: "sure",
       title: `Graphics card's hot spot is at ${round(hot)}°C`,
-      body: `Its hottest point slows the card down at about ${hotLim}°C. Clean the card's fans and give it room to breathe; if it keeps happening, the cooler needs fresh paste or pads.`,
+      body: laptop
+        ? `Its hottest point slows the graphics down at about ${hotLim}°C. Keep the vents clear and use it on a hard, flat surface; if it keeps happening, dust in the fans or old paste is the usual cause.`
+        : `Its hottest point slows the card down at about ${hotLim}°C. Clean the card's fans and give it room to breathe; if it keeps happening, the cooler needs fresh paste or pads.`,
       evidence: [`Hot spot ${round(hot)}°C, limit about ${hotLim}°C`, ...(core != null ? [`Core ${round(core)}°C`] : [])],
       action: "Ask what to do", go: "chat", ask: `My graphics card's hot spot is at ${round(hot)}°C. What should I do?`,
     });
@@ -74,7 +77,7 @@ function graphics({ inv, snap }: HealthInput, add: Add) {
     add({
       id: "gpu-hotspot-gap", category: "Temperatures", weight: 12, severity: "warn", part: "gpu", confidence: "likely",
       title: `Graphics card's hot spot runs ${round(hot - core)}° above its core`,
-      body: "A gap this wide under load usually means the cooler isn't pressing evenly on the chip or its thermal paste has dried out. Under warranty, the card's maker can repaste it.",
+      body: `A gap this wide under load usually means the cooler isn't pressing evenly on the chip or its thermal paste has dried out. Under warranty, the ${laptop ? "laptop's" : "card's"} maker can repaste it.`,
       evidence: [`Core ${round(core)}°C, hot spot ${round(hot)}°C at ${round(load)}% load`, `A healthy card stays within about 10 to 25° under load`],
       action: "Ask about it", go: "chat", ask: `My graphics card's hot spot is ${round(hot - core)}° hotter than its core under load. Is the paste bad?`,
     });
@@ -83,7 +86,9 @@ function graphics({ inv, snap }: HealthInput, add: Add) {
     add({
       id: "gpu-vram-hot", category: "Temperatures", weight: 12, severity: mem >= 108 ? "bad" : "warn", part: "gpu", confidence: "sure",
       title: `Graphics card memory is at ${round(mem)}°C`,
-      body: "Its memory chips slow down at about 110°C. Better case airflow helps; on some cards new thermal pads drop it by 10 to 20°.",
+      body: laptop
+        ? "Its memory chips slow down at about 110°C. Clear vents and a hard, flat surface under the laptop help."
+        : "Its memory chips slow down at about 110°C. Better case airflow helps; on some cards new thermal pads drop it by 10 to 20°.",
       evidence: [`Memory ${round(mem)}°C${load != null ? ` at ${round(load)}% load` : ""}`],
       action: "Ask what to do", go: "chat", ask: `My graphics card's memory runs at ${round(mem)}°C. Is that a problem?`,
     });
@@ -100,6 +105,7 @@ export const WEAR_CRITICAL = 10;
 export const DRIVE_WARM = { nvme: 75, ssd: 65, hdd: 55, unknown: 70 } as const;
 
 function drives({ inv, snap }: HealthInput, add: Add) {
+  const laptop = inv.machine.kind === "laptop";
   for (const d of inv.disks) {
     const name = d.model;
     if (d.status === "unhealthy" || d.status === "warning") {
@@ -131,7 +137,9 @@ function drives({ inv, snap }: HealthInput, add: Add) {
       add({
         id: `disk-hot-${name}`, category: "Temperatures", weight: 10, severity: temp >= warm + 10 ? "bad" : "warn", part: "ssd", confidence: "sure",
         title: `${name} is at ${round(temp)}°C`,
-        body: d.media === "hdd" ? "Hard drives wear faster above about 50°C. A case fan blowing across it fixes most of this." : "It slows itself down when it gets this hot. A heatsink or the board's drive cover, and some airflow over it, usually fixes it.",
+        body: laptop
+          ? `${d.media === "hdd" ? "Hard drives wear faster above about 50°C." : "It slows itself down when it gets this hot."} Keep the vents clear and use the laptop on a hard, flat surface.`
+          : d.media === "hdd" ? "Hard drives wear faster above about 50°C. A case fan blowing across it fixes most of this." : "It slows itself down when it gets this hot. A heatsink or the board's drive cover, and some airflow over it, usually fixes it.",
         evidence: [`Drive ${round(temp)}°C, ${{ nvme: "NVMe drives", ssd: "SATA SSDs", hdd: "hard drives", unknown: "drives" }[d.media]} start to slow or wear faster around ${warm}°C`],
         action: "Ask about it", go: "chat", ask: `My drive ${name} is at ${round(temp)}°C. Is that too hot?`,
       });
@@ -352,6 +360,8 @@ const crashAdvice: Record<StopGroup, string> = {
   storage: "The crash codes point at a drive Windows reads from. Back up, then check the drive's health and its cable.",
   driver: "The crash codes point at a driver. Updating the chipset, graphics, network and audio drivers fixes most of these.",
 };
+/** A laptop's graphics have no power cables to check. */
+const LAPTOP_GRAPHICS_CRASH = "The crash codes point at the graphics driver. A clean install of the newest driver fixes most of these; if not, check the graphics temperatures.";
 
 const day = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -495,7 +505,7 @@ function stability(input: HealthInput, now: number, add: Add) {
       id: "crashes", category: STABILITY, weight: Math.min(40, 20 + (crashes.length - 1) * 10), severity: crashes.length >= 2 || lead === "hardware" ? "bad" : "warn",
       confidence: (lead && top[1] >= 2 && top[1] === groups.length) || (test && memoryTest(test) === "failed") ? "likely" : "possible",
       title: crashes.length === 1 ? "Windows crashed with a blue screen" : `Windows crashed ${times(crashes.length)} in two weeks`,
-      body: [lead ? crashAdvice[lead] : "Ask Rig to read the crash codes and what was running.", testLine || extra, why?.body ?? ""].filter(Boolean).join(" "),
+      body: [lead ? (inv.machine.kind === "laptop" && lead === "graphics" ? LAPTOP_GRAPHICS_CRASH : crashAdvice[lead]) : "Ask Rig to read the crash codes and what was running.", testLine || extra, why?.body ?? ""].filter(Boolean).join(" "),
       evidence: [
         `${crashes.length} blue screen${crashes.length === 1 ? "" : "s"} in the last 14 days`, ...[...new Set(named)].slice(0, 4).map((c) => `Stop code ${c}`),
         ...(test ? [`Windows Memory Diagnostic on ${day(test.t)}: ${memoryTest(test) === "failed" ? "errors found" : "no errors"}`] : []),
@@ -557,7 +567,7 @@ function stability(input: HealthInput, now: number, add: Add) {
       id: "driver-resets", category: STABILITY, weight: 15, severity: "warn", part: "gpu", confidence: hot > cool || cool > hot || why ? "likely" : "possible",
       title: `The graphics driver stopped and recovered ${times(resets.length)} this week`,
       body: hot > cool
-        ? "Most came while the card was near its limit, so heat is the likely cause. Clean its fans and check case airflow."
+        ? inv.machine.kind === "laptop" ? "Most came while the graphics were near their limit, so heat is the likely cause. Keep the vents clear and clean the dust out of the fans." : "Most came while the card was near its limit, so heat is the likely cause. Clean its fans and check case airflow."
         : why
           ? `${cool > hot ? "The card wasn't hot when they happened. " : ""}${why.body}`
           : cool > hot
@@ -586,7 +596,7 @@ function stability(input: HealthInput, now: number, add: Add) {
       id: "whea-corrected", category: STABILITY, weight: 8, severity: "info", confidence: "possible",
       title: `Hardware corrected ${corrected.length} errors this week`,
       body: pcie
-        ? "They come from a PCIe link, usually the graphics card or an NVMe drive. Reseating the card, skipping a riser cable, or setting the slot's PCIe generation in the BIOS usually stops them."
+        ? inv.machine.kind === "laptop" ? "They come from a PCIe link, usually the graphics or an NVMe drive. A BIOS update from the laptop's maker usually stops them." : "They come from a PCIe link, usually the graphics card or an NVMe drive. Reseating the card, skipping a riser cable, or setting the slot's PCIe generation in the BIOS usually stops them."
         : "The processor or memory keeps fixing its own errors. Nothing has crashed yet, but an unstable overclock, undervolt or memory speed is the usual cause.",
       evidence: [`${corrected.length} corrected hardware errors in 7 days`, `Mostly WHEA-Logger ${pcie ? "17 (PCIe)" : [...new Set(corrected.map((e) => e.id))].slice(0, 3).join(", ")}`],
       action: "Ask about it", go: "chat", ask: `Windows keeps logging corrected hardware errors (WHEA${pcie ? " 17, PCIe" : ""}). Should I worry?`,

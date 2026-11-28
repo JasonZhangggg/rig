@@ -3,7 +3,7 @@
 // limit that's too low warns about a healthy PC, and the wrong sensor (an
 // offset Tctl, a hot spot) reads 10 to 20 degrees off.
 
-import type { Inventory, Sensor, Snapshot } from "./telemetry";
+import type { Inventory, PCKind, Sensor, Snapshot } from "./telemetry";
 
 /**
  * The first sensor of this hardware and type whose name matches a pattern, trying the patterns in order. With `chip`,
@@ -159,16 +159,51 @@ export function hotSpotLimit(vendor: string): number {
 }
 
 /**
- * Processors that are built to run up to their limit under a heavy load and
- * trade a little speed to stay there: Ryzen 7000 and 9000 desktop chips (but
- * not X3D, which hold lower) and Intel's unlocked 13th and 14th gen and Core
- * Ultra 200 desktop chips. Reaching the limit in a long render is normal on
- * these; reaching it at rest is not.
+ * Laptop processors: Intel's H, HX, HK, HS, U, P, V and G7-style chips (Core i, Core and
+ * Core Ultra) and AMD's H, HS, HX and U chips and every Ryzen AI. A laptop's
+ * cooling is sized so these reach their limit under a long load and hold it
+ * there by giving up some speed.
  */
-export function boostsToLimit(name: string): boolean {
+export function mobileChip(name: string): boolean {
+  if (/\b(i[3579]-\d{4,5}|Core(\(TM\))? [3579] \d{3}|Ultra [3579] \d{3})(HX|HK|HS|H|U|P|V|G[1-7])\b/i.test(name)) return true;
+  if (/Ryzen (\d+ )?(PRO )?\d{4}(HX|HS|H|U)(3D)?\b/i.test(name)) return true;
+  if (/Ryzen AI\b/i.test(name)) return true;
+  return false;
+}
+
+/**
+ * Processors that are built to run up to their limit under a heavy load and
+ * trade a little speed to stay there: every laptop's processor, Ryzen 7000 and
+ * 9000 desktop chips (but not X3D, which hold lower) and Intel's unlocked 13th
+ * and 14th gen and Core Ultra 200 desktop chips. Reaching the limit in a long
+ * render is normal on these; reaching it at rest is not.
+ */
+export function boostsToLimit(name: string, kind?: PCKind): boolean {
+  if (kind === "laptop" || mobileChip(name)) return true;
   if (/X3D/i.test(name)) return false;
-  if (/Ryzen \d+ [79]\d{3}X?\b/i.test(name) && !/\d{4}(H|HS|HX|U)\b/i.test(name)) return true;
+  if (/Ryzen \d+ [79]\d{3}X?\b/i.test(name)) return true;
   if (/i[579]-1[34]\d{3}K/i.test(name)) return true;
   if (/Ultra \d+ 2\d{2}K/i.test(name)) return true;
   return false;
+}
+
+/**
+ * Below this share of the fastest it has run since Rig started, a processor at
+ * its limit is losing real speed to the heat. A laptop under a long load
+ * settles well above it; one that's struggling for air drops below.
+ */
+export const THROTTLE_SHARE = 0.5;
+
+/** The processor's fastest core now and the fastest any core has run since Rig started, in MHz. Null when the chip reports no core clocks. */
+export function cpuSpeed(s: Snapshot | null | undefined): { now: number; top: number } | null {
+  const clocks = s?.sensors.filter((x) => x.hw === "cpu" && x.type === "clock" && x.value != null && /core/i.test(x.name) && !/bus|ring|uncore|memory/i.test(x.name)) ?? [];
+  if (!clocks.length) return null;
+  const now = Math.max(...clocks.map((x) => x.value!));
+  return { now, top: Math.max(now, ...clocks.map((x) => x.max ?? 0)) };
+}
+
+/** The processor's speeds when it has slowed to under THROTTLE_SHARE of its fastest: throttling hard enough to lose speed. */
+export function throttlingHard(s: Snapshot | null | undefined): { now: number; top: number } | null {
+  const sp = cpuSpeed(s);
+  return sp && sp.now < sp.top * THROTTLE_SHARE ? sp : null;
 }
