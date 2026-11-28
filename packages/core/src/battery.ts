@@ -8,6 +8,7 @@ import { powerSettings } from "./actions";
 import type { HistoryPoint } from "./model";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { sleepsOf, type SleepLog, type SleepView } from "./sleeps";
+import { chargeLimitView, type ChargeLimitView, type ChargeRead } from "./chargeLimit";
 
 /** What the battery is doing, as LibreHardwareMonitor's battery sensors say. */
 export interface BatteryNow {
@@ -269,10 +270,12 @@ export interface BatteryView {
   /** The last week's sleeps on battery, newest first, with how much each used (sleeps.ts). */
   sleeps?: SleepView[];
   savers: BatterySaver[];
+  /** Whether charging stops short of full, and the offer to make it, for a laptop that sits on the charger at 100% (chargeLimit.ts). */
+  charge?: ChargeLimitView;
 }
 
 /** Everything the battery section shows, or undefined for a PC without a battery. */
-export function batteryView(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, more: { history?: readonly HistoryPoint[]; power?: PowerNow; now?: number; sleep?: SleepLog } = {}): BatteryView | undefined {
+export function batteryView(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, more: { history?: readonly HistoryPoint[]; power?: PowerNow; now?: number; sleep?: SleepLog; charge?: ChargeRead | null } = {}): BatteryView | undefined {
   if (inv.machine.kind !== "laptop") return undefined;
   const live = readBattery(snap);
   if (!live && !inv.battery) return undefined;
@@ -281,6 +284,7 @@ export function batteryView(inv: Inventory, snap: Snapshot | null, facts: System
   const time = live ? timeLeft(live, inv.battery?.fullWh, live.state === "discharging" ? recordedDrain(history, now) : null) : null;
   const story = drainStory(history, now, live);
   const sleeps = sleepsOf(inv.machine.kind, more.sleep, history, now);
+  const charge = chargeLimitView(inv, live, history, now, more.charge);
   return {
     ...(live?.level != null ? { level: Math.round(live.level) } : {}),
     ...(live?.state ? { state: live.state } : {}),
@@ -289,5 +293,6 @@ export function batteryView(inv: Inventory, snap: Snapshot | null, facts: System
     ...(story ? { story } : {}),
     ...(sleeps.length ? { sleeps } : {}),
     savers: batterySavers(inv, facts, more.power, sleeps),
+    ...(charge ? { charge } : {}),
   };
 }

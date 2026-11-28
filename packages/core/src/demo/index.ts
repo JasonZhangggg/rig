@@ -19,6 +19,8 @@ import { HistoryWindow } from "../history";
 import { emptyAlertState, stepAlerts, USUAL, withAlerts, type AlertState } from "../alerts";
 import { applyToFacts, demoNow, demoSaverPower } from "./apply";
 import { batteryView } from "../battery";
+import { CHARGE_SETTING, chargeReadable, type ChargeRead } from "../chargeLimit";
+import { firmwareMakerOf } from "../firmware";
 import { demoSleepLog } from "./battery";
 import { MemoryStore } from "../local";
 import { Recorder } from "../recorder";
@@ -74,6 +76,19 @@ export const fixtures = {
   /** A gaming laptop with two graphics chips: the Radeon built into its Ryzen, and an RTX 4060 that sleeps when nothing needs it. */
   comet: { inv: cometInv as Inventory, facts: cometFacts as SystemFacts },
 };
+
+const DAY_MS = 864e5;
+
+/**
+ * The charge limit as the helper's firmware read would give it, on a demo laptop made a Dell or HP (the demo's own
+ * laptops are ASUS, which Rig doesn't set): off, until the demo's own change turns it on.
+ */
+function demoChargeRead(p: DemoPC): ChargeRead | null {
+  const maker = firmwareMakerOf(p.inv.machine.manufacturer);
+  if (!maker || !chargeReadable(p.inv)) return null;
+  const on = p.changes.some((c) => c.status === "applied" && c.applied.some((a) => a.step.kind === "native" && a.step.op.name === "firmware" && a.step.op.setting === CHARGE_SETTING && a.step.op.value === "on"));
+  return { maker, now: on ? "on" : "off", canSet: true };
+}
 
 interface DemoPC { inv: Inventory; facts: SystemFacts; id: Identity; dust: number; dayMax: DayMax; seen?: Record<string, [number, number]>; changes: Change[]; alerts: AlertState; recent?: { at: number; points: HistoryPoint[] }; today?: { at: number; points: HistoryPoint[] }; windows?: Map<number, HistoryPoint>; recorder: Recorder; scene?: Scene; recListeners: Set<(list: RecordingInfo[]) => void>; scan: StorageScan; bg?: { at: number; recs: Recording[] }; making?: Promise<Recording[]> }
 
@@ -173,13 +188,13 @@ export class DemoClient implements RigClient {
     // A laptop's last week of sleeps, as its background recorder would have logged them.
     const sleep = demoSleepLog(p.inv, now);
     const { findings: _f, ...pc } = buildPC(p.inv, snap, p.facts, p.id, p.dayMax, { scan: p.scan, sleep });
-    // The battery page reads today's history (and the hour before, for a stretch that started late last night) and the
-    // power settings, which the rest of the demo view goes without. Only laptops have one, and only today's windows are worked out.
+    // The battery page reads today's history (at least the last day, for how long it sits on the charger, and the hour
+    // before midnight, for a stretch that started late last night) and the power settings, which the rest of the demo view goes without. Only laptops have one, and only today's windows are worked out.
     if (p.inv.machine.kind === "laptop" && (!p.today || now - p.today.at > HISTORY_WINDOW_MS)) {
       const midnight = new Date(now).setHours(0, 0, 0, 0);
-      p.today = { at: now, points: this.points(p, Math.min(midnight, now - 3 * 36e5) - 36e5, now) };
+      p.today = { at: now, points: this.points(p, Math.min(midnight - 36e5, now - DAY_MS), now) };
     }
-    const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now, sleep });
+    const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now, sleep, charge: demoChargeRead(p) });
     return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: `Demo ${machineWord(pc.kind)}` }, alerts);
   }
 

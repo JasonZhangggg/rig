@@ -58,6 +58,7 @@ export * from "./partByPart";
 export * from "./caught";
 export * from "./weekStory";
 export * from "./battery";
+export * from "./chargeLimit";
 export * from "./sleeps";
 export * from "./network";
 export * from "./slowLoud";

@@ -7,6 +7,7 @@ import { checkStep, nativeOps, type ApplyReply, type Command, type CommandUndo, 
 import type { Proposal } from "../client";
 import type { ScreenLook } from "../screen";
 import { recipeCommand, type RecipeStep } from "../shorthand";
+import { FIRMWARE_SETTINGS } from "../firmware";
 
 interface DemoBase {
   /** A question that brings this card up in the demo chat. */
@@ -36,7 +37,7 @@ export interface DemoCard extends DemoBase {
   recipe?: RecipeStep;
 }
 /** A native op the demo can show, preview, apply and undo. */
-export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen" | "firmware" | "restartToFirmware"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
+export interface DemoNativeCard extends DemoBase { key: "gpu" | "fileEdit" | "screen" | "firmware" | "chargeLimit" | "restartToFirmware"; op: NativeOp; /** What the helper found in the app's window, for a screen step. */ look?: ScreenLook }
 export type AnyDemoCard = DemoCard | DemoNativeCard;
 
 const extensions: RecipeStep = { kind: "recipe", id: "fileExtensions", params: { state: "show" } };
@@ -182,9 +183,21 @@ export const demoNativeCards: DemoNativeCard[] = [
   },
 ];
 
+/** Changes the app offers from a page of its own, never from the chat: the battery charge limit on a Dell or HP laptop's Battery life tab. */
+export const demoPageCards: DemoNativeCard[] = [
+  {
+    key: "chargeLimit", ask: "Stop charging at 80%", asks: /(?!)/,
+    says: "",
+    title: "Stop charging at 80%",
+    op: { name: "firmware", setting: "chargeLimit", value: "on", does: FIRMWARE_SETTINGS.chargeLimit.does!.on },
+    read: "Battery charge limit: Off\nDrive encryption on drive C: off\nMaker: HP",
+    values: [], after: "Battery charge limit: On\nDrive encryption on drive C: off\nMaker: HP",
+  },
+];
+
 const stepOf = (c: AnyDemoCard): HelperStep => ("cmd" in c ? { kind: "command", cmd: c.cmd } : { kind: "native", op: c.op });
 const touchesOf = (c: AnyDemoCard): Touch[] => ("cmd" in c ? c.cmd.touches : (nativeOps[c.op.name] as NativeRule<NativeOp>).touches?.(c.op) ?? []);
-const all = (): AnyDemoCard[] => [...demoCards, ...demoNativeCards];
+const all = (): AnyDemoCard[] => [...demoCards, ...demoNativeCards, ...demoPageCards];
 
 let reads = 0;
 const expires = () => new Date(Date.now() + 10 * 60_000).toISOString();

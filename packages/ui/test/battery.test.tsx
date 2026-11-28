@@ -32,7 +32,7 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     expect(screen.getByText("at this rate")).toBeTruthy();
     expect(screen.getByText(/^Went from 100% to 58% in 2 h [12]0 min\. The fastest drop was .+, while (Teams and Chrome|Chrome and Teams) were busy\./)).toBeTruthy();
     expect(within(savers()).getAllByRole("listitem").map((li) => li.querySelector(".row-title")!.textContent)).toEqual([
-      "Turn off processor boost on battery", "Turn the screen off after 5 minutes on battery", "Sleep after 15 minutes on battery",
+      "Turn off processor boost on battery", "Turn the screen off after 5 minutes on battery", "Sleep after 15 minutes on battery", "Stop charging at 80%",
     ]);
   });
 
@@ -47,7 +47,7 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     expect(within(sheet).getByText("10 minutes / 5 minutes")).toBeTruthy();
     fireEvent.click(within(sheet).getByRole("button", { name: "Make this change" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Review: Turn the screen off after 5 minutes on battery" })).toBeNull(), { timeout: 5000 });
-    expect(within(savers()).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(savers()).getAllByRole("listitem")).toHaveLength(3);
   });
 
   it("opens a worn battery's finding on the battery's own replacement", async () => {
@@ -76,6 +76,58 @@ describe("The battery on a laptop", { timeout: 25000 }, () => {
     expect(screen.queryByRole("tab", { name: "Battery life" })).toBeNull();
     expect(screen.queryByText("Left on battery")).toBeNull();
     expect(screen.queryByText("While asleep")).toBeNull();
+    expect(screen.queryByText(/^Charg(es|ing)/)).toBeNull();
+  });
+});
+
+describe("Stopping charging short of full", { timeout: 25000 }, () => {
+  const openBattery = async (pc: string) => {
+    localStorage.setItem("rig.pc", pc);
+    render(<RigApp client={new DemoClient()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Battery/ }, { timeout: 10000 }));
+    await screen.findByRole("tab", { name: "Battery life", selected: true });
+  };
+
+  it("says so on the laptop whose maker's app holds it at 80%, and offers nothing more", async () => {
+    await openBattery("demo-comet");
+    expect(screen.getByText("Charging stops at 80% to slow wear.")).toBeTruthy();
+    expect(screen.queryByText(/^Stop charging/)).toBeNull();
+  });
+
+  it("on the laptop that sits at 100% on the charger, names its maker's app and asks about it, since Rig can't set it there", async () => {
+    await openBattery("demo-pebble");
+    expect(screen.getByText("Charges to 100%.")).toBeTruthy();
+    const row = within(savers()).getAllByRole("listitem").at(-1)!;
+    expect(within(row).getByText("Stop charging at 80%")).toBeTruthy();
+    expect(within(row).getByText("Plugged in at 100% most of the time. Set it in MyASUS.")).toBeTruthy();
+    expect(within(row).queryByRole("button", { name: /^Review/ })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: "Ask about it: Stop charging at 80%" }));
+    expect(await screen.findByText(/^My ASUS laptop is plugged in at 100% most of the time\. How do I make it stop charging at 80% in MyASUS/)).toBeTruthy();
+  });
+
+  it("on an HP, reviews the firmware change on its own card, sets it once approved, and lists it in Changes", async () => {
+    // The demo laptop made an HP for this test: Rig sets the limit through HP's own firmware tools.
+    const kept = fixtures.pebble.inv.machine.manufacturer;
+    fixtures.pebble.inv.machine.manufacturer = "HP";
+    try {
+      await openBattery("demo-pebble");
+      fireEvent.click(screen.getByRole("button", { name: "Review: Stop charging at 80%" }));
+      expect(await screen.findByRole("heading", { name: "Changes Battery charge limit in firmware" })).toBeTruthy();
+      expect(screen.getByText("This changes a firmware setting.")).toBeTruthy();
+      expect(screen.getByText("Stops charging short of full while it's plugged in, so the battery wears more slowly.")).toBeTruthy();
+      // Nothing is set until the person types the word and applies.
+      expect(screen.getByText("Charges to 100%.")).toBeTruthy();
+      fireEvent.change(screen.getByLabelText(/to turn on Apply/), { target: { value: "firmware" } });
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+      expect(await screen.findByText("Charge limit set. It applies at the next restart, and you can undo it from Changes.", {}, { timeout: 4000 })).toBeTruthy();
+      expect(await screen.findByText("Charging stops at 80% to slow wear.")).toBeTruthy();
+      expect(screen.queryByText("Stop charging at 80%")).toBeNull();
+      fireEvent.click(screen.getByRole("link", { name: /^Changes/ }));
+      await screen.findByRole("heading", { level: 1, name: "Changes" });
+      expect(await screen.findByText("Stop charging at 80%", {}, { timeout: 4000 })).toBeTruthy();
+    } finally {
+      fixtures.pebble.inv.machine.manufacturer = kept;
+    }
   });
 });
 

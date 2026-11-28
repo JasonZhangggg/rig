@@ -8,6 +8,7 @@ import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageSca
 import { cardChip, chipSensorName, gpuAsleep, gpuLoad, gpuSensor, graphicsCard } from "./limits";
 import { driveMaps } from "./drives";
 import { batteryView, type PowerNow } from "./battery";
+import type { ChargeRead } from "./chargeLimit";
 import { isSetting, sensorName } from "./sensors";
 import { solderedMemory } from "./shop";
 import type { Picks } from "./build";
@@ -79,12 +80,14 @@ export type Evidence = Pick<HealthInput, "events" | "history" | "now" | "sleep">
   scan?: StorageScan | null;
   /** A laptop's power settings the battery savers look at, as the helper read them (SAVER_SETTINGS). */
   power?: PowerNow;
+  /** A Dell or HP laptop's battery charge limit, from the helper's firmware read (chargeLimit.ts). */
+  charge?: ChargeRead | null;
 };
 
 export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFacts | null, id: Identity = {}, dayMax: DayMax = {}, more: Evidence = {}): PC & { findings: Finding[] } {
   const laptop = inv.machine.kind === "laptop";
   const parts: Record<string, Part> = {};
-  const { scan, power, ...evidence } = more;
+  const { scan, power, charge, ...evidence } = more;
   const fs = findings({ inv, snap, facts, ...evidence });
   const cpuLim = cpuLimit(inv.cpu.name, snap);
   const warnPart = new Set(fs.filter((f) => f.severity === "warn" || f.severity === "bad").map((f) => f.part).filter(Boolean));
@@ -232,7 +235,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   });
 
   const { health, breakdown } = score(laptop, fs, more.events != null);
-  const battery = batteryView(inv, snap, facts, { history: evidence.history, power, now: evidence.now, sleep: evidence.sleep });
+  const battery = batteryView(inv, snap, facts, { history: evidence.history, power, now: evidence.now, sleep: evidence.sleep, charge });
   const issues: Issue[] = fs.length ? fs : [{ id: "all-good", severity: "ok", title: "Nothing needs a look", body: "Temperatures, storage and settings all look normal.", action: "Ask Rig anything", go: "chat" }];
 
   // The maker the short way, as on its own site: "ASUS", not "ASUSTeK COMPUTER INC.".
