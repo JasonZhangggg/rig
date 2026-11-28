@@ -67,7 +67,8 @@ export async function setup(env: Partial<Env> = {}, claude?: Streamer, fetch?: F
   return { call, signUp, env: e, db, queries };
 }
 
-export async function syncPayload(over: Partial<MachineSync> = {}): Promise<MachineSync> {
+/** A whole upload, every part in it, as the app sends the first time. */
+export async function syncPayload(over: Partial<MachineSync> = {}): Promise<MachineSync & { inventory: NonNullable<MachineSync["inventory"]> }> {
   const link = new SimulatedLink(fixtures.atlas.inv, fixtures.atlas.facts, { now: () => Date.now() });
   const [inventory, facts, snap] = await Promise.all([link.inventory(), link.facts(), link.snapshot()]);
   const { findings: _f, ...view } = buildPC(inventory, snap, facts);
@@ -75,7 +76,7 @@ export async function syncPayload(over: Partial<MachineSync> = {}): Promise<Mach
     at: new Date().toISOString(), view, inventory, facts, changes: [], games: [], identity: {},
     history: [{ t: Date.now() - 600_000, cpu: 61, gpu: 55, busy: false }, { t: Date.now(), cpu: 70, gpu: 64, busy: true }],
     ...over,
-  };
+  } as MachineSync & { inventory: NonNullable<MachineSync["inventory"]> };
 }
 
 export async function readEvents(res: Response): Promise<ChatEvent[]> {

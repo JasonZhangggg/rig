@@ -8,7 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, screenLookReply, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig } from "@rig/core";
+import { PROBE_LIMITS, checkRequest, cleanRecording, DELETE_WORD, probeKinds, type ProbeMetric, type ProbeStatus, exportFileName, rangeMs, screenLookReply, shopFor, suggestUpgrades, type ChatEvent, type DeleteAccountRequest, type PcReadResult, READ_LIMITS, type ChatRequest, type HistoryPoint, type Identity, type MachineSync, type Range, type ServerConfig, SYNC_SEND_ALL } from "@rig/core";
 import { manualRoutes } from "./routes-manuals";
 import { updateRoutes } from "./routes-updates";
 import { authOptions, desktopOrigins, makeAuth, type Auth } from "./auth";
@@ -153,6 +153,8 @@ export function createApp(deps: AppDeps = {}) {
     const s = await c.req.json().catch(() => null) as MachineSync | null;
     if (!validId(id) || !isSync(s)) return c.json({ message: "That upload isn't in the shape Rig expects. Update the Rig app." }, 400);
     const reply = await c.get("store").sync(c.get("user").id, id, { ...s, view: { ...s.view, id }, identity: cleanIdentity((s.identity ?? {}) as Record<string, unknown>) ?? {} }, now());
+    // The app left out parts it sent before, but the account has no copy of this PC to keep them from: it sends them all again.
+    if (!reply) return c.json({ message: "This PC isn't on the account yet. Send all of it." }, SYNC_SEND_ALL);
     return c.json(reply);
   });
 
@@ -413,8 +415,9 @@ function cleanIdentity(body: Record<string, unknown> | null): Identity | null {
 }
 
 function isSync(s: MachineSync | null): s is MachineSync {
-  return !!s && typeof s === "object" && !!s.view && typeof s.view === "object" && !!s.inventory && !!s.facts
-    && Array.isArray(s.history) && Array.isArray(s.changes) && Array.isArray(s.games)
+  const part = (v: unknown, list: boolean) => v === undefined || (list ? Array.isArray(v) : !!v && typeof v === "object");
+  return !!s && typeof s === "object" && !!s.view && typeof s.view === "object" && part(s.inventory, false) && part(s.facts, false)
+    && Array.isArray(s.history) && part(s.changes, true) && part(s.games, true) && part(s.events, true)
     && s.history.every(isPoint);
 }
 
