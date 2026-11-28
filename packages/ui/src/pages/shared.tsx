@@ -11,6 +11,8 @@ export const partIcon: Record<string, JSX.Element> = {
   psu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 3 5 13h6l-1 8 8-10h-6z" /></svg>,
   battery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="2" y="7" width="18" height="10" rx="2.5" /><path d="M22 10.5v3" /><rect x="4.5" y="9.5" width="11" height="5" rx="1" fill="currentColor" stroke="none" /></svg>,
   board: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="7" y="7" width="6" height="6" rx="1" /><path d="M16 7h2M16 10h2M7 16h11" strokeLinecap="round" /></svg>,
+  // Windows itself: updates, virus protection and the firewall (core/src/safety.ts).
+  windows: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 5 6v5.5c0 4.3 2.9 7.8 7 9.5 4.1-1.7 7-5.2 7-9.5V6z" /></svg>,
 };
 partIcon.motherboard = partIcon.board;
 

@@ -17,5 +17,6 @@
   ],
   "gameMode": true,
   "visualEffects": "auto",
-  "maxProcessorState": { "ac": 100, "dc": 100 }
+  "maxProcessorState": { "ac": 100, "dc": 100 },
+  "security": {"readAt": 1795000000000, "antivirus": [{"name": "Microsoft Defender Antivirus", "enabled": true, "upToDate": true}], "defender": {"realTime": true, "signatureAgeDays": 0, "quickScanAgeDays": 1, "mode": "Normal"}, "firewall": {"domain": true, "private": true, "public": true}, "updates": {"lastInstalledAt": 1794913600000, "restartPending": true, "restartSince": 1794913600000}, "backup": {"oneDrive": ["Desktop", "Documents", "Pictures"]}}
 }

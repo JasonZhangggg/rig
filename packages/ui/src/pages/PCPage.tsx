@@ -8,6 +8,7 @@ import { PartManual } from "../manuals/PartManual";
 import { pcAccents } from "../themes";
 import { CLEAN_EVERY, daysSince, shopCatOf } from "./shared";
 import { PartUpgrade, partOf, useUpgrades, type PCUpgrades } from "./upgrades/PCUpgrades";
+import { SafetyTab } from "./safety/SafetyTab";
 import { UpgradesTab } from "./upgrades/Shop";
 import { arrowKeys } from "../components/modal";
 import { Warm } from "../components/common";
@@ -22,7 +23,7 @@ import { GpuPorts } from "./gpu/GpuPorts";
 import { gpuStage } from "./gpu/gpuStage";
 
 /** The tabs of My PC, each its own address so a link opens the right one. */
-const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals and drivers"]];
+const pcViews: [Route, string][] = [["pc", "Parts"], ["upgrades", "Upgrades"], ["manuals", "Manuals and drivers"], ["safety", "Safety"]];
 
 const driverPages: Record<string, string> = {
   NVIDIA: "https://www.nvidia.com/en-us/drivers/",
@@ -59,6 +60,7 @@ export function PCPage() {
   const list = Object.entries(parts);
   const sub = view === "upgrades" ? `What would help ${pc.name} most, and parts that fit it.`
     : view === "manuals" ? `Manuals for ${pc.name}'s parts, and its drivers and BIOS.`
+    : view === "safety" ? `Windows updates, virus protection, the firewall and backup on ${pc.name}.`
     : partsSummary(list.map(([, v]) => v), pc.name, pc.online, unit);
   return (
     <div className={`page pc-page${picked ? " is-part" : ""}`}>
@@ -73,7 +75,7 @@ export function PCPage() {
           </nav>
         </>
       )}
-      {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : (
+      {view === "upgrades" ? <UpgradesTab ups={ups} /> : view === "manuals" ? <ManualsTab /> : view === "safety" ? <SafetyTab /> : (
       <div className="pc-view" ref={viewRef}>
         <section className="stage-card" aria-label="3D view">
           {fade.pc && <StageSlot id="pc-stage" />}

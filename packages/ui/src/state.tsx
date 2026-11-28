@@ -4,7 +4,7 @@ import { defaultAppearance, parseAppearance, type Appearance } from "./appearanc
 import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
 import { alertRules, formatTemp, helperStep, livePoint, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply, type OpenRevert } from "@rig/core";
 
-export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "recorded", "events", "manuals", "web", "signin", "settings"];
+export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "recorded", "events", "manuals", "safety", "web", "signin", "settings"];
 
 /** What the app around the screens can do beyond the client. The desktop app passes these; the website passes none. */
 export interface AppHost {
