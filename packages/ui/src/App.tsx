@@ -14,6 +14,7 @@ import { sceneThemeFor } from "./themes";
 import type { SceneTheme } from "./scene";
 import { Overview } from "./pages/Overview";
 import { PCPage } from "./pages/PCPage";
+import { NetCheck } from "./components/NetCheck";
 import { Chat } from "./pages/Chat";
 import { Changes } from "./pages/Changes";
 import { Games } from "./pages/Games";
@@ -192,6 +193,7 @@ function Root() {
       <ReviewSheet />
       <CardAsk />
       <ManualViewer />
+      <NetCheck />
       <SlowLoudSheet />
       <CanItRunSheet />
       <Palette />

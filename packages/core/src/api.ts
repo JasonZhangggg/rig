@@ -13,22 +13,33 @@ import type { Inventory, SystemFacts } from "./telemetry";
 import type { Identity } from "./view";
 
 /** What the desktop app uploads for its PC every few minutes and after a change. */
+/**
+ * One upload from the desktop app. The parts marked "left out when unchanged" are sent only when they differ from what
+ * the account took last time, so most uploads are the live view and a few new points. The server asks for everything
+ * (409, SYNC_SEND_ALL) when it has no copy of the PC to keep them from.
+ */
 export interface MachineSync {
   at: string;
   view: PC;
-  inventory: Inventory;
-  facts: SystemFacts;
+  /** Left out when unchanged. */
+  inventory?: Inventory;
+  /** Left out when unchanged. */
+  facts?: SystemFacts;
   /** Hourly points since the last upload (the server keeps 30 days). */
   history: HistoryPoint[];
-  /** The newest 200 changes, so the web shows the same log. */
-  changes: Change[];
-  games: Game[];
+  /** The newest 200 changes, so the web shows the same log. Left out when unchanged. */
+  changes?: Change[];
+  /** Left out when unchanged. */
+  games?: Game[];
   /** Name, color and dust-clean date, with when they last changed here. */
   identity: Identity;
   identityAt?: string;
-  /** Windows events from the last 30 days, newest first. Missing from apps that don't read them yet. */
+  /** Windows events from the last 30 days, newest first. Left out when unchanged, and missing from apps that don't read them yet. */
   events?: PCEvent[];
 }
+
+/** The status of a sync that left parts out for a PC the account has no copy of: send them all. */
+export const SYNC_SEND_ALL = 409;
 
 /** Reply to a sync: the account's identity for this PC, which wins when it was changed on the web later. */
 export interface SyncReply {

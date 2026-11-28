@@ -223,6 +223,8 @@ describe("Logs", () => {
     await screen.findByText("Nothing logged on Pebble in the last 30 days.");
     expect(screen.queryByRole("group", { name: "Show only" })).toBeNull();
     expect(screen.queryByRole("group", { name: "Last 30 days" })).toBeNull();
+    // Nothing to narrow, so no "0 All, 0 Problems" filter either.
+    expect(screen.queryByRole("group", { name: "Show" })).toBeNull();
   });
 
   it("shows a recording in °F when that's the unit picked", async () => {

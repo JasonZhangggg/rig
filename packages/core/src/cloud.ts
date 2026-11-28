@@ -19,6 +19,7 @@ import type { PCEvent, Recording, RecordingInfo } from "./recordings";
 import type { ProbeStatus } from "./probes";
 import type { SystemFacts } from "./telemetry";
 import type { PcReadResult } from "./reads";
+import type { NetworkCheckReply } from "./network";
 
 const POLL_MS = 15_000;
 /** How long a request may wait for the server to start answering. Calls that pass their own signal aren't limited. */
@@ -197,6 +198,9 @@ export class CloudClient implements RigClient {
 
   // A failed read keeps showing the last view.
   watch(id: string, cb: (pc: PC) => void) { return poll(() => this.req<PC>(paths.machine(id)), cb); }
+
+  /** The check pings from the PC itself, so it runs only in the Rig app on that PC. */
+  async checkNetwork(_id: string): Promise<NetworkCheckReply> { return { kind: "unsupported", reason: "elsewhere" }; }
 
   async rename(id: string, patch: Identity) {
     await this.req(paths.machine(id), { method: "PATCH", body: JSON.stringify(patch) });

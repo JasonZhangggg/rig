@@ -100,12 +100,13 @@ export function EventLog() {
             {pickLabel && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${pickLabel}`} onClick={() => { setPick(null); reset(); }}>{pickLabel}<span aria-hidden="true">×</span></button>}
             {day != null && <button type="button" className="chip no-dot lg-chip" aria-label={`Remove filter: ${shortDay(day)}`} onClick={() => { setDay(null); reset(); }}>{shortDay(day)}<span aria-hidden="true">×</span></button>}
           </div>
-          <div className="lv-tools">
+          {/* With nothing logged there's nothing to narrow, so the counts wait for the first entry. */}
+          {entries.length > 0 && <div className="lv-tools">
             <div className="counts" role="group" aria-label="Show">
               <button type="button" className="count quiet" aria-pressed={only === "all"} onClick={() => { setOnly("all"); reset(); }}><span className="count-n num">{byPick.length}</span><span className="count-label">All</span></button>
               <button type="button" className="count" aria-pressed={only === "problems"} onClick={() => { setOnly(only === "problems" ? "all" : "problems"); reset(); }}><span className="count-n num">{problems.length}</span><span className="count-label">Problems</span></button>
             </div>
-          </div>
+          </div>}
         </div>
         {entries.length > 0 && <Strip items={byKind.map((e) => ({ t: e.t, key: e.key, bad: e.problem, title: e.title }))} day={day} onDay={(d) => { setDay(d); reset(); }} />}
         {events == null && !entries.length ? <p className="muted">Reading the logs…</p>

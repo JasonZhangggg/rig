@@ -103,21 +103,32 @@ export class Store {
   }
 
   /** Saves an upload. The identity changed most recently, here or on the web, wins. */
-  async sync(userId: string, id: string, s: MachineSync, now = new Date()): Promise<{ identity: Identity; identityAt?: string; recordings: { start: RecordingRequest[]; stop: string[] } }> {
+  /** Null when the upload leaves parts out but the account has no copy of the PC to keep them from: nothing is written. */
+  async sync(userId: string, id: string, s: MachineSync, now = new Date()): Promise<{ identity: Identity; identityAt?: string; recordings: { start: RecordingRequest[]; stop: string[] } } | null> {
     return this.db.transaction().execute(async (trx) => {
       const old = await new Store(trx).machine(userId, id, ["identity"]);
+      if (!old && (!s.inventory || !s.facts || !s.changes || !s.games)) return null;
       const keepOld = old?.identityAt && (!s.identityAt || Date.parse(old.identityAt) >= Date.parse(s.identityAt));
       const identity = keepOld ? old!.identity : s.identity ?? {};
       const identityAt = keepOld ? old!.identityAt! : s.identityAt ? new Date(s.identityAt).toISOString() : null;
+      // A part the app left out hasn't changed since it last sent it, and apps from before Rig read the event log send
+      // no events: either way the row keeps what it has.
       const values = {
-        view: JSON.stringify(s.view), inventory: JSON.stringify(s.inventory), facts: JSON.stringify(s.facts),
-        changes: JSON.stringify(s.changes.slice(0, 200)), games: JSON.stringify(s.games),
+        view: JSON.stringify(s.view),
+        ...(s.inventory ? { inventory: JSON.stringify(s.inventory) } : {}),
+        ...(s.facts ? { facts: JSON.stringify(s.facts) } : {}),
+        ...(s.changes ? { changes: JSON.stringify(s.changes.slice(0, 200)) } : {}),
+        ...(s.games ? { games: JSON.stringify(s.games) } : {}),
         identity: JSON.stringify(identity), identity_at: identityAt, synced_at: now,
-        // Apps from before Rig read the event log send none; keep what's there.
         ...(s.events ? { events: JSON.stringify(cleanEvents(s.events)) } : {}),
       };
-      await trx.insertInto("machine").values({ user_id: userId, id, ...values })
-        .onConflict((oc) => oc.columns(["user_id", "id"]).doUpdateSet(values)).execute();
+      if (old) await trx.updateTable("machine").set(values).where("user_id", "=", userId).where("id", "=", id).execute();
+      else {
+        // A new PC: the check above means every part is here.
+        const whole = { ...values, inventory: JSON.stringify(s.inventory!), facts: JSON.stringify(s.facts!), changes: JSON.stringify(s.changes!.slice(0, 200)), games: JSON.stringify(s.games!) };
+        await trx.insertInto("machine").values({ user_id: userId, id, ...whole })
+          .onConflict((oc) => oc.columns(["user_id", "id"]).doUpdateSet(whole)).execute();
+      }
       const points = s.history.slice(-HISTORY_MAX).map((p) => ({
         user_id: userId, machine_id: id, t: Math.round(p.t), cpu: p.cpu ?? null, gpu: p.gpu ?? null, busy: !!p.busy,
         fan: p.fan == null ? null : Math.round(p.fan), game: p.game ? p.game.slice(0, GAME_NAME_MAX) : null,

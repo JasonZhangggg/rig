@@ -10,6 +10,7 @@ import { useManuals } from "../manuals/useManuals";
 import { openManual } from "../manuals/viewerState";
 import { partOf } from "../pages/upgrades/PCUpgrades";
 import { shopCatOf } from "../pages/shared";
+import { NET_CHECK_QUESTION } from "./NetCheck";
 import { dateText } from "../dateText";
 
 /** What a page is about, so a search in a person's own words finds it. */
@@ -103,6 +104,8 @@ function OpenPalette() {
       const [sub, keys] = pageWords[route] ?? ["", ""];
       items.push({ id: `page-${route}`, kind: "pages", title: name, sub, keys, searchOnly: true, run: () => open(route, route === "logs" || route === "events" ? { recordingId: null } : {}) });
     }
+    // Read-only checks that run on the PC and answer in a dialog.
+    items.push({ id: "check-network", kind: "check", title: NET_CHECK_QUESTION, sub: `Checks ${pc.name}'s connection, your router and the internet`, keys: "internet slow wifi wi-fi wireless network connection lag ping latency router modem dns vpn ethernet cable signal", run: () => { close(); set({ netCheck: true }); } });
     const startup = pc.settings?.startup;
     if (startup) {
       const on = startup.filter((a) => a.enabled).length;
