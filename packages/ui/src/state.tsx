@@ -489,6 +489,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
   }, [data.recordings, toast]);
 
   const chatAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => chatAbort.current?.abort(), []);
   const pcId = ui.pcId;
 
   // The actions read the newest screen state and data through these, so they stay the same functions from one reading to the next.
@@ -523,7 +524,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         chatAbort.current?.abort();
         const ab = new AbortController();
         chatAbort.current = ab;
-        const edit = (f: (m: ChatMessage) => ChatMessage) => setData((d) => ({ ...d, chat: d.chat.map((m) => (m.id === reply.id ? f(m) : m)) }));
+        const edit = (f: (m: ChatMessage) => ChatMessage) => !ab.signal.aborted && setData((d) => ({ ...d, chat: d.chat.map((m) => (m.id === reply.id ? f(m) : m)) }));
         client.chat(pcId, history, (e) => {
           if (e.type === "text") edit((m) => ({ ...m, text: m.text + e.text }));
           else if (e.type === "sources") edit((m) => ({ ...m, sources: [...(m.sources ?? []), ...e.sources] }));
@@ -536,7 +537,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
           else if (e.type === "error") edit((m) => ({ ...m, error: true, text: m.text || e.message }));
         }, ab.signal)
           .catch((err: unknown) => edit((m) => ({ ...m, error: true, text: m.text || `Rig couldn't answer just now. ${err instanceof Error ? err.message : ""} Check your internet connection and send it again.`.replace(/\s+/g, " ").trim() })))
-          .finally(() => { edit((m) => ({ ...m, pending: false })); setData((d) => ({ ...d, answering: false })); });
+          .finally(() => { if (ab.signal.aborted) return; edit((m) => ({ ...m, pending: false })); setData((d) => ({ ...d, answering: false })); });
         requestAnimationFrame(() => document.querySelector(".chat-composer")?.scrollIntoView({ block: "end" }));
       },
 
