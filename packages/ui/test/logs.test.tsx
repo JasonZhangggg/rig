@@ -191,7 +191,9 @@ describe("Logs", () => {
     await screen.findByText(/Things to look at/i);
     await open("chat");
     await screen.findByText(/My screen went black/);
-    screen.getByText("Recording finished");
+    const card = screen.getByText("Recording finished").closest(".rec-card") as HTMLElement;
+    // The heading already says it finished, so no "Finished" chip repeats it.
+    expect(within(card).queryByText("Finished")).toBeNull();
     screen.getByRole("button", { name: "See what Rig found" });
 
     await open("recorded");

@@ -37,6 +37,13 @@ describe("Steady interactions", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
+  it("names the change it just made, with Undo beside it", async () => {
+    await show("changes");
+    fireEvent.click(await screen.findByRole("button", { name: /^Review: / }));
+    fireEvent.click(await screen.findByRole("button", { name: "Make this change" }));
+    expect(await screen.findByText("Done: Set LG 27GP850 to 165 Hz.", {}, { timeout: 3000 })).toBeTruthy();
+  });
+
   it("undoes once however many times Undo is pressed while it works", async () => {
     const client = await show("changes");
     const undo = await screen.findByRole("button", { name: /^Undo/ });
@@ -47,8 +54,10 @@ describe("Steady interactions", () => {
     fireEvent.click(undo);
     fireEvent.click(undo);
     await act(async () => { slow.done(undefined as never); });
-    await waitFor(() => expect(screen.getByText(/^Undone\./)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/^Undid “.+”\. Your PC is back to how it was before\.$/)).toBeTruthy());
     expect(spy).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole("button", { name: /^Redo/ }));
+    await waitFor(() => expect(screen.getByText(/^Redid “.+”\. The change is back on\.$/)).toBeTruthy());
   });
 
   it("reads the settings once however many times Review is pressed", async () => {

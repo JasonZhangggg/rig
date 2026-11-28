@@ -138,7 +138,7 @@ const appNames: Record<string, string> = {
   excel: "Excel", winword: "Word", powerpnt: "PowerPoint", outlook: "Outlook", olk: "Outlook", onenote: "OneNote",
   code: "VS Code", zoom: "Zoom", slack: "Slack", discord: "Discord", spotify: "Spotify", onedrive: "OneDrive", msmpeng: "Windows Security",
 };
-export function appName(exe: string): string {
+function appName(exe: string): string {
   const n = exe.replace(/\.exe$/i, "");
   return appNames[n.toLowerCase()] ?? n.charAt(0).toUpperCase() + n.slice(1);
 }

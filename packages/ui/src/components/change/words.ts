@@ -1,4 +1,5 @@
 import { checkScript, secondLook, writtenTouches, type Allowed, type Command, type HelperUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
+import { dateText } from "../../dateText";
 
 const kinds: Record<Touch["kind"], [one: string, many: string]> = {
   registry: ["a registry value", "registry values"], file: ["a file", "files"], service: ["a service", "services"],
@@ -142,7 +143,7 @@ export function redBack(k: RedKind, plan: UndoPlan): string {
 /** The checker's reasons a red card is red, without the plain second-look one. */
 export const redReasons = (v: Allowed) => [...new Set(v.reasons)].filter((r) => r !== secondLook);
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const when = (iso: string) => dateText(new Date(iso), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 export const restoreLine = (r: RestorePoint) => `As a last resort, Windows has a restore point from ${when(r.at)} called "${r.name}".`;
 
 /** What Undo can and can't put back, after the change ran. `can` is false when there's nothing to undo it with. */
@@ -191,7 +192,7 @@ const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 /** When the next bigger change is allowed, in the person's own time: "3:00 PM", or with the day when it isn't today. */
 export function nextAllowed(until: string, now = new Date()): string {
   const t = new Date(until);
-  return sameDay(t, now) ? t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : t.toLocaleString(undefined, { weekday: "long", hour: "numeric", minute: "2-digit" });
+  return sameDay(t, now) ? dateText(t, { hour: "numeric", minute: "2-digit" }) : dateText(t, { weekday: "long", hour: "numeric", minute: "2-digit" });
 }
 
 /** The daily limit on bigger changes was reached, so nothing ran. */

@@ -28,6 +28,7 @@ import type { Inventory, Snapshot, StorageScan, SystemFacts } from "./telemetry"
 import { suggestUpgrades } from "./upgrades";
 import { shopFor } from "./shop";
 import { buildPC, type DayMax, type Identity } from "./view";
+import { SLOW_LOUD_APPS } from "./slowLoud";
 
 /** The elevated Windows helper (or a stand-in), one call at a time. */
 export interface HelperLink {
@@ -107,7 +108,7 @@ export interface LocalOptions {
 }
 
 const EVENTS_DAYS = 30;
-/** History points kept for the account while signed out or offline: five days. Older ones were never going to be sent. */
+/** History points sent to the account at most at once, after a time signed out or offline: five days. Older ones were never going to be sent. */
 const UNSYNCED_MAX = 720;
 const BACKGROUND_PAGES = 30;
 const EVENTS_EVERY_MS = 5 * 60_000;
@@ -138,7 +139,11 @@ export class LocalClient implements RigClient {
   private power: PowerNow = {};
   /** When the busiest apps were last read for the history window, while on battery. */
   private appsAt = 0;
-  private unsynced: HistoryPoint[] = [];
+  /**
+   * The time of the newest history point the account has. Every point is on disk already, in history, so the points the
+   * account is behind on are the ones after this: kept as one number, not a growing list rewritten every ten minutes.
+   */
+  private syncedTo = 0;
   private listeners = new Set<(pc: PC) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
   private ticker: { every: number; timer: ReturnType<typeof setInterval> } | null = null;
@@ -210,7 +215,7 @@ export class LocalClient implements RigClient {
       await this.stage("opening Rig's saved history", async () => {
         this.alertState = await this.store.get<AlertState>("alerts") ?? emptyAlertState();
         this.recent = await this.store.history(this.o.now() - USUAL.baselineFrom * 864e5);
-        this.unsynced = await this.store.get<HistoryPoint[]>("unsynced") ?? [];
+        this.syncedTo = await this.store.get<number>("syncedTo") ?? await this.fromUnsynced();
         this.unsent = new Set(await this.store.get<string[]>("recordingsUnsent") ?? []);
         await this.recorder.load();
       });
@@ -326,9 +331,6 @@ export class LocalClient implements RigClient {
       this.recent.push(p);
       const keep = now - USUAL.baselineFrom * 864e5;
       if (this.recent[0]?.t < keep) this.recent = this.recent.filter((x) => x.t >= keep);
-      this.unsynced.push(p);
-      if (this.unsynced.length > UNSYNCED_MAX) this.unsynced = this.unsynced.slice(-UNSYNCED_MAX);
-      await this.store.set("unsynced", this.unsynced);
     }
   }
 
@@ -370,6 +372,21 @@ export class LocalClient implements RigClient {
     void this.isLocal(id).then((local) => { if (!stopped) stop = local ? here() : there(); });
     return () => { stopped = true; stop?.(); };
   }
+  /** The history points the account is behind on, the newest five days of them. */
+  private unsynced(): HistoryPoint[] {
+    const behind = this.recent.filter((p) => p.t > this.syncedTo);
+    return behind.length > UNSYNCED_MAX ? behind.slice(-UNSYNCED_MAX) : behind;
+  }
+
+  /** Where the account had got to, from the list of unsent points older versions of Rig kept. Read once, then replaced by syncedTo. */
+  private async fromUnsynced(): Promise<number> {
+    const old = await this.store.get<HistoryPoint[]>("unsynced");
+    const to = old?.length ? Math.min(...old.map((p) => p.t)) - 1 : this.recent.at(-1)?.t ?? 0;
+    await this.store.set("syncedTo", to);
+    if (old?.length) await this.store.set("unsynced", []);
+    return to;
+  }
+
   private signedIn() { return this.cloud?.signedIn() ?? Promise.resolve(false); }
 
   /** Uploads this PC to the account so the website shows it. Quietly does nothing when signed out. */
@@ -377,15 +394,14 @@ export class LocalClient implements RigClient {
     if (!this.cloud || !this.inv || !this.facts || !(await this.signedIn())) return;
     const payload: MachineSync = {
       at: new Date(this.o.now()).toISOString(), view: this.view(), inventory: this.inv, facts: this.facts,
-      history: this.unsynced, changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
+      history: this.unsynced(), changes: (await this.changes(this.id)).slice(0, 200), games: await this.games(this.id),
       identity: { name: this.identity.name, accent: this.identity.accent, cleanedAt: this.identity.cleanedAt, picks: this.identity.picks }, identityAt: this.identity.at,
       events: await this.windowsEvents().catch(() => []),
     };
-    const sent = payload.history.length;
+    const sent = payload.history.at(-1)?.t;
     try {
       const reply = await this.cloud.sync(this.id, payload);
-      this.unsynced = this.unsynced.slice(sent);
-      await this.store.set("unsynced", this.unsynced);
+      if (sent != null && sent > this.syncedTo) { this.syncedTo = sent; await this.store.set("syncedTo", sent); }
       // Renamed on the website since this PC last changed it: take the website's version.
       if (reply?.identityAt && (!this.identity.at || reply.identityAt > this.identity.at)) {
         this.identity = { ...reply.identity, at: reply.identityAt };
@@ -429,8 +445,8 @@ export class LocalClient implements RigClient {
   /** Deletes the account on the server. What's kept on this PC stays, so Rig keeps working signed out. */
   async deleteAccount() {
     await this.cloud!.deleteAccount();
-    this.unsynced = [];
-    await this.store.set("unsynced", []);
+    this.syncedTo = this.recent.at(-1)?.t ?? this.o.now();
+    await this.store.set("syncedTo", this.syncedTo);
   }
 
   /** The account's data when signed in; otherwise what this PC keeps on disk. */
@@ -534,6 +550,12 @@ export class LocalClient implements RigClient {
       await this.eventRead;
     }
     return this.eventLog!.list;
+  }
+
+  /** The busiest apps, from the helper. Only for this PC: another PC's apps aren't synced. */
+  async processes(id: string): Promise<ProcessUse[] | null> {
+    if (!(await this.isLocal(id)) || !this.link.processes) return null;
+    return cleanProcesses(await this.link.processes(), SLOW_LOUD_APPS);
   }
 
   /** Windows' event log, plus what the background recorder caught: power events, and anything Windows has since dropped. */

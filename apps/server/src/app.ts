@@ -19,6 +19,7 @@ import type { Env } from "./env";
 import { bestBuyFeed, type RetailFeed } from "./retail";
 import type { Fetch } from "./manuals";
 import { connect, type Connection } from "./sql";
+import { askAgainAt } from "./dailyReset";
 
 type User = { id: string; name: string; email: string };
 type Vars = { user: User; store: Store; conn?: Connection; auth?: Auth };
@@ -273,7 +274,7 @@ export function createApp(deps: AppDeps = {}) {
         countShapes: (shapes) => later((s) => s.countShapes(shapes, now())),
       };
       const limit = dailyLimit(c);
-      const overLimit = { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. It resets at midnight UTC.` };
+      const overLimit = { message: `You've asked ${limit} questions today, which is the daily limit while Rig is free. You can ask again ${askAgainAt(now(), ctx.timeZone)}.` };
       // Only an app that can show and run command steps gets them, and only on the PC itself.
       if (ctx.live && body.steps === true) ctx.commandSteps = true;
       if (ctx.commandSteps && body.recipes === true) ctx.recipeSteps = true;

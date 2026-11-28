@@ -4,6 +4,7 @@ import { Icon } from "../../components/common";
 import { useActions, useData, useTempText } from "../../state";
 import { Progress } from "./RecordingCard";
 import { minutes, stateWord, whenRan } from "./words";
+import { dateText } from "../../dateText";
 
 const lengths = [15, 30, 60];
 
@@ -94,7 +95,7 @@ export function CustomLogs() {
             <li key={r.id}>
               <button type="button" className="rec-row" onClick={() => openRecording(r.id)}>
                 <span className="rec-result">{c.spec.label}</span>
-                <span className="rec-meta">{c.spec.by === "chat" ? "Set up in chat" : "Set up by you"} {new Date(c.spec.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {c.state === "ended" ? "ended" : c.state === "paused" ? "paused" : c.state === "error" ? "not working" : "logging"}</span>
+                <span className="rec-meta">{c.spec.by === "chat" ? "Set up in chat" : "Set up by you"} {dateText(new Date(c.spec.createdAt), { month: "short", day: "numeric" })} · {c.state === "ended" ? "ended" : c.state === "paused" ? "paused" : c.state === "error" ? "not working" : "logging"}</span>
                 <Icon d="M8 4l6 6-6 6" />
               </button>
             </li>

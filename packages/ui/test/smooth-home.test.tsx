@@ -105,10 +105,10 @@ describe("customizing Home smoothly", () => {
     for (const name of ["Fans", "Evenings"]) fireEvent.keyDown(screen.getByRole("group", { name: new RegExp(`^${name}, `) }), { key: "Delete" });
     fireEvent.click(bar.getByRole("button", { name: /^Add widget/ }));
     const panel = within(screen.getByRole("dialog", { name: "Add widget" }));
-    const before = panel.getAllByRole("button", { name: /Add$/ });
+    const before = panel.getAllByRole("button", { name: /^Add / });
     before[0].focus();
     fireEvent.click(before[0]);
-    const left = panel.getAllByRole("button", { name: /Add$/ });
+    const left = panel.getAllByRole("button", { name: /^Add / });
     expect(left).toHaveLength(before.length - 1);
     expect(document.activeElement).toBe(left[0]);
   });
@@ -118,11 +118,11 @@ describe("customizing Home smoothly", () => {
     render(<RigApp client={new DemoClient()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Add widget" }));
     const panel = within(screen.getByRole("dialog", { name: "Add widget" }));
-    const [first] = panel.getAllByRole("button", { name: /Add$/ });
+    const [first] = panel.getAllByRole("button", { name: /^Add / });
     first.focus();
     fireEvent.click(first);
     await waitFor(() => expect(screen.queryByText(/Home is empty/)).toBeNull());
-    expect(document.activeElement).toBe(panel.getAllByRole("button", { name: /Add$/ })[0]);
+    expect(document.activeElement).toBe(panel.getAllByRole("button", { name: /^Add / })[0]);
   });
 
   it("shuts a phone's options sheet on the tap's click, not as the finger lands", async () => {
