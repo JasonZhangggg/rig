@@ -299,7 +299,7 @@ describe("Upgrades", () => {
     await show("pc");
     fireEvent.click(await screen.findByRole("button", { name: /^Memory/ }));
     fireEvent.click(await screen.findByRole("tab", { name: "Upgrade" }));
-    const idea = (await screen.findByRole("heading", { level: 3, name: "Memory may be soldered" })).closest("li")!;
+    const idea = (await screen.findByRole("heading", { level: 3, name: "Memory is most likely built into the board" })).closest("li")!;
     expect(within(idea).getByText("Check first")).toBeTruthy();
     expect(within(idea).queryByText("Check your model first")).toBeNull();
   });

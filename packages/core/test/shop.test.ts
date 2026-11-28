@@ -18,7 +18,7 @@ describe("hardware facts", () => {
   it("knows a thin laptop's memory is on the board", () => {
     const f = hardwareFacts(pebble());
     expect(f.laptop).toBe(true);
-    expect(f.memory.soldered).toBe(true);
+    expect(f.memory.soldered).toBe("reported");
     expect(f.cpu.short).toBe("Core Ultra 7 155H");
   });
 });
@@ -196,8 +196,13 @@ describe("a laptop's own parts", () => {
 
   it("still takes one module and no slot count as likely soldered when Windows doesn't say its form or type", () => {
     const inv = laptop([{ capacityMb: 16384, speedMhz: 7467 }]);
-    expect(hardwareFacts(inv).memory.soldered).toBe(true);
-    expect(suggestUpgrades(inv).find((u) => u.part === "Memory")?.title).toBe("Memory may be soldered");
+    const f = hardwareFacts(inv);
+    expect(f.memory.soldered).toBe("likely");
+    // The Upgrade tab and Upgrades say the same, with the same doubt: no sticks offered, its manual to be sure.
+    const idea = suggestUpgrades(inv).find((u) => u.part === "Memory")!;
+    expect(idea).toMatchObject({ fit: "check", title: "Memory is most likely built into the board", detail: "Most thin laptops take no memory sticks. Its manual says for sure." });
+    expect(categoryState("memory", f)).toMatchObject({ open: false, have: "16 GB, most likely built into the board" });
+    for (const i of memoryItems) expect(fitOf(i, f)).toMatchObject({ verdict: "no", why: "Pebble's memory is most likely built into the board, like most thin laptops." });
   });
 
   it("says a gaming laptop's graphics chip is soldered, not built into its processor", () => {

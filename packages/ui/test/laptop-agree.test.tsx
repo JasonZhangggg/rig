@@ -93,4 +93,16 @@ describe("Two screens, one figure", { timeout: 30000 }, () => {
     fireEvent.click(within(night).getByRole("button", { name: /^Details/ }));
     expect(within(night).getByRole("button", { name: /^Ask about it/ })).toBeTruthy();
   });
+
+  it("says the same of a laptop's memory on its Upgrade tab and on Upgrades", async () => {
+    await open("demo-comet");
+    await openPart(/^Memory/);
+    fireEvent.click(screen.getByRole("tab", { name: "Upgrade" }));
+    const idea = (await screen.findByRole("heading", { level: 3, name: "Memory is most likely built into the board" }, { timeout: 10000 })).closest("li")!;
+    expect(idea.textContent).toMatch(/take no memory sticks/);
+    expect(idea.textContent).not.toMatch(/Rig will check/);
+    await go("upgrades");
+    const closed = await screen.findByText(/^Built into Comet's board, so not upgradable:/, undefined, { timeout: 10000 });
+    expect(closed.textContent).toBe("Built into Comet's board, so not upgradable: memory (most likely), graphics and processor.");
+  });
 });
