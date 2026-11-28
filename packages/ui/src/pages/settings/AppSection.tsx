@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { probeWhen, type ProbeStatus, type RecorderStatus } from "@rig/core";
-import { useActions } from "../../state";
+import { useActions, useMachineWord } from "../../state";
 import { SettingRow } from "./parts";
 import { dateText } from "../../dateText";
 
@@ -68,6 +68,7 @@ function CustomLogs({ status, refresh }: { status: RecorderStatus; refresh: () =
 }
 
 export function AppSection() {
+  const word = useMachineWord();
   const { host, toast } = useActions();
   const auto = host.autostart!;
   const rec = host.recorder;
@@ -120,14 +121,14 @@ export function AppSection() {
         <button type="button" className="switch set-toggle" role="switch" aria-checked={!!on} aria-labelledby="app-autostart" disabled={on == null || starting} onClick={flip}><i /></button>
       </SettingRow>
       {rec && status?.supported && (
-        <SettingRow id="app-recorder" title="Keep a log while Rig is closed" body={`A small background recorder writes down temperatures, usage, crashes, restarts and power loss, so Logs can show what happened even when Rig wasn't open. It stays on this PC and changes nothing on it.${recording ? " Turning it off deletes what it wrote." : ""} ${busy ? "Waiting for Windows…" : recorderLine(status)}`}>
+        <SettingRow id="app-recorder" title="Keep a log while Rig is closed" body={`A small background recorder writes down temperatures, usage, crashes, restarts and power loss, so Logs can show what happened even when Rig wasn't open. It stays on this ${word} and changes nothing on it.${recording ? " Turning it off deletes what it wrote." : ""} ${busy ? "Waiting for Windows…" : recorderLine(status)}`}>
           <button type="button" className="switch set-toggle" role="switch" aria-checked={recording} aria-labelledby="app-recorder" disabled={busy} onClick={() => (recording ? setAsking(true) : void flipRecorder())}><i /></button>
         </SettingRow>
       )}
       {asking && (
         <div className="set-danger" role="group" aria-labelledby="rec-off-h">
           <b id="rec-off-h">Turn off the background log?</b>
-          <p>This deletes everything it wrote on this PC while Rig was closed. You can't undo this.</p>
+          <p>This deletes everything it wrote on this {word} while Rig was closed. You can't undo this.</p>
           <div className="set-actions">
             <button type="button" className="btn ghost sm" onClick={() => setAsking(false)} autoFocus>Keep it on</button>
             <button type="button" className="btn sm primary" onClick={() => void flipRecorder()}>Turn off and delete</button>

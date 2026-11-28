@@ -7,6 +7,7 @@ import { rangeMs, type ApplyMeta, type Change, type ChatEvent, type ChatMessage,
 import { HISTORY_WINDOW_MS, type DiffRow, type Game, type HistoryPoint, type PC } from "../model";
 import type { Inventory, Sensor, StorageScan, SystemFacts } from "../telemetry";
 import { buildPC, type DayMax, type Identity } from "../view";
+import { machineWord } from "../machineWord";
 import { suggestUpgrades } from "../upgrades";
 import type { GameRequirements } from "../canItRun";
 import { demoRequirements, demoRequirementsFor } from "./requirements";
@@ -167,7 +168,7 @@ export class DemoClient implements RigClient {
       p.today = { at: now, points: this.points(p, Math.min(midnight, now - 3 * 36e5) - 36e5, now) };
     }
     const battery = batteryView(p.inv, snap, p.facts, { history: p.today?.points ?? [], power: demoSaverPower(p.inv, p.facts), now });
-    return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: "Demo PC" }, alerts);
+    return withAlerts({ ...pc, ...(battery ? { battery } : {}), lastSync: `Demo ${machineWord(pc.kind)}` }, alerts);
   }
 
   /** A demo PC's readings now: its weekly schedule, or the busy moment the slow-or-loud check set going. */

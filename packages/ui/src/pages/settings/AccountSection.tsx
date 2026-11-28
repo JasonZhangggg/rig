@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { DELETE_WORD } from "@rig/core";
-import { useActions, useAppSelector } from "../../state";
+import { useActions, useAppSelector, useMachineWord } from "../../state";
 import { SettingRow } from "./parts";
 
 export function AccountSection() {
+  const word = useMachineWord();
   const { client, go, toast } = useActions();
   const a = useAppSelector((c) => c.data.account);
   const demo = client.kind === "demo";
@@ -19,7 +20,7 @@ export function AccountSection() {
 
   if (!a) {
     return (
-      <SettingRow title="Not signed in" body="Sign in to see this PC from any browser and keep its history if you reinstall.">
+      <SettingRow title="Not signed in" body={`Sign in to see this ${word} from any browser and keep its history if you reinstall.`}>
         <a className="btn sm" href="#signin">Sign in</a>
       </SettingRow>
     );
@@ -44,6 +45,7 @@ export function AccountSection() {
 
 function DeleteAccount() {
   const { client } = useActions();
+  const word = useMachineWord();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -82,7 +84,7 @@ function DeleteAccount() {
         <li>Your chat question count</li>
         <li>Every sign-in, including the Rig app on your PCs</li>
       </ul>
-      {client.kind === "desktop" && <p>What this PC keeps on its own disk stays, and Rig keeps working here signed out.</p>}
+      {client.kind === "desktop" && <p>What this {word} keeps on its own disk stays, and Rig keeps working here signed out.</p>}
       <p>Want a copy first? Download my data is under Your data, below.</p>
       <div className="field">
         <label className="label" htmlFor="delete-confirm">Type {DELETE_WORD} to confirm</label>

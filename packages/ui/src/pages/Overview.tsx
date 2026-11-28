@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fanTrend, insightContext, seenLabel, weekEvenings, weekTemps, type HistoryPoint, type PC } from "@rig/core";
 import { getStage } from "../components/Stage";
-import { useApp, useAppearance, useHistory } from "../state";
+import { useApp, useAppearance, useHistory, useMachineWord } from "../state";
 import { FansCard, type FansStyle } from "./overview/FansCard";
 import { Grid, type Mode } from "./overview/Grid";
-import { COLS, KINDS, SIZE_LABEL, addCell, arrange, cellsFor, defaultWidget, dragFlow, fullRows, kindOf, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, sizeLabel, stepTarget, syncLayouts, update, type Bp, type Dir, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
+import { COLS, KINDS, SIZE_LABEL, kindTitle, addCell, arrange, cellsFor, defaultWidget, dragFlow, fullRows, kindOf, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, sizeLabel, stepTarget, syncLayouts, update, type Bp, type Dir, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
 import { Gallery, type Point } from "./overview/Gallery";
 import { DashOptions, ResetConfirm, WidgetOptions, type Place } from "./overview/Options";
 import { Popover } from "./overview/Popover";
@@ -72,8 +72,8 @@ type Panel = { type: "widget"; id: string; at: HTMLElement } | { type: "add" | "
 const TONE_SAID: Record<Tone | "default", string> = { light: "Every widget is now light.", dark: "Every widget is now dark.", default: "Every widget is back to its first tone." };
 
 /** What an options change did, in a few words for the Undo note. */
-function saidFor(w: Widget, patch: Partial<Widget>, ctx: Parameters<typeof sourceItems>[1]) {
-  const meta = KINDS[w.kind];
+function saidFor(w: Widget, patch: Partial<Widget>, ctx: Parameters<typeof sourceItems>[1], word: string) {
+  const meta = { ...KINDS[w.kind], title: kindTitle(w.kind, word) };
   if (patch.style) return `${meta.title} now shows ${meta.styles.find(([s]) => s === patch.style)?.[1] ?? patch.style}.`;
   if (patch.tone) return `${meta.title} is now ${patch.tone}.`;
   if (patch.frame) return `${meta.title} now sits ${patch.frame === "tile" ? "on a tile" : "on the page"}.`;
@@ -92,6 +92,7 @@ function saidFor(w: Widget, patch: Partial<Widget>, ctx: Parameters<typeof sourc
 export function Overview() {
   const { pc, data, client, set, ask, go } = useApp();
   const look = useAppearance();
+  const word = useMachineWord();
   const { issues, open } = useHomeIssues();
   const openIssue = useOpenIssue();
   const top = open[0] ?? issues[0];
@@ -117,7 +118,7 @@ export function Overview() {
   const hidden = dash.widgets.filter((w) => w.hidden);
   const cells = useMemo(() => ({ lg: cellsFor(dash, "lg"), md: cellsFor(dash, "md") }), [dash]);
   const phone = useMemo(() => phoneOrder(dash), [dash]);
-  const titleOf = useCallback((w: Widget) => KINDS[w.kind].title, []);
+  const titleOf = useCallback((w: Widget) => kindTitle(w.kind, word), [word]);
   const close = useCallback(() => setPanel(null), []);
   const announce = useCallback((text: string) => setSaid(text), []);
   /** Says what changed, and offers to take it back for a few seconds. */
@@ -188,7 +189,7 @@ export function Overview() {
     const c = at && cellAt(id, at);
     setIncoming((prev) => (!c ? null : prev && prev.id === id && prev.x === c.x && prev.y === c.y ? prev : { id, ...c }));
   }, []);
-  const added = (id: string) => { setPanel(null); changed(`${KINDS[kindOf(id)].title} added.`); setFresh({ id, n: Date.now() }); };
+  const added = (id: string) => { setPanel(null); changed(`${kindTitle(kindOf(id), word)} added.`); setFresh({ id, n: Date.now() }); };
   const addAt = (id: string, at: Point | null) => {
     const c = at && cellAt(id, at);
     setIncoming(null);
@@ -391,7 +392,7 @@ export function Overview() {
             w={current}
             place={placeOf(current)}
             onChange={(patch) => {
-              const text = saidFor(current, patch, { pc });
+              const text = saidFor(current, patch, { pc }, word);
               board.setWidget(current.id, patch);
               changed(text);
             }}
@@ -402,7 +403,7 @@ export function Overview() {
         <Gallery
           hidden={hidden} render={render} canDrag={!list && shown.length > 0 && fine()} from={panel.at}
           onClose={close} onHover={hover} onDrop={addAt}
-          onAdd={(id) => { board.add(id); changed(`${KINDS[kindOf(id)].title} added.`); }}
+          onAdd={(id) => { board.add(id); changed(`${kindTitle(kindOf(id), word)} added.`); }}
         />
       )}
       {panel?.type === "dash" && (

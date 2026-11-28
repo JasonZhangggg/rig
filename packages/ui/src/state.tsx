@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { RecorderLink } from "@rig/core";
 import { defaultAppearance, parseAppearance, type Appearance } from "./appearance";
 import { appliedCount, stale, stepHeadline, undoneLine, waitingOn } from "./components/change";
-import { alertRules, formatTemp, helperStep, livePoint, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply, type OpenRevert } from "@rig/core";
+import { alertRules, formatTemp, machineWord, helperStep, livePoint, liveSpec, RESTART_WORDS, isTempUnit, tempsInText, stepsTitle, type TempFormat, type TempUnit, type Account, type AlertKind, type Change, type ChatMessage, type DiffRow, type HistoryPoint, type PC, type StillPC, type Range, type RecordingInfo, type RigClient, type Route, type Step, type StepOutcome, type UndoReply, type OpenRevert } from "@rig/core";
 
 export const routes: Route[] = ["overview", "pc", "chat", "changes", "upgrades", "games", "history", "logs", "recorded", "events", "manuals", "safety", "web", "signin", "settings"];
 
@@ -236,6 +236,9 @@ export function useAppSelector<T>(pick: (c: Ctx) => T, equal: (a: T, b: T) => bo
   }, [store, equal]);
   return useSyncExternalStore(store.subscribe, read, read);
 }
+
+/** "laptop" on a laptop, "PC" otherwise: the noun for the machine on screen (core's machineWord). */
+export const useMachineWord = () => useAppSelector((c) => machineWord(c.pc.kind));
 
 /** Reads the newest state when called, as in a click, without drawing the screen again on every reading. */
 export function useLatest(): () => Ctx {
@@ -705,7 +708,7 @@ export function AppProvider({ client, host = noHost, children, fallback, stallMs
         try {
           const next = c.status === "applied" ? await client.undo(pcId, id) : await client.redo(pcId, id);
           setData((d) => ({ ...d, changes: d.changes.map((x) => (x.id === id ? next : x)), chat: d.chat.map((m) => (m.proposal?.changeId === id ? { ...m, proposal: { ...m.proposal, status: next.status === "applied" ? "applied" : "waiting" } } : m)) }));
-          toast(next.status === "undone" ? `Undid “${c.title}”. Your PC is back to how it was before.` : `Redid “${c.title}”. The change is back on.`);
+          toast(next.status === "undone" ? `Undid “${c.title}”. Your ${machineWord(pcOf().kind)} is back to how it was before.` : `Redid “${c.title}”. The change is back on.`);
         } catch (e) {
           toast(`Couldn't ${c.status === "applied" ? "undo" : "redo"} that, so nothing was changed. ${e instanceof Error ? e.message : ""} Try again in a moment.`.replace(/\s+/g, " ").trim());
         }

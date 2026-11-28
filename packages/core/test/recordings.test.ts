@@ -122,7 +122,7 @@ describe("what a recording shows", () => {
       ev({ t: T0 + 2 * MIN, source: "Service Control Manager", id: 7031, level: "error", message: "A service stopped." }),
     ]), limits);
     expect(s.moments).toHaveLength(1);
-    expect(s.moments[0].title).toBe("The PC turned off without shutting down");
+    expect(s.moments[0].title).toBe("Turned off without shutting down");
     expect(s.moments[0].detail).toContain("likely off or restarting");
   });
 

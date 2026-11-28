@@ -107,7 +107,7 @@ export function eventTitle(e: PCEvent): string {
     case "crash": return /bugcheck|systemerrorreporting/i.test(e.source) ? "Windows crashed (blue screen)" : app ? `${app} ${/hang/i.test(e.source) ? "stopped responding" : "crashed"}` : "An app crashed";
     case "driver": return "The graphics driver stopped and recovered";
     case "hardware": return e.level === "warning" ? "A hardware error was corrected" : "Hardware reported an error";
-    case "shutdown": return /^rig recorder$/i.test(e.source) ? "The PC stopped suddenly" : "The PC turned off without shutting down";
+    case "shutdown": return /^rig recorder$/i.test(e.source) ? "Windows stopped suddenly" : "Turned off without shutting down";
     case "disk": return "A drive reported a problem";
     case "power": return powerTitle(e);
     case "change": { const c = describeChange(e); return c ? `Installed ${c.what}` : "Something was installed"; }
@@ -117,14 +117,14 @@ export function eventTitle(e: PCEvent): string {
 
 function powerTitle(e: PCEvent): string {
   if (/^rig recorder$/i.test(e.source)) {
-    const t: Record<number, string> = { [RIG_EVENT.sleep]: "The PC went to sleep", [RIG_EVENT.wake]: "The PC woke up", [RIG_EVENT.plugged]: "Plugged in", [RIG_EVENT.battery]: "Unplugged, running on battery" };
+    const t: Record<number, string> = { [RIG_EVENT.sleep]: "Went to sleep", [RIG_EVENT.wake]: "Woke up", [RIG_EVENT.plugged]: "Plugged in", [RIG_EVENT.battery]: "Unplugged, running on battery" };
     return t[e.id] ?? "Power changed";
   }
   if (e.id === 12) return "Windows started";
   if (e.id === 13) return "Windows shut down";
   // User32 1074: "The process C:\...\app.exe (PC) has initiated the restart of computer PC on behalf of user ..."
   const app = /process\s+(.+?\.exe)\b/i.exec(e.message)?.[1].split("\\").pop();
-  const what = /power off|shutdown/i.test(e.message) ? "shut down the PC" : "restarted the PC";
+  const what = /power off|shutdown/i.test(e.message) ? "shut down Windows" : "restarted Windows";
   return app ? `${app} ${what}` : `Something ${what}`;
 }
 
@@ -490,7 +490,7 @@ export function summarise(r: Pick<Recording, "samples" | "events" | "intervalMs"
     if ((e.kind === "other" && e.level !== "critical") || e.kind === "power") continue;
     const s = nearest(samples, e.t, r.intervalMs * 2);
     const hot = hotRuns.find((h) => e.t >= h.from - r.intervalMs && e.t <= h.to + r.intervalMs * 2);
-    const context = s ? around(s, limits) : samples.length ? "No readings right around it, so the PC was likely off or restarting." : "";
+    const context = s ? around(s, limits) : samples.length ? "No readings right around it, so Windows was likely off or restarting." : "";
     moments.push({
       t: e.t, kind: "event", severity: e.kind === "other" || e.kind === "change" ? "info" : e.level === "warning" && e.kind !== "driver" ? "warn" : "bad",
       title: eventTitle(e),

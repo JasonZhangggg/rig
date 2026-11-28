@@ -1,6 +1,8 @@
 // "Is it my PC or my internet?": a check the person starts, which reads this PC's network adapter and Wi-Fi and pings
 // the router and the internet from the PC itself (helper/RigHelper/Network.cs), and the plain answer Rig makes of it.
 // It only reads: nothing on the PC or the router changes.
+import type { PC } from "./model";
+import { machineWord } from "./machineWord";
 
 /** Five pings to one place: how many came back and how long they took on average. */
 export interface PingResult {
@@ -169,13 +171,14 @@ const driverYear = (d?: string) => { const y = d ? Number(d.slice(0, 4)) : NaN; 
  * Turns a reading into the answer the dialog shows: what's to blame, in one line, then at most three findings, each
  * with what shows it and what to do next. Pure, so the same reading always gets the same answer.
  */
-export function networkAnswer(r: NetworkReading): NetworkAnswer {
+export function networkAnswer(r: NetworkReading, kind?: PC["kind"]): NetworkAnswer {
+  const w = machineWord(kind);
   const facts = networkFacts(r);
   if (!r.adapter) {
     return {
-      verdict: "offline", headline: "This PC isn't connected to a network", facts,
-      sub: "Windows shows no connected Wi-Fi or cable, so nothing past the PC is being checked.",
-      findings: [{ id: "offline", title: "No network connection", next: "Plug in the cable, or pick your Wi-Fi network", why: "Windows has no network adapter with a way out to the internet right now.", ask: "My PC says it isn't connected to a network. What should I check?" }],
+      verdict: "offline", headline: `This ${w} isn't connected to a network`, facts,
+      sub: `Windows shows no connected Wi-Fi or cable, so nothing past the ${w} is being checked.`,
+      findings: [{ id: "offline", title: "No network connection", next: "Plug in the cable, or pick your Wi-Fi network", why: "Windows has no network adapter with a way out to the internet right now.", ask: `My ${w} says it isn't connected to a network. What should I check?` }],
     };
   }
   const s = read(r);
@@ -193,8 +196,8 @@ export function networkAnswer(r: NetworkReading): NetworkAnswer {
   const reachesNothing = !s.routerSeen && !s.internetSeen && !lookupsWork;
   if (reachesNothing) {
     verdict = weak ? "wifi" : "router";
-    headline = weak ? `The Wi-Fi signal is too weak to reach your router (${signal}%)` : "This PC can't reach your router or the internet";
-    sub = weak ? "Nothing past the PC answered, and the signal is the likeliest reason." : "Nothing past the PC answered: not the router, the internet or website lookups.";
+    headline = weak ? `The Wi-Fi signal is too weak to reach your router (${signal}%)` : `This ${w} can't reach your router or the internet`;
+    sub = weak ? `Nothing past the ${w} answered, and the signal is the likeliest reason.` : `Nothing past the ${w} answered: not the router, the internet or website lookups.`;
   } else if ((s.routerBad && fair) || weak) {
     verdict = "wifi";
     headline = `The Wi-Fi signal is weak (${signal}%), which is the likely cause`;
@@ -206,11 +209,11 @@ export function networkAnswer(r: NetworkReading): NetworkAnswer {
   } else if (s.internetBad && r.vpn && !s.internetLossy) {
     verdict = "vpn";
     headline = `Your VPN adds the delay: the internet answers in ${ms(i.avgMs!)}`;
-    sub = `This PC and your router are fine. Traffic goes through ${r.vpn.name} first, which takes longer.`;
+    sub = `This ${w} and your router are fine. Traffic goes through ${r.vpn.name} first, which takes longer.`;
   } else if (s.internetBad || (!s.internetSeen && !lookupsWork)) {
     verdict = "internet";
-    headline = "Your PC's connection is fine; the slowness is past your router";
-    const near = s.routerSeen ? "Your router answers" : "This PC is connected";
+    headline = `Your ${w}'s connection is fine; the slowness is past your router`;
+    const near = s.routerSeen ? "Your router answers" : `This ${w} is connected`;
     sub = !s.internetSeen ? `${near}, but nothing on the internet does.` : s.internetLossy ? `${near}, but ${lossPct(i)}% of pings to the internet were lost.` : `${near}, but the internet takes ${ms(i.avgMs!)} to answer.`;
   } else if (s.dnsFailed || s.dnsSlow) {
     verdict = "dns";
@@ -218,13 +221,13 @@ export function networkAnswer(r: NetworkReading): NetworkAnswer {
     sub = "The connection itself is fine. Each new website waits on this lookup (DNS) before it starts to load.";
   } else {
     verdict = "fine";
-    headline = "Your PC's connection is fine; any slowness is past your router";
+    headline = `Your ${w}'s connection is fine; any slowness is past your router`;
     sub = fineWords(r, s);
   }
 
   // The findings: the cause first, then what adds to it.
   if (reachesNothing && !weak) {
-    findings.push({ id: "unreachable", title: "Nothing past this PC answered", next: "Restart the router: unplug it for 30 seconds", why: `The router${g ? ` (${g.target})` : ""} and the internet (${i.target}) didn't answer any pings, and website lookups failed.`, ask: "My PC can't reach my router or the internet. What should I try?" });
+    findings.push({ id: "unreachable", title: `Nothing past this ${w} answered`, next: "Restart the router: unplug it for 30 seconds", why: `The router${g ? ` (${g.target})` : ""} and the internet (${i.target}) didn't answer any pings, and website lookups failed.`, ask: `My ${w} can't reach my router or the internet. What should I try?` });
   }
   if (weak) {
     findings.push({ id: "wifi-weak", title: `Wi-Fi signal is weak: ${signal}%`, next: "Move closer to the router, or clear what's between them", why: `Windows rates the signal ${signal} out of 100. Under ${WEAK_SIGNAL}, Wi-Fi slows down and drops data. Walls, floors and metal in the way weaken it most.`, ask: `My Wi-Fi signal is only ${signal}%. How can I make it stronger?` });
@@ -238,7 +241,7 @@ export function networkAnswer(r: NetworkReading): NetworkAnswer {
     });
   }
   if (s.wifi && r.wifi?.band === "2.4 GHz" && (fair || s.routerBad)) {
-    findings.push({ id: "band", title: "Connected on 2.4 GHz", next: "Use your router's 5 GHz network if it has one", why: `2.4 GHz${r.wifi.channel ? ` (channel ${r.wifi.channel})` : ""} reaches further but is slower and shared with neighbors' networks. Close to the router, 5 GHz is usually much faster.`, ask: "How do I switch my PC to my router's 5 GHz Wi-Fi?" });
+    findings.push({ id: "band", title: "Connected on 2.4 GHz", next: "Use your router's 5 GHz network if it has one", why: `2.4 GHz${r.wifi.channel ? ` (channel ${r.wifi.channel})` : ""} reaches further but is slower and shared with neighbors' networks. Close to the router, 5 GHz is usually much faster.`, ask: `How do I switch my ${w} to my router's 5 GHz Wi-Fi?` });
   }
   if (s.internetBad || (verdict === "internet" && !s.internetSeen)) {
     if (verdict === "vpn" && r.vpn) {
@@ -247,14 +250,14 @@ export function networkAnswer(r: NetworkReading): NetworkAnswer {
       findings.push({
         id: "internet", title: !s.internetSeen ? "The internet isn't answering" : s.internetLossy ? `Lost ${lost(i)} of ${i.sent} pings past the router` : `The internet answers in ${ms(i.avgMs!)}`,
         next: "Restart the router and modem, then call your provider if it stays",
-        why: `Rig pinged ${i.target} on the internet ${i.sent} times${i.avgMs != null ? `; the answers took ${ms(i.avgMs)} on average` : " and none came back"}. ${s.routerSeen && g?.avgMs != null ? `Your router answered in ${ms(g.avgMs)}, so the trouble is between it and the internet.` : "The trouble is past this PC's own connection."}`,
+        why: `Rig pinged ${i.target} on the internet ${i.sent} times${i.avgMs != null ? `; the answers took ${ms(i.avgMs)} on average` : " and none came back"}. ${s.routerSeen && g?.avgMs != null ? `Your router answered in ${ms(g.avgMs)}, so the trouble is between it and the internet.` : `The trouble is past this ${w}'s own connection.`}`,
         ask: "My internet is slow past my router. What can I check before calling my provider?",
       });
     }
   }
   if (s.dnsFailed || s.dnsSlow) {
     if (verdict === "dns" || verdict === "fine") {
-      findings.push({ id: "dns", title: s.dnsFailed ? `Couldn't look up ${r.dns.name}` : `Website lookups take ${ms(r.dns.ms!)}`, next: "Restart the router, or ask Rig about a faster DNS server", why: `Before a website loads, Windows asks a DNS server for its address. Rig asked for ${r.dns.name}${s.dnsFailed ? " and got no answer" : ` and waited ${ms(r.dns.ms!)}`}; under 100 ms is usual.`, ask: s.dnsFailed ? "Website lookups (DNS) fail on my PC. What should I check?" : `Website lookups (DNS) take ${ms(r.dns.ms!)} on my PC. Should I change my DNS server?` });
+      findings.push({ id: "dns", title: s.dnsFailed ? `Couldn't look up ${r.dns.name}` : `Website lookups take ${ms(r.dns.ms!)}`, next: "Restart the router, or ask Rig about a faster DNS server", why: `Before a website loads, Windows asks a DNS server for its address. Rig asked for ${r.dns.name}${s.dnsFailed ? " and got no answer" : ` and waited ${ms(r.dns.ms!)}`}; under 100 ms is usual.`, ask: s.dnsFailed ? `Website lookups (DNS) fail on my ${w}. What should I check?` : `Website lookups (DNS) take ${ms(r.dns.ms!)} on my ${w}. Should I change my DNS server?` });
     }
   }
   if (r.vpn && verdict !== "vpn") {
@@ -265,7 +268,7 @@ export function networkAnswer(r: NetworkReading): NetworkAnswer {
   }
   const year = driverYear(r.adapter.driverDate);
   if (year != null && new Date(r.at).getFullYear() - year >= OLD_DRIVER_YEARS && (verdict === "wifi" || verdict === "router")) {
-    findings.push({ id: "driver", title: `Network driver is from ${year}`, next: "Update the network driver", why: `${r.adapter.description ?? "The adapter"} runs a driver${r.adapter.driverVersion ? ` (${r.adapter.driverVersion})` : ""} from ${year}. Newer drivers often fix dropouts and slow links.`, ask: `How do I update the network driver on my PC? It's from ${year}.` });
+    findings.push({ id: "driver", title: `Network driver is from ${year}`, next: "Update the network driver", why: `${r.adapter.description ?? "The adapter"} runs a driver${r.adapter.driverVersion ? ` (${r.adapter.driverVersion})` : ""} from ${year}. Newer drivers often fix dropouts and slow links.`, ask: `How do I update the network driver on my ${w}? It's from ${year}.` });
   }
   return { verdict, headline, sub, findings: findings.slice(0, 3), facts };
 }
