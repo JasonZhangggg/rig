@@ -3,8 +3,10 @@ import { Icon } from "../../components/common";
 import { useActions, useData, useStillPC, useTempText } from "../../state";
 import { useManuals } from "../../manuals/useManuals";
 import { partIcon } from "../shared";
+import { NET_CHECK_QUESTION } from "../../components/NetCheck";
 
-export interface Starter { q: string; why: string; part?: string; topic?: string }
+/** check: opens that check's dialog instead of asking. */
+export interface Starter { q: string; why: string; part?: string; topic?: string; check?: "network" }
 
 const askPath = "M4 5h12v8H9l-4 3v-3H4z";
 
@@ -14,6 +16,7 @@ function generic(pc: StillPC): Starter[] {
   return [
     { q: `Why is ${pc.name} loud?`, why: "Noise usually comes from fans working harder than they need to.", part: "fans" },
     { q: "Why is startup slow?", why: "Apps that start with Windows add up over time.", part: "ssd", topic: "startup" },
+    { q: NET_CHECK_QUESTION, why: `A quick check of ${pc.name}'s connection, your router and the internet.`, part: "network", topic: "network", check: "network" },
     { q: "Can my screen look smoother?", why: "Many screens run slower than they can after a new cable or driver.", part: "gpu" },
     { q: "What should I upgrade first?", why: "See what fits and what you would notice most.", part: "ram" },
   ];
@@ -47,13 +50,13 @@ export function StarterIcon({ part }: { part?: string }) {
 }
 
 export function StarterGrid({ starters }: { starters: Starter[] }) {
-  const { ask } = useActions();
+  const { ask, set } = useActions();
   const data = useData("answering");
   return (
     <ul className="starters" aria-label="Questions to start with">
       {starters.slice(0, 4).map((s) => (
         <li key={s.q}>
-          <button type="button" className="starter" disabled={data.answering} onClick={() => ask(s.q)}>
+          <button type="button" className="starter" disabled={data.answering} onClick={() => (s.check ? set({ netCheck: true }) : ask(s.q))}>
             <StarterIcon part={s.part} />
             <span className="starter-txt"><b>{s.q}</b><span>{s.why}</span></span>
           </button>
@@ -68,7 +71,7 @@ export function FollowUps({ starters }: { starters: Starter[] }) {
   if (!starters.length) return null;
   return (
     <div className="followups" aria-label="Ask next">
-      {starters.slice(0, 3).map((s) => (
+      {starters.filter((s) => !s.check).slice(0, 3).map((s) => (
         <button key={s.q} type="button" onClick={() => ask(s.q)}>{s.q}</button>
       ))}
     </div>
