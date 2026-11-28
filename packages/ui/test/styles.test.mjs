@@ -25,6 +25,23 @@ describe("stylesheet", () => {
     expect([...unused]).toEqual([]);
   });
 
+  // Hovering a pressed button, like Exploded view while it's on, once painted the plain button's pale hover under its
+  // white words, so they all but vanished.
+  it("keeps a pressed button's look under the pointer, with words that read", () => {
+    const hovers = [];
+    let pressed = null;
+    for (const file of cssFiles(stylesDir)) {
+      postcss.parse(readFileSync(file, "utf8")).walkRules((rule) => {
+        if (rule.selector === '.stage-tools .btn[aria-pressed="true"]') pressed = Object.fromEntries(rule.nodes.filter((d) => d.type === "decl").map((d) => [d.prop, d.value]));
+        if (rule.parent?.type !== "atrule" || !/hover/.test(rule.parent.params)) return;
+        for (const sel of rule.selectors) if (/^\.btn(\.ghost)?:/.test(sel) && sel.includes(":hover")) hovers.push(sel);
+      });
+    }
+    expect(hovers.length).toBeGreaterThan(0);
+    for (const sel of hovers) expect(sel, sel).toMatch(/:not\([^)]*\[aria-pressed="true"\]/);
+    expect(pressed).toMatchObject({ background: "var(--sel)", color: "var(--text)" });
+  });
+
   // A row that scrolls sideways but is a pixel taller than itself (a tab's underline pulled down over the line)
   // gets a vertical scroll bar too, and Windows draws its arrows beside the tabs.
   it("lets tab rows scroll only sideways, with nothing hanging below them", () => {
