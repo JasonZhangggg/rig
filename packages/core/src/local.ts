@@ -490,7 +490,10 @@ export class LocalClient implements RigClient {
 
   async history(id: string, range: Range): Promise<HistoryPoint[]> {
     if (!(await this.isLocal(id))) return this.cloud?.history(id, range) ?? [];
-    return this.store.history(this.o.now() - rangeMs[range]);
+    const since = this.o.now() - rangeMs[range];
+    // Rig holds the last month in memory for the alerts, so a chart over it needs no trip to the disk.
+    if (rangeMs[range] <= USUAL.baselineFrom * 864e5) return this.recent.filter((p) => p.t >= since);
+    return this.store.history(since);
   }
 
   async upgrades(id: string) {
