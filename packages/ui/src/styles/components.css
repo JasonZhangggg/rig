@@ -384,5 +384,6 @@ button.fig[aria-pressed="true"] { background: var(--sel); }
 @media (max-width: 560px) { .net-check-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* In the dialog the rows keep Details and Ask on the title's line at every width, and Done stays in reach while it scrolls. */
 .net-check .row { grid-template-columns: minmax(0, 1fr) auto; }
-.net-check .row-acts { margin-left: 12px; }
+/* rows.css hangs a phone row's buttons into the title's column, since there they drop under it; here they stay beside it, so they keep their gap and hang right. */
+.net-check .row > .row-acts:has(> .btn:not(.primary)) { margin-left: 12px; margin-right: calc(-1 * var(--hang)); }
 .net-check .sheet-foot { position: sticky; bottom: 0; background: var(--surface); }
