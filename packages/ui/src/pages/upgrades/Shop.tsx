@@ -8,6 +8,7 @@ import { categoryState, drawWith, fixSteps, fitOf, gainOf, makersIn, matchesQuer
 import { useActions, useStillPC, useUI } from "../../state";
 import { partIcon } from "../shared";
 import type { PCUpgrades } from "./PCUpgrades";
+import { dateText } from "../../dateText";
 
 const money = (n: number) => `$${n.toLocaleString("en-US", n % 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {})}`;
 
@@ -383,7 +384,7 @@ function ItemRow({ item, fit, facts, open, onToggle, inList, onList, demo }: { i
               {live ? (
                 <>
                   <span className="label">Price</span>
-                  <p className="shop-live"><b className="num">{money(live.price)}</b> at {live.shop}, {live.inStock ? "in stock online" : "sold out online"}. <span className="faint">Checked {new Date(live.checkedAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}.</span></p>
+                  <p className="shop-live"><b className="num">{money(live.price)}</b> at {live.shop}, {live.inStock ? "in stock online" : "sold out online"}. <span className="faint">Checked {dateText(new Date(live.checkedAt), { weekday: "short", hour: "numeric", minute: "2-digit" })}.</span></p>
                   <a className="btn sm" href={live.url} target="_blank" rel="noreferrer">See it at {live.shop}</a>
                 </>
               ) : (

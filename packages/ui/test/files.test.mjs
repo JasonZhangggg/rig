@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -18,5 +18,18 @@ describe("source files", () => {
       seen.set(key, f);
     }
     expect(clashes).toEqual([]);
+  });
+
+  // A date with options made a new formatter each call, about 60 µs, and charts and lanes make dozens per reading.
+  it("words dates and times with dateText, which keeps one formatter per set of options", () => {
+    const slow = [];
+    for (const e of readdirSync(srcDir, { recursive: true, withFileTypes: true })) {
+      if (!e.isFile() || !/\.tsx?$/.test(e.name)) continue;
+      const f = join(e.parentPath, e.name);
+      readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        if (/\.toLocale(Time|Date)?String\(\s*undefined\s*,/.test(line)) slow.push(`${f.slice(srcDir.length + 1)}:${i + 1}`);
+      });
+    }
+    expect(slow).toEqual([]);
   });
 });

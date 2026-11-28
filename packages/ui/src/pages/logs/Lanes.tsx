@@ -2,6 +2,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, t
 import { findReadings, peakOf, sensorGroups, type Recorded, type RecordedPoint, type SensorType } from "@rig/core";
 import { useTemp } from "../../state";
 import { clock, clockSec } from "./words";
+import { dateText } from "../../dateText";
 
 type Temp = ReturnType<typeof useTemp>;
 
@@ -176,9 +177,9 @@ function ticksFor(t0: number, t1: number, w: number, fine = false) {
   if (t1 - t0 > 10 * 864e5) { const k = Math.ceil(out.length / Math.max(2, Math.floor(w / 80))); return out.filter((_, i) => (out.length - 1 - i) % k === 0); }
   return out;
 }
-const tickLabel = (t: number, span: number) => (span > 10 * 864e5 ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-  : span > 2 * 864e5 ? new Date(t).toLocaleDateString(undefined, { weekday: "short" })
-  : span > 4 * 36e5 && new Date(t).getMinutes() === 0 ? new Date(t).toLocaleTimeString(undefined, { hour: "numeric" }) : clock(t));
+const tickLabel = (t: number, span: number) => (span > 10 * 864e5 ? dateText(new Date(t), { month: "short", day: "numeric" })
+  : span > 2 * 864e5 ? dateText(new Date(t), { weekday: "short" })
+  : span > 4 * 36e5 && new Date(t).getMinutes() === 0 ? dateText(new Date(t), { hour: "numeric" }) : clock(t));
 
 const reduceMotion = () => typeof window !== "undefined" && (document.documentElement.dataset.motion === "reduce" || !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 

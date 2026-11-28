@@ -6,6 +6,7 @@ import { useActions, useData, useHistory, useStillPC, useTemp, useTempText } fro
 import { useEvents } from "../Logs";
 import { useWidth } from "./Lanes";
 import { clock } from "./words";
+import { dateText } from "../../dateText";
 
 type Temp = ReturnType<typeof useTemp>;
 
@@ -51,7 +52,7 @@ export function WeekStory() {
           {[...story.marks].reverse().map((m) => (
             <Row
               key={`${m.kind}${m.t}`} name={m.title} at={new Date(m.t).toISOString()}
-              time={<>{new Date(m.t).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}<span>{clock(m.t)}</span></>}
+              time={<>{dateText(new Date(m.t), { weekday: "short", month: "short", day: "numeric" })}<span>{clock(m.t)}</span></>}
               title={<span className={m.look ? "ws-look" : undefined}>{text(m.title)}</span>}
               meta={text(m.detail)}
               action={<>
@@ -148,7 +149,7 @@ function WeekChart({ story, temp }: { story: Story; temp: Temp }) {
   for (let v = Math.ceil(lo / 20) * 20; v <= hi; v += 20) if (Math.abs(v - story.hotLine) >= 6) grid.push(v);
   const dayLabel = (d: number, i: number) => {
     if (i === 6) return narrow ? "Now" : "Today";
-    const day = new Date(d), name = day.toLocaleDateString(undefined, { weekday: narrow ? "narrow" : "short" });
+    const day = new Date(d), name = dateText(day, { weekday: narrow ? "narrow" : "short" });
     return narrow ? name : `${name} ${day.getDate()}`;
   };
   const hotDeg = temp(story.hotLine, { mark: "degree" });

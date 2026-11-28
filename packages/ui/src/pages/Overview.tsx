@@ -4,8 +4,9 @@ import { getStage } from "../components/Stage";
 import { useApp, useAppearance, useHistory } from "../state";
 import { FansCard, type FansStyle } from "./overview/FansCard";
 import { Grid, type Mode } from "./overview/Grid";
-import { COLS, KINDS, SIZE_LABEL, cellsFor, defaultWidget, dragFlow, fullRows, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, sizeLabel, stepTarget, type Bp, type Dir, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
-import { AddWidgets, DashOptions, ResetConfirm, WidgetOptions, type Place } from "./overview/Options";
+import { COLS, KINDS, SIZE_LABEL, addCell, arrange, cellsFor, defaultWidget, dragFlow, fullRows, kindOf, orderOf, phoneOrder, presetCells, presetOf, resizeFlow, sizeLabel, stepTarget, syncLayouts, update, type Bp, type Dir, type Kind, type SizeName, type Tone, type Widget } from "./overview/layout";
+import { Gallery, type Point } from "./overview/Gallery";
+import { DashOptions, ResetConfirm, WidgetOptions, type Place } from "./overview/Options";
 import { Popover } from "./overview/Popover";
 import { TempsCard, type TempsStyle } from "./overview/TempsCard";
 import { dashboardKey, useDashboard } from "./overview/useDashboard";
@@ -14,6 +15,7 @@ import { ChangesWidget, DriversWidget, DrivesWidget, EventsWidget, GamesWidget, 
 import { Arrow, AsksWidget, HealthWidget, LiveWidget, PCWidget, PartsWidget, StorageWidget, TodoWidget, checkupQuestion, scored, sourceItems, useHomeIssues, useOpenIssue, type TileBox } from "./overview/widgets";
 import { focusSection } from "./settings/sections";
 import { firstName, greeting } from "./shared";
+import { dateText } from "../dateText";
 
 const Mic = () => <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>;
 const Pulse = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>;
@@ -44,6 +46,26 @@ function useWeekInsights(pc: PC, points: HistoryPoint[] | null) {
     return { recorded: points.length > 0, temps: weekTemps(points, ctx), evenings: weekEvenings(points, ctx), fans: fanTrend(points, ctx, 28) };
   }, [points, kind, cpu, gpu]);
 }
+
+/**
+ * The grid cell a widget held at a point would land in: under the pointer, centred on it across. Null over the phone's
+ * list, or once the pointer is well away from the grid.
+ */
+function cellAt(id: string, at: Point) {
+  const el = document.querySelector<HTMLElement>(".f-home .dash");
+  const n = Number(el?.dataset.cols);
+  if (!el || !(n > 1)) return null;
+  const r = el.getBoundingClientRect(), z = el.offsetWidth ? r.width / el.offsetWidth : 1;
+  const row = parseFloat(el.style.getPropertyValue("--row")) || 80, g = parseFloat(el.style.getPropertyValue("--dgap")) || 24;
+  const lx = (at.x - r.left) / z, ly = (at.y - r.top) / z;
+  if (lx < -32 || lx > el.offsetWidth + 32 || ly < -120 || ly > el.offsetHeight + 320) return null;
+  const kind = kindOf(id);
+  const [w] = presetCells(kind, KINDS[kind].size, n);
+  const colW = (el.offsetWidth - g * (n - 1)) / n;
+  return { x: Math.max(0, Math.min(n - w, Math.round(lx / (colW + g) - w / 2))), y: Math.max(0, Math.floor(ly / (row + g))) };
+}
+
+const fine = () => typeof matchMedia !== "function" || matchMedia("(pointer: fine)").matches;
 
 type Panel = { type: "widget"; id: string; at: HTMLElement } | { type: "add" | "dash" | "reset"; at: HTMLElement } | null;
 
@@ -87,6 +109,10 @@ export function Overview() {
   const [said, setSaid] = useState("");
   const [mode, setMode] = useState<Mode>("lg");
   const [undoNote, setUndoNote] = useState<{ text: string; n: number } | null>(null);
+  /** A widget dragged in from the library, and the cell it would land in. */
+  const [incoming, setIncoming] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** The widget just added, which the page shows and lights up for a moment. */
+  const [fresh, setFresh] = useState<{ id: string; n: number } | null>(null);
   const shown = useMemo(() => dash.widgets.filter((w) => !w.hidden), [dash.widgets]);
   const hidden = dash.widgets.filter((w) => w.hidden);
   const cells = useMemo(() => ({ lg: cellsFor(dash, "lg"), md: cellsFor(dash, "md") }), [dash]);
@@ -149,6 +175,43 @@ export function Overview() {
   }, [editing, views, week, points, pc.name, pc.fans]);
 
   const list = mode === "phone";
+  const bpNow: Bp = mode === "md" ? "md" : "lg";
+  // While a widget is held over the grid it shows where it would land, and the others make room, before anything is saved.
+  const view = useMemo(() => {
+    const w = incoming && dash.widgets.find((x) => x.id === incoming.id && x.hidden);
+    if (!incoming || !w) return { widgets: shown, cells };
+    const n = COLS[bpNow];
+    return { widgets: [...shown, { ...w, hidden: false }], cells: { ...cells, [bpNow]: dragFlow(addCell(cells[bpNow], w.id, n), w.id, incoming.x, incoming.y, n) } };
+  }, [incoming, dash.widgets, shown, cells, bpNow]);
+  const hover = useCallback((id: string, at: Point | null) => {
+    const c = at && cellAt(id, at);
+    setIncoming((prev) => (!c ? null : prev && prev.id === id && prev.x === c.x && prev.y === c.y ? prev : { id, ...c }));
+  }, []);
+  const added = (id: string) => { setPanel(null); changed(`${KINDS[kindOf(id)].title} added.`); setFresh({ id, n: Date.now() }); };
+  const addAt = (id: string, at: Point | null) => {
+    const c = at && cellAt(id, at);
+    setIncoming(null);
+    if (!c) return false;
+    const n = COLS[bpNow];
+    board.change((d) => arrange(syncLayouts({ ...d, widgets: update(d.widgets, id, { hidden: false }) }), bpNow, dragFlow(addCell(cellsFor(d, bpNow), id, n), id, c.x, c.y, n)));
+    added(id);
+    return true;
+  };
+  // A widget just added comes into view and lights up, and takes focus so the keyboard carries on from it.
+  useEffect(() => {
+    if (!fresh) return;
+    let t2 = 0;
+    const t = window.setTimeout(() => {
+      const item = document.querySelector<HTMLElement>(`.f-home .dg[data-id="${fresh.id}"]`);
+      if (!item) return;
+      const calm = matchMedia?.("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.motion === "reduce";
+      item.scrollIntoView({ block: "nearest", behavior: calm ? "auto" : "smooth" });
+      item.querySelector<HTMLElement>(".dw")?.focus({ preventScroll: true });
+      item.dataset.fresh = "";
+      t2 = window.setTimeout(() => delete item.dataset.fresh, 1600);
+    }, 80);
+    return () => { clearTimeout(t); clearTimeout(t2); };
+  }, [fresh]);
   // Finishing puts focus back without scrolling: on the widget it was finished from (its handle, the one part of it that
   // takes focus outside customizing), or on Customize Home.
   const refocus = useRef<string | null | undefined>(undefined);
@@ -165,6 +228,8 @@ export function Overview() {
     setEditing(true);
     announce(list ? "Customizing Home. Use the up and down buttons on a widget, or the arrow keys, to change the order." : "Customizing Home. Drag a widget or use the arrow keys to move it.");
     if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.dw[data-kind="${id}"]`)?.focus({ preventScroll: true }));
+    // The greeting's Customize button goes out of sight under the bar, so focus moves onto the bar.
+    else if (document.activeElement?.id === "f-customize") requestAnimationFrame(() => document.querySelector<HTMLElement>(".dash-bar-tools .dbtn")?.focus({ preventScroll: true }));
   };
   useLayoutEffect(() => {
     const a = anchor.current, from = refocus.current;
@@ -252,14 +317,29 @@ export function Overview() {
   };
 
   return (
-    <div className="page f-home" data-density={look.density}>
+    <div className="page f-home" data-density={look.density} data-editing={editing || undefined}>
+      {/* While customizing, the bar takes the greeting's place at the top and stays there as the page scrolls. */}
+      {editing && (
+        <div className="dash-top">
+          <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
+            <p><b>Customizing Home</b><span>{list ? "Use the arrows on a widget to move it up or down." : "Drag widgets to move them and pull an edge to resize, or use a widget's options."}</span></p>
+            <div className="dash-bar-tools">
+              <button type="button" ref={barAdd} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "add"} onClick={(e) => toggle("add", e.currentTarget)}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
+              <button type="button" ref={barLayout} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "dash"} onClick={(e) => toggle("dash", e.currentTarget)}>Layout</button>
+              <button type="button" ref={barReset} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "reset"} onClick={(e) => toggle("reset", e.currentTarget)}>Reset</button>
+            </div>
+            <button type="button" className="dbtn primary" onClick={() => done()}>Done</button>
+          </div>
+        </div>
+      )}
       <header className="f-head">
         <div className="f-head-text">
           <h1>{greeting()}{name ? `, ${name}` : ""}</h1>
           <p>{pc.online ? `${known ? `${pc.name} is ${pc.health >= 75 ? "running well" : "not at its best"}.` : `Rig is getting to know ${pc.name}.`} ${status}` : `${pc.name} is offline. ${seenLabel(pc)}.`}</p>
+          <button type="button" className="f-check" onClick={() => set({ slowLoud: true })}>Slow or loud? <span>Check now</span></button>
         </div>
         <div className="f-head-tools">
-          <div className="f-date"><b>{now.getDate()}</b><span>{now.toLocaleDateString(undefined, { weekday: "short" })},<br />{now.toLocaleDateString(undefined, { month: "long" })}</span></div>
+          <div className="f-date"><b>{now.getDate()}</b><span>{dateText(now, { weekday: "short" })},<br />{dateText(now, { month: "long" })}</span></div>
           {top && (
             <button type="button" className="f-cta" onClick={() => openIssue(top)}>
               <span>{open.length ? "Review" : "See what's new"}</span>
@@ -275,7 +355,7 @@ export function Overview() {
 
       {shown.length ? (
         <Grid
-          widgets={shown} cells={cells} phone={phone} editing={editing} compact={look.density === "compact"} gap={GAPS[dash.spacing]}
+          widgets={view.widgets} cells={view.cells} phone={phone} incoming={incoming?.id} editing={editing} compact={look.density === "compact"} gap={GAPS[dash.spacing]}
           titleOf={titleOf} render={render} announce={announce} onEdit={edit} onDone={done} onMode={setMode}
           onCells={(bp, next, text) => { board.setCells(bp, next); changed(text); }}
           onPhone={(order, text) => { board.setPhone(order); changed(text); }}
@@ -301,17 +381,6 @@ export function Overview() {
               <button type="button" onClick={undo}>Undo</button>
             </div>
           )}
-          {editing && (
-            <div className="dash-bar tone-dark" role="toolbar" aria-label="Customize Home">
-              <p><b>Customizing Home</b><span>{list ? "Use the arrows on a widget to move it up or down." : "Drag widgets to move them and pull an edge to resize, or use a widget's options."}</span></p>
-              <div className="dash-bar-tools">
-                <button type="button" ref={barAdd} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "add"} onClick={(e) => toggle("add", e.currentTarget)}>Add widget{hidden.length > 0 && <em>{hidden.length}</em>}</button>
-                <button type="button" ref={barLayout} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "dash"} onClick={(e) => toggle("dash", e.currentTarget)}>Layout</button>
-                <button type="button" ref={barReset} className="dbtn" aria-haspopup="dialog" aria-expanded={panel?.type === "reset"} onClick={(e) => toggle("reset", e.currentTarget)}>Reset</button>
-                <button type="button" className="dbtn primary" onClick={() => done()}>Done</button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -329,9 +398,11 @@ export function Overview() {
         </Popover>
       )}
       {panel?.type === "add" && (
-        <Popover anchor={panel.at} label="Add widget" onClose={close}>
-          <AddWidgets hidden={hidden} onAdd={(id) => { board.add(id); changed(`${KINDS[id as Kind].title} added.`); if (hidden.length <= 1) close(); }} />
-        </Popover>
+        <Gallery
+          hidden={hidden} render={render} canDrag={!list && shown.length > 0 && fine()} from={panel.at}
+          onClose={close} onHover={hover} onDrop={addAt}
+          onAdd={(id) => { board.add(id); changed(`${KINDS[kindOf(id)].title} added.`); }}
+        />
       )}
       {panel?.type === "dash" && (
         <Popover anchor={panel.at} label="Home layout" onClose={close}>
