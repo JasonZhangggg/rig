@@ -24,6 +24,21 @@ export const LAPTOP = {
   trackpad: { w: 1.24, d: 0.68, z: 0.65 },
 } as const;
 
+/** A spot on the laptop's board, seen from above: its centre (x, z) and its size (w across, d front to back). */
+export interface Spot { x: number; z: number; w: number; d: number }
+
+/**
+ * What sits on the board inside, between the two fans: the board itself, the processor, the graphics chip beside it
+ * on a laptop with one of its own, the memory soldered on the other side, and the M.2 drive toward the right fan.
+ */
+export const BOARD: Record<"board" | "cpu" | "gpu" | "ram" | "ssd", Spot> = {
+  board: { x: 0.05, z: -0.5, w: 1.72, d: 0.9 },
+  cpu: { x: 0.1, z: -0.5, w: 0.3, d: 0.22 },
+  gpu: { x: 0.43, z: -0.5, w: 0.26, d: 0.24 },
+  ram: { x: -0.28, z: -0.495, w: 0.29, d: 0.31 },
+  ssd: { x: 0.72, z: -0.45, w: 0.22, d: 0.8 },
+};
+
 /** Height of the base's top surface at z: highest at the hinge, lower at the front edge. */
 export function deckTop(z: number) {
   const t = THREE.MathUtils.clamp((z + LAPTOP.d / 2) / LAPTOP.d, 0, 1);
