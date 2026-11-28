@@ -1,7 +1,10 @@
 //! Talks to RigHelper, the small C# program that reads sensors with
 //! LibreHardwareMonitor and makes the catalog's settings changes. It needs
-//! admin rights, so the app starts it once through the Windows "Yes / No"
-//! prompt and talks to it over a private named pipe.
+//! admin rights. The installer's one Windows prompt sets up a Task Scheduler
+//! task that starts it with them (helper/RigHelper/HelperTask.cs), so opening
+//! Rig doesn't ask again. Without that task (the prompt was refused, or the
+//! task's copy is from another version) the app starts it through the Windows
+//! "Yes / No" prompt as before. Either way it talks to it over a private named pipe.
 //!
 //! Protocol: one JSON object per line.
 //!   app → helper  {"id": 1, "method": "snapshot", "params": null}
@@ -9,8 +12,9 @@
 //!
 //! Keeping it private: the app creates the pipe under a random name, allows
 //! one connection only, and checks that the process that connected is the
-//! helper it started. The helper checks that the pipe belongs to its parent,
-//! accepts only calls from the fix catalog, and quits when the app does.
+//! helper it started, or the task's copy in Program Files, where only admins
+//! can write. The helper checks that the pipe belongs to the app, accepts
+//! only calls from the fix catalog, and quits when the app does.
 
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -68,6 +72,8 @@ pub struct Conn<S> {
     /// Calls in a row that ran out of time. The helper is still working on them, so the
     /// connection stays until this many: starting it again means another Windows prompt.
     timeouts: u32,
+    /// Whether the helper has answered a call yet. One that stops before its first answer refused the app.
+    pub answered: bool,
 }
 
 /// Timed-out calls in a row before the helper counts as stuck and is started again.
@@ -78,7 +84,7 @@ const MAX_TIMEOUTS: u32 = 3;
 impl<S: AsyncRead + AsyncWrite> Conn<S> {
     pub fn new(stream: S) -> Self {
         let (r, w) = tokio::io::split(stream);
-        Self { reader: BufReader::new(r), writer: w, next_id: 1, timeouts: 0 }
+        Self { reader: BufReader::new(r), writer: w, next_id: 1, timeouts: 0, answered: false }
     }
 
     pub async fn call(&mut self, method: &str, params: Value) -> Result<Value, CallError> {
@@ -111,6 +117,7 @@ impl<S: AsyncRead + AsyncWrite> Conn<S> {
             Ok(Ok(m)) => m,
         };
         self.timeouts = 0;
+        self.answered = true;
         if let Some(err) = msg.get("error") {
             let text = err.get("message").and_then(Value::as_str).unwrap_or("Rig's helper couldn't do that.");
             return Err(CallError::Remote(text.to_string()));
@@ -122,8 +129,13 @@ impl<S: AsyncRead + AsyncWrite> Conn<S> {
 /// The helper connection, started on first use and restarted if it breaks.
 #[derive(Default)]
 pub struct Helper {
+    /// The connection, and whether the helper on it was started by the installer's task.
     #[cfg(windows)]
-    conn: Mutex<Option<Conn<tokio::net::windows::named_pipe::NamedPipeServer>>>,
+    conn: Mutex<Option<(Conn<tokio::net::windows::named_pipe::NamedPipeServer>, bool)>>,
+    /// Set when a helper the task started stopped before it answered (it wouldn't serve this Rig.exe): from then on,
+    /// until Rig closes, the helper starts through Windows' prompt, so Rig doesn't start the task over and over.
+    #[cfg(windows)]
+    skip_task: std::sync::atomic::AtomicBool,
     #[cfg(not(windows))]
     _conn: Mutex<()>,
 }
@@ -142,11 +154,12 @@ impl Helper {
         let waited = queued.elapsed();
         if guard.is_none() {
             let t = std::time::Instant::now();
-            log::info!("helper: starting it (Windows asks for permission)");
-            match win::launch().await {
-                Ok(pipe) => {
+            log::info!("helper: starting it");
+            let use_task = !self.skip_task.load(std::sync::atomic::Ordering::Relaxed);
+            match win::launch(use_task).await {
+                Ok((pipe, from_task)) => {
                     log::info!("helper: connected in {} ms", t.elapsed().as_millis());
-                    *guard = Some(Conn::new(pipe));
+                    *guard = Some((Conn::new(pipe), from_task));
                 }
                 Err(e) => {
                     log::error!("helper: couldn't start after {} ms: {e}", t.elapsed().as_millis());
@@ -155,12 +168,17 @@ impl Helper {
             }
         }
         let t = std::time::Instant::now();
-        let result = guard.as_mut().unwrap().call(method, params).await;
+        let (conn, from_task) = guard.as_mut().unwrap();
+        let result = conn.call(method, params).await;
         log_call(method, waited, t.elapsed(), &result);
         match result {
             Ok(v) => Ok(v),
             Err(CallError::Remote(m)) => Err(m),
             Err(CallError::Broken(m)) => {
+                if give_up_on_task(*from_task, conn.answered) {
+                    log::warn!("helper: the task's helper stopped before answering, so Windows asks from now on");
+                    self.skip_task.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 log::warn!("helper: connection dropped, it starts again on the next call");
                 *guard = None;
                 Err(m)
@@ -194,6 +212,39 @@ fn call_level(method: &str, waited: Duration, took: Duration, result: &Result<Va
     }
 }
 
+/// What `RigHelper.exe --start-task` answers (HelperTask.cs): 0 when Task Scheduler started the helper.
+/// Anything else (no task, a copy from another version, a bad request) means asking Windows instead.
+#[cfg_attr(not(windows), allow(dead_code))]
+const TASK_STARTED: i32 = 0;
+
+/// How long the helper the task started may take to connect before the app asks Windows instead.
+#[cfg_attr(not(windows), allow(dead_code))]
+const TASK_CONNECT: Duration = Duration::from_secs(15);
+
+/// A helper the task started that stops before its first answer refused this Rig.exe (it serves only the one the
+/// installer named), so starting the task again would only fail again.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn give_up_on_task(from_task: bool, answered: bool) -> bool {
+    from_task && !answered
+}
+
+/// Whether the process that connected to the pipe is Rig's helper: the one the app started itself, or the task's copy
+/// (only admins can put a program there).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_our_helper(client: u32, started: Option<u32>, client_image: Option<&str>, task_exe: Option<&str>) -> bool {
+    if started == Some(client) {
+        return true;
+    }
+    matches!((client_image, task_exe), (Some(image), Some(exe)) if same_path(image, exe))
+}
+
+/// Windows paths, compared as Windows does: case doesn't matter, nor which slash.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn same_path(a: &str, b: &str) -> bool {
+    let norm = |p: &str| p.replace('/', "\\").trim_end_matches('\\').to_lowercase();
+    !a.is_empty() && norm(a) == norm(b)
+}
+
 #[cfg(windows)]
 pub use win::run_elevated_wait;
 
@@ -205,8 +256,13 @@ mod win {
     use tokio::net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions};
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
-    use windows_sys::Win32::System::Threading::GetProcessId;
-    use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::System::Threading::{
+        GetProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_ProgramFiles, SHGetKnownFolderPath, ShellExecuteExW, KF_FLAG_DEFAULT, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -265,7 +321,101 @@ mod win {
         }
     }
 
-    pub async fn launch() -> Result<NamedPipeServer, String> {
+    /// The task's copy of the helper: %ProgramFiles%\Rig\Helper\RigHelper.exe (HelperTask.cs).
+    fn task_exe() -> Option<String> {
+        unsafe {
+            let mut path: *mut u16 = std::ptr::null_mut();
+            let hr = SHGetKnownFolderPath(&FOLDERID_ProgramFiles, KF_FLAG_DEFAULT as _, std::ptr::null_mut(), &mut path);
+            if hr != 0 || path.is_null() {
+                if !path.is_null() {
+                    CoTaskMemFree(path as _);
+                }
+                return None;
+            }
+            let len = (0..).take_while(|&i| *path.add(i) != 0).count();
+            let dir = String::from_utf16_lossy(std::slice::from_raw_parts(path, len));
+            CoTaskMemFree(path as _);
+            Some(format!(r"{dir}\Rig\Helper\RigHelper.exe"))
+        }
+    }
+
+    /// The program a process runs, as a full path, or None when Windows won't say.
+    fn image_of(pid: u32) -> Option<String> {
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return None;
+            }
+            let mut buf = vec![0u16; 1024];
+            let mut size = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut size);
+            CloseHandle(process);
+            (ok != 0).then(|| String::from_utf16_lossy(&buf[..size as usize]))
+        }
+    }
+
+    /// Asks Task Scheduler, through the helper in Rig's folder (no admin rights, no window), to start the helper with
+    /// admin rights and no prompt. True when the task started; the helper then connects to the pipe by itself.
+    async fn start_task(exe: &str, pipe: &str, parent: &str) -> bool {
+        let (exe, pipe, parent) = (exe.to_string(), pipe.to_string(), parent.to_string());
+        let ran = tokio::task::spawn_blocking(move || {
+            let mut child = std::process::Command::new(&exe)
+                .args(["--start-task", "--pipe", &pipe, "--parent", &parent])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .ok()?;
+            let until = std::time::Instant::now() + Duration::from_secs(15);
+            loop {
+                if let Ok(Some(status)) = child.try_wait() {
+                    return status.code();
+                }
+                if std::time::Instant::now() > until {
+                    let _ = child.kill();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        })
+        .await
+        .ok()
+        .flatten();
+        match ran {
+            Some(super::TASK_STARTED) => true,
+            Some(code) => {
+                log::info!("helper: no task to start it without a prompt (answer {code}), so Windows asks");
+                false
+            }
+            None => {
+                log::warn!("helper: the task didn't answer, so Windows asks");
+                false
+            }
+        }
+    }
+
+    /// Starts the helper through Windows' prompt, or without admin rights when the person says No. Returns its process id.
+    fn start_prompted(exe: &str, name: &str, parent: &str) -> Result<u32, String> {
+        let args = format!("--pipe {name} --parent {parent}");
+        match run_elevated(exe, &args) {
+            Some(pid) => {
+                log::info!("helper: running with admin rights (process {pid})");
+                Ok(pid)
+            }
+            // Said No to the prompt: run without admin rights. Some sensors will be missing,
+            // and Rig shows a card explaining how to turn them on.
+            None => {
+                log::warn!("helper: no admin rights (No at the prompt, or it couldn't show), so it runs limited");
+                Ok(std::process::Command::new(exe)
+                    .args(["--pipe", name, "--parent", parent, "--limited"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn()
+                    .map_err(|e| format!("Rig couldn't start its helper. {e}"))?
+                    .id())
+            }
+        }
+    }
+
+    /// Starts the helper and waits for it on a fresh pipe. Answers the pipe and whether the task started the helper.
+    pub async fn launch(use_task: bool) -> Result<(NamedPipeServer, bool), String> {
         let token: String = (0..32).map(|_| format!("{:x}", rand::random::<u8>() & 0xf)).collect();
         let name = format!(r"\\.\pipe\rig-helper-{token}");
         let server = ServerOptions::new()
@@ -283,37 +433,40 @@ mod win {
         }
         let exe = exe.to_string_lossy().to_string();
         let parent = std::process::id().to_string();
-        let args = format!("--pipe {name} --parent {parent}");
+        let task_exe = task_exe();
 
-        let pid = match run_elevated(&exe, &args) {
-            Some(pid) => {
-                log::info!("helper: running with admin rights (process {pid})");
-                pid
-            }
-            // Said No to the prompt: run without admin rights. Some sensors will be missing,
-            // and Rig shows a card explaining how to turn them on.
-            None => {
-                log::warn!("helper: no admin rights (No at the prompt, or it couldn't show), so it runs limited");
-                std::process::Command::new(&exe)
-                    .args(["--pipe", &name, "--parent", &parent, "--limited"])
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .spawn()
-                    .map_err(|e| format!("Rig couldn't start its helper. {e}"))?
-                    .id()
-            }
-        };
+        // The installer's task first: admin rights with no prompt. Then Windows' prompt, as before.
+        let mut started = None;
+        let mut from_task = use_task && task_exe.is_some() && start_task(&exe, &name, &parent).await;
+        if from_task {
+            log::info!("helper: started by Rig's task, with no prompt");
+        } else {
+            started = Some(start_prompted(&exe, &name, &parent)?);
+        }
 
-        tokio::time::timeout(Duration::from_secs(30), server.connect())
-            .await
-            .map_err(|_| "Rig's helper didn't start in time.".to_string())?
-            .map_err(|e| e.to_string())?;
+        let wait = if from_task { super::TASK_CONNECT } else { Duration::from_secs(30) };
+        match tokio::time::timeout(wait, server.connect()).await {
+            Ok(r) => r.map_err(|e| e.to_string())?,
+            Err(_) if from_task => {
+                log::warn!("helper: the task's helper didn't connect in {} s, so Windows asks", wait.as_secs());
+                from_task = false;
+                started = Some(start_prompted(&exe, &name, &parent)?);
+                tokio::time::timeout(Duration::from_secs(30), server.connect())
+                    .await
+                    .map_err(|_| "Rig's helper didn't start in time.".to_string())?
+                    .map_err(|e| e.to_string())?;
+            }
+            Err(_) => return Err("Rig's helper didn't start in time.".to_string()),
+        }
 
         let mut client: u32 = 0;
         let ok = unsafe { GetNamedPipeClientProcessId(server.as_raw_handle() as HANDLE, &mut client) };
-        if ok == 0 || client != pid {
+        let image = if ok != 0 && started != Some(client) { image_of(client) } else { None };
+        if ok == 0 || !super::is_our_helper(client, started, image.as_deref(), task_exe.as_deref()) {
             return Err("Something other than Rig's helper connected, so Rig closed the channel.".into());
         }
-        Ok(server)
+        // Late to connect, the task's helper may still be the one that did.
+        Ok((server, from_task || started != Some(client)))
     }
 }
 
@@ -394,6 +547,40 @@ mod tests {
         assert_eq!(call_level("events", ms(2500), ms(100), &ok), log::Level::Info);
         assert_eq!(call_level("apply", ms(0), ms(10), &Err(CallError::Remote("no".into()))), log::Level::Warn);
         assert_eq!(call_level("facts", ms(0), ms(10), &Err(CallError::Broken("gone".into()))), log::Level::Error);
+    }
+
+    #[test]
+    fn only_the_helper_rig_started_or_the_tasks_copy_may_connect() {
+        let task = Some(r"C:\Program Files\Rig\Helper\RigHelper.exe");
+        // The one Rig started through the prompt.
+        assert!(is_our_helper(42, Some(42), None, task));
+        // The task's copy, however Windows spells the path.
+        assert!(is_our_helper(7, None, Some(r"c:\program files\rig\helper\righelper.exe"), task));
+        assert!(is_our_helper(7, Some(42), Some(r"C:/Program Files/Rig/Helper/RigHelper.exe"), task));
+        // Anything else that found the pipe.
+        assert!(!is_our_helper(7, Some(42), None, task));
+        assert!(!is_our_helper(7, None, Some(r"C:\Users\a\AppData\Local\Rig\RigHelper.exe"), task));
+        assert!(!is_our_helper(7, None, Some(r"C:\Program Files\Rig\Helper\RigHelper.exe.evil"), task));
+        assert!(!is_our_helper(7, None, Some(r"C:\Temp\RigHelper.exe"), None));
+        assert!(!is_our_helper(7, None, Some(""), Some("")));
+    }
+
+    #[tokio::test]
+    async fn a_task_helper_that_stops_before_answering_hands_over_to_the_prompt() {
+        // Refused: it connected, then quit before its first answer.
+        let (a, b) = duplex(64);
+        drop(b);
+        let mut c = Conn::new(a);
+        assert!(matches!(c.call("hello", Value::Null).await, Err(CallError::Broken(_))));
+        assert!(give_up_on_task(true, c.answered));
+        assert!(!give_up_on_task(false, c.answered));
+        // One that answered and then stopped (it crashed, or Rig's updating) gets the task again.
+        let (a, b) = duplex(4096);
+        tokio::spawn(fake_helper(b));
+        let mut c = Conn::new(a);
+        c.call("hello", Value::Null).await.ok().unwrap();
+        assert!(c.answered);
+        assert!(!give_up_on_task(true, c.answered));
     }
 
     #[tokio::test]
