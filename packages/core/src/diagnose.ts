@@ -12,8 +12,7 @@ import type { HistoryPoint, Issue } from "./model";
 import type { PCEvent } from "./recordings";
 import { describeChange, memoryTest, type PCChange } from "./changes";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
-import { cpuLimit, gpuHotSpot, gpuLimit, gpuMemTemp, gpuTemp, hotSpotLimit } from "./limits";
-import { findSensor } from "./telemetry";
+import { cardChip, cpuLimit, gpuHotSpot, gpuLimit, gpuLoad, gpuMemTemp, gpuTemp, hotSpotLimit } from "./limits";
 
 export interface Finding extends Issue { category: string; weight: number }
 
@@ -59,8 +58,9 @@ export const VRAM_WARM = 100;
 function graphics({ inv, snap }: HealthInput, add: Add) {
   const gpu = inv.gpus.find((g) => !g.integrated);
   if (!gpu || !snap) return;
-  const core = gpuTemp(snap)?.value, hot = gpuHotSpot(snap)?.value, mem = gpuMemTemp(snap)?.value;
-  const load = findSensor(snap, "gpu", "load", /core|d3d 3d/i)?.value;
+  const chip = cardChip(inv);
+  const core = gpuTemp(snap, chip)?.value, hot = gpuHotSpot(snap, chip)?.value, mem = gpuMemTemp(snap, chip)?.value;
+  const load = gpuLoad(snap, chip)?.value;
   const hotLim = hotSpotLimit(gpu.vendor);
   if (hot != null && hot >= hotLim - 3) {
     add({

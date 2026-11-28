@@ -3,11 +3,15 @@
 // limit that's too low warns about a healthy PC, and the wrong sensor (an
 // offset Tctl, a hot spot) reads 10 to 20 degrees off.
 
-import type { Sensor, Snapshot } from "./telemetry";
+import type { Inventory, Sensor, Snapshot } from "./telemetry";
 
-/** The first sensor of this hardware and type whose name matches a pattern, trying the patterns in order. */
-export function pickSensor(s: Snapshot | null | undefined, hw: Sensor["hw"], type: Sensor["type"], prefer: readonly RegExp[], skip?: RegExp): Sensor | undefined {
-  const list = s?.sensors.filter((x) => x.hw === hw && x.type === type && x.value != null && !(skip && skip.test(x.name))) ?? [];
+/**
+ * The first sensor of this hardware and type whose name matches a pattern, trying the patterns in order. With `chip`,
+ * only that chip's sensors count (see onChip).
+ */
+export function pickSensor(s: Snapshot | null | undefined, hw: Sensor["hw"], type: Sensor["type"], prefer: readonly RegExp[], skip?: RegExp, chip?: string): Sensor | undefined {
+  const name = chipOf(s, chip);
+  const list = s?.sensors.filter((x) => x.hw === hw && x.type === type && x.value != null && !(skip && skip.test(x.name)) && onChip(x, name)) ?? [];
   for (const re of prefer) {
     const hit = list.find((x) => re.test(x.name));
     if (hit) return hit;
@@ -28,16 +32,78 @@ const NOT_GPU = /hot ?spot|junction|memory|vram|mem\b|vr\b|vrm/i;
 export const cpuTemp = (s: Snapshot | null) =>
   pickSensor(s, "cpu", "temperature", [/^cpu package$|^package$/i, /^core \(tdie\)$/i, /^core \(tctl\/tdie\)$/i, /tdie/i, /tctl/i, /^core max$/i, /average/i], NOT_CPU);
 
-export const gpuTemp = (s: Snapshot | null) =>
-  pickSensor(s, "gpu", "temperature", [/^gpu core$/i, /^gpu$/i, /edge/i, /core/i], NOT_GPU);
+// ----- Which graphics chip -----
+// A laptop with two graphics chips reports both: the one built into the processor (Intel, or a Radeon on Ryzen) and
+// the dedicated one (an NVIDIA RTX or a Radeon RX). LibreHardwareMonitor lists AMD's before NVIDIA's, so on a Ryzen
+// laptop the first "gpu" sensor is the built-in chip's. Every graphics reading is matched to its chip by name.
+
+/** A chip's name as Windows and LibreHardwareMonitor both write it, give or take the (R) and (TM) marks and the case. */
+const chipKey = (name: string) => name.toLowerCase().replace(/\((r|tm)\)|®|™/g, " ").replace(/\s+/g, " ").trim();
+
+/** The same graphics chip, though Windows says "AMD Radeon(TM) 780M Graphics" and the sensors "AMD Radeon 780M Graphics". */
+export const sameChip = (a: string, b: string) => chipKey(a) === chipKey(b);
+
+/** The name this chip's sensors carry, when any of them are there. Never another chip's. */
+export function chipSensorName(sensors: readonly Pick<Sensor, "hw" | "hwName">[] | undefined, chip: string): string | undefined {
+  return (sensors ?? []).find((x) => x.hw === "gpu" && sameChip(x.hwName, chip))?.hwName;
+}
+
+/** What `chip` matches sensors by: its sensors' name, null for none, undefined for any chip. */
+const chipOf = (s: Snapshot | null | undefined, chip: string | undefined) => (chip == null ? undefined : chipSensorName(s?.sensors, chip) ?? null);
+
+/** A sensor belongs to the chip. Without a chip, every sensor does: a snapshot read on its own, or a PC with one chip. */
+const onChip = (x: Sensor, name: string | null | undefined) => name === undefined || x.hw !== "gpu" || x.hwName === name;
+
+/**
+ * The chip Rig shows as the graphics card: the dedicated one when there is one, else a desktop's built-in graphics.
+ * Undefined on a laptop with only built-in graphics, which has no graphics card to show.
+ */
+export function graphicsCard(inv: Pick<Inventory, "gpus" | "machine">): Inventory["gpus"][number] | undefined {
+  const gpu = inv.gpus.find((g) => !g.integrated) ?? inv.gpus[0];
+  return gpu && (inv.machine.kind !== "laptop" || !gpu.integrated) ? gpu : undefined;
+}
+
+/**
+ * The name to match the graphics card's readings by, the `chip` the readers below take. Only a PC with more than one
+ * graphics chip needs one: with one, every graphics reading is the card's, however its sensors name it.
+ */
+export function cardChip(inv: Pick<Inventory, "gpus" | "machine">): string | undefined {
+  return inv.gpus.length > 1 ? graphicsCard(inv)?.name : undefined;
+}
+
+/** The graphics card's temperature. With `chip` (cardChip), that chip's own; nothing when it has none, never another chip's. */
+export const gpuTemp = (s: Snapshot | null, chip?: string) =>
+  pickSensor(s, "gpu", "temperature", [/^gpu core$/i, /^gpu$/i, /edge/i, /core/i], NOT_GPU, chip);
 
 /** The graphics card's hottest spot, where it reports one. */
-export const gpuHotSpot = (s: Snapshot | null) =>
-  s?.sensors.find((x) => x.hw === "gpu" && x.type === "temperature" && x.value != null && /hot ?spot|junction/i.test(x.name) && !/memory/i.test(x.name));
+export const gpuHotSpot = (s: Snapshot | null, chip?: string) => {
+  const name = chipOf(s, chip);
+  return s?.sensors.find((x) => x.hw === "gpu" && x.type === "temperature" && x.value != null && onChip(x, name) && /hot ?spot|junction/i.test(x.name) && !/memory/i.test(x.name));
+};
 
 /** The graphics card's memory chips (GDDR6X reports this as Memory Junction). */
-export const gpuMemTemp = (s: Snapshot | null) =>
-  s?.sensors.find((x) => x.hw === "gpu" && x.type === "temperature" && x.value != null && /memory/i.test(x.name));
+export const gpuMemTemp = (s: Snapshot | null, chip?: string) => {
+  const name = chipOf(s, chip);
+  return s?.sensors.find((x) => x.hw === "gpu" && x.type === "temperature" && x.value != null && onChip(x, name) && /memory/i.test(x.name));
+};
+
+/** One of the graphics card's readings: the first of that type with a reading whose name matches, on that chip when one is named. */
+export function gpuSensor(s: Snapshot | null | undefined, type: Sensor["type"], name?: RegExp, chip?: string): Sensor | undefined {
+  const own = chipOf(s, chip);
+  return s?.sensors.find((x) => x.hw === "gpu" && x.type === type && x.value != null && onChip(x, own) && (!name || name.test(x.name)));
+}
+
+/** How hard the graphics card works, in percent: its core, or Windows' 3D engine where that's all it reports. */
+export const gpuLoad = (s: Snapshot | null | undefined, chip?: string) => gpuSensor(s, "load", /core|d3d 3d/i, chip);
+
+/**
+ * The chip is switched off to save power: it's there, but it has no temperature to report. A laptop's dedicated
+ * chip sleeps whenever nothing needs it, so on a laptop that's the usual state at rest, not a missing sensor.
+ */
+export function gpuAsleep(s: Snapshot | null | undefined, chip: string): boolean {
+  const own = s?.sensors.filter((x) => x.hw === "gpu" && sameChip(x.hwName, chip)) ?? [];
+  return own.some((x) => x.type === "temperature") && !own.some((x) => x.type === "temperature" && x.value != null);
+}
 
 /**
  * The processor's own limit, from Intel's "Distance to TjMax" readings: the

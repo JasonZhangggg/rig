@@ -2,7 +2,7 @@
 // so the demo runs through exactly the same code as a real PC.
 
 import type { Inventory, Sensor, Snapshot } from "../telemetry";
-import { activityAt, type Activity } from "./schedule";
+import { activityAt, weekFor, type Activity } from "./schedule";
 import { demoBattery } from "./battery";
 
 /**
@@ -17,8 +17,14 @@ const WARM_UP_MIN = 35;
  * Sensor ids, worked out once per PC: a PC reports its sensors in the same order every time, and the demo
  * reads every sensor thousands of times to make a month of history. The name is checked, so a different order only costs time.
  */
-const ids = new WeakMap<Inventory, { hw: string; type: string; name: string; id: string }[]>();
-const slug = (hw: string, type: string, name: string) => `/${hw}/0/${type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+const ids = new WeakMap<Inventory, { dev: string; type: string; name: string; id: string }[]>();
+const slug = (dev: string, type: string, name: string) => `/${dev}/0/${type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
+/** A laptop's dedicated graphics chip wakes when something asks this much of the graphics, and sleeps again after. */
+const WAKES_AT = 0.2;
+
+/** How LibreHardwareMonitor names a chip, which isn't always how Windows does: AMD's driver drops the (TM). */
+const sensorChipName = (name: string) => name.replace(/\(TM\)/g, "").replace(/\s+/g, " ").trim();
 
 /**
  * Readings for a demo PC at a moment. It follows the PC's weekly schedule
@@ -28,24 +34,27 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
   const laptop = inv.machine.kind === "laptop";
   const battery = laptop ? demoBattery(inv, t) : null;
   // On battery the laptop does what its day on battery says (demo/battery.ts), not its usual week.
-  const act = opts.activity ?? (opts.game ? { cpu: 1, gpu: 1, game: opts.game } : battery?.activity ?? activityAt(inv.machine.kind, t));
+  const act = opts.activity ?? (opts.game ? { cpu: 1, gpu: 1, game: opts.game } : battery?.activity ?? activityAt(weekFor(inv), t));
   const cpu = Math.min(act.cpu, 1), gpuLoad = Math.min(act.gpu, 1), load = Math.max(cpu, gpuLoad);
   const dust = opts.dust ?? 0;
   const amd = /amd|ryzen/i.test(inv.cpu.name);
   const s: Sensor[] = [];
   let known = ids.get(inv);
   if (!known) ids.set(inv, known = []);
-  const idOf = (i: number, hw: string, type: string, name: string) => {
+  const idOf = (i: number, dev: string, type: string, name: string) => {
     const k = known[i];
-    if (k && k.hw === hw && k.type === type && k.name === name) return k.id;
-    return (known[i] = { hw, type, name, id: slug(hw, type, name) }).id;
+    if (k && k.dev === dev && k.type === type && k.name === name) return k.id;
+    return (known[i] = { dev, type, name, id: slug(dev, type, name) }).id;
   };
-  const add = (hw: Sensor["hw"], hwName: string, type: Sensor["type"], name: string, value: number, max?: number) =>
-    s.push({ id: idOf(s.length, hw, type, name), hw, hwName, type, name, value: Math.round(value * 10) / 10, min: null, max: max ?? null });
+  /** `value` null: the part is there but has no reading now. `dev` tells apart two parts of one kind in the sensor id, as LibreHardwareMonitor's do. */
+  const add = (hw: Sensor["hw"], hwName: string, type: Sensor["type"], name: string, value: number | null, max?: number, dev: string = hw) =>
+    s.push({ id: idOf(s.length, dev, type, name), hw, hwName, type, name, value: value == null ? null : Math.round(value * 10) / 10, min: null, max: max ?? null });
   const pct = (v: number) => Math.max(0, Math.min(100, v));
 
   // The processor, named the way LibreHardwareMonitor names it: Ryzen reports one temperature per chiplet, Intel one per core.
-  const cpuT = (laptop ? 52 : 42) + act.cpu * (laptop ? 30 : 22) + wobble(t, 9000, 2.5);
+  const gpu = inv.gpus.find((g) => !g.integrated);
+  // A gaming laptop's processor and graphics chip share their heat pipes, so a game warms both.
+  const cpuT = (laptop ? 52 : 42) + act.cpu * (laptop ? 30 : 22) + (laptop && gpu ? gpuLoad * 6 : 0) + wobble(t, 9000, 2.5);
   const cores = Math.min(inv.cpu.cores, 16);
   const smt = Math.min(2, Math.max(1, Math.round(inv.cpu.threads / inv.cpu.cores)));
   const coreLoad = (i: number) => pct(4 + cpu * (88 - i * 5) + wobble(t + i * 1311, 2500, 6) + (i === 1 ? 6 : 0));
@@ -72,26 +81,46 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
   add("cpu", inv.cpu.name, "voltage", amd ? "Core (SVI2 TFN)" : "CPU Core", 0.92 + cpu * 0.33 + wobble(t, 2000, 0.01));
   if (amd) add("cpu", inv.cpu.name, "voltage", "SoC (SVI2 TFN)", 1.05);
 
-  const gpu = inv.gpus.find((g) => !g.integrated);
+  // A laptop with a dedicated chip reports its built-in graphics too, before the dedicated chip as LibreHardwareMonitor
+  // lists them (AMD's before NVIDIA's). The built-in chip draws the desktop and the browser; in a game it only passes the
+  // dedicated chip's frames to the screen. Sharing the processor's chip, it runs about as warm.
+  const igpu = laptop && gpu ? inv.gpus.find((g) => g.integrated) : undefined;
+  const awake = !laptop || gpuLoad >= WAKES_AT;
+  if (igpu) {
+    const name = sensorChipName(igpu.name), dev = `gpu-${igpu.vendor}-integrated`;
+    const busy = awake ? 0.12 : Math.min(1, 0.04 + act.gpu * 3 + cpu * 0.15);
+    add("gpu", name, "temperature", "GPU Core", cpuT - 3, undefined, dev);
+    add("gpu", name, "load", "GPU Core", pct(busy * 100 + wobble(t, 2300, 2)), undefined, dev);
+    add("gpu", name, "load", "D3D 3D", pct(busy * 92 + wobble(t, 2300, 2)), undefined, dev);
+    add("gpu", name, "clock", "GPU Core", 800 + busy * 1900, undefined, dev);
+    add("gpu", name, "power", "GPU Core", 1.5 + busy * 14, undefined, dev);
+    add("gpu", name, "data", "D3D Shared Memory Used", 0.6 + busy * 1.4, undefined, dev);
+  }
   if (gpu) {
     // In a game the card and the air in the case warm through over the first hour or so; dust raises where it settles.
     const soak = act.game && act.since != null ? 1 - Math.exp(-act.since / WARM_UP_MIN) : 1;
-    const gt = 36 + act.gpu * (30 + 14 * soak) + dust * (3 + 6 * soak) + wobble(t, 7000, 1.5);
-    add("gpu", gpu.name, "temperature", "GPU Core", gt);
-    add("gpu", gpu.name, "temperature", "GPU Hot Spot", gt + 11);
-    add("gpu", gpu.name, "temperature", "GPU Memory Junction", gt + 6 + gpuLoad * 8);
-    add("gpu", gpu.name, "load", "GPU Core", 3 + gpuLoad * 94);
-    add("gpu", gpu.name, "load", "GPU Memory Controller", 2 + gpuLoad * 48);
-    add("gpu", gpu.name, "load", "GPU Video Engine", 0);
-    add("gpu", gpu.name, "load", "GPU Memory", 14 + gpuLoad * 52);
-    add("gpu", gpu.name, "clock", "GPU Core", 210 + gpuLoad * 2400);
-    add("gpu", gpu.name, "clock", "GPU Memory", gpuLoad > 0.1 ? 10501 : 405);
-    add("gpu", gpu.name, "fan", "GPU Fan 1", gpuLoad > 0.5 ? 1900 + dust * 550 + wobble(t, 5000, 60) : 0, 3000);
-    add("gpu", gpu.name, "fan", "GPU Fan 2", gpuLoad > 0.5 ? 1880 + dust * 550 + wobble(t, 5100, 60) : 0, 3000);
-    add("gpu", gpu.name, "control", "GPU Fan 1", gpuLoad > 0.5 ? 52 + dust * 15 : 0);
-    add("gpu", gpu.name, "power", "GPU Package", 14 + gpuLoad * 206);
-    add("gpu", gpu.name, "data", "GPU Memory Used", ((gpu.vramMb ?? 8192) / 1024) * (0.14 + gpuLoad * 0.52));
-    add("gpu", gpu.name, "data", "GPU Memory Total", (gpu.vramMb ?? 8192) / 1024);
+    // A laptop's chip has a small cooler of its own and no fans Windows can read: the laptop's fans cool it.
+    const gt = laptop ? 42 + act.gpu * (24 + 10 * soak) + wobble(t, 7000, 1.5) : 36 + act.gpu * (30 + 14 * soak) + dust * (3 + 6 * soak) + wobble(t, 7000, 1.5);
+    // Asleep, the chip answers nothing but Windows' own 3D counter.
+    const on = (v: number) => (awake ? v : null);
+    add("gpu", gpu.name, "temperature", "GPU Core", on(gt));
+    add("gpu", gpu.name, "temperature", "GPU Hot Spot", on(gt + (laptop ? 9 : 11)));
+    if (!laptop) add("gpu", gpu.name, "temperature", "GPU Memory Junction", gt + 6 + gpuLoad * 8);
+    add("gpu", gpu.name, "load", "GPU Core", on(3 + gpuLoad * 94));
+    add("gpu", gpu.name, "load", "GPU Memory Controller", on(2 + gpuLoad * 48));
+    add("gpu", gpu.name, "load", "GPU Video Engine", on(0));
+    add("gpu", gpu.name, "load", "GPU Memory", on(14 + gpuLoad * 52));
+    if (laptop) add("gpu", gpu.name, "load", "D3D 3D", awake ? 2 + gpuLoad * 92 : 0);
+    add("gpu", gpu.name, "clock", "GPU Core", on(210 + gpuLoad * (laptop ? 2100 : 2400)));
+    add("gpu", gpu.name, "clock", "GPU Memory", on(gpuLoad > 0.1 ? (laptop ? 8001 : 10501) : 405));
+    if (!laptop) {
+      add("gpu", gpu.name, "fan", "GPU Fan 1", gpuLoad > 0.5 ? 1900 + dust * 550 + wobble(t, 5000, 60) : 0, 3000);
+      add("gpu", gpu.name, "fan", "GPU Fan 2", gpuLoad > 0.5 ? 1880 + dust * 550 + wobble(t, 5100, 60) : 0, 3000);
+      add("gpu", gpu.name, "control", "GPU Fan 1", gpuLoad > 0.5 ? 52 + dust * 15 : 0);
+    }
+    add("gpu", gpu.name, "power", "GPU Package", on(laptop ? 9 + gpuLoad * 96 : 14 + gpuLoad * 206));
+    add("gpu", gpu.name, "data", "GPU Memory Used", on(((gpu.vramMb ?? 8192) / 1024) * (0.14 + gpuLoad * 0.52)));
+    add("gpu", gpu.name, "data", "GPU Memory Total", on((gpu.vramMb ?? 8192) / 1024));
   }
 
   if (!laptop) {
@@ -112,8 +141,10 @@ export function simulate(inv: Inventory, t: number, opts: { game?: string | null
     add("board", inv.board.product, "fan", "Fan #4", 820 + load * 230, 1800);
   } else {
     add("board", inv.board.product, "temperature", "Motherboard", 40 + load * 12);
-    add("cooler", "Laptop fans", "fan", "Fan #1", 1800 + cpu * 2600, 5200);
-    add("cooler", "Laptop fans", "fan", "Fan #2", 1760 + cpu * 2550, 5200);
+    // A gaming laptop's fans answer the graphics chip too, and spin faster.
+    const fan = gpu ? load : cpu, top = gpu ? 6400 : 5200;
+    add("cooler", "Laptop fans", "fan", "Fan #1", 1800 + fan * (top - 2600), top);
+    add("cooler", "Laptop fans", "fan", "Fan #2", 1760 + fan * (top - 2650), top);
   }
 
   const totalGb = inv.memory.totalMb / 1024;

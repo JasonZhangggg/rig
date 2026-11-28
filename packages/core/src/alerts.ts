@@ -12,6 +12,7 @@
 
 import { WEAR_CRITICAL, WEAR_LOW } from "./diagnose";
 import { cpuLimit, cpuTemp, gpuLimit, gpuTemp, summaryLine } from "./health";
+import { cardChip, chipSensorName } from "./limits";
 import { tempsInText, type TempUnit } from "./units";
 import { HISTORY_WINDOW_MS, type Alert, type AlertKind, type HistoryPoint, type PC, type Severity } from "./model";
 import { findSensor, type Inventory, type Sensor, type Snapshot } from "./telemetry";
@@ -56,7 +57,7 @@ interface Watched { key: "cpu" | "gpu"; name: string; limit: number; temp: Senso
 function watched(inv: Inventory, snap: Snapshot | null): Watched[] {
   const out: Watched[] = [{ key: "cpu", name: "Processor", limit: cpuLimit(inv.cpu.name, snap), temp: cpuTemp(snap) }];
   const gpu = inv.gpus.find((g) => !g.integrated);
-  if (gpu) out.push({ key: "gpu", name: "Graphics card", limit: gpuLimit(gpu.vendor), temp: gpuTemp(snap) });
+  if (gpu) out.push({ key: "gpu", name: "Graphics card", limit: gpuLimit(gpu.vendor), temp: gpuTemp(snap, cardChip(inv)) });
   return out;
 }
 
@@ -94,7 +95,8 @@ function fansFor(inv: Inventory, snap: Snapshot | null): Record<Watched["key"], 
   const cpu = inv.machine.kind === "laptop"
     ? fans.filter((s) => s.hw !== "gpu")
     : [findSensor(snap, "board", "fan", /cpu|#1/i) ?? findSensor(snap, "cooler", "fan")].filter((s): s is Sensor => !!s);
-  return { cpu, gpu: fans.filter((s) => s.hw === "gpu") };
+  const chip = cardChip(inv), own = chip && chipSensorName(snap?.sensors, chip);
+  return { cpu, gpu: fans.filter((s) => s.hw === "gpu" && (!chip || s.hwName === own)) };
 }
 
 const fanStopped: AlertRule = {

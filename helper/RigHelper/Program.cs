@@ -188,8 +188,20 @@ public static class Program
             if (procs.Count == 0 || procs.Count > Processes.MaxTop) yield return $"processes returned {procs.Count} entries";
             if (procs.Any(p => Json.Num(p?["cpu"], -1) is not (>= 0 and <= 100))) yield return "a process has a processor share outside 0 to 100";
         }
-        var ranked = Processes.Rank([("game", 6L << 30, 3200, 90), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
-        if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90 } || ranked[1].Name != "System") yield return "process ranking is off";
+        const string igpu = "luid_0x00000000_0x0000D1B2", card = "luid_0x00000000_0x0000E3C4";
+        var on = (string chip, double v) => (IReadOnlyDictionary<string, double>)new Dictionary<string, double> { [chip] = v };
+        var ranked = Processes.Rank([("game", 6L << 30, 3200, on(card, 90)), ("game", 1L << 30, 800, null), ("idle", 1L << 20, 0, null), ("System", 1L << 22, 400, null)], 1000, 8, 2);
+        if (ranked.Count != 3 || ranked[0] is not { Name: "game.exe", Cpu: 50, MemMb: 7168, Gpu: 90, Gpus: null } || ranked[1].Name != "System") yield return "process ranking is off";
+        // A laptop with built-in and dedicated graphics: an app's use stays with each chip, never added across them.
+        var chips = new Dictionary<string, string> { [igpu] = "AMD Radeon(TM) 780M Graphics", [card] = "NVIDIA GeForce RTX 4060 Laptop GPU" };
+        var split = Processes.Rank([("game", 1L << 30, 0, new Dictionary<string, double> { [card] = 60, [igpu] = 30 }), ("game", 1L << 30, 0, on(card, 20)), ("chrome", 1L << 30, 0, on(igpu, 40))], 1000, 8, 2, chips);
+        var game = split.FirstOrDefault(r => r.Name == "game.exe");
+        if (game is not { Gpu: 80 } || game.Gpus?.GetValueOrDefault("NVIDIA GeForce RTX 4060 Laptop GPU") != 80 || game.Gpus?.GetValueOrDefault("AMD Radeon(TM) 780M Graphics") != 30)
+            yield return "graphics use isn't kept chip by chip";
+        if (Processes.Rank([("game", 1L << 30, 0, on(card, 60))], 1000, 8, 1, new Dictionary<string, string>())[0] is not { Gpu: 60, Gpus: null })
+            yield return "graphics use names a chip it couldn't name";
+        if (Processes.GpuLuid("pid_1234_luid_0x00000000_0x0000d1b2_phys_0_eng_0_engtype_3D") != igpu || Processes.GpuLuid("pid_1234_phys_0_engtype_3D") != null || Adapters.Id(0xD1B2, 0) != igpu)
+            yield return "reading the graphics chip from a counter is off";
         if (Processes.GpuPid("pid_1234_luid_0x00000000_0x0000D1B5_phys_0_eng_0_engtype_3D") != 1234 || Processes.GpuPid("pid__x") != -1 || Processes.GpuPid("luid_1_engtype_3D") != -1 || Processes.GpuPid("pid_99999999999_x") != -1)
             yield return "reading the process id from a graphics counter is off";
         if (EventLogs.Clean("a\r\n  b\tc", 4) != "a b ") yield return "event message clean-up is off";

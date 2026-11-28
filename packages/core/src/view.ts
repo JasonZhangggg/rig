@@ -5,6 +5,7 @@
 import type { FanReading, HistoryPoint, Issue, Part, PC, Reading, Stat, StorageSlice } from "./model";
 import { cpuLimit, cpuTemp, findings, gpuLimit, gpuTemp, score, summaryLine, type Finding, type HealthInput } from "./health";
 import { findSensor, type Inventory, type Sensor, type Snapshot, type StorageScan, type SystemFacts } from "./telemetry";
+import { cardChip, chipSensorName, gpuAsleep, gpuLoad, gpuSensor, graphicsCard } from "./limits";
 import { driveMaps } from "./drives";
 import { batteryView, type PowerNow } from "./battery";
 import { isSetting, sensorName } from "./sensors";
@@ -34,9 +35,12 @@ function prettyName(host: string): string {
   return /^(DESKTOP|LAPTOP)-[A-Z0-9]+$/i.test(host) ? "My PC" : host;
 }
 
-/** Which part a sensor is filed under, as a key of PC.parts: the graphics card only for the card Rig shows, case and laptop fans under Fans. */
-function partOf(s: Sensor, laptop: boolean, gpuName: string | undefined): string | null {
-  if (s.hw === "gpu") return s.hwName === gpuName ? "gpu" : null;
+/**
+ * Which part a sensor is filed under, as a key of PC.parts: the graphics card only for the card Rig shows (`gpu`: true
+ * for every graphics sensor, or the name the card's sensors carry), case and laptop fans under Fans.
+ */
+function partOf(s: Sensor, laptop: boolean, gpu: true | string | undefined): string | null {
+  if (s.hw === "gpu") return gpu === true || (gpu != null && s.hwName === gpu) ? "gpu" : null;
   if (s.type === "fan" || s.type === "control" || s.hw === "cooler") return "fans";
   switch (s.hw) {
     case "cpu": return "cpu";
@@ -97,16 +101,18 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
   };
 
   // Graphics
-  const dgpu = inv.gpus.find((g) => !g.integrated) ?? inv.gpus[0];
-  if (dgpu && (!laptop || !dgpu.integrated)) {
-    const gt = gpuTemp(snap);
+  const dgpu = graphicsCard(inv), chip = cardChip(inv);
+  if (dgpu) {
+    // Its own readings only: on a laptop with two graphics chips, the built-in one's are not the card's.
+    const gt = gpuTemp(snap, chip);
+    const asleep = laptop && chip != null && !gt && gpuAsleep(snap, chip);
     parts.gpu = {
       name: dgpu.name, type: "Graphics card", modelSource: "generic",
       // Windows names the chip, not the exact card; the card's own maker isn't known yet.
       maker: chipMaker[dgpu.vendor], model: dgpu.name.replace(/^(NVIDIA|AMD|Intel)(\(R\))?\s+/i, ""),
       temp: round(gt?.value), tempMax: gt ? round(Math.max(dayMax[gt.id] ?? 0, gt.value ?? 0)) : undefined, limit: gpuLimit(dgpu.vendor),
-      load: round(findSensor(snap, "gpu", "load", /core|d3d 3d/i)?.value), clock: ghz(findSensor(snap, "gpu", "clock", /core/i)?.value),
-      fan: round(findSensor(snap, "gpu", "fan")?.value), warn: warnPart.has("gpu"),
+      load: round(gpuLoad(snap, chip)?.value), clock: ghz(gpuSensor(snap, "clock", /core/i, chip)?.value),
+      fan: round(gpuSensor(snap, "fan", undefined, chip)?.value), warn: warnPart.has("gpu"), ...(asleep ? { asleep } : {}), ...(chip ? { chip } : {}),
       specs: [...(dgpu.vramMb ? [["Memory", `${gb(dgpu.vramMb)} GB`] as [string, string]] : []), ["Safe limit", `${gpuLimit(dgpu.vendor)}°C`]],
       manual: [],
       driver: dgpu.driverVersion ? { installed: `${dgpu.vendor === "nvidia" ? "NVIDIA" : dgpu.vendor === "amd" ? "AMD" : "Driver"} ${dgpu.driverVersion}`, note: dgpu.driverDate ? `Installed ${dgpu.driverDate}.` : "" } : undefined,
@@ -211,7 +217,7 @@ export function buildPC(inv: Inventory, snap: Snapshot | null, facts: SystemFact
 
   const drives = new Set(snap?.sensors.filter((x) => x.hw === "storage").map((x) => x.hwName));
   const readings: Reading[] = (snap?.sensors ?? []).flatMap((x) => {
-    const part = partOf(x, laptop, dgpu?.name);
+    const part = partOf(x, laptop, !dgpu ? undefined : chip == null ? true : chipSensorName(snap?.sensors, chip));
     if (!part || !parts[part] || x.value == null || isSetting(x)) return [];
     const top = Math.max(x.max ?? -Infinity, dayMax[x.id] ?? -Infinity, x.value);
     return [{ id: x.id, part, name: x.hw === "storage" && drives.size > 1 ? `${x.hwName} ${x.name}` : sensorName(x), type: x.type, value: x.value, min: x.min ?? null, max: top }];

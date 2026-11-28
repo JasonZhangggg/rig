@@ -115,7 +115,7 @@ export function Readings() {
     }
     if (logged) {
       if (!recs) return { r: null, from, to, title, source: "", empty: "Loading…" };
-      const all = recs.length ? recorded(recs.length === 1 ? recs[0] : joinRecordings(recs)) : null;
+      const all = recs.length ? recorded(recs.length === 1 ? recs[0] : joinRecordings(recs), pc.parts?.gpu?.chip) : null;
       const inRange = all ? all.points.filter((p) => p.t >= from && p.t <= to) : [];
       const r = all && { ...all, points: thin(inRange, from, to - from) };
       const first = r?.points[0]?.t ?? from, last = r?.points.at(-1)?.t ?? to;
