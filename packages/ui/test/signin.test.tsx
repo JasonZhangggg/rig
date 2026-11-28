@@ -70,11 +70,14 @@ describe("Sign-in screen", () => {
     const signInEmail = vi.fn(async (_e: string, _p: string, create?: { name: string }) => {
       throw create ? new ApiError(422, "User already exists. Use another email.") : new ApiError(401, "Invalid email or password");
     });
-    render(<SignIn client={{ kind: "web", signInEmail } as unknown as RigClient} onDone={() => {}} />);
+    const onDone = vi.fn();
+    render(<SignIn client={{ kind: "web", signInEmail } as unknown as RigClient} onDone={onDone} />);
     fireEvent.click(screen.getByRole("button", { name: "Create one" }));
     fill("jo@example.com", "new horse");
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect((await screen.findByRole("alert")).textContent).toBe("There's already an account for jo@example.com. Sign in with its password.");
+    // A wrong password never signs anyone in. Saying the account exists adds nothing: creating it already says so.
+    expect(onDone).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
     expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("jo@example.com");
   });
