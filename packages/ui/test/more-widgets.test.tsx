@@ -28,8 +28,8 @@ describe("widgets for every part of Rig", () => {
     for (const title of NEW) expect(screen.queryByRole("heading", { name: title })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Add widget/ }));
     const library = within(screen.getByRole("dialog", { name: "Add widget" }));
-    for (const title of NEW) expect(library.getByRole("button", { name: new RegExp(`^${title}`) })).toBeTruthy();
-    fireEvent.click(library.getByRole("button", { name: /^Windows events/ }));
+    for (const title of NEW) expect(library.getByRole("button", { name: `Add ${title}` })).toBeTruthy();
+    fireEvent.click(library.getByRole("button", { name: "Add Windows events" }));
     expect(await screen.findByRole("heading", { name: "Windows events" })).toBeTruthy();
   });
 
