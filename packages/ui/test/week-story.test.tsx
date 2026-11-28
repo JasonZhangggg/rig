@@ -67,15 +67,20 @@ describe("The week as a story", () => {
   });
 
   it("follows the temperature unit picked in Settings", async () => {
-    localStorage.setItem("rig.tempUnit", "f");
-    render(<RigApp client={new DemoClient()} />);
-    await screen.findByText(/Things to look at/i);
-    await open("history");
-    const readings = await screen.findByRole("region", { name: "Readings" });
-    fireEvent.click(within(within(readings).getByRole("group", { name: "Show as" })).getByRole("button", { name: "Story" }));
-    const story = await within(readings).findByRole("region", { name: /^A normal week/ });
-    const list = within(story).getByRole("list", { name: "What happened this week" });
-    expect(list.textContent).toMatch(/°F/);
-    expect(story.textContent).not.toMatch(/°C/);
+    // The demo week depends on today's date, so pin it like the test above.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 19, 9, 0));
+    try {
+      localStorage.setItem("rig.tempUnit", "f");
+      render(<RigApp client={new DemoClient()} />);
+      await screen.findByText(/Things to look at/i);
+      await open("history");
+      const readings = await screen.findByRole("region", { name: "Readings" });
+      fireEvent.click(within(within(readings).getByRole("group", { name: "Show as" })).getByRole("button", { name: "Story" }));
+      const story = await within(readings).findByRole("region", { name: /^A normal week/ });
+      const list = within(story).getByRole("list", { name: "What happened this week" });
+      expect(list.textContent).toMatch(/°F/);
+      expect(story.textContent).not.toMatch(/°C/);
+    } finally { vi.useRealTimers(); }
   });
 });
