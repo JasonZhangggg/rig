@@ -4,7 +4,12 @@
 import type { Inventory, Sensor, Snapshot } from "../telemetry";
 import { activityAt, type Activity } from "./schedule";
 
-const wobble = (t: number, period: number, amp: number) => Math.sin(t / period) * amp;
+/**
+ * A slow swing over `period` ms. The time is first brought inside one turn: the sine of a number near a billion is
+ * several times slower to work out, and a month of demo history takes thousands of readings.
+ */
+const wobble = (t: number, period: number, amp: number) => Math.sin((t % (TURN * period)) / period) * amp;
+const TURN = 2 * Math.PI;
 /** How fast a game warms the graphics card through, in minutes: most of the way in about an hour and a half. */
 const WARM_UP_MIN = 35;
 /**
