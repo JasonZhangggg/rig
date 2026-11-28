@@ -2,10 +2,9 @@ import { useEffect, useRef, useState, type MouseEvent as ClickEvent, type ReactN
 import type { Route } from "@rig/core";
 import { useActions, useApp, useAppSelector, useMachineWord, useUI } from "../state";
 import { Icon } from "./common";
-import { homeOf, navItems, navLabel } from "./Shell";
+import { homeOf, navIcon, navLabel } from "./Shell";
 import { arrowKeys, focusFirstItem, useModal } from "./modal";
 
-const path = (r: Route) => navItems.find(([id]) => id === r)?.[2] ?? "";
 // Settings isn't here: it opens from the account menu at the bottom.
 const groups = (word: string): [string, Route[]][] => [[`Your ${word}`, ["overview", "pc", "logs"]], ["Fix problems", ["chat", "changes"]]];
 
@@ -62,7 +61,7 @@ function useSetup() {
   const [skipped, setSkipped] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("rig.setupSkipped") ?? "[]"); } catch { return []; } });
   const steps: { id: string; title: string; body: string; cta: string; run: () => void; done: boolean }[] = [
     { id: "sensors", title: "Allow temperature readings", body: issues?.some((i) => i.id === "needs-driver") ? "Processor temperatures come through PawnIO, a small driver that installs with Rig." : "Windows only shares processor and board temperatures with apps that have admin permission.", cta: "Ask how", run: () => go("chat"), done: !issues?.some((i) => i.id === "needs-admin" || i.id === "needs-driver") },
-    { id: "name", title: `Name your ${word}`, body: `Pick a name and a color. It marks this ${word} everywhere you see it.`, cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: name !== "My PC" },
+    { id: "name", title: `Name your ${word}`, body: `Pick a name and a color. It marks this ${word} everywhere you see it.`, cta: "Name it", run: () => { set({ selected: null }); go("pc"); }, done: name !== `My ${word}` },
     { id: "account", title: "Sign in to sync", body: `See this ${word} from any browser and keep its history if you reinstall.`, cta: "Sign in", run: () => go("signin"), done: !!account || client.kind === "demo" },
   ];
   const open = steps.filter((s) => !s.done && !skipped.includes(s.id));
@@ -222,7 +221,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
                 {g && <div className="fp-label">{g}</div>}
                 {ids.map((r) => (
                   <a key={r} href={`#${r}`} className="fp-item" title={mini ? label(r) : undefined} aria-current={homeOf(ui.route) === r ? "page" : undefined} onClick={(e) => phone.pick(e, r)}>
-                    <Icon d={path(r)} /><span>{label(r)}</span>{count(r)}
+                    <Icon d={navIcon(r, word)} /><span>{label(r)}</span>{count(r)}
                   </a>
                 ))}
               </div>

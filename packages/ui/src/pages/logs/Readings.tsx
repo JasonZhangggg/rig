@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { historyRecorded, isActive, joinRecordings, limitsOf, liveRecorded, partByPart, recorded, type Range as HistoryRange, type Recorded, type Recording, type RecordingInfo } from "@rig/core";
+import { historyRecorded, isActive, joinRecordings, limitsOf, liveRecorded, machineWord, partByPart, recorded, type Range as HistoryRange, type Recorded, type Recording, type RecordingInfo } from "@rig/core";
 import { ChartNote } from "../../chart";
 import { Icon } from "../../components/common";
 import { useActions, useAppSelector, useData, useHistory, useStillPC, useUI } from "../../state";
@@ -132,10 +132,10 @@ export function Readings() {
     const r = points.length ? historyRecorded(thin(points, from, to - from)) : null;
     return {
       r, whole: r ? historyRecorded(points) : null, from, to, title, source: "Every 10 minutes while Rig was open",
-      note: span !== "month" ? "Turn on the background recorder in Settings on this PC to keep every sensor every 30 seconds, even while Rig is closed." : undefined,
+      note: span !== "month" ? `Turn on the background recorder in Settings on this ${machineWord(pc.kind)} to keep every sensor every 30 seconds, even while Rig is closed.` : undefined,
       empty: `Nothing logged on ${pc.name} in the last ${span === "month" ? "30 days" : span === "week" ? "7 days" : "24 hours"}.`,
     };
-  }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, logged]);
+  }, [span, data.live, full.readings, full.online, recs, history, from, to, dayInfo, pc.name, pc.kind, logged]);
 
   if (opened) return opened;
   const pickSpan = (k: Span) => { setSpan(k); setPick(0); };

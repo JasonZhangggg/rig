@@ -1,6 +1,7 @@
 import { outputKindName, type CardUse, type GpuPorts as Ports, type OutputState, type gpuPowerOptions } from "@rig/core";
 import { gpuStage, useCard, useGpuPointed } from "./gpuStage";
 import { CardModel, layoutName } from "./CardPick";
+import { useMachineWord } from "../../state";
 
 const stateName: Record<OutputState, string> = { used: "in use", free: "free", some: "maybe in use, Windows doesn't say which", unknown: "Rig can't see it" };
 const cellState: Record<OutputState, string> = { used: "used", free: "free", some: "some", unknown: "unknown" };
@@ -12,7 +13,8 @@ const cellState: Record<OutputState, string> = { used: "used", free: "free", som
 export function GpuPorts() {
   const c = useCard();
   const pointed = useGpuPointed();
-  if (!c) return <p className="muted">Rig shows the card's outputs once the Rig app on this PC sends its parts.</p>;
+  const word = useMachineWord();
+  if (!c) return <p className="muted">Rig shows the card's outputs once the Rig app on this {word} sends its parts.</p>;
   const p = c.shape.ports;
   const some = c.use.groups.some((g) => g.outputs.some((o) => o.state === "some"));
   const elsewhere = c.use.elsewhere.length > 0 && (

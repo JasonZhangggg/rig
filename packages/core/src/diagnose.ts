@@ -11,6 +11,7 @@
 import type { HistoryPoint, Issue } from "./model";
 import type { PCEvent } from "./recordings";
 import { describeChange, memoryTest, type PCChange } from "./changes";
+import { machineWord } from "./machineWord";
 import type { Inventory, Snapshot, SystemFacts } from "./telemetry";
 import { cardChip, cpuLimit, gpuHotSpot, gpuLimit, gpuLoad, gpuMemTemp, gpuTemp, hotSpotLimit } from "./limits";
 
@@ -519,6 +520,7 @@ function stability(input: HealthInput, now: number, add: Add) {
   const offs = incidents(fortnight.filter((e) => e.kind === "shutdown"), 10 * MIN)
     .filter((run) => !crashes.some((c) => Math.abs(c[0].t - run[0].t) <= 15 * MIN));
   if (offs.length) {
+    const word = machineWord(inv.machine.kind);
     const seen = offs.map((run) => before(history, run[0].t, lim));
     const known = seen.filter((s): s is NonNullable<typeof s> => !!s);
     const hot = known.filter((s) => s.hot);
@@ -527,27 +529,31 @@ function stability(input: HealthInput, now: number, add: Add) {
       const part = hot.filter((s) => s.hot === "graphics card").length >= hot.length / 2 ? "graphics card" : "processor";
       add({
         id: "shutdowns-hot", category: STABILITY, weight: 35, severity: "bad", part: part === "graphics card" ? "gpu" : "cpu", confidence: "likely",
-        title: "The PC shut off suddenly while running hot",
-        body: `${hot.length === offs.length ? "Each time" : `${hot.length} of ${offs.length} times`}, the ${part} was near its limit just before. That's what a PC does to protect itself from heat. Clean the dust out and check that every fan spins.`,
+        title: `The ${word} shut off suddenly while running hot`,
+        body: `${hot.length === offs.length ? "Each time" : `${hot.length} of ${offs.length} times`}, the ${part} was near its limit just before. That's what a ${word} does to protect itself from heat. Clean the dust out and check that every fan spins.`,
         evidence: [`${offs.length} sudden shutdown${offs.length === 1 ? "" : "s"} in 14 days`, `${hot.length} came within half an hour of the ${part} reaching ${part === "graphics card" ? lim.gpu - 6 : lim.cpu - 6}°C or more`],
-        action: "Ask what to do", go: "chat", ask: "My PC shut off suddenly while it was running hot. What should I do?",
+        action: "Ask what to do", go: "chat", ask: `My ${word} shut off suddenly while it was running hot. What should I do?`,
       });
     } else if (offs.length >= 2 && loaded.length >= 2 && loaded.length === known.length) {
       const game = loaded.map((s) => s.game).find((g) => !!g);
       add({
         id: "shutdowns-load", category: STABILITY, weight: 30, severity: "bad", part: inv.machine.kind === "tower" ? "psu" : undefined, confidence: "likely",
-        title: `The PC shut off ${times(offs.length)} under load`,
-        body: `It was working hard${game ? ` (${game})` : ""} but nothing was hot, which points at power: a power supply that can't keep up with the graphics card's spikes, or a loose power cable to the card. ${inv.machine.kind === "laptop" ? "On a laptop, check the charger and battery." : "Check the card's power cables first."}`,
+        title: `The ${word} shut off ${times(offs.length)} under load`,
+        body: inv.machine.kind === "laptop"
+          ? `It was working hard${game ? ` (${game})` : ""} but nothing was hot, which points at power: a charger that can't keep up, a loose charger plug, or a worn battery. Use the charger that came with the laptop, plugged in firmly.`
+          : `It was working hard${game ? ` (${game})` : ""} but nothing was hot, which points at power: a power supply that can't keep up with the graphics card's spikes, or a loose power cable to the card. Check the card's power cables first.`,
         evidence: [`${offs.length} sudden shutdowns in 14 days`, `${loaded.length} came while busy, with temperatures normal`],
-        action: "Ask what to do", go: "chat", ask: `My PC shuts off suddenly while gaming but nothing is hot. Is it my power supply?`,
+        action: "Ask what to do", go: "chat", ask: inv.machine.kind === "laptop" ? `My laptop shuts off suddenly while gaming but nothing is hot. Is it the charger or the battery?` : `My PC shuts off suddenly while gaming but nothing is hot. Is it my power supply?`,
       });
     } else if (offs.length >= 2) {
       add({
         id: "shutdowns", category: STABILITY, weight: 20, severity: "warn", confidence: "possible",
-        title: `The PC turned off without shutting down ${times(offs.length)}`,
-        body: "Power cuts, holding the power button and a failing power supply all look like this. If you didn't do it, Rig can record what happens next time.",
+        title: `The ${word} turned off without shutting down ${times(offs.length)}`,
+        body: inv.machine.kind === "laptop"
+          ? "Holding the power button, a battery that ran flat and a failing charger all look like this. If you didn't do it, Rig can record what happens next time."
+          : "Power cuts, holding the power button and a failing power supply all look like this. If you didn't do it, Rig can record what happens next time.",
         evidence: [`${offs.length} sudden shutdowns in 14 days`, known.length ? "Temperatures were normal before each one Rig has history for" : "Rig has no readings from just before them"],
-        action: "Ask about it", go: "chat", ask: `My PC turned off without shutting down ${times(offs.length)}. Why?`,
+        action: "Ask about it", go: "chat", ask: `My ${word} turned off without shutting down ${times(offs.length)}. Why?`,
       });
     }
   }

@@ -20,6 +20,12 @@ export const navItems: [Route, string, string][] = [
   ["settings", "Settings", "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4"],
 ];
 
+/** My laptop's icon in the sidebar: a laptop drawn like the tower beside it, a screen over a base. */
+const LAPTOP_ICON = "M4.5 5h11v8h-11zM2.5 15.5h15";
+
+/** A page's icon in the sidebar: My PC shows a laptop on a laptop. */
+export const navIcon = (r: Route, word: string) => (r === "pc" && word === "laptop" ? LAPTOP_ICON : navItems.find(([id]) => id === r)?.[2] ?? "");
+
 /** A page's name as the sidebar and Ctrl K show it: My PC is My laptop on a laptop. */
 export const navLabel = (r: Route, word: string) => (r === "pc" ? `My ${word}` : navItems.find(([id]) => id === r)?.[1] ?? r);
 

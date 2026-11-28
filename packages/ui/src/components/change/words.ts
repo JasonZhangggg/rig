@@ -1,10 +1,11 @@
 import { checkScript, secondLook, writtenTouches, type Allowed, type Command, type HelperUndo, type FoundCommand, type RestorePoint, type Sentinel, type Touch, type UndoReply } from "@rig/core";
 import { dateText } from "../../dateText";
 
-const kinds: Record<Touch["kind"], [one: string, many: string]> = {
+/** What a command touches, in words; `w` names the machine ("PC" or "laptop", core's machineWord). */
+const kinds = (w: string): Record<Touch["kind"], [one: string, many: string]> => ({
   registry: ["a registry value", "registry values"], file: ["a file", "files"], service: ["a service", "services"],
-  task: ["a scheduled task", "scheduled tasks"], firewall: ["a firewall rule", "firewall rules"], device: ["a device", "devices"], other: ["something else on this PC", "other things on this PC"],
-};
+  task: ["a scheduled task", "scheduled tasks"], firewall: ["a firewall rule", "firewall rules"], device: ["a device", "devices"], other: [`something else on this ${w}`, `other things on this ${w}`],
+});
 
 const last = (path: string) => path.split("\\").filter(Boolean).pop() ?? path;
 
@@ -19,11 +20,11 @@ export const snapshotted = (t: Touch) => t.kind === "registry" || t.kind === "fi
 const list = (parts: string[]) => (parts.length < 3 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`);
 
 /** A heading in Rig's own words, from what the command touches: "Change a registry value". */
-export function touchSummary(touches: Touch[]): string {
+export function touchSummary(touches: Touch[], w = "PC"): string {
   const counts = new Map<Touch["kind"], number>();
   for (const t of touches) counts.set(t.kind, (counts.get(t.kind) ?? 0) + 1);
   if (!counts.size) return "Run a command";
-  return `Change ${list([...counts].map(([k, n]) => (n === 1 ? kinds[k][0] : `${n} ${kinds[k][1]}`)))}`;
+  return `Change ${list([...counts].map(([k, n]) => (n === 1 ? kinds(w)[k][0] : `${n} ${kinds(w)[k][1]}`)))}`;
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -59,10 +60,10 @@ export function runCommands(cmd: Command, commands: FoundCommand[]): FoundComman
 const undoCommands = (cmd: Command) => (cmd.undo ? checkScript(cmd.undo, "undo").commands.filter((c) => c.tier > 0) : []);
 
 /** The card's heading, from the riskiest command the checker found in the change script: "Adds a firewall rule". */
-export function headline(cmd: Command, commands: FoundCommand[]): string {
+export function headline(cmd: Command, commands: FoundCommand[], w = "PC"): string {
   const mine = runCommands(cmd, commands);
   const top = mine.find((c) => c.tier === Math.max(...mine.map((x) => x.tier)));
-  if (!top) return touchSummary(cmd.touches);
+  if (!top) return touchSummary(cmd.touches, w);
   const more = new Set(mine.map((c) => c.says)).size - 1;
   return `${cap(commandSays(top))}${more > 0 ? `, and ${more} more ${more === 1 ? "command" : "commands"}` : ""}`;
 }
@@ -129,15 +130,16 @@ export function redKind(cmd: Command, v: Allowed): RedKind {
   return v.commands.some((c) => c.tier === 3) ? "unsure" : "lowers";
 }
 
-const red: Record<RedKind, { head: string; chip: string; word: string }> = {
+const red = (w: string): Record<RedKind, { head: string; chip: string; word: string }> => ({
   none: { head: "This can't be undone.", chip: "Can't be undone", word: "permanent" },
   unsure: { head: "Rig can't promise to undo this.", chip: "Can't promise an undo", word: "permanent" },
-  lowers: { head: "This lowers a protection on this PC.", chip: "Lowers a protection", word: "lower" },
-};
-export const redWords = (k: RedKind) => red[k];
+  lowers: { head: `This lowers a protection on this ${w}.`, chip: "Lowers a protection", word: "lower" },
+});
+/** A red card's heading, chip and typed word; `w` names the machine ("PC" or "laptop"). */
+export const redWords = (k: RedKind, w = "PC") => red(w)[k];
 /** The red card's answer to "Can it be undone". */
-export function redBack(k: RedKind, plan: UndoPlan): string {
-  return k === "none" ? "No." : k === "unsure" ? "Not for sure." : `${plan.line} Until you undo it, the PC is less protected.`;
+export function redBack(k: RedKind, plan: UndoPlan, w = "PC"): string {
+  return k === "none" ? "No." : k === "unsure" ? "Not for sure." : `${plan.line} Until you undo it, the ${w} is less protected.`;
 }
 
 /** The checker's reasons a red card is red, without the plain second-look one. */
@@ -172,13 +174,13 @@ export function nativeReach(undo: HelperUndo, own?: { undo: string; noUndo: bool
   return { can: true, untied: [], line: `${back ?? "Undo puts it back the way Rig read it before."}${undo.outside.length ? ` It can't put back what's under Also changed.${restore}` : ""}` };
 }
 
-const sentinels: Record<Sentinel, string> = {
+const sentinels = (w: string): Record<Sentinel, string> => ({
   services: "the list of Windows services or how they start", run: "the apps that start with Windows", ifeo: "which program Windows opens in place of another",
-  winlogon: "what runs when you sign in", defenderExclusions: "the places Defender skips", localUsers: "the accounts on this PC", administrators: "who is an administrator on this PC",
+  winlogon: "what runs when you sign in", defenderExclusions: "the places Defender skips", localUsers: `the accounts on this ${w}`, administrators: `who is an administrator on this ${w}`,
   rdp: "Remote Desktop", winrm: "remote management", rootCertificates: "the certificates Windows trusts", hosts: "the hosts file", proxy: "the proxy settings",
   scheduledTasks: "the scheduled tasks", bcd: "how Windows starts up",
-};
-export const sentinelWords = (s: Sentinel) => sentinels[s];
+});
+export const sentinelWords = (s: Sentinel, w = "PC") => sentinels(w)[s];
 
 /** What one undo came to, in a sentence. */
 export function undoneLine(u: UndoReply): string {

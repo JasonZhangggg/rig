@@ -1,7 +1,7 @@
 import { useState, type PointerEvent } from "react";
 import { moveOne, roomFor, roomWords, type DriveFill, type DriveMap } from "@rig/core";
 import { Row, RowFigure, Rows } from "../../components/Rows";
-import { useApp, useAppSelector, useTemp } from "../../state";
+import { useApp, useAppSelector, useMachineWord, useTemp } from "../../state";
 import { ago } from "../games/words";
 import { FreeSpace } from "./FreeSpace";
 
@@ -32,6 +32,7 @@ export function StorageMap() {
   const drives = useAppSelector((c) => c.pc.drives, Object.is);
   const noAdmin = useAppSelector((c) => !!c.pc.issues?.some((i) => i.id === "needs-admin"));
   const { client, pc, toast } = useApp();
+  const word = useMachineWord();
   if (!drives?.length) return null;
   const scanning = drives.some((d) => d.scanning);
   const at = drives.map((d) => d.scannedAt).filter(Boolean).sort()[0];
@@ -42,7 +43,7 @@ export function StorageMap() {
     <div className="sm-map">
       <div className="sm-head">
         <p className="faint sm-when" aria-live="polite">
-          {scanning ? "Measuring folders now. It runs slowly in the background so the PC stays quick." : at ? `Folders measured ${ago(Date.parse(at))}.` : "Rig measures folders on the PC itself."}
+          {scanning ? `Measuring folders now. It runs slowly in the background so the ${word} stays quick.` : at ? `Folders measured ${ago(Date.parse(at))}.` : `Rig measures folders on the ${word} itself.`}
         </p>
         {measure && <button className="btn ghost sm" type="button" disabled={scanning} onClick={() => void measure()}>{scanning ? "Measuring…" : "Measure again"}</button>}
       </div>

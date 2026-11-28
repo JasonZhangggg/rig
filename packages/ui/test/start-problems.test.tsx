@@ -31,6 +31,14 @@ describe("start problems", () => {
     expect(screen.queryByRole("button", { name: "Open logs folder" })).toBeNull();
   });
 
+  it("calls a laptop a laptop when it was a laptop last time", async () => {
+    localStorage.setItem("rig.kind", "laptop");
+    try {
+      render(<RigApp client={new BrokenPC()} />);
+      expect(await screen.findByText("Rig couldn't read this laptop.")).toBeTruthy();
+    } finally { localStorage.clear(); }
+  });
+
   it("starts quietly, and a failed start can be tried again without quitting Rig", () => {
     const retry = vi.fn();
     const { rerender } = render(<Splash text="Starting Rig…" />);

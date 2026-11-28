@@ -2,6 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoClient } from "@rig/core/demo";
+import { navIcon } from "../src/components/Shell";
+import { redBack, redWords, touchSummary } from "../src/components/change/words";
 
 vi.mock("../src/scene", () => ({
   createScene: (_el: HTMLElement, { onSelect }: { onSelect: (id: string | null) => void }) =>
@@ -44,13 +46,42 @@ describe("laptop words", () => {
     localStorage.setItem("rig.pc", "demo-pebble");
     render(<RigApp client={new DemoClient()} />);
     await screen.findByText(/Things to look at/i);
-    // Logs is left out: its Performance view still says "Whole PC" (pages/logs/Lanes.tsx, Readings.tsx).
-    for (const route of ["overview", "pc", "upgrades", "manuals", "safety", "games", "events", "chat", "changes", "settings"]) {
+    for (const route of ["overview", "pc", "logs", "upgrades", "manuals", "safety", "games", "events", "chat", "changes", "settings"]) {
       await go(route);
       await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       expect(shown().match(machinePC)?.[0], `#${route}`).toBeUndefined();
     }
     expect(screen.getByText(/Makes every screen a little bigger, the 3D laptop included\./)).toBeTruthy();
+  });
+
+  it("draws a laptop in the sidebar and names the tab My laptop", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    const side = within(screen.getByRole("complementary", { name: "Main" }));
+    const icon = () => side.getByRole("link", { name: /^My laptop/ }).querySelector("path")?.getAttribute("d");
+    expect(icon()).toBe(navIcon("pc", "laptop"));
+    expect(icon()).not.toBe(navIcon("pc", "PC"));
+    await go("pc");
+    expect(document.title).toBe("My laptop · Rig");
+  });
+
+  it("says Whole laptop in the Logs Show menu", async () => {
+    localStorage.setItem("rig.pc", "demo-pebble");
+    render(<RigApp client={new DemoClient()} />);
+    await screen.findByText(/Things to look at/i);
+    await go("logs");
+    const readings = await screen.findByRole("region", { name: "Readings" });
+    fireEvent.click(within(within(readings).getByRole("group", { name: "How far back" })).getByRole("button", { name: "Week" }));
+    fireEvent.click(await within(readings).findByRole("button", { name: "Show Whole laptop" }));
+    expect(within(screen.getByRole("dialog", { name: "Show" })).getAllByRole("menuitemradio")[0].textContent).toBe("Whole laptop");
+  });
+
+  it("names the laptop on approval cards", () => {
+    expect(redWords("lowers", "laptop").head).toBe("This lowers a protection on this laptop.");
+    expect(redBack("lowers", { line: "Undo turns it back on." } as never, "laptop")).toBe("Undo turns it back on. Until you undo it, the laptop is less protected.");
+    expect(touchSummary([{ kind: "other" } as never], "laptop")).toBe("Change something else on this laptop");
+    expect(redWords("lowers").head).toBe("This lowers a protection on this PC.");
   });
 
   it("still calls a desktop a PC", async () => {
@@ -60,6 +91,9 @@ describe("laptop words", () => {
     expect(side.getByText("Your PC")).toBeTruthy();
     expect(side.getByRole("link", { name: /^My PC/ })).toBeTruthy();
     expect(side.queryByText(/laptop/i)).toBeNull();
+    expect(side.getByRole("link", { name: /^My PC/ }).querySelector("path")?.getAttribute("d")).toBe(navIcon("pc", "PC"));
+    await go("pc");
+    expect(document.title).toBe("My PC · Rig");
     await go("settings");
     expect(screen.getByText(/Makes every screen a little bigger, the 3D PC included\./)).toBeTruthy();
   });

@@ -164,7 +164,7 @@ export function Overview() {
       case "fans": return (
         <FansCard
           fans={pc.fans} trend={week?.fans ?? null} style={w.style as FansStyle} days={Number(o.span)} compact={compact}
-          live={o.live !== false} legend={o.legend !== false} off={Array.isArray(o.off) ? o.off : []}
+          live={o.live !== false} legend={o.legend !== false} off={Array.isArray(o.off) ? o.off : []} word={word}
         />
       );
       case "evenings": return (

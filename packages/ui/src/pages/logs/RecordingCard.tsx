@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { RecordingInfo, RecordingRequest } from "@rig/core";
-import { useActions, useData, useStillPC, useTempText } from "../../state";
+import { useActions, useData, useMachineWord, useStillPC, useTempText } from "../../state";
 import { clock, minutes, stateWord } from "./words";
 
 /** The clock, ticking once a second while something on screen counts down. */
@@ -37,6 +37,7 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
   const pc = useStillPC();
   const data = useData("answering", "recordings");
   const inUnit = useTempText();
+  const word = useMachineWord();
   const [stopping, setStopping] = useState(false);
   const live = data.recordings.find((r) => r.id === request.id);
   const state = live?.state ?? "pending";
@@ -51,7 +52,7 @@ export function RecordingCard({ request }: { request: RecordingRequest }) {
       <div className="rec-card-body">
         <p>{request.reason}</p>
         {live && <Progress r={live} />}
-        {state === "pending" && <p className="muted">Waiting for the Rig app on {pc.name} to pick it up. That takes up to five minutes while the PC is on.</p>}
+        {state === "pending" && <p className="muted">Waiting for the Rig app on {pc.name} to pick it up. That takes up to five minutes while the {word} is on.</p>}
         {finished && <p className="rec-found">{live?.headline ? inUnit(live.headline) : "Rig has the readings."}</p>}
         {state === "failed" && <p className="muted">{live?.error ?? "No readings came in. Start a new recording, and if it fails again, restart Rig."}</p>}
       </div>

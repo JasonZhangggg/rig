@@ -122,6 +122,13 @@ describe("safe and up to date", () => {
     const { security: _s, ...old } = f;
     expect(findings({ inv, snap: null, facts: old, now }).some((x) => /firewall|virus|update in/i.test(x.title))).toBe(false);
   });
+
+  it("calls a laptop a laptop in Things to look at", () => {
+    const f: SystemFacts = { ...structuredClone(fixtures.pebble.facts), security: { ...fine(), firewall: { domain: true, private: false, public: true } } };
+    const body = findings({ inv: structuredClone(fixtures.pebble.inv), snap: null, facts: f, now }).find((x) => x.id === "firewall-off")!.body;
+    expect(body).toMatch(/this laptop/);
+    expect(body).not.toMatch(/\bPC\b/);
+  });
 });
 
 describe("the demo's safety readings", () => {

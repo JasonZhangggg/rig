@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { caughtProblem, isActive, limitsOf, logTitle, recorded, summarise, type HistoryPoint, type PCEvent, type Recording, type RecordingInfo, type RecordingSummary } from "@rig/core";
 import { LineChart } from "../../chart";
 import { Icon } from "../../components/common";
-import { useActions, useData, useHistory, useStillPC, useTemp, useTempText } from "../../state";
+import { useActions, useData, useHistory, useMachineWord, useStillPC, useTemp, useTempText } from "../../state";
 import { CaughtChart, CaughtChecks, CaughtLead, CaughtTodo } from "./Caught";
 import { CustomLogDetail } from "./CustomLog";
 import { Rows } from "../../components/Rows";
@@ -26,6 +26,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
   const data = useData("answering");
   const temp = useTemp();
   const inUnit = useTempText();
+  const word = useMachineWord();
   const [rec, setRec] = useState<Recording | null | undefined>(undefined);
   // Fetch again as it grows and when it finishes.
   const version = `${info.id}|${info.state}|${Math.floor(info.sampleCount / 6)}`;
@@ -96,7 +97,7 @@ function RecordingDetail({ info, onBack }: { info: RecordingInfo; onBack: () => 
       </div>
 
       {info.state === "recording" && <section className="card card-pad"><Progress r={info} /></section>}
-      {info.state === "pending" && <section className="card card-pad"><p className="muted">Waiting for the Rig app on {pc.name} to pick this up. It starts within about five minutes while the PC is on and signed in.</p></section>}
+      {info.state === "pending" && <section className="card card-pad"><p className="muted">Waiting for the Rig app on {pc.name} to pick this up. It starts within about five minutes while the {word} is on and signed in.</p></section>}
       {info.error && <div className="callout warn">{info.error}</div>}
 
       {rec === undefined || (caught && history === null) ? <p className="muted">Loading the recording…</p> : !rec || !sum ? <p className="muted">Rig couldn't load this recording. Go back to Logs and open it again.</p> : caught ? (

@@ -116,7 +116,7 @@ function Rings({ fans }: { fans: readonly FanReading[] }) {
 }
 
 /** Live speeds of the busiest and quietest fans, over the recent trend. `trend` is null while history loads. */
-export function FansCard({ fans, trend: full, style = "dots", days = 4, live = true, legend = true, off = [], compact = false }: { fans: readonly FanReading[] | undefined; trend: FanTrend | null } & FansOptions) {
+export function FansCard({ fans, trend: full, style = "dots", days = 4, live = true, legend = true, off = [], compact = false, word = "PC" }: { fans: readonly FanReading[] | undefined; trend: FanTrend | null; word?: string } & FansOptions) {
   const shown = (fans ?? []).filter((f) => !off.includes(f.label));
   const stats = headlines(shown);
   const trend = full && recent(full, days * 4);
@@ -124,7 +124,7 @@ export function FansCard({ fans, trend: full, style = "dots", days = 4, live = t
   // While history loads the chart's room is kept, so the page doesn't grow under the reader when it arrives.
   const loading = !full && !rings && (!compact || stats.length > 0);
   const note = rings ? "Each fan against its top speed" : trend?.scale != null && !compact ? "Fastest fan every six hours, rpm" : "rpm";
-  const empty = <EmptyNote ghost={!!fans?.length}>{fans?.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : "This PC doesn't report fan speeds, so there's nothing to show here."}</EmptyNote>;
+  const empty = <EmptyNote ghost={!!fans?.length}>{fans?.length ? "Rig is still learning how fast the fans run. Their week shows up here soon." : `This ${word} doesn't report fan speeds, so there's nothing to show here.`}</EmptyNote>;
   return (
     <section className={`f-pane bl-fans${compact ? " compact" : ""}`} aria-busy={loading || undefined}>
       <CardHead title="Fans" note={note} />
